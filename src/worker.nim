@@ -80,6 +80,7 @@ var
   pxA, pyA: Float32Array
   pxB, pyB: Float32Array
   sA, sB: Uint8Array # Actual species arrays
+  denA, denB: Float32Array # Density arrays
 
   # Derived/Grid data
   vxDelta, vyDelta: Float32Array
@@ -135,6 +136,7 @@ proc computeForces(
   startIdx, endIdx: int32,
   px, py: Float32Array,
   species: Uint8Array,
+  density: Float32Array,
   W, H, rMax: float32,
   gridW, gridH: int32,
   cellSize, fMul, dt, mouseX, mouseY: float32,
@@ -145,7 +147,10 @@ proc computeForces(
   let invR = 1.0 / rMax
   let halfW = W * 0.5
   let halfH = H * 0.5
-  let invCellSize = 1.0 / cellSize
+  # Use rectangular cells that perfectly divide the domain (W, H)
+  # This ensures robust wrapping without edge artifacts
+  let invCellW = float32(gridW) / W
+  let invCellH = float32(gridH) / H
   let md2Limit = 90000.0 # 300^2
 
   for i in startIdx ..< endIdx:
@@ -158,8 +163,11 @@ proc computeForces(
     var fy = 0.0'f32
 
     # Use int32 explicit cast to ensure JS bitwise OR 0 behavior
-    let cx = toInt32(xi * invCellSize)
-    let cy = toInt32(yi * invCellSize)
+    # Map position 0..W -> 0..gridW
+    let cx = toInt32(xi * invCellW)
+    let cy = toInt32(yi * invCellH)
+
+    var dens = 0.0'f32
 
     # 3x3 Neighborhood search
     # We iterate over the 9 surrounding cells to find neighbors.
@@ -211,11 +219,17 @@ proc computeForces(
           let d2 = ddx * ddx + ddy * ddy
 
           if d2 > 0.0 and d2 < rMaxSq:
-            let d = sqrt(d2)
+            var d = sqrt(d2)
+            # Clamp min distance to avoid singularities
+            if d < 2.0: d = 2.0
             let r = d * invR
 
             # Matrix lookup
             let s_j = species[j]
+
+            # Accumulate density (same species only)
+            if s_j == si:
+              dens += (1.0 - r)
             let attr = matrix[rowOffset + int32(s_j)]
 
             var f: float32
@@ -251,6 +265,7 @@ proc computeForces(
     # Write to delta buffer
     vxDelta[i] = fx * dt
     vyDelta[i] = fy * dt
+    density[i] = dens
 
 # ------------------------------------------------------------------
 # Main Loop
@@ -295,11 +310,12 @@ proc workLoop() =
     let px = if bufferParity == 0: pxA else: pxB
     let py = if bufferParity == 0: pyA else: pyB
     let species = if bufferParity == 0: sA else: sB
+    let density = if bufferParity == 0: denA else: denB
 
     # Run Physics
     computeForces(
       startIdx, endIdx,
-      px, py, species,
+      px, py, species, density,
       W, H, rMax,
       gridW, gridH,
       cellSize, fMul, dt,
@@ -327,10 +343,12 @@ proc onMessage(e: MessageEvent) =
     pxA = newFloat32Array(msg.pxBufferA)
     pyA = newFloat32Array(msg.pyBufferA)
     sA = newUint8Array(msg.speciesBufferA)
+    denA = newFloat32Array(msg.densityBufferA)
 
     pxB = newFloat32Array(msg.pxBufferB)
     pyB = newFloat32Array(msg.pyBufferB)
     sB = newUint8Array(msg.speciesBufferB)
+    denB = newFloat32Array(msg.densityBufferB)
 
     vxDelta = newFloat32Array(msg.vxDeltaBuffer)
     vyDelta = newFloat32Array(msg.vyDeltaBuffer)
