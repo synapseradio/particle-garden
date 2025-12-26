@@ -4,11 +4,14 @@
 
 ## What This Is
 
-A native desktop wrapper around the Emergent Garden particle simulator that:
+A native desktop wrapper around the [Emergent Garden](https://github.com/gyanantaran/emergent-garden) particle simulator that has a few extra goodies.
 
-1. **Enables SharedArrayBuffer** via Cross-Origin Isolation headers (COOP/COEP)
-2. **Opens in your default browser** via nim-webui
-3. **Eliminates ~7MB/frame of memory copies** in worker mode
+## Key Features
+
+- **Zero-Copy Physics**: Physics engine runs in a Nim-compiled Web Worker, accessing shared memory directly. No serialization overhead.
+- **Density-Based Sizing**: Particles grow larger when isolated from their own species, highlighting outliers.
+- **Editable Rules**: Click any cell in the interaction matrix to manually tune attraction/repulsion forces in real-time.
+- **Configurable Trails**: Toggle motion trails and adjust their length/persistence.
 
 ## Architecture
 
@@ -26,7 +29,7 @@ A native desktop wrapper around the Emergent Garden particle simulator that:
 │  Browser (Chrome/Firefox/Edge)               │
 │  ├── window.crossOriginIsolated = true       │
 │  ├── SharedArrayBuffer available             │
-│  └── Web Workers read shared memory directly │
+│  └── Web Workers (Nim -> JS) run physics     │
 └──────────────────────────────────────────────┘
 ```
 
@@ -45,6 +48,9 @@ cd emergent-garden-webui
 # Install dependencies
 nimble install
 
+# Compile the physics worker (Nim -> JS)
+nimble worker
+
 # Build (debug)
 nimble build
 
@@ -55,9 +61,13 @@ nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
 ## Run
 
 ```bash
-./src/emergent_garden
+# Ensure worker is compiled
+nimble worker
+
+# Run
+./emergent_garden
 # or on Windows:
-# src\emergent_garden.exe
+# emergent_garden.exe
 ```
 
 This will:
@@ -89,9 +99,7 @@ At 60fps with 16K particles and 7 workers, SAB mode saves **~420 MB/s** of memor
 
 ### "SharedArrayBuffer is not defined"
 
-The server isn't setting COOP/COEP headers. Check:
-1. You're accessing via `http://localhost:8089`, not `file://`
-2. The Nim server is running (check terminal output)
+The app isn't serving COOP/COEP headers. Ensure you are running the binary (which starts the internal server), not just opening the HTML file directly. The binary serves the embedded content with the correct security headers.
 
 ### Browser doesn't open
 
@@ -100,6 +108,28 @@ webui couldn't find a browser. Install Chrome, Firefox, or Edge.
 ### Port 8089 in use
 
 Edit `src/emergent_garden.nim` and change `PORT = 8089` to another port.
+
+## Packaging
+
+### macOS
+
+Run the included script to create a standalone `.app` bundle:
+
+```bash
+./package_mac.sh
+```
+
+This will create `Emergent Garden.app` which can be moved to `/Applications`.
+
+### Windows
+
+1. Build the worker and optimized binary:
+   ```bash
+   nimble worker
+   nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
+   ```
+2. The resulting `src/emergent_garden.exe` is a standalone executable (it embeds the web assets).
+3. You can distribute this single file.
 
 ## Next Steps → Native Physics (Option 2)
 

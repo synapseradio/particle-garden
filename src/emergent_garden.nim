@@ -31,6 +31,10 @@ import std/[os, asynchttpserver, asyncdispatch, net, strutils]
 
 const ServerPort = 8089
 
+# Embed static files
+const indexHtml = staticRead("../web/index.html")
+const workerJs = staticRead("../web/worker.js")
+
 # Custom HTTP server that serves with COOP/COEP headers for SharedArrayBuffer
 proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
   var server = newAsyncHttpServer()
@@ -38,16 +42,20 @@ proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
   proc handler(req: Request) {.async.} =
     echo "[DEBUG] Request: ", req.reqMethod, " ", req.url.path
 
-    var path = req.url.path
-    if path == "/": path = "/index.html"
+    var content = ""
+    var contentType = "text/plain"
+    var found = false
 
-    let filePath = "web" & path
+    if req.url.path == "/" or req.url.path == "/index.html":
+      content = indexHtml
+      contentType = "text/html; charset=utf-8"
+      found = true
+    elif req.url.path == "/worker.js":
+      content = workerJs
+      contentType = "application/javascript"
+      found = true
 
-    if fileExists(filePath):
-      var contentType = "text/plain"
-      if filePath.endsWith(".html"): contentType = "text/html; charset=utf-8"
-      elif filePath.endsWith(".js"): contentType = "application/javascript"
-
+    if found:
       # Set Cross-Origin Isolation headers for SharedArrayBuffer support
       let headers = newHttpHeaders([
         ("Content-Type", contentType),
@@ -55,7 +63,7 @@ proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
         ("Cross-Origin-Embedder-Policy", "require-corp")
       ])
 
-      await req.respond(Http200, readFile(filePath), headers)
+      await req.respond(Http200, content, headers)
     else:
       await req.respond(Http404, "Not Found", newHttpHeaders())
 
