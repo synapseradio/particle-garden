@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergent Garden 🦠 - SharedArrayBuffer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0f; font-family: 'Segoe UI', system-ui, sans-serif; color: #e0e0e0; overflow: hidden; height: 100vh; }
+        #canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+        .controls {
+            position: fixed; top: 20px; left: 20px;
+            background: rgba(10, 10, 20, 0.85); backdrop-filter: blur(10px);
+            padding: 20px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 100; max-width: 340px; max-height: calc(100vh - 40px); overflow-y: auto;
+        }
+        .controls h1 { font-size: 1.4em; margin-bottom: 5px; background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .controls .subtitle { font-size: 0.75em; color: #888; margin-bottom: 15px; }
+        .mode-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.65em; font-weight: bold; }
+        .mode-badge.sab { background: #1a4d1a; color: #4ade80; border: 1px solid #2d5a2d; }
+        .mode-badge.copy { background: #4d3d1a; color: #fbbf24; border: 1px solid #5a4d2d; }
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 5px; }
+        .control-group input[type="range"] { width: 100%; height: 6px; -webkit-appearance: none; background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+        .control-group input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: #4d96ff; border-radius: 50%; cursor: pointer; }
+        .value-display { font-size: 0.75em; color: #4d96ff; float: right; }
+        button { background: linear-gradient(135deg, #4d96ff, #6bcb77); border: none; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 0.9em; margin-right: 8px; margin-bottom: 8px; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(77, 150, 255, 0.3); }
+        button.secondary { background: rgba(255, 255, 255, 0.1); }
+        button.active { background: linear-gradient(135deg, #6bcb77, #4d96ff); }
+        .stats { font-size: 0.75em; color: #666; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+        .stats div { margin-bottom: 2px; }
+        .stats .highlight { color: #4ade80; }
+        .matrix-display { margin-top: 10px; display: grid; gap: 2px; font-size: 0.65em; }
+        .matrix-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: bold; }
+        .matrix-header { background: rgba(255, 255, 255, 0.05); }
+        .collapse-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #666; cursor: pointer; padding: 5px; font-size: 1.2em; }
+        .collapsed .controls-content { display: none; }
+        .hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(10, 10, 20, 0.7); padding: 10px 20px; border-radius: 20px; font-size: 0.8em; color: #888; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
+        .hint.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls" id="controls">
+        <button class="collapse-btn" onclick="toggleControls()">−</button>
+        <h1>Emergent Garden 🦠</h1>
+        <p class="subtitle">
+            <span id="workerCount">0</span> threads • 
+            <span id="modeBadge" class="mode-badge">checking...</span>
+        </p>
+        
+        <div class="controls-content">
+            <div class="control-group">
+                <label>Particles <span class="value-display" id="particleValue">16000</span></label>
+                <input type="range" id="particleCount" min="1000" max="80000" value="16000" step="1000">
+            </div>
+            
+            <div class="control-group">
+                <label>Species <span class="value-display" id="speciesValue">4</span></label>
+                <input type="range" id="speciesCount" min="2" max="6" value="4">
+            </div>
+            
+            <div class="control-group">
+                <label>Interaction Radius <span class="value-display" id="radiusValue">50</span></label>
+                <input type="range" id="interactionRadius" min="20" max="120" value="50">
+            </div>
+            
+            <div class="control-group">
+                <label>Force Strength <span class="value-display" id="forceValue">1.0</span></label>
+                <input type="range" id="forceStrength" min="0.1" max="3" value="1" step="0.1">
+            </div>
+            
+            <div class="control-group">
+                <label>Friction <span class="value-display" id="frictionValue">0.05</span></label>
+                <input type="range" id="friction" min="0.01" max="0.2" value="0.05" step="0.01">
+            </div>
+            
+            <div style="margin-top: 15px;">
+                <button onclick="randomizeMatrix()">🎲 New Rules</button>
+                <button onclick="resetParticles()">↺ Reset</button>
+                <button id="trailBtn" class="secondary" onclick="toggleTrails()">Trails</button>
+            </div>
+            
+            <div class="control-group" style="margin-top: 15px;">
+                <label>Attraction Matrix</label>
+                <div class="matrix-display" id="matrixDisplay"></div>
+            </div>
+            
+            <div class="stats">
+                <div>FPS: <span id="fps">0</span></div>
+                <div>Particles: <span id="particleStats">0</span></div>
+                <div>Grid build: <span id="gridTime">0</span>ms</div>
+                <div>Workers: <span id="workerTime">0</span>ms</div>
+                <div>Mem saved: <span id="memSaved" class="highlight">0</span> MB/s</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="hint" id="hint">Zero-copy parallel physics via SharedArrayBuffer</div>
+
+<script>
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * EMERGENT GARDEN - SharedArrayBuffer Edition
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * KEY DIFFERENCE FROM WORKERS VERSION:
+ * 
+ * Old (copy mode):
+ *   Main: px.slice() → copy → postMessage → Worker: new Float32Array(buffer)
+ *   Cost: ~7MB copied per frame at 16K particles × 7 workers
+ *
+ * New (SharedArrayBuffer mode):  
+ *   Main: SharedArrayBuffer allocated once
+ *   Workers: Read directly from shared memory
+ *   Sync: Atomics.wait/notify for coordination
+ *   Cost: ~0 bytes copied per frame
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const USE_SHARED = typeof SharedArrayBuffer !== 'undefined';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WORKER CODE - Embedded as string for blob URL creation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const WORKER_CODE_SHARED = `
+/*
+ * Worker with SharedArrayBuffer - reads directly from main thread memory
+ */
+const MAX_SPECIES = 6;
+
+// Shared buffer views (set once at init)
+let px, py, vxDelta, vyDelta, species;
+let gridCounts, gridOffsets, gridIndices;
+let syncBuffer;  // Int32Array for Atomics coordination
+let matrix;
+
+// My assigned range
+let myIndex, startIdx, endIdx;
+
+// Sync buffer layout:
+// [0] = frame counter (main increments, workers wait on)
+// [1..N] = worker done flags
+
+self.onmessage = function(e) {
+    const msg = e.data;
+    
+    if (msg.type === 'init') {
+        // Receive SharedArrayBuffer references (once!)
+        myIndex = msg.workerIndex;
+        
+        px = new Float32Array(msg.pxBuffer);
+        py = new Float32Array(msg.pyBuffer);
+        vxDelta = new Float32Array(msg.vxDeltaBuffer);
+        vyDelta = new Float32Array(msg.vyDeltaBuffer);
+        species = new Uint8Array(msg.speciesBuffer);
+        gridCounts = new Uint16Array(msg.gridCountsBuffer);
+        gridOffsets = new Uint32Array(msg.gridOffsetsBuffer);
+        gridIndices = new Uint32Array(msg.gridIndicesBuffer);
+        syncBuffer = new Int32Array(msg.syncBuffer);
+        matrix = new Float32Array(msg.matrixBuffer);
+        
+        // Start the work loop
+        workLoop();
+        return;
+    }
+    
+    if (msg.type === 'updateMatrix') {
+        // Matrix is in shared memory, just need to know it changed
+        return;
+    }
+};
+
+function workLoop() {
+    let lastFrame = 0;
+    
+    while (true) {
+        // Wait for main thread to signal new frame
+        // syncBuffer[0] = frame counter
+        Atomics.wait(syncBuffer, 0, lastFrame);
+        lastFrame = Atomics.load(syncBuffer, 0);
+        
+        // Read our assignment from sync buffer
+        // Layout: [frameCounter, workerCount, startIdx0, endIdx0, startIdx1, endIdx1, ...]
+        const workerCount = syncBuffer[1];
+        startIdx = syncBuffer[2 + myIndex * 2];
+        endIdx = syncBuffer[2 + myIndex * 2 + 1];
+        
+        // Read config from sync buffer (after worker assignments)
+        const configOffset = 2 + workerCount * 2;
+        const W = syncBuffer[configOffset];
+        const H = syncBuffer[configOffset + 1];
+        const rMax = syncBuffer[configOffset + 2];
+        const gridW = syncBuffer[configOffset + 3];
+        const gridH = syncBuffer[configOffset + 4];
+        const cellSize = syncBuffer[configOffset + 5];
+        // Float config stored as int bits
+        const fMulBits = syncBuffer[configOffset + 6];
+        const dtBits = syncBuffer[configOffset + 7];
+        const mouseXBits = syncBuffer[configOffset + 8];
+        const mouseYBits = syncBuffer[configOffset + 9];
+        const mouseDown = syncBuffer[configOffset + 10];
+        
+        // Convert int bits back to float
+        const floatView = new Float32Array(1);
+        const intView = new Int32Array(floatView.buffer);
+        
+        intView[0] = fMulBits;
+        const fMul = floatView[0];
+        intView[0] = dtBits;
+        const dt = floatView[0];
+        intView[0] = mouseXBits;
+        const mouseX = floatView[0];
+        intView[0] = mouseYBits;
+        const mouseY = floatView[0];
+        
+        // Do the work
+        computeForces(startIdx, endIdx, W, H, rMax, gridW, gridH, cellSize, fMul, dt, mouseX, mouseY, mouseDown);
+        
+        // Signal done - use atomic store to worker's done slot
+        // Done flags start after config
+        const doneOffset = configOffset + 16;
+        Atomics.store(syncBuffer, doneOffset + myIndex, 1);
+        Atomics.notify(syncBuffer, doneOffset + myIndex);
+    }
+}
+
+function computeForces(startIdx, endIdx, W, H, rMax, gridW, gridH, cellSize, fMul, dt, mouseX, mouseY, mouseDown) {
+    const rMaxSq = rMax * rMax;
+    const invR = 1 / rMax;
+    const halfW = W * 0.5;
+    const halfH = H * 0.5;
+    const invCellSize = 1 / cellSize;
+    
+    for (let i = startIdx; i < endIdx; i++) {
+        const xi = px[i];
+        const yi = py[i];
+        const si = species[i];
+        const row = si * MAX_SPECIES;
+        
+        let fx = 0, fy = 0;
+        
+        const cx = (xi * invCellSize) | 0;
+        const cy = (yi * invCellSize) | 0;
+        
+        // Check 3x3 neighborhood
+        for (let dy = -1; dy <= 1; dy++) {
+            let ny = cy + dy;
+            if (ny < 0) ny += gridH;
+            else if (ny >= gridH) ny -= gridH;
+            
+            for (let dx = -1; dx <= 1; dx++) {
+                let nx = cx + dx;
+                if (nx < 0) nx += gridW;
+                else if (nx >= gridW) nx -= gridW;
+                
+                const cell = ny * gridW + nx;
+                const start = gridOffsets[cell];
+                const count = gridCounts[cell];
+                
+                for (let k = 0; k < count; k++) {
+                    const j = gridIndices[start + k];
+                    if (i === j) continue;
+                    
+                    let ddx = px[j] - xi;
+                    let ddy = py[j] - yi;
+                    
+                    // Toroidal wrapping
+                    if (ddx > halfW) ddx -= W;
+                    else if (ddx < -halfW) ddx += W;
+                    if (ddy > halfH) ddy -= H;
+                    else if (ddy < -halfH) ddy += H;
+                    
+                    const d2 = ddx * ddx + ddy * ddy;
+                    
+                    if (d2 > 0 && d2 < rMaxSq) {
+                        const d = Math.sqrt(d2);
+                        const r = d * invR;
+                        
+                        const attr = matrix[row + species[j]];
+                        
+                        let f;
+                        if (r < 0.3) {
+                            f = r / 0.3 - 1;
+                        } else {
+                            const t = 2 * r - 1.3;
+                            f = attr * (1 - (t < 0 ? -t : t) / 0.7);
+                        }
+                        
+                        f = f * fMul / d;
+                        fx += ddx * f;
+                        fy += ddy * f;
+                    }
+                }
+            }
+        }
+        
+        // Mouse attraction
+        if (mouseDown) {
+            let mdx = mouseX - xi;
+            let mdy = mouseY - yi;
+            if (mdx > halfW) mdx -= W;
+            else if (mdx < -halfW) mdx += W;
+            if (mdy > halfH) mdy -= H;
+            else if (mdy < -halfH) mdy += H;
+            
+            const md2 = mdx * mdx + mdy * mdy;
+            if (md2 > 0 && md2 < 90000) {
+                const md = Math.sqrt(md2);
+                const mf = 0.5 * (1 - md / 300) / md;
+                fx += mdx * mf;
+                fy += mdy * mf;
+            }
+        }
+        
+        // Write directly to shared delta buffers
+        vxDelta[i] = fx * dt;
+        vyDelta[i] = fy * dt;
+    }
+}
+`;
+
+// Fallback worker code (copy-based, same as original)
+const WORKER_CODE_COPY = `
+const MAX_SPECIES = 6;
+let matrix;
+
+onmessage = function(e) {
+    const msg = e.data;
+    
+    if (msg.type === 'init') {
+        matrix = new Float32Array(msg.matrix);
+        return;
+    }
+    
+    if (msg.type === 'updateMatrix') {
+        matrix = new Float32Array(msg.matrix);
+        return;
+    }
+    
+    if (msg.type === 'compute') {
+        const { startIdx, endIdx, pxBuffer, pyBuffer, speciesBuffer,
+                gridCountsBuffer, gridOffsetsBuffer, gridIndicesBuffer, config } = msg;
+        
+        const px = new Float32Array(pxBuffer);
+        const py = new Float32Array(pyBuffer);
+        const species = new Uint8Array(speciesBuffer);
+        const gridCounts = new Uint16Array(gridCountsBuffer);
+        const gridOffsets = new Uint32Array(gridOffsetsBuffer);
+        const gridIndices = new Uint32Array(gridIndicesBuffer);
+        
+        const count = endIdx - startIdx;
+        const vxOut = new Float32Array(count);
+        const vyOut = new Float32Array(count);
+        
+        computeForces(startIdx, endIdx, config, px, py, species, gridCounts, gridOffsets, gridIndices, vxOut, vyOut);
+        
+        postMessage({ type: 'done', startIdx, endIdx, vxBuffer: vxOut.buffer, vyBuffer: vyOut.buffer },
+                    [vxOut.buffer, vyOut.buffer]);
+    }
+};
+
+function computeForces(startIdx, endIdx, config, px, py, species, gridCounts, gridOffsets, gridIndices, vxOut, vyOut) {
+    const { W, H, rMax, rMaxSq, invR, fMul, gridW, gridH, cellSize, mouseDown, mouseX, mouseY, dt } = config;
+    const halfW = W * 0.5, halfH = H * 0.5;
+    const invCellSize = 1 / cellSize;
+    
+    for (let i = startIdx; i < endIdx; i++) {
+        const xi = px[i], yi = py[i], si = species[i], row = si * MAX_SPECIES;
+        let fx = 0, fy = 0;
+        const cx = (xi * invCellSize) | 0, cy = (yi * invCellSize) | 0;
+        
+        for (let dy = -1; dy <= 1; dy++) {
+            let ny = cy + dy;
+            if (ny < 0) ny += gridH; else if (ny >= gridH) ny -= gridH;
+            for (let dx = -1; dx <= 1; dx++) {
+                let nx = cx + dx;
+                if (nx < 0) nx += gridW; else if (nx >= gridW) nx -= gridW;
+                const cell = ny * gridW + nx, start = gridOffsets[cell], count = gridCounts[cell];
+                for (let k = 0; k < count; k++) {
+                    const j = gridIndices[start + k];
+                    if (i === j) continue;
+                    let ddx = px[j] - xi, ddy = py[j] - yi;
+                    if (ddx > halfW) ddx -= W; else if (ddx < -halfW) ddx += W;
+                    if (ddy > halfH) ddy -= H; else if (ddy < -halfH) ddy += H;
+                    const d2 = ddx * ddx + ddy * ddy;
+                    if (d2 > 0 && d2 < rMaxSq) {
+                        const d = Math.sqrt(d2), r = d * invR;
+                        const attr = matrix[row + species[j]];
+                        let f = r < 0.3 ? r / 0.3 - 1 : attr * (1 - Math.abs(2 * r - 1.3) / 0.7);
+                        f = f * fMul / d;
+                        fx += ddx * f; fy += ddy * f;
+                    }
+                }
+            }
+        }
+        if (mouseDown) {
+            let mdx = mouseX - xi, mdy = mouseY - yi;
+            if (mdx > halfW) mdx -= W; else if (mdx < -halfW) mdx += W;
+            if (mdy > halfH) mdy -= H; else if (mdy < -halfH) mdy += H;
+            const md2 = mdx * mdx + mdy * mdy;
+            if (md2 > 0 && md2 < 90000) { const md = Math.sqrt(md2); const mf = 0.5 * (1 - md / 300) / md; fx += mdx * mf; fy += mdy * mf; }
+        }
+        vxOut[i - startIdx] = fx * dt; vyOut[i - startIdx] = fy * dt;
+    }
+}
+`;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CONFIG = {
+    particleCount: 16000,
+    speciesCount: 4,
+    interactionRadius: 50,
+    forceStrength: 1.0,
+    friction: 0.05,
+    timeScale: 1.0,
+    particleSize: 2,
+    trails: false,
+    trailAlpha: 0.92
+};
+
+const MAX_PARTICLES = 100000;
+const MAX_SPECIES = 6;
+const MAX_GRID = 256;
+const MAX_WORKERS = 16;
+
+const COLORS = new Float32Array([
+    1.0, 0.42, 0.42,   // Red
+    1.0, 0.85, 0.24,   // Yellow
+    0.42, 0.80, 0.47,  // Green
+    0.30, 0.59, 1.0,   // Blue
+    0.73, 0.42, 1.0,   // Purple
+    1.0, 0.55, 0.30    // Orange
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let canvas, gl;
+let particleCount = 0;
+
+// Shared buffers (if SAB available) or regular buffers
+let pxBuffer, pyBuffer, vxBuffer, vyBuffer, speciesBuffer;
+let vxDeltaBuffer, vyDeltaBuffer;
+let gridCountsBuffer, gridOffsetsBuffer, gridIndicesBuffer;
+let syncBuffer, matrixBuffer;
+
+// TypedArray views
+let px, py, vx, vy, species;
+let vxDelta, vyDelta;
+let gridCounts, gridOffsets, gridIndices;
+let syncArray, matrix;
+
+// Grid dimensions
+let gridW, gridH, cellSize;
+
+// Workers
+let workers = [];
+let workerCount = 0;
+
+// For copy mode fallback
+let pendingWorkers = 0;
+let workerResolve = null;
+
+// Render buffer
+let renderData;
+
+// Mouse
+let mouseX = 0, mouseY = 0, mouseDown = false;
+
+// Stats
+let lastTime = 0, frameCount = 0, fps = 0, lastFpsTime = 0;
+let gridTimeMs = 0, workerTimeMs = 0;
+let frameCounter = 0;
+let bytesSavedPerFrame = 0;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMORY ALLOCATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function allocateBuffers() {
+    const BufferType = USE_SHARED ? SharedArrayBuffer : ArrayBuffer;
+    
+    // Particle data
+    pxBuffer = new BufferType(MAX_PARTICLES * 4);
+    pyBuffer = new BufferType(MAX_PARTICLES * 4);
+    vxBuffer = new BufferType(MAX_PARTICLES * 4);
+    vyBuffer = new BufferType(MAX_PARTICLES * 4);
+    speciesBuffer = new BufferType(MAX_PARTICLES);
+    
+    // Velocity deltas (workers write here)
+    vxDeltaBuffer = new BufferType(MAX_PARTICLES * 4);
+    vyDeltaBuffer = new BufferType(MAX_PARTICLES * 4);
+    
+    // Grid
+    const maxCells = MAX_GRID * MAX_GRID;
+    gridCountsBuffer = new BufferType(maxCells * 2);   // Uint16
+    gridOffsetsBuffer = new BufferType(maxCells * 4);  // Uint32
+    gridIndicesBuffer = new BufferType(MAX_PARTICLES * 4);
+    
+    // Sync buffer for Atomics (only used in SAB mode)
+    // Layout: [frameCounter, workerCount, ...workerAssignments, ...config, ...doneFlags]
+    const syncSize = 2 + MAX_WORKERS * 2 + 16 + MAX_WORKERS;
+    syncBuffer = new BufferType(syncSize * 4);
+    
+    // Matrix
+    matrixBuffer = new BufferType(MAX_SPECIES * MAX_SPECIES * 4);
+    
+    // Create views
+    px = new Float32Array(pxBuffer);
+    py = new Float32Array(pyBuffer);
+    vx = new Float32Array(vxBuffer);
+    vy = new Float32Array(vyBuffer);
+    species = new Uint8Array(speciesBuffer);
+    vxDelta = new Float32Array(vxDeltaBuffer);
+    vyDelta = new Float32Array(vyDeltaBuffer);
+    gridCounts = new Uint16Array(gridCountsBuffer);
+    gridOffsets = new Uint32Array(gridOffsetsBuffer);
+    gridIndices = new Uint32Array(gridIndicesBuffer);
+    syncArray = new Int32Array(syncBuffer);
+    matrix = new Float32Array(matrixBuffer);
+    
+    // Render buffer (not shared, only used by main thread)
+    renderData = new Float32Array(MAX_PARTICLES * 5);
+    
+    // Calculate memory saved per frame in SAB mode
+    if (USE_SHARED) {
+        // In copy mode, we'd copy: px, py, species, gridCounts, gridOffsets, gridIndices per worker
+        const bytesPerWorker = MAX_PARTICLES * 4 * 2 + MAX_PARTICLES + 
+                               MAX_GRID * MAX_GRID * 2 + MAX_GRID * MAX_GRID * 4 + MAX_PARTICLES * 4;
+        bytesSavedPerFrame = bytesPerWorker * (navigator.hardwareConcurrency - 1);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WORKER MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function createWorkers() {
+    workerCount = Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 1, MAX_WORKERS));
+    
+    const workerCode = USE_SHARED ? WORKER_CODE_SHARED : WORKER_CODE_COPY;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    
+    for (let i = 0; i < workerCount; i++) {
+        const worker = new Worker(workerUrl);
+        
+        if (USE_SHARED) {
+            // Send shared buffer references once
+            worker.postMessage({
+                type: 'init',
+                workerIndex: i,
+                pxBuffer,
+                pyBuffer,
+                vxDeltaBuffer,
+                vyDeltaBuffer,
+                speciesBuffer,
+                gridCountsBuffer,
+                gridOffsetsBuffer,
+                gridIndicesBuffer,
+                syncBuffer,
+                matrixBuffer
+            });
+        } else {
+            // Copy mode: send matrix copy
+            worker.onmessage = handleWorkerResultCopy;
+            worker.postMessage({
+                type: 'init',
+                matrix: Array.from(matrix)
+            });
+        }
+        
+        workers.push(worker);
+    }
+    
+    document.getElementById('workerCount').textContent = workerCount;
+    
+    // Update mode badge
+    const badge = document.getElementById('modeBadge');
+    if (USE_SHARED) {
+        badge.textContent = 'SharedArrayBuffer';
+        badge.className = 'mode-badge sab';
+    } else {
+        badge.textContent = 'Copy Mode';
+        badge.className = 'mode-badge copy';
+    }
+    
+    console.log(`🦠 Created ${workerCount} workers in ${USE_SHARED ? 'SharedArrayBuffer' : 'Copy'} mode`);
+}
+
+function updateWorkersMatrix() {
+    if (!USE_SHARED) {
+        // Copy mode: send matrix to each worker
+        for (const worker of workers) {
+            worker.postMessage({ type: 'updateMatrix', matrix: Array.from(matrix) });
+        }
+    }
+    // SAB mode: matrix is already in shared memory, workers will see the update
+}
+
+// Copy mode result handler
+function handleWorkerResultCopy(e) {
+    if (e.data.type !== 'done') return;
+    
+    const { startIdx, endIdx, vxBuffer, vyBuffer } = e.data;
+    const vxResult = new Float32Array(vxBuffer);
+    const vyResult = new Float32Array(vyBuffer);
+    
+    const fric = 1 - CONFIG.friction;
+    for (let i = startIdx; i < endIdx; i++) {
+        vx[i] = vx[i] * fric + vxResult[i - startIdx];
+        vy[i] = vy[i] * fric + vyResult[i - startIdx];
+    }
+    
+    pendingWorkers--;
+    if (pendingWorkers === 0 && workerResolve) {
+        workerResolve();
+        workerResolve = null;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GRID CONSTRUCTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function buildGrid() {
+    const t0 = performance.now();
+    
+    const n = particleCount;
+    cellSize = CONFIG.interactionRadius;
+    gridW = Math.min(Math.ceil(canvas.width / cellSize) + 1, MAX_GRID);
+    gridH = Math.min(Math.ceil(canvas.height / cellSize) + 1, MAX_GRID);
+    
+    const numCells = gridW * gridH;
+    const invCellSize = 1 / cellSize;
+    
+    // Clear counts
+    for (let i = 0; i < numCells; i++) gridCounts[i] = 0;
+    
+    // Count particles per cell
+    for (let i = 0; i < n; i++) {
+        const cx = (px[i] * invCellSize) | 0;
+        const cy = (py[i] * invCellSize) | 0;
+        if (cx >= 0 && cx < gridW && cy >= 0 && cy < gridH) {
+            gridCounts[cy * gridW + cx]++;
+        }
+    }
+    
+    // Prefix sum for offsets
+    let off = 0;
+    for (let i = 0; i < numCells; i++) {
+        gridOffsets[i] = off;
+        off += gridCounts[i];
+        gridCounts[i] = 0;
+    }
+    
+    // Scatter particles into grid
+    for (let i = 0; i < n; i++) {
+        const cx = (px[i] * invCellSize) | 0;
+        const cy = (py[i] * invCellSize) | 0;
+        if (cx >= 0 && cx < gridW && cy >= 0 && cy < gridH) {
+            const cell = cy * gridW + cx;
+            gridIndices[gridOffsets[cell] + gridCounts[cell]] = i;
+            gridCounts[cell]++;
+        }
+    }
+    
+    gridTimeMs = performance.now() - t0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHYSICS DISPATCH
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Helper to convert float to int bits
+const floatToIntBits = (() => {
+    const f32 = new Float32Array(1);
+    const i32 = new Int32Array(f32.buffer);
+    return (f) => { f32[0] = f; return i32[0]; };
+})();
+
+async function dispatchPhysicsShared(dt) {
+    const t0 = performance.now();
+    
+    const n = particleCount;
+    const perWorker = Math.ceil(n / workerCount);
+    
+    // Write worker assignments and config to sync buffer
+    syncArray[1] = workerCount;
+    
+    for (let i = 0; i < workerCount; i++) {
+        const startIdx = i * perWorker;
+        const endIdx = Math.min(startIdx + perWorker, n);
+        syncArray[2 + i * 2] = startIdx;
+        syncArray[2 + i * 2 + 1] = endIdx;
+    }
+    
+    // Config offset
+    const configOffset = 2 + workerCount * 2;
+    syncArray[configOffset + 0] = canvas.width;
+    syncArray[configOffset + 1] = canvas.height;
+    syncArray[configOffset + 2] = CONFIG.interactionRadius;
+    syncArray[configOffset + 3] = gridW;
+    syncArray[configOffset + 4] = gridH;
+    syncArray[configOffset + 5] = cellSize;
+    syncArray[configOffset + 6] = floatToIntBits(CONFIG.forceStrength * 0.5);
+    syncArray[configOffset + 7] = floatToIntBits(dt);
+    syncArray[configOffset + 8] = floatToIntBits(mouseX);
+    syncArray[configOffset + 9] = floatToIntBits(mouseY);
+    syncArray[configOffset + 10] = mouseDown ? 1 : 0;
+    
+    // Clear done flags
+    const doneOffset = configOffset + 16;
+    for (let i = 0; i < workerCount; i++) {
+        Atomics.store(syncArray, doneOffset + i, 0);
+    }
+    
+    // Increment frame counter to wake workers
+    frameCounter++;
+    Atomics.store(syncArray, 0, frameCounter);
+    Atomics.notify(syncArray, 0);
+    
+    // Wait for all workers to finish
+    for (let i = 0; i < workerCount; i++) {
+        Atomics.wait(syncArray, doneOffset + i, 0);
+    }
+    
+    // Apply velocity deltas
+    const fric = 1 - CONFIG.friction;
+    for (let i = 0; i < n; i++) {
+        vx[i] = vx[i] * fric + vxDelta[i];
+        vy[i] = vy[i] * fric + vyDelta[i];
+    }
+    
+    workerTimeMs = performance.now() - t0;
+}
+
+function dispatchPhysicsCopy(dt) {
+    return new Promise((resolve) => {
+        const t0 = performance.now();
+        
+        workerResolve = () => {
+            workerTimeMs = performance.now() - t0;
+            resolve();
+        };
+        pendingWorkers = workerCount;
+        
+        const n = particleCount;
+        const perWorker = Math.ceil(n / workerCount);
+        
+        const config = {
+            W: canvas.width, H: canvas.height,
+            rMax: CONFIG.interactionRadius,
+            rMaxSq: CONFIG.interactionRadius * CONFIG.interactionRadius,
+            invR: 1 / CONFIG.interactionRadius,
+            fMul: CONFIG.forceStrength * 0.5,
+            gridW, gridH, cellSize,
+            mouseDown, mouseX, mouseY, dt
+        };
+        
+        for (let i = 0; i < workerCount; i++) {
+            const startIdx = i * perWorker;
+            const endIdx = Math.min(startIdx + perWorker, n);
+            
+            if (startIdx >= n) {
+                pendingWorkers--;
+                if (pendingWorkers === 0) resolve();
+                continue;
+            }
+            
+            // Copy all buffers (the expensive part!)
+            const pxCopy = px.slice().buffer;
+            const pyCopy = py.slice().buffer;
+            const speciesCopy = species.slice().buffer;
+            const countsCopy = gridCounts.slice().buffer;
+            const offsetsCopy = gridOffsets.slice().buffer;
+            const indicesCopy = gridIndices.slice().buffer;
+            
+            workers[i].postMessage({
+                type: 'compute', startIdx, endIdx,
+                pxBuffer: pxCopy, pyBuffer: pyCopy, speciesBuffer: speciesCopy,
+                gridCountsBuffer: countsCopy, gridOffsetsBuffer: offsetsCopy,
+                gridIndicesBuffer: indicesCopy, config
+            }, [pxCopy, pyCopy, speciesCopy, countsCopy, offsetsCopy, indicesCopy]);
+        }
+    });
+}
+
+async function physics(dt) {
+    buildGrid();
+    
+    if (USE_SHARED) {
+        await dispatchPhysicsShared(dt);
+    } else {
+        await dispatchPhysicsCopy(dt);
+    }
+    
+    // Update positions
+    const W = canvas.width, H = canvas.height;
+    const dtScaled = dt * 60;
+    
+    for (let i = 0; i < particleCount; i++) {
+        let x = px[i] + vx[i] * dtScaled;
+        let y = py[i] + vy[i] * dtScaled;
+        
+        if (x < 0) x += W; else if (x >= W) x -= W;
+        if (y < 0) y += H; else if (y >= H) y -= H;
+        
+        px[i] = x;
+        py[i] = y;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARTICLES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function initParticles() {
+    particleCount = CONFIG.particleCount;
+    const W = canvas.width, H = canvas.height;
+    const ns = CONFIG.speciesCount;
+    
+    for (let i = 0; i < particleCount; i++) {
+        px[i] = Math.random() * W;
+        py[i] = Math.random() * H;
+        vx[i] = (Math.random() - 0.5) * 2;
+        vy[i] = (Math.random() - 0.5) * 2;
+        species[i] = i % ns;
+    }
+    
+    // Shuffle species
+    for (let i = particleCount - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        const t = species[i]; species[i] = species[j]; species[j] = t;
+    }
+    
+    document.getElementById('particleStats').textContent = particleCount.toLocaleString();
+}
+
+function resetParticles() { initParticles(); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MATRIX
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function randomizeMatrix() {
+    const ns = CONFIG.speciesCount;
+    for (let i = 0; i < ns; i++) {
+        for (let j = 0; j < ns; j++) {
+            matrix[i * MAX_SPECIES + j] = Math.random() * 2 - 1;
+        }
+    }
+    updateMatrixDisplay();
+    updateWorkersMatrix();
+}
+
+function updateMatrixDisplay() {
+    const el = document.getElementById('matrixDisplay');
+    const ns = CONFIG.speciesCount;
+    el.style.gridTemplateColumns = `repeat(${ns + 1}, 1fr)`;
+    
+    let html = '<div class="matrix-cell matrix-header"></div>';
+    for (let j = 0; j < ns; j++) {
+        const c = j * 3;
+        html += `<div class="matrix-cell matrix-header" style="background:rgba(${COLORS[c]*255|0},${COLORS[c+1]*255|0},${COLORS[c+2]*255|0},0.5)"></div>`;
+    }
+    for (let i = 0; i < ns; i++) {
+        const c = i * 3;
+        html += `<div class="matrix-cell matrix-header" style="background:rgba(${COLORS[c]*255|0},${COLORS[c+1]*255|0},${COLORS[c+2]*255|0},0.5)"></div>`;
+        for (let j = 0; j < ns; j++) {
+            const v = matrix[i * MAX_SPECIES + j];
+            html += `<div class="matrix-cell" style="background:hsla(${v > 0 ? 120 : 0},${Math.abs(v)*100|0}%,40%,0.7)">${v.toFixed(1)}</div>`;
+        }
+    }
+    el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WEBGL RENDERING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const VERT = `
+    attribute vec2 a_pos;
+    attribute vec3 a_col;
+    uniform vec2 u_res;
+    uniform float u_size;
+    varying vec3 v_col;
+    void main() {
+        vec2 clip = (a_pos / u_res) * 2.0 - 1.0;
+        gl_Position = vec4(clip * vec2(1, -1), 0, 1);
+        gl_PointSize = u_size;
+        v_col = a_col;
+    }
+`;
+
+const FRAG = `
+    precision mediump float;
+    varying vec3 v_col;
+    void main() {
+        vec2 c = gl_PointCoord - 0.5;
+        float d2 = dot(c, c);
+        if (d2 > 0.25) discard;
+        float a = 1.0 - smoothstep(0.1, 0.25, d2);
+        gl_FragColor = vec4(v_col, a);
+    }
+`;
+
+const FADE_VERT = `attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0, 1); }`;
+const FADE_FRAG = `precision mediump float; uniform float u_alpha; void main() { gl_FragColor = vec4(0.04, 0.04, 0.06, u_alpha); }`;
+
+let prog, fadeProg, vbo, quadVbo;
+let uRes, uSize, aPos, aCol, fadeAPos, fadeAlpha;
+
+function initGL() {
+    canvas = document.getElementById('canvas');
+    gl = canvas.getContext('webgl', { alpha: false, antialias: false, preserveDrawingBuffer: true });
+    if (!gl) { alert('WebGL required'); return false; }
+    
+    function compile(type, src) {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+    }
+    
+    function link(vs, fs) {
+        const p = gl.createProgram();
+        gl.attachShader(p, vs);
+        gl.attachShader(p, fs);
+        gl.linkProgram(p);
+        return gl.getProgramParameter(p, gl.LINK_STATUS) ? p : null;
+    }
+    
+    prog = link(compile(gl.VERTEX_SHADER, VERT), compile(gl.FRAGMENT_SHADER, FRAG));
+    fadeProg = link(compile(gl.VERTEX_SHADER, FADE_VERT), compile(gl.FRAGMENT_SHADER, FADE_FRAG));
+    
+    aPos = gl.getAttribLocation(prog, 'a_pos');
+    aCol = gl.getAttribLocation(prog, 'a_col');
+    uRes = gl.getUniformLocation(prog, 'u_res');
+    uSize = gl.getUniformLocation(prog, 'u_size');
+    fadeAPos = gl.getAttribLocation(fadeProg, 'a_pos');
+    fadeAlpha = gl.getUniformLocation(fadeProg, 'u_alpha');
+    
+    vbo = gl.createBuffer();
+    quadVbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+    
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    
+    resize();
+    return true;
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+}
+
+function render() {
+    if (CONFIG.trails) {
+        gl.useProgram(fadeProg);
+        gl.uniform1f(fadeAlpha, 1 - CONFIG.trailAlpha);
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+        gl.enableVertexAttribArray(fadeAPos);
+        gl.vertexAttribPointer(fadeAPos, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+    } else {
+        gl.clearColor(0.04, 0.04, 0.06, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    
+    const n = particleCount;
+    for (let i = 0; i < n; i++) {
+        const i5 = i * 5, c = species[i] * 3;
+        renderData[i5] = px[i];
+        renderData[i5 + 1] = py[i];
+        renderData[i5 + 2] = COLORS[c];
+        renderData[i5 + 3] = COLORS[c + 1];
+        renderData[i5 + 4] = COLORS[c + 2];
+    }
+    
+    gl.useProgram(prog);
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uSize, CONFIG.particleSize + 1);
+    
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, renderData.subarray(0, n * 5), gl.DYNAMIC_DRAW);
+    
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(aCol);
+    gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 20, 8);
+    
+    gl.drawArrays(gl.POINTS, 0, n);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let isRunning = false;
+
+async function loop(now) {
+    if (!isRunning) return;
+    
+    const dt = Math.min((now - lastTime) / 1000, 0.05) * CONFIG.timeScale;
+    lastTime = now;
+    
+    await physics(dt);
+    render();
+    
+    frameCount++;
+    if (now - lastFpsTime > 500) {
+        fps = (frameCount * 1000 / (now - lastFpsTime)) | 0;
+        frameCount = 0;
+        lastFpsTime = now;
+        document.getElementById('fps').textContent = fps;
+        document.getElementById('gridTime').textContent = gridTimeMs.toFixed(2);
+        document.getElementById('workerTime').textContent = workerTimeMs.toFixed(1);
+        
+        if (USE_SHARED) {
+            const mbPerSec = (bytesSavedPerFrame * fps / 1024 / 1024).toFixed(1);
+            document.getElementById('memSaved').textContent = mbPerSec;
+        } else {
+            document.getElementById('memSaved').textContent = '0 (copy mode)';
+        }
+    }
+    
+    requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function setupUI() {
+    document.getElementById('particleCount').oninput = e => {
+        CONFIG.particleCount = +e.target.value;
+        document.getElementById('particleValue').textContent = CONFIG.particleCount;
+    };
+    document.getElementById('particleCount').onchange = initParticles;
+    
+    document.getElementById('speciesCount').oninput = e => {
+        CONFIG.speciesCount = +e.target.value;
+        document.getElementById('speciesValue').textContent = CONFIG.speciesCount;
+    };
+    document.getElementById('speciesCount').onchange = () => { randomizeMatrix(); initParticles(); };
+    
+    document.getElementById('interactionRadius').oninput = e => {
+        CONFIG.interactionRadius = +e.target.value;
+        document.getElementById('radiusValue').textContent = CONFIG.interactionRadius;
+    };
+    
+    document.getElementById('forceStrength').oninput = e => {
+        CONFIG.forceStrength = +e.target.value;
+        document.getElementById('forceValue').textContent = CONFIG.forceStrength.toFixed(1);
+    };
+    
+    document.getElementById('friction').oninput = e => {
+        CONFIG.friction = +e.target.value;
+        document.getElementById('frictionValue').textContent = CONFIG.friction.toFixed(2);
+    };
+}
+
+function toggleTrails() {
+    CONFIG.trails = !CONFIG.trails;
+    document.getElementById('trailBtn').classList.toggle('active', CONFIG.trails);
+}
+
+function toggleControls() {
+    const c = document.getElementById('controls');
+    c.classList.toggle('collapsed');
+    c.querySelector('.collapse-btn').textContent = c.classList.contains('collapsed') ? '+' : '−';
+}
+
+function setupEvents() {
+    window.onresize = resize;
+    
+    canvas.onmousedown = e => { mouseDown = true; mouseX = e.clientX; mouseY = e.clientY; };
+    canvas.onmouseup = () => mouseDown = false;
+    canvas.onmouseleave = () => mouseDown = false;
+    canvas.onmousemove = e => { mouseX = e.clientX; mouseY = e.clientY; };
+    
+    canvas.ontouchstart = e => { e.preventDefault(); mouseDown = true; mouseX = e.touches[0].clientX; mouseY = e.touches[0].clientY; };
+    canvas.ontouchend = () => mouseDown = false;
+    canvas.ontouchmove = e => { e.preventDefault(); mouseX = e.touches[0].clientX; mouseY = e.touches[0].clientY; };
+    
+    const hint = document.getElementById('hint');
+    hint.classList.add('visible');
+    setTimeout(() => hint.classList.remove('visible'), 4000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function init() {
+    console.log(`🦠 Emergent Garden - SharedArrayBuffer Edition`);
+    console.log(`   SharedArrayBuffer: ${USE_SHARED ? '✅ Available' : '❌ Not available (using copy fallback)'}`);
+    
+    allocateBuffers();
+    if (!initGL()) return;
+    
+    setupUI();
+    setupEvents();
+    createWorkers();
+    randomizeMatrix();
+    initParticles();
+    
+    lastTime = performance.now();
+    lastFpsTime = lastTime;
+    isRunning = true;
+    requestAnimationFrame(loop);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
