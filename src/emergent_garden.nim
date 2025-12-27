@@ -34,6 +34,13 @@ const ServerPort = 8089
 # Embed static files
 const indexHtml = staticRead("../web/index.html")
 const workerJs = staticRead("../web/worker.js")
+const mainJs = staticRead("../web/main.js")
+const configJs = staticRead("../web/config.js")
+const buffersJs = staticRead("../web/buffers.js")
+const rendererJs = staticRead("../web/renderer.js")
+const workersJs = staticRead("../web/workers.js")
+const gridJs = staticRead("../web/grid.js")
+const uiJs = staticRead("../web/ui.js")
 
 # Custom HTTP server that serves with COOP/COEP headers for SharedArrayBuffer
 proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
@@ -52,6 +59,34 @@ proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
       found = true
     elif req.url.path == "/worker.js":
       content = workerJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/main.js":
+      content = mainJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/config.js":
+      content = configJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/buffers.js":
+      content = buffersJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/renderer.js":
+      content = rendererJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/workers.js":
+      content = workersJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/grid.js":
+      content = gridJs
+      contentType = "application/javascript"
+      found = true
+    elif req.url.path == "/ui.js":
+      content = uiJs
       contentType = "application/javascript"
       found = true
 
