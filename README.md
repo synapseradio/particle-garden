@@ -80,7 +80,7 @@ This will:
 Open browser DevTools (F12) → Console. You should see:
 
 ```
-🦠 Emergent Garden - SharedArrayBuffer Edition
+🦠 Goober Garden - SharedArrayBuffer Edition
    SharedArrayBuffer: ✅ Available
 ```
 
@@ -119,7 +119,7 @@ Run the included script to create a standalone `.app` bundle:
 ./package_mac.sh
 ```
 
-This will create `Emergent Garden.app` which can be moved to `/Applications`.
+This will create `Goober Garden.app` which can be moved to `/Applications`.
 
 ### Windows
 

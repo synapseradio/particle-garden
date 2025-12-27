@@ -1,7 +1,7 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-APP_NAME="Emergent Garden"
+APP_NAME="Goober Garden"
 EXECUTABLE="emergent_garden"
 BUNDLE_DIR="${APP_NAME}.app"
 CONTENTS_DIR="${BUNDLE_DIR}/Contents"
@@ -16,7 +16,7 @@ nimble worker
 
 # Build optimized binary
 echo "🔨 Building binary..."
-nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
+nim c -d:release -d:danger --opt:speed --out:${EXECUTABLE} src/emergent_garden.nim
 
 # Create structure
 rm -rf "${BUNDLE_DIR}"
@@ -37,7 +37,7 @@ cat >"${CONTENTS_DIR}/Info.plist" <<EOF
     <key>CFBundleDisplayName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.emergentgarden.app</string>
+    <string>com.goobergarden.app</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundlePackageType</key>

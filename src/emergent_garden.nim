@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - NATIVE DESKTOP WRAPPER
+# GOOBER GARDEN - NATIVE DESKTOP WRAPPER
 # ==============================================================================
 #
 # ARCHITECTURE EXPLANATION:

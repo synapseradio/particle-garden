@@ -4,145 +4,143 @@ var excHandler = 0;
 var lastJSError = null;
 var objectID_771752114 = [0];
 
-function asFloat__worker_u98(bits_p0) {
-  var result_570425444 = 0.0;
+function asFloat__worker_u100(bits_p0) {
+  var result_570425446 = 0.0;
 
   BeforeRet: {
-    var arr_570425445 = new Float32Array(1);
-    var iarr_570425446 = new Int32Array(arr_570425445["buffer"]);
-    iarr_570425446[0] = bits_p0;
-    result_570425444 = arr_570425445[0];
+    intConvArr_570425391[0][0] = bits_p0;
+    result_570425446 = floatConvArr_570425390[0][0];
     break BeforeRet;
   };
 
-  return result_570425444;
+  return result_570425446;
 
 }
 
-function HEX2BHEX3D__worker_u214(x_p0, x_p0_Idx, y_p1) {
+function HEX2BHEX3D__worker_u182(x_p0, x_p0_Idx, y_p1) {
     x_p0[x_p0_Idx] = (x_p0[x_p0_Idx] + y_p1);
 
   
 }
 
-function HEX2DHEX3D__worker_u232(x_p0, x_p0_Idx, y_p1) {
+function HEX2DHEX3D__worker_u200(x_p0, x_p0_Idx, y_p1) {
     x_p0[x_p0_Idx] = (x_p0[x_p0_Idx] - y_p1);
 
   
 }
 
-function computeForces__worker_u137(startIdx_p0, endIdx_p1, px_p2, py_p3, species_p4, density_p5, W_p6, H_p7, rMax_p8, gridW_p9, gridH_p10, cellSize_p11, fMul_p12, dt_p13, mouseX_p14, mouseY_p15, mouseDown_p16) {
+function computeForces__worker_u105(startIdx_p0, endIdx_p1, px_p2, py_p3, species_p4, density_p5, W_p6, H_p7, rMax_p8, gridW_p9, gridH_p10, cellSize_p11, fMul_p12, dt_p13, mouseX_p14, mouseY_p15, mouseDown_p16) {
                                       var Temporary13;
 
-    var rMaxSq_570425499 = (rMax_p8 * rMax_p8);
-    var invR_570425500 = (1.0 / rMax_p8);
-    var halfW_570425501 = (W_p6 * 0.5);
-    var halfH_570425502 = (H_p7 * 0.5);
-    var invCellW_570425503 = (gridW_p9 / W_p6);
-    var invCellH_570425504 = (gridH_p10 / H_p7);
-    var md2Limit_570425505 = 90000.0;
+    var rMaxSq_570425467 = (rMax_p8 * rMax_p8);
+    var invR_570425468 = (1.0 / rMax_p8);
+    var halfW_570425469 = (W_p6 * 0.5);
+    var halfH_570425470 = (H_p7 * 0.5);
+    var invCellW_570425471 = (gridW_p9 / W_p6);
+    var invCellH_570425472 = (gridH_p10 / H_p7);
+    var md2Limit_570425473 = 90000.0;
     Label1: {
-      var i_570425506 = 0;
+      var i_570425474 = 0;
       var res_570425757 = startIdx_p0;
       Label2: {
           Label3: while (true) {
           if (!(res_570425757 < endIdx_p1)) break Label3;
-            i_570425506 = res_570425757;
-            var xi_570425507 = px_p2[((i_570425506) | 0)];
-            var yi_570425508 = py_p3[((i_570425506) | 0)];
-            var si_570425509 = species_p4[((i_570425506) | 0)];
-            var rowOffset_570425510 = (((si_570425509) | 0) * 6);
-            var fx_570425511 = [0.0];
-            var fy_570425512 = [0.0];
-            var cx_570425513 = ((xi_570425507 * invCellW_570425503) | 0);
-            var cy_570425514 = ((yi_570425508 * invCellH_570425504) | 0);
-            var dens_570425515 = [0.0];
+            i_570425474 = res_570425757;
+            var xi_570425475 = px_p2[((i_570425474) | 0)];
+            var yi_570425476 = py_p3[((i_570425474) | 0)];
+            var si_570425477 = species_p4[((i_570425474) | 0)];
+            var rowOffset_570425478 = (((si_570425477) | 0) * 6);
+            var fx_570425479 = [0.0];
+            var fy_570425480 = [0.0];
+            var cx_570425481 = ((xi_570425475 * invCellW_570425471) | 0);
+            var cy_570425482 = ((yi_570425476 * invCellH_570425472) | 0);
+            var dens_570425483 = [0.0];
             Label4: {
-              var dy_570425520 = 0;
+              var dy_570425488 = 0;
               var res_570425755 = (-1);
               Label5: {
                   Label6: while (true) {
                   if (!(res_570425755 <= 1)) break Label6;
-                    dy_570425520 = res_570425755;
-                    var ny_570425521 = (cy_570425514 + ((dy_570425520) | 0));
-                    var wrapY_570425522 = 0.0;
-                    if ((ny_570425521 < 0)) {
-                    ny_570425521 += gridH_p10;
-                    wrapY_570425522 = -(H_p7);
+                    dy_570425488 = res_570425755;
+                    var ny_570425489 = (cy_570425482 + ((dy_570425488) | 0));
+                    var wrapY_570425490 = 0.0;
+                    if ((ny_570425489 < 0)) {
+                    ny_570425489 += gridH_p10;
+                    wrapY_570425490 = -(H_p7);
                     }
                     else {
-                    if ((gridH_p10 <= ny_570425521)) {
-                    ny_570425521 -= gridH_p10;
-                    wrapY_570425522 = H_p7;
+                    if ((gridH_p10 <= ny_570425489)) {
+                    ny_570425489 -= gridH_p10;
+                    wrapY_570425490 = H_p7;
                     }
                     }
-                    var nyIdx_570425531 = (ny_570425521 * gridW_p9);
+                    var nyIdx_570425499 = (ny_570425489 * gridW_p9);
                     Label7: {
-                      var dx_570425536 = 0;
+                      var dx_570425504 = 0;
                       var res_570425753 = (-1);
                       Label8: {
                           Label9: while (true) {
                           if (!(res_570425753 <= 1)) break Label9;
-                            dx_570425536 = res_570425753;
-                            var nx_570425537 = (cx_570425513 + ((dx_570425536) | 0));
-                            var wrapX_570425538 = 0.0;
-                            if ((nx_570425537 < 0)) {
-                            nx_570425537 += gridW_p9;
-                            wrapX_570425538 = -(W_p6);
+                            dx_570425504 = res_570425753;
+                            var nx_570425505 = (cx_570425481 + ((dx_570425504) | 0));
+                            var wrapX_570425506 = 0.0;
+                            if ((nx_570425505 < 0)) {
+                            nx_570425505 += gridW_p9;
+                            wrapX_570425506 = -(W_p6);
                             }
                             else {
-                            if ((gridW_p9 <= nx_570425537)) {
-                            nx_570425537 -= gridW_p9;
-                            wrapX_570425538 = W_p6;
+                            if ((gridW_p9 <= nx_570425505)) {
+                            nx_570425505 -= gridW_p9;
+                            wrapX_570425506 = W_p6;
                             }
                             }
-                            var cell_570425547 = (nyIdx_570425531 + nx_570425537);
-                            var start_570425548 = gridOffsets_570425401[0][((cell_570425547) | 0)];
-                            var count_570425549 = ((gridCounts_570425400[0][((cell_570425547) | 0)]) | 0);
-                            var fin_570425550 = (start_570425548 + count_570425549);
+                            var cell_570425515 = (nyIdx_570425499 + nx_570425505);
+                            var start_570425516 = gridOffsets_570425403[0][((cell_570425515) | 0)];
+                            var count_570425517 = ((gridCounts_570425402[0][((cell_570425515) | 0)]) | 0);
+                            var fin_570425518 = (start_570425516 + count_570425517);
                             Label10: {
-                              var j_570425551 = 0;
-                              var res_570425750 = start_570425548;
+                              var j_570425519 = 0;
+                              var res_570425750 = start_570425516;
                               Label11: {
                                   Label12: while (true) {
-                                  if (!(res_570425750 < fin_570425550)) break Label12;
-                                    j_570425551 = res_570425750;
-                                    var ddx_570425552 = ((px_p2[((j_570425551) | 0)] + wrapX_570425538) - xi_570425507);
-                                    var ddy_570425553 = ((py_p3[((j_570425551) | 0)] + wrapY_570425522) - yi_570425508);
-                                    var d2_570425554 = ((ddx_570425552 * ddx_570425552) + (ddy_570425553 * ddy_570425553));
-                                    if (((0.0 < d2_570425554) && (d2_570425554 < rMaxSq_570425499))) {
-                                    var d_570425555 = Math.sqrt(d2_570425554);
-                                    if ((d_570425555 < 2.0)) {
-                                    d_570425555 = 2.0;
+                                  if (!(res_570425750 < fin_570425518)) break Label12;
+                                    j_570425519 = res_570425750;
+                                    var ddx_570425520 = ((px_p2[((j_570425519) | 0)] + wrapX_570425506) - xi_570425475);
+                                    var ddy_570425521 = ((py_p3[((j_570425519) | 0)] + wrapY_570425490) - yi_570425476);
+                                    var d2_570425522 = ((ddx_570425520 * ddx_570425520) + (ddy_570425521 * ddy_570425521));
+                                    if (((0.0 < d2_570425522) && (d2_570425522 < rMaxSq_570425467))) {
+                                    var d_570425523 = Math.sqrt(d2_570425522);
+                                    if ((d_570425523 < 2.0)) {
+                                    d_570425523 = 2.0;
                                     }
                                     
-                                    var r_570425556 = (d_570425555 * invR_570425500);
-                                    var s_j_570425557 = species_p4[((j_570425551) | 0)];
-                                    if ((s_j_570425557 == si_570425509)) {
-                                    HEX2BHEX3D__worker_u214(dens_570425515, 0, (1.0 - r_570425556));
+                                    var r_570425524 = (d_570425523 * invR_570425468);
+                                    var s_j_570425525 = species_p4[((j_570425519) | 0)];
+                                    if ((s_j_570425525 == si_570425477)) {
+                                    HEX2BHEX3D__worker_u182(dens_570425483, 0, (1.0 - r_570425524));
                                     }
                                     
-                                    var attr_570425562 = matrix_570425403[0][(((rowOffset_570425510 + ((s_j_570425557) | 0))) | 0)];
-                                    var f_570425563 = 0.0;
-                                    if ((r_570425556 < 0.3)) {
-                                    f_570425563 = ((r_570425556 / 0.3) - 1.0);
+                                    var attr_570425530 = matrix_570425405[0][(((rowOffset_570425478 + ((s_j_570425525) | 0))) | 0)];
+                                    var f_570425531 = 0.0;
+                                    if ((r_570425524 < 0.3)) {
+                                    f_570425531 = ((r_570425524 / 0.3) - 1.0);
                                     }
                                     else {
-                                      var t_570425564 = ((2.0 * r_570425556) - 1.3);
-                                      if ((t_570425564 < 0.0)) {
-                                      Temporary13 = -(t_570425564);
+                                      var t_570425532 = ((2.0 * r_570425524) - 1.3);
+                                      if ((t_570425532 < 0.0)) {
+                                      Temporary13 = -(t_570425532);
                                       }
                                       else {
-                                      Temporary13 = t_570425564;
+                                      Temporary13 = t_570425532;
                                       }
                                       
-                                      var abs_t_570425565 = Temporary13;
-                                      f_570425563 = (attr_570425562 * (1.0 - (abs_t_570425565 / 0.7)));
+                                      var abs_t_570425533 = Temporary13;
+                                      f_570425531 = (attr_570425530 * (1.0 - (abs_t_570425533 / 0.7)));
                                     }
                                     
-                                    f_570425563 = ((f_570425563 * fMul_p12) / d_570425555);
-                                    HEX2BHEX3D__worker_u214(fx_570425511, 0, (ddx_570425552 * f_570425563));
-                                    HEX2BHEX3D__worker_u214(fy_570425512, 0, (ddy_570425553 * f_570425563));
+                                    f_570425531 = ((f_570425531 * fMul_p12) / d_570425523);
+                                    HEX2BHEX3D__worker_u182(fx_570425479, 0, (ddx_570425520 * f_570425531));
+                                    HEX2BHEX3D__worker_u182(fy_570425480, 0, (ddy_570425521 * f_570425531));
                                     }
                                     
                                     res_570425750 += 1;
@@ -158,37 +156,37 @@ function computeForces__worker_u137(startIdx_p0, endIdx_p1, px_p2, py_p3, specie
               };
             };
             if (mouseDown_p16) {
-            var mdx_570425574 = [(mouseX_p14 - xi_570425507)];
-            var mdy_570425575 = [(mouseY_p15 - yi_570425508)];
-            if ((halfW_570425501 < mdx_570425574[0])) {
-            HEX2DHEX3D__worker_u232(mdx_570425574, 0, W_p6);
+            var mdx_570425542 = [(mouseX_p14 - xi_570425475)];
+            var mdy_570425543 = [(mouseY_p15 - yi_570425476)];
+            if ((halfW_570425469 < mdx_570425542[0])) {
+            HEX2DHEX3D__worker_u200(mdx_570425542, 0, W_p6);
             }
             else {
-            if ((mdx_570425574[0] < -(halfW_570425501))) {
-            HEX2BHEX3D__worker_u214(mdx_570425574, 0, W_p6);
+            if ((mdx_570425542[0] < -(halfW_570425469))) {
+            HEX2BHEX3D__worker_u182(mdx_570425542, 0, W_p6);
             }
             }
-            if ((halfH_570425502 < mdy_570425575[0])) {
-            HEX2DHEX3D__worker_u232(mdy_570425575, 0, H_p7);
+            if ((halfH_570425470 < mdy_570425543[0])) {
+            HEX2DHEX3D__worker_u200(mdy_570425543, 0, H_p7);
             }
             else {
-            if ((mdy_570425575[0] < -(halfH_570425502))) {
-            HEX2BHEX3D__worker_u214(mdy_570425575, 0, H_p7);
+            if ((mdy_570425543[0] < -(halfH_570425470))) {
+            HEX2BHEX3D__worker_u182(mdy_570425543, 0, H_p7);
             }
             }
-            var md2_570425592 = ((mdx_570425574[0] * mdx_570425574[0]) + (mdy_570425575[0] * mdy_570425575[0]));
-            if (((0.0 < md2_570425592) && (md2_570425592 < md2Limit_570425505))) {
-            var md_570425593 = Math.sqrt(md2_570425592);
-            var mf_570425594 = ((0.5 * (1.0 - (md_570425593 / 300.0))) / md_570425593);
-            HEX2BHEX3D__worker_u214(fx_570425511, 0, (mdx_570425574[0] * mf_570425594));
-            HEX2BHEX3D__worker_u214(fy_570425512, 0, (mdy_570425575[0] * mf_570425594));
+            var md2_570425560 = ((mdx_570425542[0] * mdx_570425542[0]) + (mdy_570425543[0] * mdy_570425543[0]));
+            if (((0.0 < md2_570425560) && (md2_570425560 < md2Limit_570425473))) {
+            var md_570425561 = Math.sqrt(md2_570425560);
+            var mf_570425562 = ((0.5 * (1.0 - (md_570425561 / 300.0))) / md_570425561);
+            HEX2BHEX3D__worker_u182(fx_570425479, 0, (mdx_570425542[0] * mf_570425562));
+            HEX2BHEX3D__worker_u182(fy_570425480, 0, (mdy_570425543[0] * mf_570425562));
             }
             
             }
             
-            vxDelta_570425398[0][((i_570425506) | 0)] = (fx_570425511[0] * dt_p13);
-            vyDelta_570425399[0][((i_570425506) | 0)] = (fy_570425512[0] * dt_p13);
-            density_p5[((i_570425506) | 0)] = dens_570425515[0];
+            vxDelta_570425400[0][((i_570425474) | 0)] = (fx_570425479[0] * dt_p13);
+            vyDelta_570425401[0][((i_570425474) | 0)] = (fy_570425480[0] * dt_p13);
+            density_p5[((i_570425474) | 0)] = dens_570425483[0];
             res_570425757 += 1;
           }
       };
@@ -197,117 +195,121 @@ function computeForces__worker_u137(startIdx_p0, endIdx_p1, px_p2, py_p3, specie
   
 }
 
-function workLoop__worker_u259() {
+function workLoop__worker_u227() {
           var Temporary3;
           var Temporary4;
           var Temporary5;
           var Temporary6;
 
-    var lastFrame_570425604 = 0;
+    var lastFrame_570425572 = 0;
     Label1: {
         Label2: while (true) {
         if (!true) break Label2;
-          Atomics.wait(syncBuffer_570425402[0], 0, lastFrame_570425604);
-          lastFrame_570425604 = Atomics.load(syncBuffer_570425402[0], 0);
-          var workerCount_570425605 = syncBuffer_570425402[0][1];
-          var baseIdx_570425606 = (2 + (myIndex_570425404[0] * 2));
-          startIdx_570425405[0] = syncBuffer_570425402[0][((baseIdx_570425606) | 0)];
-          endIdx_570425406[0] = syncBuffer_570425402[0][(((baseIdx_570425606 + 1)) | 0)];
-          var configOffset_570425607 = (2 + (workerCount_570425605 * 2));
-          var W_570425608 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 0)) | 0)]);
-          var H_570425609 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 1)) | 0)]);
-          var rMax_570425610 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 2)) | 0)]);
-          var gridW_570425611 = syncBuffer_570425402[0][(((configOffset_570425607 + 3)) | 0)];
-          var gridH_570425612 = syncBuffer_570425402[0][(((configOffset_570425607 + 4)) | 0)];
-          var cellSize_570425613 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 5)) | 0)]);
-          var fMul_570425614 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 6)) | 0)]);
-          var dt_570425615 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 7)) | 0)]);
-          var mouseX_570425616 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 8)) | 0)]);
-          var mouseY_570425617 = asFloat__worker_u98(syncBuffer_570425402[0][(((configOffset_570425607 + 9)) | 0)]);
-          var mouseDown_570425618 = !((syncBuffer_570425402[0][(((configOffset_570425607 + 10)) | 0)] == 0));
-          var bufferParity_570425619 = syncBuffer_570425402[0][(((configOffset_570425607 + 11)) | 0)];
-          if ((bufferParity_570425619 == 0)) {
-          Temporary3 = pxA_570425390[0];
+          Atomics.wait(syncBuffer_570425404[0], 0, lastFrame_570425572);
+          lastFrame_570425572 = Atomics.load(syncBuffer_570425404[0], 0);
+          var workerCount_570425573 = syncBuffer_570425404[0][1];
+          var baseIdx_570425574 = (2 + (myIndex_570425406[0] * 2));
+          startIdx_570425407[0] = syncBuffer_570425404[0][((baseIdx_570425574) | 0)];
+          endIdx_570425408[0] = syncBuffer_570425404[0][(((baseIdx_570425574 + 1)) | 0)];
+          var configOffset_570425575 = (2 + (workerCount_570425573 * 2));
+          var W_570425576 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 0)) | 0)]);
+          var H_570425577 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 1)) | 0)]);
+          var rMax_570425578 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 2)) | 0)]);
+          var gridW_570425579 = syncBuffer_570425404[0][(((configOffset_570425575 + 3)) | 0)];
+          var gridH_570425580 = syncBuffer_570425404[0][(((configOffset_570425575 + 4)) | 0)];
+          var cellSize_570425581 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 5)) | 0)]);
+          var fMul_570425582 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 6)) | 0)]);
+          var dt_570425583 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 7)) | 0)]);
+          var mouseX_570425584 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 8)) | 0)]);
+          var mouseY_570425585 = asFloat__worker_u100(syncBuffer_570425404[0][(((configOffset_570425575 + 9)) | 0)]);
+          var mouseDown_570425586 = !((syncBuffer_570425404[0][(((configOffset_570425575 + 10)) | 0)] == 0));
+          var bufferParity_570425587 = syncBuffer_570425404[0][(((configOffset_570425575 + 11)) | 0)];
+          if ((bufferParity_570425587 == 0)) {
+          Temporary3 = pxA_570425392[0];
           }
           else {
-          Temporary3 = pxB_570425392[0];
+          Temporary3 = pxB_570425394[0];
           }
           
-          var px_570425620 = Temporary3;
-          if ((bufferParity_570425619 == 0)) {
-          Temporary4 = pyA_570425391[0];
+          var px_570425588 = Temporary3;
+          if ((bufferParity_570425587 == 0)) {
+          Temporary4 = pyA_570425393[0];
           }
           else {
-          Temporary4 = pyB_570425393[0];
+          Temporary4 = pyB_570425395[0];
           }
           
-          var py_570425621 = Temporary4;
-          if ((bufferParity_570425619 == 0)) {
-          Temporary5 = sA_570425394[0];
+          var py_570425589 = Temporary4;
+          if ((bufferParity_570425587 == 0)) {
+          Temporary5 = sA_570425396[0];
           }
           else {
-          Temporary5 = sB_570425395[0];
+          Temporary5 = sB_570425397[0];
           }
           
-          var species_570425622 = Temporary5;
-          if ((bufferParity_570425619 == 0)) {
-          Temporary6 = denA_570425396[0];
+          var species_570425590 = Temporary5;
+          if ((bufferParity_570425587 == 0)) {
+          Temporary6 = denA_570425398[0];
           }
           else {
-          Temporary6 = denB_570425397[0];
+          Temporary6 = denB_570425399[0];
           }
           
-          var density_570425623 = Temporary6;
-          computeForces__worker_u137(startIdx_570425405[0], endIdx_570425406[0], px_570425620, py_570425621, species_570425622, density_570425623, W_570425608, H_570425609, rMax_570425610, gridW_570425611, gridH_570425612, cellSize_570425613, fMul_570425614, dt_570425615, mouseX_570425616, mouseY_570425617, mouseDown_570425618);
-          var doneOffset_570425624 = ((configOffset_570425607 + 16) + myIndex_570425404[0]);
-          Atomics.store(syncBuffer_570425402[0], ((doneOffset_570425624) | 0), 1);
-          Atomics.notify(syncBuffer_570425402[0], ((doneOffset_570425624) | 0));
+          var density_570425591 = Temporary6;
+          computeForces__worker_u105(startIdx_570425407[0], endIdx_570425408[0], px_570425588, py_570425589, species_570425590, density_570425591, W_570425576, H_570425577, rMax_570425578, gridW_570425579, gridH_570425580, cellSize_570425581, fMul_570425582, dt_570425583, mouseX_570425584, mouseY_570425585, mouseDown_570425586);
+          var doneOffset_570425592 = ((configOffset_570425575 + 16) + myIndex_570425406[0]);
+          Atomics.store(syncBuffer_570425404[0], ((doneOffset_570425592) | 0), 1);
+          Atomics.notify(syncBuffer_570425404[0], ((doneOffset_570425592) | 0));
         }
     };
 
   
 }
 
-function onMessage__worker_u297(e_p0) {
-    var msg_570425643 = e_p0.data;
-    var mType_570425648 = (msg_570425643["type"]);
-    if ((mType_570425648 == "init")) {
-    myIndex_570425404[0] = (msg_570425643.workerIndex);
-    pxA_570425390[0] = new Float32Array(msg_570425643.pxBufferA);
-    pyA_570425391[0] = new Float32Array(msg_570425643.pyBufferA);
-    sA_570425394[0] = new Uint8Array(msg_570425643.speciesBufferA);
-    denA_570425396[0] = new Float32Array(msg_570425643.densityBufferA);
-    pxB_570425392[0] = new Float32Array(msg_570425643.pxBufferB);
-    pyB_570425393[0] = new Float32Array(msg_570425643.pyBufferB);
-    sB_570425395[0] = new Uint8Array(msg_570425643.speciesBufferB);
-    denB_570425397[0] = new Float32Array(msg_570425643.densityBufferB);
-    vxDelta_570425398[0] = new Float32Array(msg_570425643.vxDeltaBuffer);
-    vyDelta_570425399[0] = new Float32Array(msg_570425643.vyDeltaBuffer);
-    gridCounts_570425400[0] = new Uint16Array(msg_570425643.gridCountsBuffer);
-    gridOffsets_570425401[0] = new Uint32Array(msg_570425643.gridOffsetsBuffer);
-    syncBuffer_570425402[0] = new Int32Array(msg_570425643.syncBuffer);
-    matrix_570425403[0] = new Float32Array(msg_570425643.matrixBuffer);
-    workLoop__worker_u259();
+function onMessage__worker_u281(e_p0) {
+    var msg_570425627 = e_p0.data;
+    var mType_570425632 = (msg_570425627["type"]);
+    if ((mType_570425632 == "init")) {
+    myIndex_570425406[0] = (msg_570425627.workerIndex);
+    floatConvArr_570425390[0] = new Float32Array(1);
+    intConvArr_570425391[0] = new Int32Array(floatConvArr_570425390[0]["buffer"]);
+    pxA_570425392[0] = new Float32Array(msg_570425627.pxBufferA);
+    pyA_570425393[0] = new Float32Array(msg_570425627.pyBufferA);
+    sA_570425396[0] = new Uint8Array(msg_570425627.speciesBufferA);
+    denA_570425398[0] = new Float32Array(msg_570425627.densityBufferA);
+    pxB_570425394[0] = new Float32Array(msg_570425627.pxBufferB);
+    pyB_570425395[0] = new Float32Array(msg_570425627.pyBufferB);
+    sB_570425397[0] = new Uint8Array(msg_570425627.speciesBufferB);
+    denB_570425399[0] = new Float32Array(msg_570425627.densityBufferB);
+    vxDelta_570425400[0] = new Float32Array(msg_570425627.vxDeltaBuffer);
+    vyDelta_570425401[0] = new Float32Array(msg_570425627.vyDeltaBuffer);
+    gridCounts_570425402[0] = new Uint16Array(msg_570425627.gridCountsBuffer);
+    gridOffsets_570425403[0] = new Uint32Array(msg_570425627.gridOffsetsBuffer);
+    syncBuffer_570425404[0] = new Int32Array(msg_570425627.syncBuffer);
+    matrix_570425405[0] = new Float32Array(msg_570425627.matrixBuffer);
+    workLoop__worker_u227();
     }
     
 
   
 }
-var pxA_570425390 = [null];
-var pyA_570425391 = [null];
-var pxB_570425392 = [null];
-var pyB_570425393 = [null];
-var sA_570425394 = [null];
-var sB_570425395 = [null];
-var denA_570425396 = [null];
-var denB_570425397 = [null];
-var vxDelta_570425398 = [null];
-var vyDelta_570425399 = [null];
-var gridCounts_570425400 = [null];
-var gridOffsets_570425401 = [null];
-var syncBuffer_570425402 = [null];
-var matrix_570425403 = [null];
-var myIndex_570425404 = [0];
-var startIdx_570425405 = [0];
-var endIdx_570425406 = [0];
-self["onmessage"] = onMessage__worker_u297;
+var floatConvArr_570425390 = [null];
+var intConvArr_570425391 = [null];
+var pxA_570425392 = [null];
+var pyA_570425393 = [null];
+var pxB_570425394 = [null];
+var pyB_570425395 = [null];
+var sA_570425396 = [null];
+var sB_570425397 = [null];
+var denA_570425398 = [null];
+var denB_570425399 = [null];
+var vxDelta_570425400 = [null];
+var vyDelta_570425401 = [null];
+var gridCounts_570425402 = [null];
+var gridOffsets_570425403 = [null];
+var syncBuffer_570425404 = [null];
+var matrix_570425405 = [null];
+var myIndex_570425406 = [0];
+var startIdx_570425407 = [0];
+var endIdx_570425408 = [0];
+self["onmessage"] = onMessage__worker_u281;

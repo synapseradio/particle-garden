@@ -1,6 +1,6 @@
 # Package
 version       = "0.1.0"
-author        = "Emergent Garden"
+author        = "Goober Garden"
 description   = "Particle life simulation with SharedArrayBuffer workers"
 license       = "MIT"
 srcDir        = "src"

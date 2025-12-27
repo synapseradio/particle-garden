@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Emergent Garden 🦠 - SharedArrayBuffer</title>
+    <title>Goober Garden 🦠</title>
     <style>
       * {
         margin: 0;
@@ -50,23 +50,7 @@
         color: #888;
         margin-bottom: 15px;
       }
-      .mode-badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.65em;
-        font-weight: bold;
-      }
-      .mode-badge.sab {
-        background: #1a4d1a;
-        color: #4ade80;
-        border: 1px solid #2d5a2d;
-      }
-      .mode-badge.copy {
-        background: #4d3d1a;
-        color: #fbbf24;
-        border: 1px solid #5a4d2d;
-      }
+
       .control-group {
         margin-bottom: 15px;
       }
@@ -184,23 +168,6 @@
       .collapsed .controls-content {
         display: none;
       }
-      .hint {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(10, 10, 20, 0.7);
-        padding: 10px 20px;
-        border-radius: 20px;
-        font-size: 0.8em;
-        color: #888;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.5s;
-      }
-      .hint.visible {
-        opacity: 1;
-      }
     </style>
   </head>
   <body>
@@ -209,7 +176,7 @@
     <div class="controls" id="controls">
       <button class="collapse-btn" onclick="toggleControls()">−</button>
       <h1>
-        Emergent Garden
+        •🧬•
         <button class="collapse-btn" onclick="toggleControls()">🦠</button>
       </h1>
       <p class="subtitle">
@@ -223,8 +190,6 @@
           "
           >Original Inspiration</a
         ><br />
-        <span id="workerCount">0</span> threads •
-        <span id="modeBadge" class="mode-badge">checking...</span>
       </p>
 
       <div class="controls-content">
@@ -354,132 +319,21 @@
       </div>
     </div>
 
-    <div class="hint" id="hint">
-      Zero-copy parallel physics via SharedArrayBuffer
-    </div>
-
     <script>
       /*
        * ═══════════════════════════════════════════════════════════════════════════════
-       * EMERGENT GARDEN - SharedArrayBuffer Edition
+       * EMERGENT GARDEN - Variations on a theme.
        * ═══════════════════════════════════════════════════════════════════════════════
        *
-       * KEY DIFFERENCE FROM WORKERS VERSION:
-       *
-       * Old (copy mode):
-       *   Main: px.slice() → copy → postMessage → Worker: new Float32Array(buffer)
-       *   Cost: ~7MB copied per frame at 16K particles × 7 workers
-       *
-       * New (SharedArrayBuffer mode):
-       *   Main: SharedArrayBuffer allocated once
-       *   Workers: Read directly from shared memory
-       *   Sync: Atomics.wait/notify for coordination
-       *   Cost: ~0 bytes copied per frame
-       *
-       * ═══════════════════════════════════════════════════════════════════════════════
        */
 
       // ═══════════════════════════════════════════════════════════════════════════════
       // FEATURE DETECTION
       // ═══════════════════════════════════════════════════════════════════════════════
 
-      const USE_SHARED = typeof SharedArrayBuffer !== "undefined";
-
       // ═══════════════════════════════════════════════════════════════════════════════
       // WORKER CODE
       // ═══════════════════════════════════════════════════════════════════════════════
-
-      // We now load "worker.js" (compiled from Nim) instead of embedding JS strings
-
-      // Fallback worker code (copy-based, same as original)
-      const WORKER_CODE_COPY = `
-      const MAX_SPECIES = 6;
-      let matrix;
-
-      onmessage = function(e) {
-          const msg = e.data;
-
-          if (msg.type === 'init') {
-              matrix = new Float32Array(msg.matrix);
-              return;
-          }
-
-          if (msg.type === 'updateMatrix') {
-              matrix = new Float32Array(msg.matrix);
-              return;
-          }
-
-          if (msg.type === 'compute') {
-              const { startIdx, endIdx, pxBuffer, pyBuffer, speciesBuffer,
-                      gridCountsBuffer, gridOffsetsBuffer, config } = msg;
-
-              const px = new Float32Array(pxBuffer);
-              const py = new Float32Array(pyBuffer);
-              const species = new Uint8Array(speciesBuffer);
-              const gridCounts = new Uint16Array(gridCountsBuffer);
-              const gridOffsets = new Uint32Array(gridOffsetsBuffer);
-
-              const count = endIdx - startIdx;
-              const vxOut = new Float32Array(count);
-              const vyOut = new Float32Array(count);
-
-              computeForces(startIdx, endIdx, config, px, py, species, gridCounts, gridOffsets, vxOut, vyOut);
-
-              postMessage({ type: 'done', startIdx, endIdx, vxBuffer: vxOut.buffer, vyBuffer: vyOut.buffer },
-                          [vxOut.buffer, vyOut.buffer]);
-          }
-      };
-
-      function computeForces(startIdx, endIdx, config, px, py, species, gridCounts, gridOffsets, vxOut, vyOut) {
-          const { W, H, rMax, rMaxSq, invR, fMul, gridW, gridH, cellSize, mouseDown, mouseX, mouseY, dt } = config;
-          const halfW = W * 0.5, halfH = H * 0.5;
-          const invCellSize = 1 / cellSize;
-
-          for (let i = startIdx; i < endIdx; i++) {
-              const xi = px[i], yi = py[i], si = species[i], row = si * MAX_SPECIES;
-              let fx = 0, fy = 0;
-              const cx = (xi * invCellSize) | 0, cy = (yi * invCellSize) | 0;
-
-              for (let dy = -1; dy <= 1; dy++) {
-                  let ny = cy + dy;
-                  if (ny < 0) ny += gridH; else if (ny >= gridH) ny -= gridH;
-
-                  for (let dx = -1; dx <= 1; dx++) {
-                      let nx = cx + dx;
-                      if (nx < 0) nx += gridW; else if (nx >= gridW) nx -= gridW;
-
-                      const cell = ny * gridW + nx;
-                      const start = gridOffsets[cell];
-                      const count = gridCounts[cell];
-                      const end = start + count;
-
-                      for (let j = start; j < end; j++) {
-                          if (i === j) continue;
-                          let ddx = px[j] - xi, ddy = py[j] - yi;
-                          if (ddx > halfW) ddx -= W; else if (ddx < -halfW) ddx += W;
-                          if (ddy > halfH) ddy -= H; else if (ddy < -halfH) ddy += H;
-                          const d2 = ddx * ddx + ddy * ddy;
-                          if (d2 > 0 && d2 < rMaxSq) {
-                              const d = Math.sqrt(d2), r = d * invR;
-                              const attr = matrix[row + species[j]];
-                              let f = r < 0.3 ? r / 0.3 - 1 : attr * (1 - Math.abs(2 * r - 1.3) / 0.7);
-                              f = f * fMul / d;
-                              fx += ddx * f; fy += ddy * f;
-                          }
-                      }
-                  }
-              }
-              if (mouseDown) {
-                  let mdx = mouseX - xi, mdy = mouseY - yi;
-                  if (mdx > halfW) mdx -= W; else if (mdx < -halfW) mdx += W;
-                  if (mdy > halfH) mdy -= H; else if (mdy < -halfH) mdy += H;
-                  const md2 = mdx * mdx + mdy * mdy;
-                  if (md2 > 0 && md2 < 90000) { const md = Math.sqrt(md2); const mf = 0.5 * (1 - md / 300) / md; fx += mdx * mf; fy += mdy * mf; }
-              }
-              vxOut[i - startIdx] = fx * dt; vyOut[i - startIdx] = fy * dt;
-          }
-      }
-      `;
 
       // ═══════════════════════════════════════════════════════════════════════════════
       // CONFIGURATION
@@ -497,7 +351,7 @@
         trailAlpha: 0.92,
       };
 
-      const MAX_PARTICLES = 100000;
+      const MAX_PARTICLES = 64000;
       const MAX_SPECIES = 6;
       const MAX_GRID = 256;
       const MAX_WORKERS = 16;
@@ -565,8 +419,6 @@
       let workerCount = 0;
 
       // For copy mode fallback
-      let pendingWorkers = 0;
-      let workerResolve = null;
 
       // Render buffer
       let renderData;
@@ -591,9 +443,8 @@
       // ═══════════════════════════════════════════════════════════════════════════════
 
       function allocateBuffers() {
-        const BufferType = USE_SHARED ? SharedArrayBuffer : ArrayBuffer;
-
         // Particle data - DOUBLE BUFFERED
+        const BufferType = SharedArrayBuffer;
         pxBufferA = new BufferType(MAX_PARTICLES * 4);
         pyBufferA = new BufferType(MAX_PARTICLES * 4);
         vxBufferA = new BufferType(MAX_PARTICLES * 4);
@@ -652,15 +503,13 @@
         // Render buffer (not shared, only used by main thread)
         renderData = new Float32Array(MAX_PARTICLES * 6);
 
-        // Calculate memory saved per frame in SAB mode
-        if (USE_SHARED) {
-          const bytesPerWorker =
-            MAX_PARTICLES * 4 * 3 + // px, py, species
-            MAX_GRID * MAX_GRID * 2 +
-            MAX_GRID * MAX_GRID * 4;
-          bytesSavedPerFrame =
-            bytesPerWorker * (navigator.hardwareConcurrency - 1);
-        }
+        // Calculate memory saved per frame (virtual bandwidth)
+        const bytesPerWorker =
+          MAX_PARTICLES * 4 * 3 + // px, py, species
+          MAX_GRID * MAX_GRID * 2 +
+          MAX_GRID * MAX_GRID * 4;
+        bytesSavedPerFrame =
+          bytesPerWorker * (navigator.hardwareConcurrency - 1);
       }
 
       // ═══════════════════════════════════════════════════════════════════════════════
@@ -673,99 +522,42 @@
           Math.min((navigator.hardwareConcurrency || 4) - 1, MAX_WORKERS),
         );
 
-        // In Shared mode, we use the compiled Nim worker
-        // In Copy mode (fallback), we'd need a fallback JS or Nim worker.
-        // For now, let's assume Shared mode for the Nim worker.
-        const workerUrl = USE_SHARED
-          ? "worker.js"
-          : URL.createObjectURL(
-              new Blob([WORKER_CODE_COPY], { type: "application/javascript" }),
-            );
+        // Use the compiled Nim worker
+        const workerUrl = "worker.js";
 
         for (let i = 0; i < workerCount; i++) {
           const worker = new Worker(workerUrl);
 
-          if (USE_SHARED) {
-            // Send shared buffer references once
-            worker.postMessage({
-              type: "init",
-              workerIndex: i,
-              pxBufferA,
-              pyBufferA,
-              speciesBufferA,
-              densityBufferA: denBufferA,
-              pxBufferB,
-              pyBufferB,
-              speciesBufferB,
-              densityBufferB: denBufferB,
-              vxDeltaBuffer,
-              vyDeltaBuffer,
-              gridCountsBuffer,
-              gridOffsetsBuffer,
-              syncBuffer,
-              matrixBuffer,
-            });
-          } else {
-            // Copy mode: send matrix copy
-            worker.onmessage = handleWorkerResultCopy;
-            worker.postMessage({
-              type: "init",
-              matrix: Array.from(matrix),
-            });
-          }
+          // Send shared buffer references once
+          worker.postMessage({
+            type: "init",
+            workerIndex: i,
+            pxBufferA,
+            pyBufferA,
+            speciesBufferA,
+            densityBufferA: denBufferA,
+            pxBufferB,
+            pyBufferB,
+            speciesBufferB,
+            densityBufferB: denBufferB,
+            vxDeltaBuffer,
+            vyDeltaBuffer,
+            gridCountsBuffer,
+            gridOffsetsBuffer,
+            syncBuffer,
+            matrixBuffer,
+          });
 
           workers.push(worker);
         }
 
-        document.getElementById("workerCount").textContent = workerCount;
-
-        // Update mode badge
-        const badge = document.getElementById("modeBadge");
-        if (USE_SHARED) {
-          badge.textContent = "SharedArrayBuffer";
-          badge.className = "mode-badge sab";
-        } else {
-          badge.textContent = "Copy Mode";
-          badge.className = "mode-badge copy";
-        }
-
         console.log(
-          `🦠 Created ${workerCount} workers in ${USE_SHARED ? "SharedArrayBuffer" : "Copy"} mode`,
+          `🦠 Created ${workerCount} workers in SharedArrayBuffer mode`,
         );
       }
 
       function updateWorkersMatrix() {
-        if (!USE_SHARED) {
-          // Copy mode: send matrix to each worker
-          for (const worker of workers) {
-            worker.postMessage({
-              type: "updateMatrix",
-              matrix: Array.from(matrix),
-            });
-          }
-        }
         // SAB mode: matrix is already in shared memory, workers will see the update
-      }
-
-      // Copy mode result handler
-      function handleWorkerResultCopy(e) {
-        if (e.data.type !== "done") return;
-
-        const { startIdx, endIdx, vxBuffer, vyBuffer } = e.data;
-        const vxResult = new Float32Array(vxBuffer);
-        const vyResult = new Float32Array(vyBuffer);
-
-        const fric = 1 - CONFIG.friction;
-        for (let i = startIdx; i < endIdx; i++) {
-          vx[i] = vx[i] * fric + vxResult[i - startIdx];
-          vy[i] = vy[i] * fric + vyResult[i - startIdx];
-        }
-
-        pendingWorkers--;
-        if (pendingWorkers === 0 && workerResolve) {
-          workerResolve();
-          workerResolve = null;
-        }
       }
 
       // ═══════════════════════════════════════════════════════════════════════════════
@@ -947,82 +739,10 @@
         workerTimeMs = performance.now() - t0;
       }
 
-      function dispatchPhysicsCopy(dt) {
-        return new Promise((resolve) => {
-          const t0 = performance.now();
-
-          workerResolve = () => {
-            workerTimeMs = performance.now() - t0;
-            resolve();
-          };
-          pendingWorkers = workerCount;
-
-          const n = particleCount;
-          const perWorker = Math.ceil(n / workerCount);
-
-          const config = {
-            W: canvas.width,
-            H: canvas.height,
-            rMax: CONFIG.interactionRadius,
-            rMaxSq: CONFIG.interactionRadius * CONFIG.interactionRadius,
-            invR: 1 / CONFIG.interactionRadius,
-            fMul: CONFIG.forceStrength * 0.5,
-            gridW,
-            gridH,
-            cellSize,
-            mouseDown,
-            mouseX,
-            mouseY,
-            dt,
-          };
-
-          for (let i = 0; i < workerCount; i++) {
-            const startIdx = i * perWorker;
-            const endIdx = Math.min(startIdx + perWorker, n);
-
-            if (startIdx >= n) {
-              pendingWorkers--;
-              if (pendingWorkers === 0) resolve();
-              continue;
-            }
-
-            // Copy mode: We need to copy the currently active sorted buffer
-            const pxActive = activeParity === 0 ? pxA : pxB;
-            const pyActive = activeParity === 0 ? pyA : pyB;
-            const sActive = activeParity === 0 ? speciesA : speciesB;
-
-            const pxCopy = pxActive.slice().buffer;
-            const pyCopy = pyActive.slice().buffer;
-            const speciesCopy = sActive.slice().buffer;
-            const countsCopy = gridCounts.slice().buffer;
-            const offsetsCopy = gridOffsets.slice().buffer;
-
-            workers[i].postMessage(
-              {
-                type: "compute",
-                startIdx,
-                endIdx,
-                pxBuffer: pxCopy,
-                pyBuffer: pyCopy,
-                speciesBuffer: speciesCopy,
-                gridCountsBuffer: countsCopy,
-                gridOffsetsBuffer: offsetsCopy,
-                config,
-              },
-              [pxCopy, pyCopy, speciesCopy, countsCopy, offsetsCopy],
-            );
-          }
-        });
-      }
-
       async function physics(dt) {
         buildGrid();
 
-        if (USE_SHARED) {
-          await dispatchPhysicsShared(dt);
-        } else {
-          await dispatchPhysicsCopy(dt);
-        }
+        await dispatchPhysicsShared(dt);
 
         // Update positions
         const W = canvas.width,
@@ -1235,6 +955,10 @@
         fadeAlpha = gl.getUniformLocation(fadeProg, "u_alpha");
 
         vbo = gl.createBuffer();
+        // Pre-allocate VBO to max size once — avoids per-frame GPU allocation leak
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, MAX_PARTICLES * 6 * 4, gl.DYNAMIC_DRAW);
+
         quadVbo = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
         gl.bufferData(
@@ -1291,11 +1015,8 @@
         gl.uniform1f(uSize, CONFIG.particleSize + 1);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-        gl.bufferData(
-          gl.ARRAY_BUFFER,
-          renderData.subarray(0, n * 6),
-          gl.DYNAMIC_DRAW,
-        );
+        // Update existing buffer — bufferSubData reuses GPU memory, bufferData allocates new
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, renderData.subarray(0, n * 6));
 
         gl.enableVertexAttribArray(aPos);
         gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 24, 0);
@@ -1333,14 +1054,10 @@
           document.getElementById("workerTime").textContent =
             workerTimeMs.toFixed(1);
 
-          if (USE_SHARED) {
-            const mbPerSec = ((bytesSavedPerFrame * fps) / 1024 / 1024).toFixed(
-              1,
-            );
-            document.getElementById("memSaved").textContent = mbPerSec;
-          } else {
-            document.getElementById("memSaved").textContent = "0 (copy mode)";
-          }
+          const mbPerSec = ((bytesSavedPerFrame * fps) / 1024 / 1024).toFixed(
+            1,
+          );
+          document.getElementById("memSaved").textContent = mbPerSec;
         }
 
         requestAnimationFrame(loop);
@@ -1427,8 +1144,12 @@
           mouseX = e.clientX;
           mouseY = e.clientY;
         };
-        canvas.onmouseup = () => (mouseDown = false);
-        canvas.onmouseleave = () => (mouseDown = false);
+        canvas.onmouseup = () => {
+          mouseDown = false;
+        };
+        canvas.onmouseleave = () => {
+          mouseDown = false;
+        };
         canvas.onmousemove = (e) => {
           mouseX = e.clientX;
           mouseY = e.clientY;
@@ -1440,16 +1161,14 @@
           mouseX = e.touches[0].clientX;
           mouseY = e.touches[0].clientY;
         };
-        canvas.ontouchend = () => (mouseDown = false);
+        canvas.ontouchend = () => {
+          mouseDown = false;
+        };
         canvas.ontouchmove = (e) => {
           e.preventDefault();
           mouseX = e.touches[0].clientX;
           mouseY = e.touches[0].clientY;
         };
-
-        const hint = document.getElementById("hint");
-        hint.classList.add("visible");
-        setTimeout(() => hint.classList.remove("visible"), 4000);
       }
 
       // ═══════════════════════════════════════════════════════════════════════════════
@@ -1457,10 +1176,17 @@
       // ═══════════════════════════════════════════════════════════════════════════════
 
       async function init() {
-        console.log(`🦠 Emergent Garden - SharedArrayBuffer Edition`);
-        console.log(
-          `   SharedArrayBuffer: ${USE_SHARED ? "✅ Available" : "❌ Not available (using copy fallback)"}`,
-        );
+        console.log(`
+=========================================
+
+   Hi there!
+
+   •🧬•
+
+   I hope this message finds you well.
+
+=========================================
+`);
 
         allocateBuffers();
         if (!initGL()) return;

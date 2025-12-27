@@ -72,6 +72,11 @@ const MAX_SPECIES = 6
 # State
 # ------------------------------------------------------------------
 
+# Pre-allocated conversion buffers for asFloat — avoids per-call allocation
+# (asFloat is called 12x per frame per worker; these eliminate ~5000 allocs/sec)
+var floatConvArr: Float32Array
+var intConvArr: Int32Array
+
 # Double buffered arrays
 # We toggle between set A and set B every frame.
 # One set acts as the "Source" (Read-Only, Sorted by Cell).
@@ -115,12 +120,10 @@ proc `[]=`*(a: Uint16Array, i: int, v: uint16) {.importjs: "#[#] = #".}
 proc `[]`*(a: Uint32Array, i: int): uint32 {.importjs: "#[#]".}
 proc `[]=`*(a: Uint32Array, i: int, v: uint32) {.importjs: "#[#] = #".}
 
-# Helper to reinterpret float bits as int
+# Helper to reinterpret int bits as float (uses pre-allocated buffers)
 proc asFloat(bits: int32): float32 =
-  var arr = newFloat32Array(1)
-  var iarr = newInt32Array(arr["buffer"])
-  iarr[0] = bits
-  return arr[0]
+  intConvArr[0] = bits
+  return floatConvArr[0]
 
 # Safe float -> int conversion (truncates Infinity/NaN to 0)
 # This forces the JS engine to use a bitwise OR operation, which is the standard
@@ -338,6 +341,10 @@ proc onMessage(e: MessageEvent) =
 
   if mType == "init":
     myIndex = msg.workerIndex.to(int32)
+
+    # Init conversion buffers (shared backing buffer for int<->float reinterpret)
+    floatConvArr = newFloat32Array(1)
+    intConvArr = newInt32Array(floatConvArr["buffer"])
 
     # Init views
     pxA = newFloat32Array(msg.pxBufferA)
