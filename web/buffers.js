@@ -19,6 +19,7 @@ import {
   MAX_GRID,
   MAX_WORKERS,
   WASM_MEMORY_PAGES,
+  WASM_MEMORY_PAGES_MAX,
   MEMORY_LAYOUT,
 } from './config.js';
 
@@ -110,7 +111,7 @@ export function allocateBuffers() {
   // Create unified WASM memory with SharedArrayBuffer backing
   wasmMemory = new WebAssembly.Memory({
     initial: WASM_MEMORY_PAGES,
-    maximum: WASM_MEMORY_PAGES,
+    maximum: WASM_MEMORY_PAGES_MAX,
     shared: true,
   });
 

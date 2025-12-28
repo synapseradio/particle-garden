@@ -4,24 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
+**All three build steps are required** - the main app embeds the compiled worker and WASM files.
+
 ```bash
 # Install dependencies
 nimble install
 
-# Build the JS worker (Nim -> JS)
+# Build the Web Worker (src/worker.nim -> web/worker.js)
 nimble worker
 
-# Build the WASM physics module (requires emscripten)
+# Build the WASM physics module (src/physics_wasm.nim -> web/physics.js + web/physics.wasm)
 nimble wasm
 
-# Build (debug)
+# Build the main app (embeds all web/ files)
 nimble build
-
-# Build optimized release
-nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
 
 # Run
 ./emergent_garden
+```
+
+For release builds:
+```bash
+nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
 ```
 
 ## Architecture

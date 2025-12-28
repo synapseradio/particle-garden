@@ -26,9 +26,10 @@ export const MAX_SPECIES = 6; // Maximum species for attraction matrix
 export const MAX_GRID = 256; // Maximum grid cells per dimension
 export const MAX_WORKERS = 16; // Maximum Web Workers for physics
 
-// Unified WASM memory layout (128MB total)
+// Unified WASM memory layout
 // All particle data lives in WASM linear memory for zero-copy access
-export const WASM_MEMORY_PAGES = 2048; // 128MB (each page = 64KB)
+export const WASM_MEMORY_PAGES = 2048; // 128MB initial (each page = 64KB)
+export const WASM_MEMORY_PAGES_MAX = 8192; // 512MB maximum
 export const WASM_DATA_OFFSET = 1024 * 1024; // 1MB - skip WASM internals
 
 // Memory layout offsets (computed from WASM_DATA_OFFSET)

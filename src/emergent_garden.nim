@@ -43,7 +43,6 @@ const gridJs = staticRead("../web/grid.js")
 const uiJs = staticRead("../web/ui.js")
 const physicsJs = staticRead("../web/physics.js")
 const physicsWasm = staticRead("../web/physics.wasm")
-const physicsWasmJs = staticRead("../web/physics-wasm.js")
 
 # Custom HTTP server that serves with COOP/COEP headers for SharedArrayBuffer
 proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
@@ -99,10 +98,6 @@ proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
     elif req.url.path == "/physics.wasm":
       content = physicsWasm
       contentType = "application/wasm"
-      found = true
-    elif req.url.path == "/physics-wasm.js":
-      content = physicsWasmJs
-      contentType = "application/javascript"
       found = true
 
     if found:

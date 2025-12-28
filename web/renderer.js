@@ -20,6 +20,7 @@ import {
   pyB,
   speciesB,
   denA,
+  denB,
   activeParity,
 } from './buffers.js';
 
@@ -194,7 +195,7 @@ export function render(particleCount) {
   const pxActive = activeParity === 1 ? pxB : pxA;
   const pyActive = activeParity === 1 ? pyB : pyA;
   const sActive = activeParity === 1 ? speciesB : speciesA;
-  const denActive = denA;
+  const denActive = activeParity === 1 ? denB : denA;
 
   for (let i = 0; i < n; i++) {
     const i6 = i * 6;

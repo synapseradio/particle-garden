@@ -42,6 +42,8 @@ A native desktop wrapper around the [Emergent Garden](https://github.com/gyanant
 
 ## Setup
 
+**All three build steps are required.** The main app binary embeds the compiled worker and WASM files at compile time.
+
 ```bash
 # Clone/download this project
 cd emergent-garden-webui
@@ -49,26 +51,18 @@ cd emergent-garden-webui
 # Install dependencies
 nimble install
 
-# Compile the Web Worker (src/worker.nim -> web/worker.js)
-nimble worker
-
-# Build the WASM physics module (src/physics_wasm.nim -> web/physics.js + web/physics.wasm)
-nimble wasm
-
-# Build (debug)
-nimble build
+# Build all (required order):
+nimble worker  # src/worker.nim -> web/worker.js
+nimble wasm    # src/physics_wasm.nim -> web/physics.js + web/physics.wasm
+nimble build   # embeds web/* into the binary
 
 # Or build optimized release
-nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
+nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
 ```
 
 ## Run
 
 ```bash
-# Ensure worker and WASM are compiled
-nimble worker
-nimble wasm
-
 # Run
 ./emergent_garden
 # or on Windows:

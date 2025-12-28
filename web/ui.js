@@ -11,7 +11,7 @@
  */
 
 import { CONFIG, MAX_SPECIES, COLORS } from './config.js';
-import { matrix, bytesSavedPerFrame } from './buffers.js';
+import { matrix } from './buffers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MOUSE STATE (exported for physics calculations)
@@ -289,9 +289,6 @@ export function updateStats(fps, gridTimeMs, workerTimeMs) {
   document.getElementById('fps').textContent = fps;
   document.getElementById('gridTime').textContent = gridTimeMs.toFixed(2);
   document.getElementById('workerTime').textContent = workerTimeMs.toFixed(1);
-
-  const mbPerSec = ((bytesSavedPerFrame * fps) / 1024 / 1024).toFixed(1);
-  document.getElementById('memSaved').textContent = mbPerSec;
 }
 
 /**

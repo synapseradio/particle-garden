@@ -20,11 +20,13 @@ task wasm, "Build the physics WASM module":
   exec """emcc nimcache_wasm/*.c -O3 \
     -I/opt/homebrew/Cellar/nim/2.2.6/nim/lib \
     -sWASM=1 \
+    -sMODULARIZE=1 \
+    -sEXPORT_NAME='createPhysicsModule' \
     -sIMPORTED_MEMORY=1 \
     -sSHARED_MEMORY=1 \
     -sINITIAL_MEMORY=134217728 \
-    -sMAXIMUM_MEMORY=134217728 \
-    -sALLOW_MEMORY_GROWTH=0 \
+    -sMAXIMUM_MEMORY=536870912 \
+    -sALLOW_MEMORY_GROWTH=1 \
     -sEXPORTED_FUNCTIONS='["_physicsStepRange","_malloc","_free"]' \
     -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
     -o web/physics.js"""
