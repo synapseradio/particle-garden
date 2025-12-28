@@ -37,6 +37,7 @@ A native desktop wrapper around the [Emergent Garden](https://github.com/gyanant
 
 - **Nim >= 2.0.0**
 - **webui >= 2.4.0** (nimble will install this)
+- **Emscripten** (for WASM physics build)
 - A modern browser (Chrome, Firefox, Edge)
 
 ## Setup
@@ -48,8 +49,11 @@ cd emergent-garden-webui
 # Install dependencies
 nimble install
 
-# Compile the physics worker (Nim -> JS)
+# Compile the Web Worker (src/worker.nim -> web/worker.js)
 nimble worker
+
+# Build the WASM physics module (src/physics_wasm.nim -> web/physics.js + web/physics.wasm)
+nimble wasm
 
 # Build (debug)
 nimble build
@@ -61,8 +65,9 @@ nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
 ## Run
 
 ```bash
-# Ensure worker is compiled
+# Ensure worker and WASM are compiled
 nimble worker
+nimble wasm
 
 # Run
 ./emergent_garden
@@ -123,9 +128,10 @@ This will create `Goober Garden.app` which can be moved to `/Applications`.
 
 ### Windows
 
-1. Build the worker and optimized binary:
+1. Build the worker, WASM, and optimized binary:
    ```bash
    nimble worker
+   nimble wasm
    nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
    ```
 2. The resulting `src/emergent_garden.exe` is a standalone executable (it embeds the web assets).

@@ -13,15 +13,14 @@
 import { CONFIG, MAX_PARTICLES, COLORS } from './config.js';
 import {
   renderData,
-  activeParity,
   pxA,
   pyA,
   speciesA,
-  denA,
   pxB,
   pyB,
   speciesB,
-  denB,
+  denA,
+  activeParity,
 } from './buffers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -191,10 +190,11 @@ export function render(particleCount) {
   }
 
   const n = particleCount;
-  const pxActive = activeParity === 0 ? pxA : pxB;
-  const pyActive = activeParity === 0 ? pyA : pyB;
-  const sActive = activeParity === 0 ? speciesA : speciesB;
-  const denActive = activeParity === 0 ? denA : denB;
+  // Select active buffer based on current parity
+  const pxActive = activeParity === 1 ? pxB : pxA;
+  const pyActive = activeParity === 1 ? pyB : pyA;
+  const sActive = activeParity === 1 ? speciesB : speciesA;
+  const denActive = denA;
 
   for (let i = 0; i < n; i++) {
     const i6 = i * 6;

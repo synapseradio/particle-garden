@@ -8,6 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 nimble install
 
+# Build the JS worker (Nim -> JS)
+nimble worker
+
+# Build the WASM physics module (requires emscripten)
+nimble wasm
+
 # Build (debug)
 nimble build
 
@@ -15,7 +21,7 @@ nimble build
 nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
 
 # Run
-./src/emergent_garden
+./emergent_garden
 ```
 
 ## Architecture
@@ -30,6 +36,8 @@ This is a native desktop wrapper for a particle life simulation that enables Sha
 
 **Key files:**
 - `src/emergent_garden.nim` - HTTP server with COOP/COEP headers + webui window management
-- `web/index.html` - Self-contained particle simulation (~47KB) with embedded Web Workers
+- `src/physics_wasm.nim` - WASM physics module → `web/physics.js` + `web/physics.wasm` (via emscripten)
+- `src/worker.nim` - Web Worker source → `web/worker.js` (via `nim js`)
+- `web/` - Frontend modules (ES modules, hand-written)
 
-**The simulation** uses SharedArrayBuffer for zero-copy parallel physics across Web Workers. Workers read particle positions directly from shared memory instead of receiving copied buffers via postMessage.
+**The simulation** uses SharedArrayBuffer for zero-copy parallel physics. The WASM physics module operates directly on shared memory with no data transfer overhead between JS and WASM.

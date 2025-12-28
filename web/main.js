@@ -27,18 +27,23 @@ import {
   vxB,
   vyB,
   speciesB,
-  vxDelta,
-  vyDelta,
+  denA,
+  matrix,
+  gridCounts,
+  gridOffsets,
   activeParity,
 } from './buffers.js';
 import { initGL, resize, render, canvas } from './renderer.js';
+import { buildGrid, gridW, gridH, cellSize } from './grid.js';
 import {
   createWorkers,
   dispatchPhysicsShared,
   updateWorkersMatrix,
-  workerCount,
 } from './workers.js';
-import { buildGrid, gridW, gridH, cellSize, gridTimeMs } from './grid.js';
+import {
+  vxDelta,
+  vyDelta,
+} from './buffers.js';
 import {
   init as initUI,
   setupUI,
@@ -76,6 +81,7 @@ let workerTimeMs = 0;
  */
 export function initParticles() {
   particleCount = CONFIG.particleCount;
+
   const W = canvas.width;
   const H = canvas.height;
   const ns = CONFIG.speciesCount;
@@ -109,26 +115,27 @@ export function resetParticles() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PHYSICS
+// PHYSICS (WASM)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Run one physics step.
+ * Run one physics step using parallel WASM workers.
  *
- * This function:
- * 1. Builds the spatial grid and sorts particles
- * 2. Dispatches physics work to workers
- * 3. Applies velocity deltas from workers
- * 4. Updates particle positions with velocity
+ * Flow:
+ * 1. Build spatial grid (sorts particles by cell)
+ * 2. Dispatch to workers (each runs WASM physics on its particle range)
+ * 3. Apply velocity deltas from workers
+ * 4. Integrate positions (friction, position update, toroidal wrap)
  *
  * @param {number} dt - Delta time in seconds (already scaled by timeScale)
  */
 async function physics(dt) {
-  // Build spatial grid - this sorts particles and flips buffer parity
+  const t0 = performance.now();
+
+  // Build spatial grid - sorts particles by cell and flips parity
   const gridResult = buildGrid(particleCount, canvas.width, canvas.height);
 
-  // Dispatch physics to workers
-  const t0 = performance.now();
+  // Dispatch to WASM workers - they compute velocity deltas
   await dispatchPhysicsShared(
     dt,
     particleCount,
@@ -141,52 +148,28 @@ async function physics(dt) {
     mouseY,
     mouseDown
   );
-  workerTimeMs = performance.now() - t0;
 
-  // Apply velocity deltas
-  // Note: activeParity now points to the sorted buffer that workers read from
-  const vxActive = activeParity === 0 ? vxA : vxB;
-  const vyActive = activeParity === 0 ? vyA : vyB;
+  // Select active buffer (buildGrid flipped parity)
+  const pxActive = activeParity === 1 ? pxB : pxA;
+  const pyActive = activeParity === 1 ? pyB : pyA;
+  const vxActive = activeParity === 1 ? vxB : vxA;
+  const vyActive = activeParity === 1 ? vyB : vyA;
 
-  // Friction scaled by time step to prevent momentum loss during slow motion
-  const dtFactor = dt * 60;
-  const fric = Math.pow(1 - CONFIG.friction, dtFactor);
-
-  for (let i = 0; i < particleCount; i++) {
-    vxActive[i] = vxActive[i] * fric + vxDelta[i];
-    vyActive[i] = vyActive[i] * fric + vyDelta[i];
-  }
-
-  // Update positions
   const W = canvas.width;
   const H = canvas.height;
-  const dtScaled = dt * 60;
+  const friction = 0.95;
 
-  const pxActive = activeParity === 0 ? pxA : pxB;
-  const pyActive = activeParity === 0 ? pyA : pyB;
-
-  const MAX_SPEED = 20.0;
-  const MAX_SPEED_SQ = MAX_SPEED * MAX_SPEED;
-
+  // Apply velocity deltas and integrate positions
   for (let i = 0; i < particleCount; i++) {
-    let vx = vxActive[i];
-    let vy = vyActive[i];
+    // Apply delta and friction
+    vxActive[i] = (vxActive[i] + vxDelta[i]) * friction;
+    vyActive[i] = (vyActive[i] + vyDelta[i]) * friction;
 
-    // Clamp velocity to prevent teleporting
-    const v2 = vx * vx + vy * vy;
-    if (v2 > MAX_SPEED_SQ) {
-      const v = Math.sqrt(v2);
-      const scale = MAX_SPEED / v;
-      vx *= scale;
-      vy *= scale;
-      vxActive[i] = vx;
-      vyActive[i] = vy;
-    }
+    // Update position
+    let x = pxActive[i] + vxActive[i];
+    let y = pyActive[i] + vyActive[i];
 
-    let x = pxActive[i] + vx * dtScaled;
-    let y = pyActive[i] + vy * dtScaled;
-
-    // Toroidal wrapping
+    // Toroidal wrap
     if (x < 0) x += W;
     else if (x >= W) x -= W;
     if (y < 0) y += H;
@@ -195,6 +178,8 @@ async function physics(dt) {
     pxActive[i] = x;
     pyActive[i] = y;
   }
+
+  workerTimeMs = performance.now() - t0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -223,7 +208,7 @@ async function loop(now) {
     fps = ((frameCount * 1000) / (now - lastFpsTime)) | 0;
     frameCount = 0;
     lastFpsTime = now;
-    updateStats(fps, gridTimeMs, workerTimeMs);
+    updateStats(fps, 0, workerTimeMs);  // No grid time with brute force
   }
 
   requestAnimationFrame(loop);
@@ -276,11 +261,11 @@ async function init() {
   // Set up event handlers (pass canvas from renderer)
   setupEvents(canvas);
 
-  // Set matrix update callback to sync with workers
-  setMatrixUpdateCallback(updateWorkersMatrix);
-
-  // Create worker pool
+  // Create worker pool (workers load WASM internally)
   createWorkers();
+
+  // Set matrix update callback (matrix is in SharedArrayBuffer, workers see it)
+  setMatrixUpdateCallback(() => updateWorkersMatrix());
 
   // Initialize attraction matrix with random values
   randomizeMatrix();

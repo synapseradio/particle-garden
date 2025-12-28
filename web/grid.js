@@ -85,8 +85,10 @@ export function buildGrid(particleCount, canvasWidth, canvasHeight) {
   const vyDst = activeParity === 0 ? vyB : vyA;
   const sDst = activeParity === 0 ? speciesB : speciesA;
 
-  // Clear counts
-  for (let i = 0; i < numCells; i++) gridCounts[i] = 0;
+  // Clear counts - clear entire buffer to prevent stale data access
+  // WASM might access cells beyond numCells if particle positions are out of bounds
+  const maxCells = gridCounts.length;
+  for (let i = 0; i < maxCells; i++) gridCounts[i] = 0;
 
   // Count particles per cell using source positions
   for (let i = 0; i < n; i++) {

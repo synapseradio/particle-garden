@@ -209,6 +209,7 @@ export function randomizeMatrix() {
   }
   updateMatrixDisplay();
   if (onMatrixUpdate) onMatrixUpdate();
+  console.log("Matrix randomized - sample values:", matrix[0], matrix[1], matrix[6], matrix[7]);
 }
 
 /**

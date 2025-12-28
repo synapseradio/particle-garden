@@ -1,64 +1,43 @@
 /**
- * SharedArrayBuffer allocation and typed array view management for Goober Garden.
+ * Unified WASM Memory for Goober Garden.
  *
- * This module handles all shared memory allocation for the particle simulation:
- * - Double-buffered particle data (position, velocity, species, density)
- * - Velocity delta buffers for worker output
- * - Grid structure buffers for spatial partitioning
- * - Sync buffer for worker coordination via Atomics
- * - Matrix buffer for species interaction rules
+ * This module creates a single WebAssembly.Memory backed by SharedArrayBuffer.
+ * All particle data, grid structures, and sync buffers live in this unified memory.
  *
- * Double buffering enables lock-free sorting: while workers read from one buffer set,
- * the main thread can write sorted particle data to the other.
+ * ZERO-COPY ARCHITECTURE:
+ * - JS creates typed array views into the WASM memory
+ * - Workers instantiate WASM with the same memory
+ * - WASM reads/writes directly - no uploads or downloads needed
+ *
+ * Memory layout (defined in config.js MEMORY_LAYOUT):
+ * - Offset 0-1MB: Reserved for WASM stack/heap
+ * - Offset 1MB+: Particle data, grid, matrix, sync buffer
  */
 
 import {
   MAX_PARTICLES,
-  MAX_SPECIES,
   MAX_GRID,
   MAX_WORKERS,
+  WASM_MEMORY_PAGES,
+  MEMORY_LAYOUT,
 } from './config.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DOUBLE-BUFFERED PARTICLE DATA
+// UNIFIED WASM MEMORY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Buffer set A
-export let pxBufferA;
-export let pyBufferA;
-export let vxBufferA;
-export let vyBufferA;
-export let speciesBufferA;
-export let denBufferA;
+/**
+ * The single WebAssembly.Memory that backs everything.
+ * Created with `shared: true` to enable SharedArrayBuffer backing.
+ * Passed to workers and WASM modules for zero-copy access.
+ */
+export let wasmMemory;
 
-// Buffer set B
-export let pxBufferB;
-export let pyBufferB;
-export let vxBufferB;
-export let vyBufferB;
-export let speciesBufferB;
-export let denBufferB;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// VELOCITY DELTA BUFFERS (workers write accumulated forces here)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export let vxDeltaBuffer;
-export let vyDeltaBuffer;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// GRID BUFFERS (spatial partitioning for O(n) neighbor queries)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export let gridCountsBuffer;
-export let gridOffsetsBuffer;
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SYNC AND MATRIX BUFFERS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export let syncBuffer;
-export let matrixBuffer;
+/**
+ * The underlying SharedArrayBuffer of wasmMemory.
+ * Cached once since memory growth is disabled.
+ */
+export let sharedBuffer;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPED ARRAY VIEWS - Buffer set A
@@ -104,7 +83,7 @@ export let syncArray;
 export let matrix;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LOCAL TEMPORARY ARRAYS (not shared with workers)
+// LOCAL TEMPORARY ARRAYS (not in shared memory)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export let fillOffsets;
@@ -114,135 +93,82 @@ export let renderData;
 // ACTIVE BUFFER TRACKING
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// 0 = A is active/source, 1 = B is active/source
-// Flipped after each grid build to swap read/write buffers
 export let activeParity = 0;
-
-// Memory bandwidth saved per frame (calculated in allocateBuffers)
-export let bytesSavedPerFrame = 0;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUFFER ALLOCATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Allocate all SharedArrayBuffers and create typed array views.
+ * Create the unified WebAssembly.Memory and all typed array views.
  *
- * Buffer layout:
- * - Particle data: Float32 for positions/velocities/density, Uint8 for species
- * - Grid: Uint16 for counts (max 65535 particles per cell), Uint32 for offsets
- * - Sync: Int32 for Atomics operations
- * - Matrix: Float32 for interaction strengths
+ * This creates a single 128MB SharedArrayBuffer-backed memory.
+ * All particle data lives at known offsets within this memory.
+ * Both JS and WASM access the same underlying buffer - zero copies.
  */
 export function allocateBuffers() {
-  const BufferType = SharedArrayBuffer;
+  // Create unified WASM memory with SharedArrayBuffer backing
+  wasmMemory = new WebAssembly.Memory({
+    initial: WASM_MEMORY_PAGES,
+    maximum: WASM_MEMORY_PAGES,
+    shared: true,
+  });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Particle data - DOUBLE BUFFERED
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Cache the buffer reference (won't change since growth is disabled)
+  sharedBuffer = wasmMemory.buffer;
 
-  pxBufferA = new BufferType(MAX_PARTICLES * 4);
-  pyBufferA = new BufferType(MAX_PARTICLES * 4);
-  vxBufferA = new BufferType(MAX_PARTICLES * 4);
-  vyBufferA = new BufferType(MAX_PARTICLES * 4);
-  speciesBufferA = new BufferType(MAX_PARTICLES);
-  denBufferA = new BufferType(MAX_PARTICLES * 4);
-
-  pxBufferB = new BufferType(MAX_PARTICLES * 4);
-  pyBufferB = new BufferType(MAX_PARTICLES * 4);
-  vxBufferB = new BufferType(MAX_PARTICLES * 4);
-  vyBufferB = new BufferType(MAX_PARTICLES * 4);
-  speciesBufferB = new BufferType(MAX_PARTICLES);
-  denBufferB = new BufferType(MAX_PARTICLES * 4);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Velocity deltas (workers write here)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  vxDeltaBuffer = new BufferType(MAX_PARTICLES * 4);
-  vyDeltaBuffer = new BufferType(MAX_PARTICLES * 4);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Grid structure
-  // ─────────────────────────────────────────────────────────────────────────────
-
+  const L = MEMORY_LAYOUT;
   const maxCells = MAX_GRID * MAX_GRID;
-  gridCountsBuffer = new BufferType(maxCells * 2); // Uint16
-  gridOffsetsBuffer = new BufferType(maxCells * 4); // Uint32
-  fillOffsets = new Uint32Array(maxCells); // Temp (local only)
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Sync buffer for Atomics
-  // Layout: [frameCounter, workerCount, ...workerAssignments, ...config, ...doneFlags]
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const syncSize = 2 + MAX_WORKERS * 2 + 16 + MAX_WORKERS;
-  syncBuffer = new BufferType(syncSize * 4);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Matrix buffer for species interactions
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  matrixBuffer = new BufferType(MAX_SPECIES * MAX_SPECIES * 4);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Create typed array views - Buffer set A
   // ─────────────────────────────────────────────────────────────────────────────
 
-  pxA = new Float32Array(pxBufferA);
-  pyA = new Float32Array(pyBufferA);
-  vxA = new Float32Array(vxBufferA);
-  vyA = new Float32Array(vyBufferA);
-  speciesA = new Uint8Array(speciesBufferA);
-  denA = new Float32Array(denBufferA);
+  pxA = new Float32Array(sharedBuffer, L.pxA, MAX_PARTICLES);
+  pyA = new Float32Array(sharedBuffer, L.pyA, MAX_PARTICLES);
+  vxA = new Float32Array(sharedBuffer, L.vxA, MAX_PARTICLES);
+  vyA = new Float32Array(sharedBuffer, L.vyA, MAX_PARTICLES);
+  denA = new Float32Array(sharedBuffer, L.denA, MAX_PARTICLES);
+  speciesA = new Uint8Array(sharedBuffer, L.speciesA, MAX_PARTICLES);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Create typed array views - Buffer set B
   // ─────────────────────────────────────────────────────────────────────────────
 
-  pxB = new Float32Array(pxBufferB);
-  pyB = new Float32Array(pyBufferB);
-  vxB = new Float32Array(vxBufferB);
-  vyB = new Float32Array(vyBufferB);
-  speciesB = new Uint8Array(speciesBufferB);
-  denB = new Float32Array(denBufferB);
+  pxB = new Float32Array(sharedBuffer, L.pxB, MAX_PARTICLES);
+  pyB = new Float32Array(sharedBuffer, L.pyB, MAX_PARTICLES);
+  vxB = new Float32Array(sharedBuffer, L.vxB, MAX_PARTICLES);
+  vyB = new Float32Array(sharedBuffer, L.vyB, MAX_PARTICLES);
+  denB = new Float32Array(sharedBuffer, L.denB, MAX_PARTICLES);
+  speciesB = new Uint8Array(sharedBuffer, L.speciesB, MAX_PARTICLES);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Create typed array views - Velocity deltas
   // ─────────────────────────────────────────────────────────────────────────────
 
-  vxDelta = new Float32Array(vxDeltaBuffer);
-  vyDelta = new Float32Array(vyDeltaBuffer);
+  vxDelta = new Float32Array(sharedBuffer, L.vxDelta, MAX_PARTICLES);
+  vyDelta = new Float32Array(sharedBuffer, L.vyDelta, MAX_PARTICLES);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Create typed array views - Grid structure
   // ─────────────────────────────────────────────────────────────────────────────
 
-  gridCounts = new Uint16Array(gridCountsBuffer);
-  gridOffsets = new Uint32Array(gridOffsetsBuffer);
+  gridCounts = new Uint16Array(sharedBuffer, L.gridCounts, maxCells);
+  gridOffsets = new Uint32Array(sharedBuffer, L.gridOffsets, maxCells);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Create typed array views - Sync and matrix
   // ─────────────────────────────────────────────────────────────────────────────
 
-  syncArray = new Int32Array(syncBuffer);
-  matrix = new Float32Array(matrixBuffer);
+  syncArray = new Int32Array(sharedBuffer, L.sync, 256);
+  matrix = new Float32Array(sharedBuffer, L.matrix, 36);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Render buffer (not shared, only used by main thread)
+  // Local arrays (not shared with workers)
   // ─────────────────────────────────────────────────────────────────────────────
 
+  fillOffsets = new Uint32Array(maxCells);
   renderData = new Float32Array(MAX_PARTICLES * 6);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Calculate memory saved per frame (virtual bandwidth)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const bytesPerWorker =
-    MAX_PARTICLES * 4 * 3 + // px, py, species
-    MAX_GRID * MAX_GRID * 2 +
-    MAX_GRID * MAX_GRID * 4;
-  bytesSavedPerFrame = bytesPerWorker * (navigator.hardwareConcurrency - 1);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

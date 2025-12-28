@@ -1,36 +1,19 @@
 /**
  * Web Worker management for Goober Garden physics computation.
  *
- * This module handles:
- * - Worker pool creation and initialization with SharedArrayBuffer references
- * - Float-to-int bit conversion for Atomics-based config passing
- * - Physics dispatch via sync buffer coordination
- * - Worker completion synchronization using Atomics.waitAsync
+ * ZERO-COPY ARCHITECTURE:
+ * - Workers receive the shared WebAssembly.Memory object
+ * - Each worker instantiates WASM with this memory
+ * - WASM reads/writes particle data directly - no copies
  *
- * Workers read particle data from shared buffers, compute velocity deltas,
- * and signal completion through the sync buffer. The main thread then
- * applies the accumulated deltas.
+ * This module handles:
+ * - Worker pool creation and initialization
+ * - Physics dispatch via sync buffer coordination
+ * - Worker completion synchronization using Atomics
  */
 
-import { CONFIG, MAX_WORKERS } from './config.js';
-import {
-  pxBufferA,
-  pyBufferA,
-  speciesBufferA,
-  denBufferA,
-  pxBufferB,
-  pyBufferB,
-  speciesBufferB,
-  denBufferB,
-  vxDeltaBuffer,
-  vyDeltaBuffer,
-  gridCountsBuffer,
-  gridOffsetsBuffer,
-  syncBuffer,
-  matrixBuffer,
-  syncArray,
-  activeParity,
-} from './buffers.js';
+import { CONFIG, MAX_WORKERS, MEMORY_LAYOUT } from './config.js';
+import { wasmMemory, syncArray, activeParity } from './buffers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FLOAT-TO-INT CONVERSION FOR ATOMICS
@@ -38,9 +21,7 @@ import {
 
 /**
  * Convert a float to its bit representation as an int32.
- * Required because Atomics only work with integer arrays, but we need to pass
- * float configuration values (canvas size, cell size, mouse position, etc.)
- * through the sync buffer.
+ * Required because Atomics only work with integer arrays.
  */
 export const floatToIntBits = (() => {
   const f32 = new Float32Array(1);
@@ -66,9 +47,8 @@ export let frameCounter = 0;
 /**
  * Create and initialize the worker pool.
  *
- * Worker count is based on available hardware concurrency minus one (for the main thread).
- * Each worker receives references to all SharedArrayBuffers on initialization,
- * establishing the zero-copy communication channel.
+ * Each worker receives the shared WebAssembly.Memory object.
+ * Workers instantiate WASM with this memory for zero-copy access.
  */
 export function createWorkers() {
   workerCount = Math.max(
@@ -81,32 +61,18 @@ export function createWorkers() {
   for (let i = 0; i < workerCount; i++) {
     const worker = new Worker(workerUrl);
 
-    // Send shared buffer references once - workers retain these for all future frames
+    // Send shared memory reference - workers use this for WASM instantiation
     worker.postMessage({
       type: 'init',
       workerIndex: i,
-      pxBufferA,
-      pyBufferA,
-      speciesBufferA,
-      densityBufferA: denBufferA,
-      pxBufferB,
-      pyBufferB,
-      speciesBufferB,
-      densityBufferB: denBufferB,
-      vxDeltaBuffer,
-      vyDeltaBuffer,
-      gridCountsBuffer,
-      gridOffsetsBuffer,
-      syncBuffer,
-      matrixBuffer,
+      wasmMemory: wasmMemory,
+      syncOffset: MEMORY_LAYOUT.sync,
     });
 
     workers.push(worker);
   }
 
-  console.log(
-    `Created ${workerCount} workers in SharedArrayBuffer mode`,
-  );
+  console.log(`Created ${workerCount} workers (zero-copy mode)`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -115,13 +81,10 @@ export function createWorkers() {
 
 /**
  * Notify workers of matrix changes.
- *
- * In SharedArrayBuffer mode, the matrix is already in shared memory.
- * Workers will see updates automatically on their next read.
- * This function exists for interface compatibility.
+ * In zero-copy mode, the matrix is in shared memory - workers see updates immediately.
  */
 export function updateWorkersMatrix() {
-  // SAB mode: matrix is already in shared memory, workers will see the update
+  // Matrix is in shared WASM memory - no action needed
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -131,14 +94,8 @@ export function updateWorkersMatrix() {
 /**
  * Dispatch physics computation to workers and wait for completion.
  *
- * This function:
- * 1. Writes worker assignments (particle index ranges) to the sync buffer
- * 2. Writes configuration values (canvas size, physics params) to sync buffer
- * 3. Clears done flags and increments frame counter to wake workers
- * 4. Waits for all workers to signal completion via Atomics.waitAsync
- *
- * Workers compute velocity deltas for their assigned particle ranges.
- * The caller is responsible for applying those deltas after this returns.
+ * ZERO-COPY: Workers read particle data directly from shared memory.
+ * This function only writes config scalars to the sync buffer.
  *
  * @param {number} dt - Delta time in seconds
  * @param {number} particleCount - Number of active particles
@@ -146,7 +103,7 @@ export function updateWorkersMatrix() {
  * @param {number} canvasHeight - Canvas height in pixels
  * @param {number} gridW - Grid width in cells
  * @param {number} gridH - Grid height in cells
- * @param {number} cellSize - Cell size in pixels (equals interaction radius)
+ * @param {number} cellSize - Cell size in pixels
  * @param {number} mouseX - Mouse X position
  * @param {number} mouseY - Mouse Y position
  * @param {boolean} mouseDown - Whether mouse button is pressed
@@ -167,7 +124,7 @@ export async function dispatchPhysicsShared(
   const n = particleCount;
   const perWorker = Math.ceil(n / workerCount);
 
-  // Write worker assignments and config to sync buffer
+  // Write worker assignments to sync buffer
   syncArray[1] = workerCount;
 
   for (let i = 0; i < workerCount; i++) {
@@ -190,7 +147,8 @@ export async function dispatchPhysicsShared(
   syncArray[configOffset + 8] = floatToIntBits(mouseX);
   syncArray[configOffset + 9] = floatToIntBits(mouseY);
   syncArray[configOffset + 10] = mouseDown ? 1 : 0;
-  syncArray[configOffset + 11] = activeParity; // Tell workers which buffer to read
+  syncArray[configOffset + 11] = activeParity;
+  syncArray[configOffset + 12] = particleCount;
 
   // Clear done flags
   const doneOffset = configOffset + 16;
