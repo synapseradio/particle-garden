@@ -108,6 +108,11 @@ proc physicsStepRange*(
   let halfH = H * 0.5f
   let md2Limit = 90000.0f
 
+  # Precomputed constants for inner loop optimization
+  let inv03 = 1.0f / 0.3f      # For force calculation
+  let inv07 = 1.0f / 0.7f      # For force calculation
+  let minDistSq = 4.0f         # Minimum distance squared (2.0²)
+
   let invCellW = float32(gridW) / W
   let invCellH = float32(gridH) / H
   let numCells = gridW * gridH
@@ -177,26 +182,31 @@ proc physicsStepRange*(
           let d2 = dx_val * dx_val + dy_val * dy_val
 
           if d2 > 0.0f and d2 < rMaxSq:
-            var d = sqrt(d2)
-            if d < 2.0f: d = 2.0f
+            # Clamp minimum distance squared to avoid division issues
+            let d2Clamped = if d2 < minDistSq: minDistSq else: d2
+            let d = sqrt(d2Clamped)
+            let invD = 1.0f / d
             let r = d * invR
 
             let sj = int32(species[j])
 
+            # Density accumulation (same species only)
             if sj == si:
               dens += 1.0f - r
 
             let attr = matrix()[rowOffset + sj]
 
+            # Force calculation with precomputed constants
             var f: float32
             if r < 0.3f:
-              f = r / 0.3f - 1.0f
+              f = r * inv03 - 1.0f
             else:
               let t = 2.0f * r - 1.3f
               let abs_t = if t < 0.0f: -t else: t
-              f = attr * (1.0f - abs_t / 0.7f)
+              f = attr * (1.0f - abs_t * inv07)
 
-            f = f * fMul / d
+            # Use precomputed inverse distance
+            f = f * fMul * invD
             fx += dx_val * f
             fy += dy_val * f
 

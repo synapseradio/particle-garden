@@ -71,6 +71,23 @@ let fps = 0;
 let lastFpsTime = 0;
 let workerTimeMs = 0;
 
+// Performance profiling - per-frame measurements
+let gridTimeMs = 0;
+let physicsTimeMs = 0;
+let integrationTimeMs = 0;
+let renderPackTimeMs = 0;
+let renderUploadTimeMs = 0;
+
+// Performance profiling - rolling averages (over 60 frames)
+const PROFILING_WINDOW = 60;
+let profilingFrameCount = 0;
+let gridTimeSum = 0;
+let physicsTimeSum = 0;
+let integrationTimeSum = 0;
+let renderPackTimeSum = 0;
+let renderUploadTimeSum = 0;
+let totalTimeSum = 0;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PARTICLE INITIALIZATION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -132,10 +149,13 @@ export function resetParticles() {
 async function physics(dt) {
   const t0 = performance.now();
 
-  // Build spatial grid - sorts particles by cell and flips parity
+  // Phase 1: Build spatial grid - sorts particles by cell and flips parity
+  const tGrid0 = performance.now();
   const gridResult = buildGrid(particleCount, canvas.width, canvas.height);
+  gridTimeMs = performance.now() - tGrid0;
 
-  // Dispatch to WASM workers - they compute velocity deltas
+  // Phase 2: Dispatch to WASM workers - they compute velocity deltas
+  const tPhysics0 = performance.now();
   await dispatchPhysicsShared(
     dt,
     particleCount,
@@ -148,6 +168,10 @@ async function physics(dt) {
     mouseY,
     mouseDown
   );
+  physicsTimeMs = performance.now() - tPhysics0;
+
+  // Phase 3: Integration - apply velocity deltas and integrate positions
+  const tIntegration0 = performance.now();
 
   // Select active buffer (buildGrid flipped parity)
   const pxActive = activeParity === 1 ? pxB : pxA;
@@ -179,7 +203,70 @@ async function physics(dt) {
     pyActive[i] = y;
   }
 
+  integrationTimeMs = performance.now() - tIntegration0;
+
   workerTimeMs = performance.now() - t0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PERFORMANCE PROFILING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Report aggregated profiling data over the profiling window.
+ * Computes averages and percentages to identify bottlenecks.
+ */
+function reportProfilingData() {
+  const n = profilingFrameCount;
+  if (n === 0) return;
+
+  const avgGrid = gridTimeSum / n;
+  const avgPhysics = physicsTimeSum / n;
+  const avgIntegration = integrationTimeSum / n;
+  const avgRenderPack = renderPackTimeSum / n;
+  const avgRenderUpload = renderUploadTimeSum / n;
+  const avgTotal = totalTimeSum / n;
+
+  // Compute percentages
+  const pctGrid = (avgGrid / avgTotal) * 100;
+  const pctPhysics = (avgPhysics / avgTotal) * 100;
+  const pctIntegration = (avgIntegration / avgTotal) * 100;
+  const pctRenderPack = (avgRenderPack / avgTotal) * 100;
+  const pctRenderUpload = (avgRenderUpload / avgTotal) * 100;
+
+  // Compute serial fraction (grid + integration + renderPack are currently serial)
+  const serialTime = avgGrid + avgIntegration + avgRenderPack;
+  const serialFraction = (serialTime / avgTotal) * 100;
+
+  // Compute theoretical Amdahl's Law maximum speedup
+  const s = serialTime / avgTotal;
+  const maxSpeedup = 1 / (s + (1 - s) / navigator.hardwareConcurrency);
+
+  console.log(`
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║ PERFORMANCE PROFILE (avg over ${n} frames, ${particleCount} particles)
+╠═══════════════════════════════════════════════════════════════════════════════╣
+║ Phase Breakdown:
+║   Grid Construction:    ${avgGrid.toFixed(2)}ms (${pctGrid.toFixed(1)}%)
+║   Physics (WASM):       ${avgPhysics.toFixed(2)}ms (${pctPhysics.toFixed(1)}%)  [parallel]
+║   Integration:          ${avgIntegration.toFixed(2)}ms (${pctIntegration.toFixed(1)}%)
+║   Render Pack:          ${avgRenderPack.toFixed(2)}ms (${pctRenderPack.toFixed(1)}%)
+║   Render Upload/Draw:   ${avgRenderUpload.toFixed(2)}ms (${pctRenderUpload.toFixed(1)}%)
+║   ────────────────────────────────────────────────────────────────────────
+║   TOTAL:                ${avgTotal.toFixed(2)}ms (${avgTotal > 0 ? ((1000/avgTotal)).toFixed(1) : '0'} FPS)
+╠═══════════════════════════════════════════════════════════════════════════════╣
+║ Parallelization Analysis:
+║   Serial Time:          ${serialTime.toFixed(2)}ms (${serialFraction.toFixed(1)}%)
+║   Parallel Time:        ${avgPhysics.toFixed(2)}ms (${pctPhysics.toFixed(1)}%)
+║   Serial Fraction (s):  ${(s * 100).toFixed(1)}%
+║
+║   Amdahl's Law (${navigator.hardwareConcurrency} cores):
+║   Max Theoretical Speedup: ${maxSpeedup.toFixed(2)}x
+║
+║   If serial fraction drops to 14%:
+║   Predicted Max Speedup:    ${(1 / (0.14 + (1 - 0.14) / navigator.hardwareConcurrency)).toFixed(2)}x
+╚═══════════════════════════════════════════════════════════════════════════════╝
+  `);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -195,12 +282,28 @@ async function physics(dt) {
 async function loop(now) {
   if (!isRunning) return;
 
+  const frameStart = performance.now();
+
   // Compute delta time, capped to prevent spiral of death
   const dt = Math.min((now - lastTime) / 1000, 0.05) * CONFIG.timeScale;
   lastTime = now;
 
   await physics(dt);
-  render(particleCount);
+
+  const renderTiming = render(particleCount);
+  renderPackTimeMs = renderTiming.packTimeMs;
+  renderUploadTimeMs = renderTiming.uploadTimeMs;
+
+  const frameTotal = performance.now() - frameStart;
+
+  // Accumulate profiling data
+  gridTimeSum += gridTimeMs;
+  physicsTimeSum += physicsTimeMs;
+  integrationTimeSum += integrationTimeMs;
+  renderPackTimeSum += renderPackTimeMs;
+  renderUploadTimeSum += renderUploadTimeMs;
+  totalTimeSum += frameTotal;
+  profilingFrameCount++;
 
   // Update FPS and stats every 500ms
   frameCount++;
@@ -209,6 +312,19 @@ async function loop(now) {
     frameCount = 0;
     lastFpsTime = now;
     updateStats(fps, 0, workerTimeMs);  // No grid time with brute force
+  }
+
+  // Report profiling data every PROFILING_WINDOW frames
+  if (profilingFrameCount >= PROFILING_WINDOW) {
+    reportProfilingData();
+    // Reset accumulators
+    profilingFrameCount = 0;
+    gridTimeSum = 0;
+    physicsTimeSum = 0;
+    integrationTimeSum = 0;
+    renderPackTimeSum = 0;
+    renderUploadTimeSum = 0;
+    totalTimeSum = 0;
   }
 
   requestAnimationFrame(loop);

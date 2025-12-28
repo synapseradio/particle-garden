@@ -17,7 +17,7 @@ task wasm, "Build the physics WASM module":
   # Step 1: Compile Nim to C for WASM32 target
   exec "nim c --backend:c --cpu:wasm32 --os:linux --nimcache:./nimcache_wasm --compileOnly -d:emscripten -d:release src/physics_wasm.nim"
   # Step 2: Compile C to WASM with SharedArrayBuffer support
-  exec """emcc nimcache_wasm/*.c -O3 \
+  exec """emcc nimcache_wasm/*.c -O3 -msimd128 \
     -I/opt/homebrew/Cellar/nim/2.2.6/nim/lib \
     -sWASM=1 \
     -sMODULARIZE=1 \

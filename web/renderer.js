@@ -176,6 +176,7 @@ export function resize() {
 /**
  * Render all particles to the canvas.
  * @param {number} particleCount - Number of particles to render
+ * @returns {{ packTimeMs: number, uploadTimeMs: number }} Timing breakdown
  */
 export function render(particleCount) {
   if (CONFIG.trails) {
@@ -191,6 +192,10 @@ export function render(particleCount) {
   }
 
   const n = particleCount;
+
+  // Phase 1: Pack vertex data (CPU-side)
+  const tPack0 = performance.now();
+
   // Select active buffer based on current parity
   const pxActive = activeParity === 1 ? pxB : pxA;
   const pyActive = activeParity === 1 ? pyB : pyA;
@@ -208,6 +213,11 @@ export function render(particleCount) {
     renderData[i6 + 5] = denActive[i];
   }
 
+  const packTimeMs = performance.now() - tPack0;
+
+  // Phase 2: Upload to GPU and draw
+  const tUpload0 = performance.now();
+
   gl.useProgram(prog);
   gl.uniform2f(uRes, canvas.width, canvas.height);
   gl.uniform1f(uSize, CONFIG.particleSize + 1);
@@ -224,4 +234,8 @@ export function render(particleCount) {
   gl.vertexAttribPointer(aDen, 1, gl.FLOAT, false, 24, 20);
 
   gl.drawArrays(gl.POINTS, 0, n);
+
+  const uploadTimeMs = performance.now() - tUpload0;
+
+  return { packTimeMs, uploadTimeMs };
 }
