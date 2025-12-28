@@ -42,6 +42,25 @@ export let cellSize = 0;
 export let gridTimeMs = 0;
 
 /**
+ * Compute grid dimensions without doing any sorting.
+ * Used by WebGPU path which builds the grid on the GPU.
+ *
+ * @param {number} canvasWidth - Canvas width in pixels
+ * @param {number} canvasHeight - Canvas height in pixels
+ * @returns {{ gridW: number, gridH: number, cellSize: number }}
+ */
+export function computeGridDimensions(canvasWidth, canvasHeight) {
+  cellSize = CONFIG.interactionRadius;
+
+  gridW = Math.floor(canvasWidth / cellSize);
+  gridH = Math.floor(canvasHeight / cellSize);
+  gridW = Math.max(1, Math.min(gridW, MAX_GRID));
+  gridH = Math.max(1, Math.min(gridH, MAX_GRID));
+
+  return { gridW, gridH, cellSize };
+}
+
+/**
  * Build the spatial partitioning grid and sort particles by cell.
  *
  * This function:

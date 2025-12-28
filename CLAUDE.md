@@ -42,6 +42,16 @@ This is a native desktop wrapper for a particle life simulation that enables Sha
 - `src/emergent_garden.nim` - HTTP server with COOP/COEP headers + webui window management
 - `src/physics_wasm.nim` - WASM physics module → `web/physics.js` + `web/physics.wasm` (via emscripten)
 - `src/worker.nim` - Web Worker source → `web/worker.js` (via `nim js`)
-- `web/` - Frontend modules (ES modules, hand-written)
+- `web/` - Frontend modules (compiled from Nim via `nim js`)
+
+## Language Policy
+
+**All source code must be written in Nim.** No hand-written JavaScript.
+
+- Frontend modules compile from `src/*.nim` to `web/*.js` using `nim js`
+- WASM modules compile via emscripten
+- WGSL shaders are the only non-Nim source (GPU shaders have no Nim backend)
+
+When modifying frontend behavior, edit the corresponding `.nim` source file, not the generated `.js` file.
 
 **The simulation** uses SharedArrayBuffer for zero-copy parallel physics. The WASM physics module operates directly on shared memory with no data transfer overhead between JS and WASM.

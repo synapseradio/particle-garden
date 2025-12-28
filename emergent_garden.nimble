@@ -30,3 +30,27 @@ task wasm, "Build the physics WASM module":
     -sEXPORTED_FUNCTIONS='["_physicsStepRange","_malloc","_free"]' \
     -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
     -o web/physics.js"""
+
+task all, "Build everything: worker, wasm, and main app":
+  # Build in dependency order
+  echo "Building worker..."
+  exec "nim js -d:release -d:danger --out:web/worker.js src/worker.nim"
+  echo "Building WASM physics module..."
+  exec "nim c --backend:c --cpu:wasm32 --os:linux --nimcache:./nimcache_wasm --compileOnly -d:emscripten -d:release src/physics_wasm.nim"
+  exec """emcc nimcache_wasm/*.c -O3 -msimd128 \
+    -I/opt/homebrew/Cellar/nim/2.2.6/nim/lib \
+    -sWASM=1 \
+    -sMODULARIZE=1 \
+    -sEXPORT_NAME='createPhysicsModule' \
+    -sIMPORTED_MEMORY=1 \
+    -sSHARED_MEMORY=1 \
+    -sINITIAL_MEMORY=134217728 \
+    -sMAXIMUM_MEMORY=536870912 \
+    -sALLOW_MEMORY_GROWTH=1 \
+    -sEXPORTED_FUNCTIONS='["_physicsStepRange","_malloc","_free"]' \
+    -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+    -o web/physics.js"""
+  echo "Building main app (embeds all web/ files)..."
+  exec "nim c -d:release -d:danger --opt:speed src/emergent_garden.nim"
+  exec "mv src/emergent_garden ./emergent_garden"
+  echo "✓ Build complete. Run with: ./emergent_garden"

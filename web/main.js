@@ -34,7 +34,7 @@ import {
   activeParity,
 } from './buffers.js';
 import { initGL, resize, render, canvas } from './renderer.js';
-import { buildGrid, gridW, gridH, cellSize } from './grid.js';
+import { buildGrid, computeGridDimensions, gridW, gridH, cellSize } from './grid.js';
 import {
   createWorkers,
   dispatchPhysicsShared,
@@ -56,13 +56,29 @@ import {
   mouseY,
   mouseDown,
 } from './ui.js';
+import {
+  initWebGPU,
+  isWebGPUAvailable as webgpuAvailable,
+} from './webgpu-init.js';
+import {
+  initPipelines,
+  runPhysicsFrame,
+  isPipelineReady,
+  uploadInitialData,
+} from './webgpu-compute.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MODULE STATE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// DIAGNOSTIC: Enable WebGPU debugging (set to true to see checkpoint logs)
+// To enable: type `__WEBGPU_DEBUG__ = true` in browser console
+globalThis.__WEBGPU_DEBUG__ = true;
+globalThis.__WEBGPU_DEBUG_FRAME__ = 0;
+
 let particleCount = 0;
 let isRunning = false;
+let useWebGPU = false; // Set to true if WebGPU is available and initialized
 
 // Timing and stats
 let lastTime = 0;
@@ -132,13 +148,20 @@ export function resetParticles() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PHYSICS (WASM)
+// PHYSICS (DUAL PATH: WebGPU or WASM)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Run one physics step using parallel WASM workers.
+ * Run one physics step using WebGPU compute shaders (if available) or WASM workers.
  *
- * Flow:
+ * WebGPU Flow (all on GPU):
+ * 1. Pass 1: bin-count (count particles per cell)
+ * 2. Pass 2: prefix-sum (exclusive scan for cell offsets)
+ * 3. Pass 3: bin-scatter (scatter particles to sorted order)
+ * 4. Pass 4: forces (compute inter-particle forces)
+ * 5. Pass 5: integrate (apply forces and update positions)
+ *
+ * WASM Flow (CPU parallel):
  * 1. Build spatial grid (sorts particles by cell)
  * 2. Dispatch to workers (each runs WASM physics on its particle range)
  * 3. Apply velocity deltas from workers
@@ -149,63 +172,101 @@ export function resetParticles() {
 async function physics(dt) {
   const t0 = performance.now();
 
-  // Phase 1: Build spatial grid - sorts particles by cell and flips parity
-  const tGrid0 = performance.now();
-  const gridResult = buildGrid(particleCount, canvas.width, canvas.height);
-  gridTimeMs = performance.now() - tGrid0;
+  if (useWebGPU && isPipelineReady) {
+    // ═══════════════════════════════════════════════════════════════════════
+    // WebGPU Compute Path (ALL computation on GPU)
+    // ═══════════════════════════════════════════════════════════════════════
 
-  // Phase 2: Dispatch to WASM workers - they compute velocity deltas
-  const tPhysics0 = performance.now();
-  await dispatchPhysicsShared(
-    dt,
-    particleCount,
-    canvas.width,
-    canvas.height,
-    gridResult.gridW,
-    gridResult.gridH,
-    gridResult.cellSize,
-    mouseX,
-    mouseY,
-    mouseDown
-  );
-  physicsTimeMs = performance.now() - tPhysics0;
+    // Only compute grid dimensions - no CPU sorting
+    const gridResult = computeGridDimensions(canvas.width, canvas.height);
+    gridTimeMs = 0; // Grid built on GPU
 
-  // Phase 3: Integration - apply velocity deltas and integrate positions
-  const tIntegration0 = performance.now();
+    const tPhysics0 = performance.now();
 
-  // Select active buffer (buildGrid flipped parity)
-  const pxActive = activeParity === 1 ? pxB : pxA;
-  const pyActive = activeParity === 1 ? pyB : pyA;
-  const vxActive = activeParity === 1 ? vxB : vxA;
-  const vyActive = activeParity === 1 ? vyB : vyA;
+    await runPhysicsFrame({
+      dt,
+      particleCount,
+      width: canvas.width,
+      height: canvas.height,
+      gridW: gridResult.gridW,
+      gridH: gridResult.gridH,
+      rMax: CONFIG.interactionRadius,
+      fMul: CONFIG.forceStrength,
+      friction: 0.95,
+      mouseX,
+      mouseY,
+      mouseDown: mouseDown ? 1 : 0,
+      parity: 0, // WebGPU always uses buffer set A as source
+      matrix,
+    });
 
-  const W = canvas.width;
-  const H = canvas.height;
-  const friction = 0.95;
+    physicsTimeMs = performance.now() - tPhysics0;
+    integrationTimeMs = 0; // Integration happens on GPU
 
-  // Apply velocity deltas and integrate positions
-  for (let i = 0; i < particleCount; i++) {
-    // Apply delta and friction
-    vxActive[i] = (vxActive[i] + vxDelta[i]) * friction;
-    vyActive[i] = (vyActive[i] + vyDelta[i]) * friction;
+    workerTimeMs = performance.now() - t0;
+  } else {
+    // ═══════════════════════════════════════════════════════════════════════
+    // WASM Worker Path (CPU parallel)
+    // ═══════════════════════════════════════════════════════════════════════
 
-    // Update position
-    let x = pxActive[i] + vxActive[i];
-    let y = pyActive[i] + vyActive[i];
+    // Phase 1: Build spatial grid - sorts particles by cell and flips parity
+    const tGrid0 = performance.now();
+    const gridResult = buildGrid(particleCount, canvas.width, canvas.height);
+    gridTimeMs = performance.now() - tGrid0;
 
-    // Toroidal wrap
-    if (x < 0) x += W;
-    else if (x >= W) x -= W;
-    if (y < 0) y += H;
-    else if (y >= H) y -= H;
+    // Phase 2: Dispatch to WASM workers - they compute velocity deltas
+    const tPhysics0 = performance.now();
+    await dispatchPhysicsShared(
+      dt,
+      particleCount,
+      canvas.width,
+      canvas.height,
+      gridResult.gridW,
+      gridResult.gridH,
+      gridResult.cellSize,
+      mouseX,
+      mouseY,
+      mouseDown
+    );
+    physicsTimeMs = performance.now() - tPhysics0;
 
-    pxActive[i] = x;
-    pyActive[i] = y;
+    // Phase 3: Integration - apply velocity deltas and integrate positions
+    const tIntegration0 = performance.now();
+
+    // Select active buffer (buildGrid flipped parity)
+    const pxActive = activeParity === 1 ? pxB : pxA;
+    const pyActive = activeParity === 1 ? pyB : pyA;
+    const vxActive = activeParity === 1 ? vxB : vxA;
+    const vyActive = activeParity === 1 ? vyB : vyA;
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const friction = 0.95;
+
+    // Apply velocity deltas and integrate positions
+    for (let i = 0; i < particleCount; i++) {
+      // Apply delta and friction
+      vxActive[i] = (vxActive[i] + vxDelta[i]) * friction;
+      vyActive[i] = (vyActive[i] + vyDelta[i]) * friction;
+
+      // Update position
+      let x = pxActive[i] + vxActive[i];
+      let y = pyActive[i] + vyActive[i];
+
+      // Toroidal wrap
+      if (x < 0) x += W;
+      else if (x >= W) x -= W;
+      if (y < 0) y += H;
+      else if (y >= H) y -= H;
+
+      pxActive[i] = x;
+      pyActive[i] = y;
+    }
+
+    integrationTimeMs = performance.now() - tIntegration0;
+
+    workerTimeMs = performance.now() - t0;
   }
-
-  integrationTimeMs = performance.now() - tIntegration0;
-
-  workerTimeMs = performance.now() - t0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -283,6 +344,7 @@ async function loop(now) {
   if (!isRunning) return;
 
   const frameStart = performance.now();
+  globalThis.__WEBGPU_DEBUG_FRAME__++;
 
   // Compute delta time, capped to prevent spiral of death
   const dt = Math.min((now - lastTime) / 1000, 0.05) * CONFIG.timeScale;
@@ -377,8 +439,25 @@ async function init() {
   // Set up event handlers (pass canvas from renderer)
   setupEvents(canvas);
 
-  // Create worker pool (workers load WASM internally)
-  createWorkers();
+  // Try to initialize WebGPU (optional acceleration)
+  console.log('Attempting WebGPU initialization...');
+  const webgpuResult = await initWebGPU();
+  if (webgpuResult.success) {
+    console.log('✓ WebGPU device acquired:', webgpuResult.info);
+    console.log('Initializing WebGPU compute pipelines...');
+    const pipelineResult = await initPipelines();
+    if (pipelineResult.success) {
+      console.log('✓ WebGPU compute pipelines ready:', pipelineResult.info);
+      useWebGPU = true;
+      console.log('→ Physics acceleration: WebGPU compute shaders');
+    } else {
+      console.warn('✗ WebGPU pipeline initialization failed:', pipelineResult.error);
+      console.log('→ Falling back to WASM workers');
+    }
+  } else {
+    console.warn('✗ WebGPU not available:', webgpuResult.error);
+    console.log('→ Using WASM workers for physics');
+  }
 
   // Set matrix update callback (matrix is in SharedArrayBuffer, workers see it)
   setMatrixUpdateCallback(() => updateWorkersMatrix());
@@ -388,6 +467,24 @@ async function init() {
 
   // Initialize particles
   initParticles();
+
+  // Upload particle data to GPU if using WebGPU
+  if (useWebGPU) {
+    console.log('Uploading initial particle data to GPU...');
+    const uploadResult = await uploadInitialData(particleCount);
+    if (uploadResult.success) {
+      console.log('✓ Initial data uploaded to GPU');
+    } else {
+      console.warn('✗ Failed to upload initial data:', uploadResult.error);
+      console.log('→ Falling back to WASM workers');
+      useWebGPU = false;
+    }
+  }
+
+  // Only create worker pool if WebGPU is not available
+  if (!useWebGPU) {
+    createWorkers();
+  }
 
   // Expose resetParticles globally for HTML onclick handler
   window.resetParticles = resetParticles;

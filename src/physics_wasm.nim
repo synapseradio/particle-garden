@@ -223,7 +223,7 @@ proc physicsStepRange*(
       let md2 = mdx * mdx + mdy * mdy
       if md2 > 0.0f and md2 < md2Limit:
         let md = sqrt(md2)
-        let mf = 0.5f * (1.0f - md / 300.0f) / md
+        let mf = 2.5f * (1.0f - md / 300.0f) / md
         fx += mdx * mf
         fy += mdy * mf
 

@@ -27,87 +27,66 @@
 # ==============================================================================
 
 import webui
-import std/[os, asynchttpserver, asyncdispatch, net, strutils]
+import std/[os, asynchttpserver, asyncdispatch, net, strutils, tables]
 
 const ServerPort = 8089
 
-# Embed static files
-const indexHtml = staticRead("../web/index.html")
-const workerJs = staticRead("../web/worker.js")
-const mainJs = staticRead("../web/main.js")
-const configJs = staticRead("../web/config.js")
-const buffersJs = staticRead("../web/buffers.js")
-const rendererJs = staticRead("../web/renderer.js")
-const workersJs = staticRead("../web/workers.js")
-const gridJs = staticRead("../web/grid.js")
-const uiJs = staticRead("../web/ui.js")
-const physicsJs = staticRead("../web/physics.js")
-const physicsWasm = staticRead("../web/physics.wasm")
+# MIME types by extension
+const MimeTypes = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript",
+  ".wasm": "application/wasm",
+  ".wgsl": "text/plain",
+}.toTable
 
-# Custom HTTP server that serves with COOP/COEP headers for SharedArrayBuffer
+# Static file registry: path -> content
+# Files are embedded at compile time via staticRead
+const StaticFiles = {
+  "/index.html": staticRead("../web/index.html"),
+  "/main.js": staticRead("../web/main.js"),
+  "/config.js": staticRead("../web/config.js"),
+  "/buffers.js": staticRead("../web/buffers.js"),
+  "/renderer.js": staticRead("../web/renderer.js"),
+  "/grid.js": staticRead("../web/grid.js"),
+  "/ui.js": staticRead("../web/ui.js"),
+  # WASM physics (fallback when WebGPU unavailable)
+  "/worker.js": staticRead("../web/worker.js"),
+  "/workers.js": staticRead("../web/workers.js"),
+  "/physics.js": staticRead("../web/physics.js"),
+  "/physics.wasm": staticRead("../web/physics.wasm"),
+  # WebGPU compute pipeline
+  "/webgpu-init.js": staticRead("../web/webgpu-init.js"),
+  "/webgpu-compute.js": staticRead("../web/webgpu-compute.js"),
+  "/shaders/bin-count.wgsl": staticRead("../web/shaders/bin-count.wgsl"),
+  "/shaders/prefix-sum.wgsl": staticRead("../web/shaders/prefix-sum.wgsl"),
+  "/shaders/bin-scatter.wgsl": staticRead("../web/shaders/bin-scatter.wgsl"),
+  "/shaders/forces.wgsl": staticRead("../web/shaders/forces.wgsl"),
+  "/shaders/density.wgsl": staticRead("../web/shaders/density.wgsl"),
+  "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),
+}.toTable
+
+proc getMimeType(path: string): string =
+  for ext, mime in MimeTypes:
+    if path.endsWith(ext):
+      return mime
+  return "text/plain"
+
 proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
   var server = newAsyncHttpServer()
 
   proc handler(req: Request) {.async.} =
     echo "[DEBUG] Request: ", req.reqMethod, " ", req.url.path
 
-    var content = ""
-    var contentType = "text/plain"
-    var found = false
+    # Normalize path: "/" -> "/index.html"
+    let path = if req.url.path == "/": "/index.html" else: req.url.path
 
-    if req.url.path == "/" or req.url.path == "/index.html":
-      content = indexHtml
-      contentType = "text/html; charset=utf-8"
-      found = true
-    elif req.url.path == "/worker.js":
-      content = workerJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/main.js":
-      content = mainJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/config.js":
-      content = configJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/buffers.js":
-      content = buffersJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/renderer.js":
-      content = rendererJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/workers.js":
-      content = workersJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/grid.js":
-      content = gridJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/ui.js":
-      content = uiJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/physics.js":
-      content = physicsJs
-      contentType = "application/javascript"
-      found = true
-    elif req.url.path == "/physics.wasm":
-      content = physicsWasm
-      contentType = "application/wasm"
-      found = true
-
-    if found:
-      # Set Cross-Origin Isolation headers for SharedArrayBuffer support
+    if StaticFiles.hasKey(path):
+      let content = StaticFiles[path]
       let headers = newHttpHeaders([
-        ("Content-Type", contentType),
+        ("Content-Type", getMimeType(path)),
         ("Cross-Origin-Opener-Policy", "same-origin"),
         ("Cross-Origin-Embedder-Policy", "require-corp")
       ])
-
       await req.respond(Http200, content, headers)
     else:
       await req.respond(Http404, "Not Found", newHttpHeaders())

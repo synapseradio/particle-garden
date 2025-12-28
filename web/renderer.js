@@ -202,6 +202,19 @@ export function render(particleCount) {
   const sActive = activeParity === 1 ? speciesB : speciesA;
   const denActive = activeParity === 1 ? denB : denA;
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // DIAGNOSTIC: Checkpoint 5C - Verify renderer receives data
+  // ─────────────────────────────────────────────────────────────────────────────
+  if (globalThis.__WEBGPU_DEBUG__ && globalThis.__WEBGPU_DEBUG_FRAME__ % 60 === 0) {
+    const pxSample = Array.from(pxActive.subarray(0, 5));
+    const pySample = Array.from(pyActive.subarray(0, 5));
+    const nonZeroPx = Array.from(pxActive.subarray(0, n)).filter(v => v !== 0).length;
+    console.log(`[5C] Renderer parity=${activeParity}, reading from buffer ${activeParity === 1 ? 'B' : 'A'}`);
+    console.log('[5C] Renderer pxActive (first 5):', pxSample);
+    console.log('[5C] Renderer pyActive (first 5):', pySample);
+    console.log(`[5C] Non-zero positions: ${nonZeroPx}/${n}`);
+  }
+
   for (let i = 0; i < n; i++) {
     const i6 = i * 6;
     const c = sActive[i] * 3;
