@@ -1,7 +1,8 @@
 # Build artifacts
 emergent_garden
 Goober Garden.app/
-
+.ck/
+.DS_Store
 # Nim compilation caches
 nimcache/
 nimcache_wasm/
