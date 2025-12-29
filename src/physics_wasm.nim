@@ -90,7 +90,7 @@ proc physicsStepRange*(
   bufferParity: int32,  # 0 = read from A, 1 = read from B
   dt, W, H, rMax, fMul: float32,
   gridW, gridH: int32,
-  mouseX, mouseY, mouseDown: float32
+  mouseX, mouseY, mouseDown, mouseRightDown: float32
 ) {.exportc, cdecl.} =
 
   if startIdx >= endIdx or n <= 0 or gridW <= 0 or gridH <= 0:
@@ -210,8 +210,8 @@ proc physicsStepRange*(
             fx += dx_val * f
             fy += dy_val * f
 
-    # Mouse attraction
-    if mouseDown > 0.5f:
+    # Mouse attraction/repulsion
+    if mouseDown > 0.5f or mouseRightDown > 0.5f:
       var mdx = mouseX - xi
       var mdy = mouseY - yi
 
@@ -223,9 +223,15 @@ proc physicsStepRange*(
       let md2 = mdx * mdx + mdy * mdy
       if md2 > 0.0f and md2 < md2Limit:
         let md = sqrt(md2)
-        let mf = 2.5f * (1.0f - md / 300.0f) / md
-        fx += mdx * mf
-        fy += mdy * mf
+        let mf = 50.0f * (1.0f - md / 300.0f) / md
+
+        # Combine left (attraction) and right (repulsion)
+        var sign = 0.0f
+        if mouseDown > 0.5f: sign += 1.0f
+        if mouseRightDown > 0.5f: sign -= 1.0f
+
+        fx += mdx * mf * sign
+        fy += mdy * mf * sign
 
     # Write velocity DELTAS directly to shared memory
     vxDelta()[i] = fx * dt
