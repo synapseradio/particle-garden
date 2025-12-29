@@ -191,9 +191,10 @@ var bindGroupLayouts* {.exportc.}: JsObject = createJsObject()
 # Uniform buffers for passing parameters to shaders.
 var uniformBuffers* {.exportc.}: JsObject = createJsObject()
 
-# Bind groups (created per-frame based on parity).
-# We don't cache these because they change with parity.
+# Bind groups - cached to avoid per-frame recreation overhead.
+# In WebGPU mode, parity is always 0 (in-place updates), so bind groups are stable.
 var bindGroups* {.exportc.}: JsObject = createJsObject()
+var cachedBindGroupParity: int = -1  # -1 = not initialized, tracks when to recreate
 
 # Whether pipelines have been initialized.
 var isPipelineReady* {.exportc.}: bool = false
@@ -793,9 +794,12 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # =========================================================================
-  # PHASE: BIND GROUP CREATION
+  # PHASE: BIND GROUP CREATION (cached)
   # =========================================================================
-  await createBindGroups(parity, gridW, gridH)
+  # Only recreate bind groups when parity changes (in WebGPU mode, this is never)
+  if parity != cachedBindGroupParity:
+    await createBindGroups(parity, gridW, gridH)
+    cachedBindGroupParity = parity
 
   # =========================================================================
   # PHASE: COMMAND ENCODING (DISPATCH)
