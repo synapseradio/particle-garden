@@ -20,6 +20,7 @@ import std/jsffi
 import bindings/typed_arrays
 import bindings/atomics
 import bindings/workers
+import sync_protocol
 
 # ==============================================================================
 # SECTION 1: ADDITIONAL TYPE DEFINITIONS
@@ -113,29 +114,30 @@ proc workLoop() =
 
   while true:
     # --- WAIT FOR FRAME ---
-    discard atomicWait(syncBuffer, 0, lastFrame)
-    lastFrame = atomicLoad(syncBuffer, 0)
+    discard atomicWait(syncBuffer, SYNC_FRAME_COUNTER, lastFrame)
+    lastFrame = atomicLoad(syncBuffer, SYNC_FRAME_COUNTER)
 
     # --- READ CONFIGURATION ---
-    let workerCount = syncBuffer[1]
-    let baseIdx = 2 + int(myIndex) * 2
-    let startIdx = int32(syncBuffer[baseIdx])
-    let endIdx = int32(syncBuffer[baseIdx + 1])
+    # Worker count and particle range using sync_protocol
+    let workerCount = syncBuffer[SYNC_WORKER_COUNT]
+    let rangeOff = workerRangeOffset(int(myIndex))
+    let startIdx = int32(syncBuffer[rangeOff.startIdx])
+    let endIdx = int32(syncBuffer[rangeOff.endIdx])
 
-    let configOffset = 2 + workerCount * 2
-    let W = asFloat(syncBuffer[configOffset + 0])
-    let H = asFloat(syncBuffer[configOffset + 1])
-    let rMax = asFloat(syncBuffer[configOffset + 2])
-    let gridW = int32(syncBuffer[configOffset + 3])
-    let gridH = int32(syncBuffer[configOffset + 4])
-    let fMul = asFloat(syncBuffer[configOffset + 6])
-    let dt = asFloat(syncBuffer[configOffset + 7])
-    let mouseX = asFloat(syncBuffer[configOffset + 8])
-    let mouseY = asFloat(syncBuffer[configOffset + 9])
-    let mouseDown = syncBuffer[configOffset + 10] != 0
-    let mouseRightDown = syncBuffer[configOffset + 11] != 0
-    let bufferParity = int32(syncBuffer[configOffset + 12])
-    let particleCount = int32(syncBuffer[configOffset + 13])
+    # Config fields using sync_protocol
+    let W = asFloat(syncBuffer[configFieldIndex(workerCount, scfWidth)])
+    let H = asFloat(syncBuffer[configFieldIndex(workerCount, scfHeight)])
+    let rMax = asFloat(syncBuffer[configFieldIndex(workerCount, scfRadius)])
+    let gridW = int32(syncBuffer[configFieldIndex(workerCount, scfGridW)])
+    let gridH = int32(syncBuffer[configFieldIndex(workerCount, scfGridH)])
+    let fMul = asFloat(syncBuffer[configFieldIndex(workerCount, scfForceStrength)])
+    let dt = asFloat(syncBuffer[configFieldIndex(workerCount, scfDt)])
+    let mouseX = asFloat(syncBuffer[configFieldIndex(workerCount, scfMouseX)])
+    let mouseY = asFloat(syncBuffer[configFieldIndex(workerCount, scfMouseY)])
+    let mouseDown = syncBuffer[configFieldIndex(workerCount, scfMouseDown)] != 0
+    let mouseRightDown = syncBuffer[configFieldIndex(workerCount, scfMouseRightDown)] != 0
+    let bufferParity = int32(syncBuffer[configFieldIndex(workerCount, scfParity)])
+    let particleCount = int32(syncBuffer[configFieldIndex(workerCount, scfParticleCount)])
 
     # --- CALL WASM PHYSICS (ZERO-COPY) ---
     # No uploads or downloads! WASM reads/writes shared memory directly.
@@ -148,9 +150,9 @@ proc workLoop() =
                          mouseX, mouseY, mouseDownVal, mouseRightDownVal)
 
     # --- SIGNAL COMPLETION ---
-    let doneOffset = configOffset + 16 + int(myIndex)
-    discard atomicStore(syncBuffer, doneOffset, 1)
-    discard atomicNotify(syncBuffer, doneOffset)
+    let doneIdx = doneFlagIndex(workerCount, int(myIndex))
+    discard atomicStore(syncBuffer, doneIdx, 1)
+    discard atomicNotify(syncBuffer, doneIdx)
 
 # ==============================================================================
 # SECTION 7: INITIALIZATION

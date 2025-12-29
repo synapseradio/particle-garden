@@ -11,12 +11,10 @@
 #
 # ==============================================================================
 
-# ==============================================================================
-# CONSTANTS
-# ==============================================================================
+import memory_layout
 
-const
-  MAX_GRID* = 256  # Maximum grid dimension in either axis
+# Re-export MAX_GRID for backward compatibility with existing code
+const MAX_GRID* = memory_layout.MAX_GRID
 
 # ==============================================================================
 # GRID DIMENSION COMPUTATION

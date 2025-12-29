@@ -7,13 +7,8 @@
 #
 # ZERO-COPY: No data transfers between JS and WASM. Both access the same memory.
 #
-# Memory layout (must match config.js MEMORY_LAYOUT):
-#   Offset 1MB (0x100000): Particle data starts
-#   - pxA, pyA, vxA, vyA, denA, speciesA (buffer set A)
-#   - pxB, pyB, vxB, vyB, denB, speciesB (buffer set B)
-#   - vxDelta, vyDelta (velocity deltas)
-#   - gridCounts, gridOffsets (spatial grid)
-#   - matrix (6x6 attraction matrix)
+# Memory layout is defined in memory_layout.nim (single source of truth).
+# This module imports offset constants from there.
 #
 # Compile:
 #   nim c --backend:c --nimcache:./nimcache_wasm --compileOnly -d:emscripten -d:release src/physics_wasm.nim
@@ -21,45 +16,14 @@
 # =============================================================================
 
 import std/math
-
-const
-  MAX_SPECIES* = 6
-  MAX_PARTICLES* = 64000
-  MAX_GRID* = 256
-
-  # Memory layout offsets (must match config.js MEMORY_LAYOUT)
-  WASM_DATA_OFFSET = 1024 * 1024  # 1MB
-  FLOAT_SIZE = MAX_PARTICLES * 4
-  UINT8_SIZE = MAX_PARTICLES
-  GRID_CELLS = MAX_GRID * MAX_GRID
-
-# Compute offsets at compile time
-const
-  PX_A_OFFSET = WASM_DATA_OFFSET
-  PY_A_OFFSET = PX_A_OFFSET + FLOAT_SIZE
-  VX_A_OFFSET = PY_A_OFFSET + FLOAT_SIZE
-  VY_A_OFFSET = VX_A_OFFSET + FLOAT_SIZE
-  DEN_A_OFFSET = VY_A_OFFSET + FLOAT_SIZE
-  SPECIES_A_OFFSET = DEN_A_OFFSET + FLOAT_SIZE
-
-  PX_B_OFFSET = ((SPECIES_A_OFFSET + UINT8_SIZE + 3) and not 3)
-  PY_B_OFFSET = PX_B_OFFSET + FLOAT_SIZE
-  VX_B_OFFSET = PY_B_OFFSET + FLOAT_SIZE
-  VY_B_OFFSET = VX_B_OFFSET + FLOAT_SIZE
-  DEN_B_OFFSET = VY_B_OFFSET + FLOAT_SIZE
-  SPECIES_B_OFFSET = DEN_B_OFFSET + FLOAT_SIZE
-
-  VX_DELTA_OFFSET = ((SPECIES_B_OFFSET + UINT8_SIZE + 3) and not 3)
-  VY_DELTA_OFFSET = VX_DELTA_OFFSET + FLOAT_SIZE
-
-  GRID_COUNTS_OFFSET = VY_DELTA_OFFSET + FLOAT_SIZE
-  GRID_OFFSETS_OFFSET = ((GRID_COUNTS_OFFSET + GRID_CELLS * 2 + 3) and not 3)
-
-  MATRIX_OFFSET = GRID_OFFSETS_OFFSET + GRID_CELLS * 4
+import memory_layout
 
 # -----------------------------------------------------------------------------
 # Memory access helpers
 # -----------------------------------------------------------------------------
+#
+# These templates provide typed pointer access to WASM linear memory.
+# Offsets are imported from memory_layout.nim (single source of truth).
 
 template pxA(): ptr UncheckedArray[float32] = cast[ptr UncheckedArray[float32]](PX_A_OFFSET)
 template pyA(): ptr UncheckedArray[float32] = cast[ptr UncheckedArray[float32]](PY_A_OFFSET)

@@ -29,6 +29,7 @@ import bindings/js_interop
 # Direct imports - in consolidated build, all modules share the same variables
 import config
 import buffers
+import sync_protocol
 
 # ==============================================================================
 # SECTION 1: FLOAT-TO-INT CONVERSION FOR ATOMICS
@@ -157,45 +158,44 @@ proc dispatchPhysicsShared*(
   let n = particleCount
   let perWorker = jsCeil(n.float / workerCount.float)
 
-  # Write worker assignments to sync buffer
-  syncArray[1] = workerCount
+  # Write worker assignments to sync buffer using sync_protocol
+  syncArray[SYNC_WORKER_COUNT] = workerCount
 
   for i in 0 ..< workerCount:
     let startIdx = i * perWorker
     let endIdx = min(startIdx + perWorker, n)
-    syncArray[2 + i * 2] = startIdx
-    syncArray[2 + i * 2 + 1] = endIdx
+    let rangeOff = workerRangeOffset(i)
+    syncArray[rangeOff.startIdx] = startIdx
+    syncArray[rangeOff.endIdx] = endIdx
 
-  # Config offset in sync buffer
-  let configOffset = 2 + workerCount * 2
-  syncArray[configOffset + 0] = floatToIntBits(canvasWidth)
-  syncArray[configOffset + 1] = floatToIntBits(canvasHeight)
-  syncArray[configOffset + 2] = floatToIntBits(CONFIG.interactionRadius.float)
-  syncArray[configOffset + 3] = gridW
-  syncArray[configOffset + 4] = gridH
-  syncArray[configOffset + 5] = floatToIntBits(cellSize)
-  syncArray[configOffset + 6] = floatToIntBits(CONFIG.forceStrength * 0.5)
-  syncArray[configOffset + 7] = floatToIntBits(dt)
-  syncArray[configOffset + 8] = floatToIntBits(mouseX)
-  syncArray[configOffset + 9] = floatToIntBits(mouseY)
-  syncArray[configOffset + 10] = if mouseDown: 1 else: 0
-  syncArray[configOffset + 11] = if mouseRightDown: 1 else: 0
-  syncArray[configOffset + 12] = buffers.activeParity
-  syncArray[configOffset + 13] = particleCount
+  # Write config fields using sync_protocol
+  syncArray[configFieldIndex(workerCount, scfWidth)] = floatToIntBits(canvasWidth)
+  syncArray[configFieldIndex(workerCount, scfHeight)] = floatToIntBits(canvasHeight)
+  syncArray[configFieldIndex(workerCount, scfRadius)] = floatToIntBits(CONFIG.interactionRadius.float)
+  syncArray[configFieldIndex(workerCount, scfGridW)] = gridW
+  syncArray[configFieldIndex(workerCount, scfGridH)] = gridH
+  syncArray[configFieldIndex(workerCount, scfCellSize)] = floatToIntBits(cellSize)
+  syncArray[configFieldIndex(workerCount, scfForceStrength)] = floatToIntBits(CONFIG.forceStrength * 0.5)
+  syncArray[configFieldIndex(workerCount, scfDt)] = floatToIntBits(dt)
+  syncArray[configFieldIndex(workerCount, scfMouseX)] = floatToIntBits(mouseX)
+  syncArray[configFieldIndex(workerCount, scfMouseY)] = floatToIntBits(mouseY)
+  syncArray[configFieldIndex(workerCount, scfMouseDown)] = if mouseDown: 1 else: 0
+  syncArray[configFieldIndex(workerCount, scfMouseRightDown)] = if mouseRightDown: 1 else: 0
+  syncArray[configFieldIndex(workerCount, scfParity)] = buffers.activeParity
+  syncArray[configFieldIndex(workerCount, scfParticleCount)] = particleCount
 
-  # Clear done flags
-  let doneOffset = configOffset + 16
+  # Clear done flags using sync_protocol
   for i in 0 ..< workerCount:
-    discard atomicStore(syncArray, doneOffset + i, 0)
+    discard atomicStore(syncArray, doneFlagIndex(workerCount, i), 0)
 
   # Increment frame counter to wake workers
   frameCounter += 1
-  discard atomicStore(syncArray, 0, frameCounter)
-  discard atomicNotify(syncArray, 0)
+  discard atomicStore(syncArray, SYNC_FRAME_COUNTER, frameCounter)
+  discard atomicNotify(syncArray, SYNC_FRAME_COUNTER)
 
   # Wait for all workers to finish
   for i in 0 ..< workerCount:
-    let waitResult = atomicWaitAsync(syncArray, doneOffset + i, 0)
+    let waitResult = atomicWaitAsync(syncArray, doneFlagIndex(workerCount, i), 0)
     if waitResult.async:
       # waitResult.value is a Promise - await it
       discard await cast[Future[cstring]](waitResult.value)

@@ -4,7 +4,8 @@ author        = "Goober Garden"
 description   = "Particle life simulation with SharedArrayBuffer workers"
 license       = "MIT"
 srcDir        = "src"
-bin           = @["emergent_garden"]
+bin           = @["main"]
+binDir        = "."
 
 # Dependencies
 requires "nim >= 2.0.0 & < 3.0.0"
@@ -74,9 +75,8 @@ task all, "Build everything: worker, app, wasm, and native":
   exec "nim c " & wasmFlags & " --nimcache:./nimcache_wasm --compileOnly src/physics_wasm.nim"
   exec "emcc nimcache_wasm/*.c " & emccFlags
   echo "Building native app..."
-  exec "nim c " & nativeFlags & " src/main.nim"
-  exec "mv src/emergent_garden ./emergent_garden"
-  echo "Build complete. Run with: ./emergent_garden"
+  exec "nim c " & nativeFlags & " --out:main src/main.nim"
+  echo "Build complete. Run with: ./main"
 
 task test, "Run tests":
   exec "nim c -r " & qualityFlags & " tests/test_all.nim"
@@ -91,6 +91,5 @@ task release, "Build everything with maximum optimization (no runtime checks)":
   exec "nim c " & wasmReleaseFlags & " --nimcache:./nimcache_wasm --compileOnly src/physics_wasm.nim"
   exec "emcc nimcache_wasm/*.c " & emccFlags
   echo "Building native app..."
-  exec "nim c " & nativeReleaseFlags & " src/main.nim"
-  exec "mv src/emergent_garden ./emergent_garden"
-  echo "Release build complete. Run with: ./emergent_garden"
+  exec "nim c " & nativeReleaseFlags & " --out:main src/main.nim"
+  echo "Release build complete. Run with: ./main"

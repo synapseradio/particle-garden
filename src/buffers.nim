@@ -10,9 +10,34 @@
 # - Workers instantiate WASM with the same memory
 # - WASM reads/writes directly - no uploads or downloads needed
 #
-# Memory layout (defined in config.nim MEMORY_LAYOUT):
+# Memory layout (defined in memory_layout.nim):
 # - Offset 0-1MB: Reserved for WASM stack/heap
 # - Offset 1MB+: Particle data, grid, matrix, sync buffer
+#
+# ==============================================================================
+# PARITY CONTRACT (Double Buffering)
+# ==============================================================================
+#
+# Two buffer sets (A and B) exist for particle state. `activeParity` tracks
+# which buffer contains VALID, COMPLETE particle data.
+#
+# IMPORTANT: Parity semantics differ between physics paths!
+#
+# WASM PATH (workers.nim + physics_wasm.nim):
+#   - Uses grid scatter: particles copied from source to destination buffer
+#   - grid.buildGrid() scatters buffer[parity] → buffer[1-parity]
+#   - Parity FLIPS after scatter: activeParity = 1 - activeParity
+#   - Renderer reads from the newly-written buffer
+#
+# WEBGPU PATH (webgpu_compute.nim):
+#   - Does IN-PLACE updates on a single buffer set
+#   - Reads from buffer[parity], writes back to same buffer[parity]
+#   - Parity NEVER FLIPS - stays constant (typically 0)
+#   - Same buffer read by physics and renderer
+#
+# INVARIANT:
+#   After physics completes, buffer[activeParity] contains valid particle state.
+#   Renderer should always read from buffer[activeParity].
 #
 # Compile with: nim js -o:web/buffers.js src/buffers.nim
 #
@@ -165,9 +190,22 @@ proc allocateBuffers*() {.exportc.} =
 # ==============================================================================
 # SECTION 10: PARITY MANAGEMENT
 # ==============================================================================
+#
+# See PARITY CONTRACT in file header for full documentation.
+#
+# Quick reference:
+#   parity = 0 → Buffer set A is active (pxA, pyA, vxA, vyA, speciesA, denA)
+#   parity = 1 → Buffer set B is active (pxB, pyB, vxB, vyB, speciesB, denB)
+#
 
 proc setActiveParity*(parity: int) {.exportc.} =
-  ## Set the active parity. Used by grid building to flip buffers after sorting.
-  ## parity - 0 for buffer set A, 1 for buffer set B
+  ## Set the active parity. Used by grid.buildGrid() after scatter completes.
+  ##
+  ## parity: 0 for buffer set A, 1 for buffer set B
+  ##
+  ## WASM path: Called after grid scatter to flip to the newly-written buffer.
+  ## WebGPU path: Typically not called (parity stays at 0).
+  ##
+  assert parity in {0, 1}, "Parity must be 0 or 1, got: " & $parity
   activeParity = parity
 

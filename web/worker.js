@@ -2,6 +2,8 @@
 var framePtr = null;
 var excHandler = 0;
 var lastJSError = null;
+var NTI33554435 = {size: 0,kind: 31,base: null,node: null,finalizer: null};
+var NTI1107296279 = {size: 0, kind: 18, base: null, node: null, finalizer: null};
 var NTI33555167 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI33555175 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
 var NTI33554449 = {size: 0,kind: 28,base: null,node: null,finalizer: null};
@@ -31,6 +33,9 @@ NTI33555171.base = NTI33555167;
 NTI33555172.base = NTI33555171;
 NTI134217741.base = NTI33555172;
 NTI134217743.base = NTI134217741;
+var NNI1107296279 = {kind: 2, len: 2, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "Field0", len: 0, typ: NTI33554435, name: "Field0", sons: null}, 
+{kind: 1, offset: "Field1", len: 0, typ: NTI33554435, name: "Field1", sons: null}]};
+NTI1107296279.node = NNI1107296279;
 
 function isObj(obj_p0, subclass_p1) {
   var result_33557457 = false;
@@ -151,6 +156,123 @@ function mulInt(a_p0, b_p1) {
 
   
 }
+
+function setConstr() {
+        var result = {};
+    for (var i = 0; i < arguments.length; ++i) {
+      var x = arguments[i];
+      if (typeof(x) == "object") {
+        for (var j = x[0]; j <= x[1]; ++j) {
+          result[j] = true;
+        }
+      } else {
+        result[x] = true;
+      }
+    }
+    return result;
+  
+
+  
+}
+var ConstSet1 = setConstr(17, 16, 4, 18, 27, 19, 23, 22, 21);
+
+function nimCopy(dest_p0, src_p1, ti_p2) {
+  var result_33557344 = null;
+
+    switch (ti_p2.kind) {
+    case 21:
+    case 22:
+    case 23:
+    case 5:
+      if (!(isFatPointer__system_u2892(ti_p2))) {
+      result_33557344 = src_p1;
+      }
+      else {
+        result_33557344 = [src_p1[0], src_p1[1]];
+      }
+      
+      break;
+    case 19:
+            if (dest_p0 === null || dest_p0 === undefined) {
+        dest_p0 = {};
+      }
+      else {
+        for (var key in dest_p0) { delete dest_p0[key]; }
+      }
+      for (var key in src_p1) { dest_p0[key] = src_p1[key]; }
+      result_33557344 = dest_p0;
+    
+      break;
+    case 18:
+    case 17:
+      if (!((ti_p2.base == null))) {
+      result_33557344 = nimCopy(dest_p0, src_p1, ti_p2.base);
+      }
+      else {
+      if ((ti_p2.kind == 17)) {
+      result_33557344 = (dest_p0 === null || dest_p0 === undefined) ? {m_type: ti_p2} : dest_p0;
+      }
+      else {
+        result_33557344 = (dest_p0 === null || dest_p0 === undefined) ? {} : dest_p0;
+      }
+      }
+      nimCopyAux(result_33557344, src_p1, ti_p2.node);
+      break;
+    case 4:
+    case 16:
+            if(ArrayBuffer.isView(src_p1)) { 
+        if(dest_p0 === null || dest_p0 === undefined || dest_p0.length != src_p1.length) {
+          dest_p0 = new src_p1.constructor(src_p1);
+        } else {
+          dest_p0.set(src_p1, 0);
+        }
+        result_33557344 = dest_p0;
+      } else {
+        if (src_p1 === null) {
+          result_33557344 = null;
+        }
+        else {
+          if (dest_p0 === null || dest_p0 === undefined || dest_p0.length != src_p1.length) {
+            dest_p0 = new Array(src_p1.length);
+          }
+          result_33557344 = dest_p0;
+          for (var i = 0; i < src_p1.length; ++i) {
+            result_33557344[i] = nimCopy(result_33557344[i], src_p1[i], ti_p2.base);
+          }
+        }
+      }
+    
+      break;
+    case 24:
+    case 27:
+            if (src_p1 === null) {
+        result_33557344 = null;
+      }
+      else {
+        if (dest_p0 === null || dest_p0 === undefined || dest_p0.length != src_p1.length) {
+          dest_p0 = new Array(src_p1.length);
+        }
+        result_33557344 = dest_p0;
+        for (var i = 0; i < src_p1.length; ++i) {
+          result_33557344[i] = nimCopy(result_33557344[i], src_p1[i], ti_p2.base);
+        }
+      }
+    
+      break;
+    case 28:
+            if (src_p1 !== null) {
+        result_33557344 = src_p1.slice(0);
+      }
+    
+      break;
+    default: 
+      result_33557344 = src_p1;
+      break;
+    }
+
+  return result_33557344;
+
+}
 var objectID_788529330 = [0];
 
 function add__system_u1954(x_p0, x_p0_Idx, y_p1) {
@@ -246,47 +368,132 @@ function checkOverflowInt(a_p0) {
   
 }
 
-function asFloat__worker_u32(bits_p0) {
-  var result_587202594 = 0.0;
+function isFatPointer__system_u2892(ti_p0) {
+  var result_33557326 = false;
 
   BeforeRet: {
-    intConvArr_587202591[0][0] = bits_p0;
-    result_587202594 = floatConvArr_587202590[0][0];
+    result_33557326 = !((ConstSet1[ti_p0.base.kind] != undefined));
     break BeforeRet;
   };
 
-  return result_587202594;
+  return result_33557326;
 
 }
 
-function workLoop__worker_u52() {
+function nimCopyAux(dest_p0, src_p1, n_p2) {
+    switch (n_p2.kind) {
+    case 0:
+      break;
+    case 1:
+            dest_p0[n_p2.offset] = nimCopy(dest_p0[n_p2.offset], src_p1[n_p2.offset], n_p2.typ);
+    
+      break;
+    case 2:
+          for (var i = 0; i < n_p2.sons.length; i++) {
+      nimCopyAux(dest_p0, src_p1, n_p2.sons[i]);
+    }
+    
+      break;
+    case 3:
+            dest_p0[n_p2.offset] = nimCopy(dest_p0[n_p2.offset], src_p1[n_p2.offset], n_p2.typ);
+      for (var i = 0; i < n_p2.sons.length; ++i) {
+        nimCopyAux(dest_p0, src_p1, n_p2.sons[i][1]);
+      }
+    
+      break;
+    }
+
+  
+}
+
+function workerRangeOffset__sync95protocol_u25(workerIndex_p0) {
+  var result_1107296285 = {Field0: 0, Field1: 0};
+
+    var base_1107296286 = addInt(2, mulInt(workerIndex_p0, 2));
+    var colontmp__587202905 = base_1107296286;
+    var colontmp__587202906 = addInt(base_1107296286, 1);
+    result_1107296285 = nimCopy(result_1107296285, {Field0: colontmp__587202905, Field1: colontmp__587202906}, NTI1107296279);
+
+  return result_1107296285;
+
+}
+
+function asFloat__worker_u33(bits_p0) {
+  var result_587202595 = 0.0;
+
+  BeforeRet: {
+    intConvArr_587202592[0][0] = bits_p0;
+    result_587202595 = floatConvArr_587202591[0][0];
+    break BeforeRet;
+  };
+
+  return result_587202595;
+
+}
+
+function configOffset__sync95protocol_u50(workerCount_p0) {
+  var result_1107296308 = 0;
+
+    result_1107296308 = addInt(2, mulInt(workerCount_p0, 2));
+
+  return result_1107296308;
+
+}
+
+function configFieldIndex__sync95protocol_u53(workerCount_p0, field_p1) {
+  var result_1107296312 = 0;
+
+    result_1107296312 = addInt(configOffset__sync95protocol_u50(workerCount_p0), field_p1);
+
+  return result_1107296312;
+
+}
+
+function doneOffset__sync95protocol_u61(workerCount_p0) {
+  var result_1107296319 = 0;
+
+    result_1107296319 = addInt(configOffset__sync95protocol_u50(workerCount_p0), 16);
+
+  return result_1107296319;
+
+}
+
+function doneFlagIndex__sync95protocol_u64(workerCount_p0, workerIndex_p1) {
+  var result_1107296323 = 0;
+
+    result_1107296323 = addInt(doneOffset__sync95protocol_u61(workerCount_p0), workerIndex_p1);
+
+  return result_1107296323;
+
+}
+
+function workLoop__worker_u53() {
           var Temporary3;
           var Temporary4;
 
-    var lastFrame_587202613 = 0;
+    var lastFrame_587202614 = 0;
     Label1: {
         Label2: while (true) {
         if (!true) break Label2;
-          (Atomics.wait(syncBuffer_587202588[0], 0, lastFrame_587202613));
-          lastFrame_587202613 = Atomics.load(syncBuffer_587202588[0], 0);
-          var workerCount_587202614 = syncBuffer_587202588[0][1];
-          var baseIdx_587202615 = addInt(2, mulInt(((myIndex_587202585[0]) | 0), 2));
-          var startIdx_587202616 = ((syncBuffer_587202588[0][baseIdx_587202615]) | 0);
-          var endIdx_587202617 = ((syncBuffer_587202588[0][addInt(baseIdx_587202615, 1)]) | 0);
-          var configOffset_587202618 = addInt(2, mulInt(workerCount_587202614, 2));
-          var W_587202619 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 0)]);
-          var H_587202620 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 1)]);
-          var rMax_587202621 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 2)]);
-          var gridW_587202622 = ((syncBuffer_587202588[0][addInt(configOffset_587202618, 3)]) | 0);
-          var gridH_587202623 = ((syncBuffer_587202588[0][addInt(configOffset_587202618, 4)]) | 0);
-          var fMul_587202624 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 6)]);
-          var dt_587202625 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 7)]);
-          var mouseX_587202626 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 8)]);
-          var mouseY_587202627 = asFloat__worker_u32(syncBuffer_587202588[0][addInt(configOffset_587202618, 9)]);
-          var mouseDown_587202628 = !((syncBuffer_587202588[0][addInt(configOffset_587202618, 10)] == 0));
-          var mouseRightDown_587202629 = !((syncBuffer_587202588[0][addInt(configOffset_587202618, 11)] == 0));
-          var bufferParity_587202630 = ((syncBuffer_587202588[0][addInt(configOffset_587202618, 12)]) | 0);
-          var particleCount_587202631 = ((syncBuffer_587202588[0][addInt(configOffset_587202618, 13)]) | 0);
+          (Atomics.wait(syncBuffer_587202589[0], 0, lastFrame_587202614));
+          lastFrame_587202614 = Atomics.load(syncBuffer_587202589[0], 0);
+          var workerCount_587202615 = syncBuffer_587202589[0][1];
+          var rangeOff_587202616 = workerRangeOffset__sync95protocol_u25(((myIndex_587202586[0]) | 0));
+          var startIdx_587202617 = ((syncBuffer_587202589[0][rangeOff_587202616.Field0]) | 0);
+          var endIdx_587202618 = ((syncBuffer_587202589[0][rangeOff_587202616.Field1]) | 0);
+          var W_587202619 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 0)]);
+          var H_587202620 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 1)]);
+          var rMax_587202621 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 2)]);
+          var gridW_587202622 = ((syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 3)]) | 0);
+          var gridH_587202623 = ((syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 4)]) | 0);
+          var fMul_587202624 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 6)]);
+          var dt_587202625 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 7)]);
+          var mouseX_587202626 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 8)]);
+          var mouseY_587202627 = asFloat__worker_u33(syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 9)]);
+          var mouseDown_587202628 = !((syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 10)] == 0));
+          var mouseRightDown_587202629 = !((syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 11)] == 0));
+          var bufferParity_587202630 = ((syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 12)]) | 0);
+          var particleCount_587202631 = ((syncBuffer_587202589[0][configFieldIndex__sync95protocol_u53(workerCount_587202615, 13)]) | 0);
           if (mouseDown_587202628) {
           Temporary3 = 1.0;
           }
@@ -303,10 +510,10 @@ function workLoop__worker_u52() {
           }
           
           var mouseRightDownVal_587202633 = Temporary4;
-          physicsStepRangeFn_587202587[0](startIdx_587202616, endIdx_587202617, particleCount_587202631, bufferParity_587202630, dt_587202625, W_587202619, H_587202620, rMax_587202621, fMul_587202624, gridW_587202622, gridH_587202623, mouseX_587202626, mouseY_587202627, mouseDownVal_587202632, mouseRightDownVal_587202633);
-          var doneOffset_587202634 = addInt(addInt(configOffset_587202618, 16), ((myIndex_587202585[0]) | 0));
-          (Atomics.store(syncBuffer_587202588[0], doneOffset_587202634, 1));
-          (Atomics.notify(syncBuffer_587202588[0], doneOffset_587202634));
+          physicsStepRangeFn_587202588[0](startIdx_587202617, endIdx_587202618, particleCount_587202631, bufferParity_587202630, dt_587202625, W_587202619, H_587202620, rMax_587202621, fMul_587202624, gridW_587202622, gridH_587202623, mouseX_587202626, mouseY_587202627, mouseDownVal_587202632, mouseRightDownVal_587202633);
+          var doneIdx_587202634 = doneFlagIndex__sync95protocol_u64(workerCount_587202615, ((myIndex_587202586[0]) | 0));
+          (Atomics.store(syncBuffer_587202589[0], doneIdx_587202634, 1));
+          (Atomics.notify(syncBuffer_587202589[0], doneIdx_587202634));
         }
     };
 
@@ -314,7 +521,7 @@ function workLoop__worker_u52() {
 }
 
 function initWasmAndStart__worker_u75(module_p0) {
-    wasmModule_587202586[0] = module_p0;
+    wasmModule_587202587[0] = module_p0;
     var argTypes_587202637 = ([]);
     Label1: {
       var i_587202642 = 0;
@@ -328,9 +535,9 @@ function initWasmAndStart__worker_u75(module_p0) {
           }
       };
     };
-    physicsStepRangeFn_587202587[0] = wasmModule_587202586[0].cwrap(("physicsStepRange"), (null), (argTypes_587202637));
-    console.log([(("WASM Worker ")), ((myIndex_587202585[0])), ((" initialized (zero-copy mode)"))]);
-    workLoop__worker_u52();
+    physicsStepRangeFn_587202588[0] = wasmModule_587202587[0].cwrap(("physicsStepRange"), (null), (argTypes_587202637));
+    console.log([(("WASM Worker ")), ((myIndex_587202586[0])), ((" initialized (zero-copy mode)"))]);
+    workLoop__worker_u53();
 
   
 }
@@ -341,13 +548,13 @@ function onMessage__worker_u202(e_p0) {
     var msg_587202764 = e_p0.data;
     var mType_587202769 = (msg_587202764["type"]);
     if ((mType_587202769 == "init")) {
-    myIndex_587202585[0] = (msg_587202764["workerIndex"]);
-    syncOffset_587202589[0] = (msg_587202764["syncOffset"]);
-    floatConvArr_587202590[0] = new Float32Array(1);
-    intConvArr_587202591[0] = new Int32Array(floatConvArr_587202590[0].buffer);
+    myIndex_587202586[0] = (msg_587202764["workerIndex"]);
+    syncOffset_587202590[0] = (msg_587202764["syncOffset"]);
+    floatConvArr_587202591[0] = new Float32Array(1);
+    intConvArr_587202592[0] = new Int32Array(floatConvArr_587202591[0].buffer);
     var wasmMemory_587202778 = msg_587202764["wasmMemory"];
     var buffer_587202779 = wasmMemory_587202778["buffer"];
-    syncBuffer_587202588[0] = new Int32Array(buffer_587202779, syncOffset_587202589[0], 256);
+    syncBuffer_587202589[0] = new Int32Array(buffer_587202779, syncOffset_587202590[0], 256);
     importScripts("/physics.js");
     var options_587202780 = ({});
     options_587202780["wasmMemory"] = wasmMemory_587202778;
@@ -360,12 +567,12 @@ function onMessage__worker_u202(e_p0) {
   
 }
 var Temporary1;
-var myIndex_587202585 = [0];
-var wasmModule_587202586 = [null];
-var physicsStepRangeFn_587202587 = [null];
-var syncBuffer_587202588 = [null];
-var syncOffset_587202589 = [0];
-var floatConvArr_587202590 = [null];
-var intConvArr_587202591 = [null];
+var myIndex_587202586 = [0];
+var wasmModule_587202587 = [null];
+var physicsStepRangeFn_587202588 = [null];
+var syncBuffer_587202589 = [null];
+var syncOffset_587202590 = [0];
+var floatConvArr_587202591 = [null];
+var intConvArr_587202592 = [null];
 Temporary1 = onMessage__worker_u202.bind(null); Temporary1.ClP_0 = onMessage__worker_u202; Temporary1.ClE_0 = null;
 self.onmessage = Temporary1;
