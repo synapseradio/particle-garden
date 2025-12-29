@@ -55,9 +55,9 @@ struct SimParams {
   gridH: u32,           // Grid height (cells)
   mouseX: f32,          // Mouse X position
   mouseY: f32,          // Mouse Y position
-  mouseDown: f32,       // Mouse button state (> 0.5 = down)
+  mouseDown: f32,       // Mouse left button state (> 0.5 = down)
+  mouseRightDown: f32,  // Mouse right button state (> 0.5 = down)
   particleCount: u32,   // Active particle count
-  _pad0: u32,           // Padding for alignment
   // Attraction matrix embedded in uniform (6x6 = 36 floats, packed as 9 vec4s)
   // WGSL uniform arrays require 16-byte aligned elements, so we use vec4<f32>
   // Row-major: to get matrix[i][j], use matrix[(i*6+j)/4][(i*6+j)%4]
@@ -220,8 +220,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     }
   }
 
-  // Mouse attraction (5x strength for strong gravity feel)
-  if (params.mouseDown > 0.5) {
+  // Mouse attraction/repulsion (5x strength for strong gravity feel)
+  if (params.mouseDown > 0.5 || params.mouseRightDown > 0.5) {
     var mdx = params.mouseX - xi;
     var mdy = params.mouseY - yi;
 
@@ -241,9 +241,19 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let md2 = mdx * mdx + mdy * mdy;
     if (md2 > 0.0 && md2 < MD2_LIMIT) {
       let md = sqrt(md2);
-      let mf = 2.5 * (1.0 - md / 300.0) / md;
-      fx += mdx * mf;
-      fy += mdy * mf;
+      let mf = 50.0 * (1.0 - md / 300.0) / md;
+
+      // Combine left (attraction) and right (repulsion)
+      var sign = 0.0;
+      if (params.mouseDown > 0.5) {
+        sign += 1.0;
+      }
+      if (params.mouseRightDown > 0.5) {
+        sign -= 1.0;
+      }
+
+      fx += mdx * mf * sign;
+      fy += mdy * mf * sign;
     }
   }
 
