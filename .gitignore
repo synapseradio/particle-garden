@@ -15,3 +15,5 @@ web/physics.wasm
 
 # macOS
 .DS_Store
+src/emergent_garden
+src/main
