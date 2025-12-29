@@ -15,37 +15,50 @@
 #
 # ==============================================================================
 
+# Avoid jsffi ambiguity by using std/jsffi directly for JsObject utilities
 import std/jsffi
+import bindings/typed_arrays
+import bindings/atomics
+import bindings/workers
 
 # ==============================================================================
-# SECTION 1: TYPE DEFINITIONS
+# SECTION 1: ADDITIONAL TYPE DEFINITIONS
 # ==============================================================================
 
 type
-  Int32Array* = ref object of JsObject
-  MessageEvent* = ref object of JsObject
-    data*: JsObject
+  WasmModule* = ref object of JsObject
+    ## WASM module returned by createPhysicsModule
 
 # ==============================================================================
-# SECTION 2: JAVASCRIPT FFI
+# SECTION 2: WASM MODULE FFI
 # ==============================================================================
 
-proc newInt32Array*(buffer: JsObject, byteOffset: int, length: int): Int32Array {.importjs: "new Int32Array(#, #, #)".}
-proc newFloat32Array*(size: int): JsObject {.importjs: "new Float32Array(#)".}
-proc newInt32ArrayFromFloat*(f32: JsObject): JsObject {.importjs: "new Int32Array(#.buffer)".}
+# Global variable that will hold the WASM createPhysicsModule function
+var createPhysicsModule {.importjs: "createPhysicsModule", nodecl.}: JsObject
 
-proc `[]`*(a: Int32Array, i: int): int32 {.importjs: "#[#]".}
-proc `[]=`*(a: Int32Array, i: int, v: int32) {.importjs: "#[#] = #".}
+proc cwrap*(module: WasmModule, name: cstring, returnType: cstring, argTypes: JsObject): JsObject {.importjs: "#.cwrap(#, #, #)".}
+  ## Wrap a C function exported from WASM for convenient calling
 
-proc atomicWait*(ta: Int32Array, index: int, value: int32) {.importjs: "Atomics.wait(#, #, #)".}
-proc atomicLoad*(ta: Int32Array, index: int): int32 {.importjs: "Atomics.load(#, #)".}
-proc atomicStore*(ta: Int32Array, index: int, value: int32) {.importjs: "Atomics.store(#, #, #)".}
-proc atomicNotify*(ta: Int32Array, index: int) {.importjs: "Atomics.notify(#, #)".}
+proc importScriptsWorker*(url: cstring) {.importjs: "importScripts(#)".}
+  ## Load a script into the worker's global scope
 
-proc importScripts*(url: cstring) {.importjs: "importScripts(#)".}
-proc then*(promise: JsObject, callback: proc(result: JsObject)) {.importjs: "#.then(#)".}
+# Promise.then for untyped Promise (JsObject)
+proc thenCallback*(promise: JsObject, callback: proc(result: JsObject)) {.importjs: "#.then(#)".}
+  ## Attach a then callback to a Promise-like object
 
-var self {.importjs: "self", nodecl.}: JsObject
+# Console logging
+proc consoleLog*(args: varargs[JsObject, toJs]) {.importjs: "console.log(@)".}
+  ## Log to console
+
+# JavaScript null value
+var jsNull* {.importjs: "null".}: JsObject
+
+# Object utilities
+proc newJsObject*(): JsObject {.importjs: "({})".}
+  ## Create an empty JavaScript object
+
+proc newJsArray*(): JsObject {.importjs: "([])".}
+  ## Create an empty JavaScript array
 
 # ==============================================================================
 # SECTION 3: WORKER STATE
@@ -53,44 +66,59 @@ var self {.importjs: "self", nodecl.}: JsObject
 
 var
   myIndex: int32
-  wasmModule: JsObject
+  wasmModule: WasmModule
   physicsStepRangeFn: JsObject
   syncBuffer: Int32Array
   syncOffset: int  # Byte offset of sync buffer in shared memory
 
-# Bit conversion buffers
-var floatConvArr: JsObject
-var intConvArr: JsObject
+# Bit conversion buffers - aliased views of the same ArrayBuffer
+var floatConvArr: Float32Array
+var intConvArr: Int32Array
 
 # ==============================================================================
 # SECTION 4: HELPER FUNCTIONS
 # ==============================================================================
 
-proc asFloat(bits: int32): float32 =
-  ## Reinterpret int32 bits as float32
-  {.emit: """
-  `floatConvArr`[0] = 0;
-  `intConvArr`[0] = `bits`;
-  return `floatConvArr`[0];
-  """.}
+proc asFloat(bits: int): float =
+  ## Reinterpret int32 bits as float32 using typed array aliasing.
+  ## Both arrays share the same underlying buffer, so writing to intConvArr
+  ## and reading from floatConvArr performs the bit reinterpretation.
+  intConvArr[0] = bits
+  return floatConvArr[0]
 
 # ==============================================================================
-# SECTION 5: MAIN WORK LOOP (ZERO-COPY)
+# SECTION 5: PHYSICS FUNCTION CALL
+# ==============================================================================
+
+# Direct call to the wrapped WASM function with 15 parameters
+# The function signature matches physicsStepRange in physics_wasm.nim:
+# proc physicsStepRange(startIdx, endIdx, particleCount, bufferParity: int32,
+#                       dt, W, H, rMax, fMul: float32,
+#                       gridW, gridH: int32,
+#                       mouseX, mouseY, mouseDown, mouseRightDown: float32)
+proc callPhysicsStepRange(fn: JsObject,
+                          startIdx, endIdx, particleCount, bufferParity: int32,
+                          dt, W, H, rMax, fMul: float,
+                          gridW, gridH: int32,
+                          mouseX, mouseY, mouseDownVal, mouseRightDownVal: float) {.importjs: "#(#, #, #, #, #, #, #, #, #, #, #, #, #, #, #)".}
+
+# ==============================================================================
+# SECTION 6: MAIN WORK LOOP (ZERO-COPY)
 # ==============================================================================
 
 proc workLoop() =
   ## Infinite loop: wait for frame signal, call WASM physics, signal done.
   ## NO DATA COPYING - WASM accesses shared memory directly.
-  var lastFrame: int32 = 0
+  var lastFrame: int = 0
 
   while true:
     # --- WAIT FOR FRAME ---
-    atomicWait(syncBuffer, 0, lastFrame)
+    discard atomicWait(syncBuffer, 0, lastFrame)
     lastFrame = atomicLoad(syncBuffer, 0)
 
     # --- READ CONFIGURATION ---
-    let workerCount = int32(syncBuffer[1])
-    let baseIdx = 2 + myIndex * 2
+    let workerCount = syncBuffer[1]
+    let baseIdx = 2 + int(myIndex) * 2
     let startIdx = int32(syncBuffer[baseIdx])
     let endIdx = int32(syncBuffer[baseIdx + 1])
 
@@ -105,42 +133,45 @@ proc workLoop() =
     let mouseX = asFloat(syncBuffer[configOffset + 8])
     let mouseY = asFloat(syncBuffer[configOffset + 9])
     let mouseDown = syncBuffer[configOffset + 10] != 0
-    let bufferParity = int32(syncBuffer[configOffset + 11])
-    let particleCount = int32(syncBuffer[configOffset + 12])
+    let mouseRightDown = syncBuffer[configOffset + 11] != 0
+    let bufferParity = int32(syncBuffer[configOffset + 12])
+    let particleCount = int32(syncBuffer[configOffset + 13])
 
     # --- CALL WASM PHYSICS (ZERO-COPY) ---
     # No uploads or downloads! WASM reads/writes shared memory directly.
-    {.emit: """
-    `physicsStepRangeFn`(
-      `startIdx`, `endIdx`, `particleCount`,
-      `bufferParity`,
-      `dt`, `W`, `H`, `rMax`, `fMul`,
-      `gridW`, `gridH`,
-      `mouseX`, `mouseY`, `mouseDown` ? 1.0 : 0.0
-    );
-    """.}
+    let mouseDownVal = if mouseDown: 1.0 else: 0.0
+    let mouseRightDownVal = if mouseRightDown: 1.0 else: 0.0
+    callPhysicsStepRange(physicsStepRangeFn,
+                         startIdx, endIdx, particleCount, bufferParity,
+                         dt, W, H, rMax, fMul,
+                         gridW, gridH,
+                         mouseX, mouseY, mouseDownVal, mouseRightDownVal)
 
     # --- SIGNAL COMPLETION ---
-    let doneOffset = configOffset + 16 + myIndex
-    atomicStore(syncBuffer, doneOffset, 1)
-    atomicNotify(syncBuffer, doneOffset)
+    let doneOffset = configOffset + 16 + int(myIndex)
+    discard atomicStore(syncBuffer, doneOffset, 1)
+    discard atomicNotify(syncBuffer, doneOffset)
 
 # ==============================================================================
-# SECTION 6: INITIALIZATION
+# SECTION 7: INITIALIZATION
 # ==============================================================================
 
 proc initWasmAndStart(module: JsObject) =
   ## Called when WASM module finishes loading.
-  wasmModule = module
+  wasmModule = cast[WasmModule](module)
 
-  # Create wrapped function for physicsStepRange (13 scalar parameters)
-  {.emit: """
-  var cwrapArgs = ['number','number','number','number',
-                   'number','number','number','number','number',
-                   'number','number','number','number','number'];
-  `physicsStepRangeFn` = `wasmModule`.cwrap('physicsStepRange', null, cwrapArgs);
-  console.log('WASM Worker ' + `myIndex` + ' initialized (zero-copy mode)');
-  """.}
+  # Create array of argument types for cwrap
+  let argTypes = newJsArray()
+  # 15 'number' arguments for physicsStepRange:
+  # startIdx, endIdx, particleCount, bufferParity,
+  # dt, W, H, rMax, fMul, gridW, gridH, mouseX, mouseY, mouseDown, mouseRightDown
+  for i in 0 ..< 15:
+    argTypes[i] = toJs("number")
+
+  # Wrap the C function for convenient calling
+  physicsStepRangeFn = wasmModule.cwrap(cstring"physicsStepRange", jsNull, argTypes)
+
+  consoleLog(toJs("WASM Worker "), toJs(myIndex), toJs(" initialized (zero-copy mode)"))
 
   workLoop()
 
@@ -150,26 +181,42 @@ proc onMessage(e: MessageEvent) =
   let mType = msg["type"].to(cstring)
 
   if mType == "init":
-    myIndex = msg.workerIndex.to(int32)
-    syncOffset = msg.syncOffset.to(int)
+    myIndex = msg["workerIndex"].to(int32)
+    syncOffset = msg["syncOffset"].to(int)
 
-    # Bit conversion buffers
+    # Create bit conversion buffers - aliased views of the same ArrayBuffer
+    # Writing to intConvArr and reading from floatConvArr performs bit reinterpretation
     floatConvArr = newFloat32Array(1)
-    intConvArr = newInt32ArrayFromFloat(floatConvArr)
+    intConvArr = newInt32Array(floatConvArr.buffer)
 
     # Create view into shared memory for sync buffer
-    let wasmMemory = msg.wasmMemory
+    let wasmMemory = msg["wasmMemory"]
     let buffer = wasmMemory["buffer"]
     syncBuffer = newInt32Array(buffer, syncOffset, 256)
 
     # Load WASM with the shared memory
-    importScripts("/physics.js")
-    {.emit: """
-    createPhysicsModule({ wasmMemory: `wasmMemory` }).then(`initWasmAndStart`);
-    """.}
+    importScriptsWorker(cstring"/physics.js")
+
+    # Create options object with wasmMemory
+    let options = newJsObject()
+    options["wasmMemory"] = wasmMemory
+
+    # Call createPhysicsModule(options).then(initWasmAndStart)
+    let promise = createPhysicsModule.call(options)
+    promise.thenCallback(initWasmAndStart)
+
+# ==============================================================================
+# SECTION 8: ADDITIONAL FFI FOR PROMISE AND ARRAY
+# ==============================================================================
+
+proc call*(fn: JsObject, arg: JsObject): JsObject {.importjs: "#(#)".}
+  ## Call a function with one argument
+
+proc `[]=`*(arr: JsObject, idx: int, val: JsObject) {.importjs: "#[#] = #".}
+  ## Set array element
 
 # ==============================================================================
 # ENTRY POINT
 # ==============================================================================
 
-self["onmessage"] = onMessage
+self.onmessage = onMessage
