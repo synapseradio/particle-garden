@@ -74,7 +74,7 @@ task all, "Build everything: worker, app, wasm, and native":
   exec "nim c " & wasmFlags & " --nimcache:./nimcache_wasm --compileOnly src/physics_wasm.nim"
   exec "emcc nimcache_wasm/*.c " & emccFlags
   echo "Building native app..."
-  exec "nim c " & nativeFlags & " src/emergent_garden.nim"
+  exec "nim c " & nativeFlags & " src/main.nim"
   exec "mv src/emergent_garden ./emergent_garden"
   echo "Build complete. Run with: ./emergent_garden"
 
@@ -91,6 +91,6 @@ task release, "Build everything with maximum optimization (no runtime checks)":
   exec "nim c " & wasmReleaseFlags & " --nimcache:./nimcache_wasm --compileOnly src/physics_wasm.nim"
   exec "emcc nimcache_wasm/*.c " & emccFlags
   echo "Building native app..."
-  exec "nim c " & nativeReleaseFlags & " src/emergent_garden.nim"
+  exec "nim c " & nativeReleaseFlags & " src/main.nim"
   exec "mv src/emergent_garden ./emergent_garden"
   echo "Release build complete. Run with: ./emergent_garden"

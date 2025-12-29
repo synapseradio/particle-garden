@@ -57,7 +57,7 @@ nimble wasm    # src/physics_wasm.nim -> web/physics.js + web/physics.wasm
 nimble build   # embeds web/* into the binary
 
 # Or build optimized release
-nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
+nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/main.nim
 ```
 
 ## Run
@@ -106,7 +106,7 @@ webui couldn't find a browser. Install Chrome, Firefox, or Edge.
 
 ### Port 8089 in use
 
-Edit `src/emergent_garden.nim` and change `PORT = 8089` to another port.
+Edit `src/main.nim` and change `PORT = 8089` to another port.
 
 ## Packaging
 
@@ -126,7 +126,7 @@ This will create `Goober Garden.app` which can be moved to `/Applications`.
    ```bash
    nimble worker
    nimble wasm
-   nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
+   nim c -d:release -d:danger --opt:speed src/main.nim
    ```
 2. The resulting `src/emergent_garden.exe` is a standalone executable (it embeds the web assets).
 3. You can distribute this single file.

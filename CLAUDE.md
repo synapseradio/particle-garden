@@ -25,7 +25,7 @@ nimble build
 
 For release builds:
 ```bash
-nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/emergent_garden.nim
+nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/main.nim
 ```
 
 ## Architecture
@@ -39,7 +39,7 @@ This is a native desktop wrapper for a particle life simulation that enables Sha
 **Why this design:** Browsers require Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers to enable SharedArrayBuffer. The Nim server provides these headers; webui handles the native window lifecycle.
 
 **Key files:**
-- `src/emergent_garden.nim` - HTTP server with COOP/COEP headers + webui window management
+- `src/main.nim` - HTTP server with COOP/COEP headers + webui window management
 - `src/physics_wasm.nim` - WASM physics module → `web/physics.js` + `web/physics.wasm` (via emscripten)
 - `src/worker.nim` - Web Worker source → `web/worker.js` (via `nim js`)
 - `web/` - Frontend modules (compiled from Nim via `nim js`)

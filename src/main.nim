@@ -43,20 +43,10 @@ const MimeTypes = {
 # Files are embedded at compile time via staticRead
 const StaticFiles = {
   "/index.html": staticRead("../web/index.html"),
-  "/main.js": staticRead("../web/main.js"),
-  "/config.js": staticRead("../web/config.js"),
-  "/buffers.js": staticRead("../web/buffers.js"),
-  "/renderer.js": staticRead("../web/renderer.js"),
-  "/grid.js": staticRead("../web/grid.js"),
-  "/ui.js": staticRead("../web/ui.js"),
-  # WASM physics (fallback when WebGPU unavailable)
+  "/app.js": staticRead("../web/app.js"),
   "/worker.js": staticRead("../web/worker.js"),
-  "/workers.js": staticRead("../web/workers.js"),
   "/physics.js": staticRead("../web/physics.js"),
   "/physics.wasm": staticRead("../web/physics.wasm"),
-  # WebGPU compute pipeline
-  "/webgpu-init.js": staticRead("../web/webgpu-init.js"),
-  "/webgpu-compute.js": staticRead("../web/webgpu-compute.js"),
   "/shaders/bin-count.wgsl": staticRead("../web/shaders/bin-count.wgsl"),
   "/shaders/prefix-sum.wgsl": staticRead("../web/shaders/prefix-sum.wgsl"),
   "/shaders/bin-scatter.wgsl": staticRead("../web/shaders/bin-scatter.wgsl"),
