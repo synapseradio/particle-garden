@@ -153,6 +153,9 @@ template gpuBuffers*(): untyped = webgpu_init.buffers
 # These are the canonical source of truth from the WGSL shader declarations.
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_COUNT* = 4
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_SUM* = 3
+const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL* = 4
+const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
+const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 5
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 9
 const EXPECTED_BIND_GROUP_ENTRIES_DENSITY* = 8
@@ -163,6 +166,9 @@ proc getExpectedEntryCount(passName: cstring): int =
   case $passName
   of "binCount": result = EXPECTED_BIND_GROUP_ENTRIES_BIN_COUNT
   of "prefixSum": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_SUM
+  of "prefixLocal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL
+  of "prefixBlocks": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS
+  of "prefixFinal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL
   of "binScatter": result = EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER
   of "forces": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES
   of "density": result = EXPECTED_BIND_GROUP_ENTRIES_DENSITY
@@ -367,7 +373,7 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
     "Bin Count Bind Group"
   )
 
-  # Pass 2: Prefix Sum
+  # Pass 2: Prefix Sum (legacy - sequential fallback)
   let prefixSumEntries = createJsArray()
   discard prefixSumEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
   discard prefixSumEntries.push(createBindGroupEntry(1, gpuBuffers["gridCounts"]))
@@ -379,6 +385,49 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
     cast[GPUBindGroupLayout](bindGroupLayouts["prefixSum"]),
     prefixSumEntries,
     "Prefix Sum Bind Group"
+  )
+
+  # Pass 2a: Prefix Local (parallel Blelloch scan within workgroups)
+  let prefixLocalEntries = createJsArray()
+  discard prefixLocalEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
+  discard prefixLocalEntries.push(createBindGroupEntry(1, gpuBuffers["gridCounts"]))
+  discard prefixLocalEntries.push(createBindGroupEntry(2, gpuBuffers["gridOffsets"]))
+  discard prefixLocalEntries.push(createBindGroupEntry(3, gpuBuffers["blockSums"]))
+
+  validateBindGroupEntryCount(prefixLocalEntries, "prefixLocal", "bind group creation")
+  bindGroups["prefixLocal"] = await createBindGroupWithValidation(
+    "Prefix Local",
+    cast[GPUBindGroupLayout](bindGroupLayouts["prefixLocal"]),
+    prefixLocalEntries,
+    "Prefix Local Bind Group"
+  )
+
+  # Pass 2b: Prefix Blocks (scan of block totals)
+  let prefixBlocksEntries = createJsArray()
+  discard prefixBlocksEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
+  discard prefixBlocksEntries.push(createBindGroupEntry(1, gpuBuffers["blockSums"]))
+  discard prefixBlocksEntries.push(createBindGroupEntry(2, gpuBuffers["blockOffsets"]))
+
+  validateBindGroupEntryCount(prefixBlocksEntries, "prefixBlocks", "bind group creation")
+  bindGroups["prefixBlocks"] = await createBindGroupWithValidation(
+    "Prefix Blocks",
+    cast[GPUBindGroupLayout](bindGroupLayouts["prefixBlocks"]),
+    prefixBlocksEntries,
+    "Prefix Blocks Bind Group"
+  )
+
+  # Pass 2c: Prefix Final (add block offsets to local results)
+  let prefixFinalEntries = createJsArray()
+  discard prefixFinalEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
+  discard prefixFinalEntries.push(createBindGroupEntry(1, gpuBuffers["gridOffsets"]))
+  discard prefixFinalEntries.push(createBindGroupEntry(2, gpuBuffers["blockOffsets"]))
+
+  validateBindGroupEntryCount(prefixFinalEntries, "prefixFinal", "bind group creation")
+  bindGroups["prefixFinal"] = await createBindGroupWithValidation(
+    "Prefix Final",
+    cast[GPUBindGroupLayout](bindGroupLayouts["prefixFinal"]),
+    prefixFinalEntries,
+    "Prefix Final Bind Group"
   )
 
   # Pass 3: Bin Scatter (index mapping only - no physical scatter)
@@ -540,6 +589,9 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     let binCountModule = await loadShader("./shaders/bin-count.wgsl", "Bin Count Shader")
     let prefixSumModule = await loadShader("./shaders/prefix-sum.wgsl", "Prefix Sum Shader")
+    let prefixLocalModule = await loadShader("./shaders/prefix-sum-local.wgsl", "Prefix Sum Local Shader")
+    let prefixBlocksModule = await loadShader("./shaders/prefix-sum-blocks.wgsl", "Prefix Sum Blocks Shader")
+    let prefixFinalModule = await loadShader("./shaders/prefix-sum-final.wgsl", "Prefix Sum Final Shader")
     let binScatterModule = await loadShader("./shaders/bin-scatter.wgsl", "Bin Scatter Shader")
     let forcesModule = await loadShader("./shaders/forces.wgsl", "Forces Shader")
     let densityModule = await loadShader("./shaders/density.wgsl", "Density Shader")
@@ -547,12 +599,15 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     shaderModules["binCount"] = cast[JsObject](binCountModule)
     shaderModules["prefixSum"] = cast[JsObject](prefixSumModule)
+    shaderModules["prefixLocal"] = cast[JsObject](prefixLocalModule)
+    shaderModules["prefixBlocks"] = cast[JsObject](prefixBlocksModule)
+    shaderModules["prefixFinal"] = cast[JsObject](prefixFinalModule)
     shaderModules["binScatter"] = cast[JsObject](binScatterModule)
     shaderModules["forces"] = cast[JsObject](forcesModule)
     shaderModules["density"] = cast[JsObject](densityModule)
     shaderModules["integrate"] = cast[JsObject](integrateModule)
 
-    consoleLog(("[PHASE: SHADER LOADING] Success - Shaders loaded: 6").toJs)
+    consoleLog(("[PHASE: SHADER LOADING] Success - Shaders loaded: 9").toJs)
 
     # =========================================================================
     # PHASE: UNIFORM BUFFER CREATION
@@ -583,6 +638,9 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     pipelines["binCount"] = await createPipelineWithValidation("Bin Count", binCountModule, "main")
     pipelines["prefixSum"] = await createPipelineWithValidation("Prefix Sum", prefixSumModule, "main")
+    pipelines["prefixLocal"] = await createPipelineWithValidation("Prefix Local", prefixLocalModule, "main")
+    pipelines["prefixBlocks"] = await createPipelineWithValidation("Prefix Blocks", prefixBlocksModule, "main")
+    pipelines["prefixFinal"] = await createPipelineWithValidation("Prefix Final", prefixFinalModule, "main")
     pipelines["binScatter"] = await createPipelineWithValidation("Bin Scatter", binScatterModule, "main")
     pipelines["forces"] = await createPipelineWithValidation("Forces", forcesModule, "computeForces")
     pipelines["density"] = await createPipelineWithValidation("Density", densityModule, "computeDensity")
@@ -594,6 +652,9 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     device.pushErrorScope("validation")
     bindGroupLayouts["binCount"] = cast[JsObject](cast[GPUComputePipeline](pipelines["binCount"]).getBindGroupLayout(0))
     bindGroupLayouts["prefixSum"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixSum"]).getBindGroupLayout(0))
+    bindGroupLayouts["prefixLocal"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixLocal"]).getBindGroupLayout(0))
+    bindGroupLayouts["prefixBlocks"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixBlocks"]).getBindGroupLayout(0))
+    bindGroupLayouts["prefixFinal"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixFinal"]).getBindGroupLayout(0))
     bindGroupLayouts["binScatter"] = cast[JsObject](cast[GPUComputePipeline](pipelines["binScatter"]).getBindGroupLayout(0))
     bindGroupLayouts["forces"] = cast[JsObject](cast[GPUComputePipeline](pipelines["forces"]).getBindGroupLayout(0))
     bindGroupLayouts["density"] = cast[JsObject](cast[GPUComputePipeline](pipelines["density"]).getBindGroupLayout(0))
@@ -606,6 +667,9 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     # Validate all layouts
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["binCount"]), "binCount")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixSum"]), "prefixSum")
+    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixLocal"]), "prefixLocal")
+    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixBlocks"]), "prefixBlocks")
+    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixFinal"]), "prefixFinal")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["binScatter"]), "binScatter")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["forces"]), "forces")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["density"]), "density")
@@ -618,8 +682,8 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     let resultObj = createJsObject()
     resultObj["success"] = true.toJs
     let infoObj = createJsObject()
-    infoObj["shaderCount"] = 6.toJs
-    infoObj["pipelineCount"] = 6.toJs
+    infoObj["shaderCount"] = 9.toJs
+    infoObj["pipelineCount"] = 9.toJs
     resultObj["info"] = infoObj
     return resultObj
 
@@ -679,8 +743,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["gridParams"]), 0, gridParamsData)
 
   # Scan parameters (used by prefix-sum)
+  # struct ScanParams { numCells: u32, numBlocks: u32, padding1: u32, padding2: u32 }
+  let numBlocksForScan = jsCeil(numCells.float / 256.0)  # 256 = prefix sum block size
   let scanParamsData = newUint32Array(4)
   scanParamsData[0] = numCells
+  scanParamsData[1] = numBlocksForScan
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
   # Simulation parameters (used by forces)
@@ -750,9 +817,35 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   gridBuildPass.dispatchWorkgroups(particleWorkgroups)
 
   # Pass 2: Prefix Sum
-  gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixSum"]))
-  gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixSum"]))
-  gridBuildPass.dispatchWorkgroups(1)
+  # Toggle between parallel (Blelloch) and sequential implementations
+  const USE_PARALLEL_PREFIX_SUM = true  # Set to true for parallel, false for sequential
+
+  when USE_PARALLEL_PREFIX_SUM:
+    # Parallel Prefix Sum (3-pass Blelloch algorithm)
+    # - Each workgroup processes 256 cells
+    # - numBlocks = ceil(numCells / 256)
+    let prefixBlockSize = 256
+    let numBlocks = jsCeil(numCells.float / prefixBlockSize.float)
+
+    # Pass 2a: Local scan within workgroups
+    gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixLocal"]))
+    gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixLocal"]))
+    gridBuildPass.dispatchWorkgroups(numBlocks)
+
+    # Pass 2b: Scan block totals (single workgroup)
+    gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixBlocks"]))
+    gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixBlocks"]))
+    gridBuildPass.dispatchWorkgroups(1)
+
+    # Pass 2c: Add block offsets to local results
+    gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixFinal"]))
+    gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixFinal"]))
+    gridBuildPass.dispatchWorkgroups(numBlocks)
+  else:
+    # Sequential Prefix Sum (single-threaded fallback)
+    gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixSum"]))
+    gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixSum"]))
+    gridBuildPass.dispatchWorkgroups(1)
 
   gridBuildPass.endPass()
 
@@ -808,16 +901,14 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let denCPU = if parity == 0: cpuBuffers.denA else: cpuBuffers.denB
   let speciesCPU = if parity == 0: cpuBuffers.speciesA else: cpuBuffers.speciesB
 
-  # Create staging buffers for readback
+  # Use pre-created staging buffers (created once at init, reused every frame)
   let bytesPerParticle = particleCount * 4
-  let stagingUsage = bitwiseOr(gpuBufferUsageCopyDst, gpuBufferUsageMapRead)
-
-  let stagingPx = device.createBufferLabeled(bytesPerParticle, stagingUsage, "Staging Buffer (px)")
-  let stagingPy = device.createBufferLabeled(bytesPerParticle, stagingUsage, "Staging Buffer (py)")
-  let stagingVx = device.createBufferLabeled(bytesPerParticle, stagingUsage, "Staging Buffer (vx)")
-  let stagingVy = device.createBufferLabeled(bytesPerParticle, stagingUsage, "Staging Buffer (vy)")
-  let stagingDen = device.createBufferLabeled(bytesPerParticle, stagingUsage, "Staging Buffer (den)")
-  let stagingSpecies = device.createBufferLabeled(bytesPerParticle, stagingUsage, "Staging Buffer (species)")
+  let stagingPx = cast[GPUBuffer](gpuBuffers["stagingPx"])
+  let stagingPy = cast[GPUBuffer](gpuBuffers["stagingPy"])
+  let stagingVx = cast[GPUBuffer](gpuBuffers["stagingVx"])
+  let stagingVy = cast[GPUBuffer](gpuBuffers["stagingVy"])
+  let stagingDen = cast[GPUBuffer](gpuBuffers["stagingDen"])
+  let stagingSpecies = cast[GPUBuffer](gpuBuffers["stagingSpecies"])
 
   # Encode copy commands
   commandEncoder.copyBufferToBuffer(cast[GPUBuffer](pxGPU), 0, stagingPx, 0, bytesPerParticle)
@@ -866,20 +957,13 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # No parity flip needed - the same buffer that was written is read by renderer.
   # This differs from WASM path which scatters to opposite buffer and flips.
 
-  # Unmap and destroy staging buffers
+  # Unmap staging buffers (will be reused next frame)
   stagingPx.unmap()
   stagingPy.unmap()
   stagingVx.unmap()
   stagingVy.unmap()
   stagingDen.unmap()
   stagingSpecies.unmap()
-
-  stagingPx.destroy()
-  stagingPy.destroy()
-  stagingVx.destroy()
-  stagingVy.destroy()
-  stagingDen.destroy()
-  stagingSpecies.destroy()
 
 # ==============================================================================
 # SECTION 10: INITIAL DATA UPLOAD

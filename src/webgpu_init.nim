@@ -59,6 +59,15 @@ type
     sync* {.importjs: "sync".}: GPUBuffer
     sortedIndices* {.importjs: "sortedIndices".}: GPUBuffer
     fillPointers* {.importjs: "fillPointers".}: GPUBuffer
+    blockSums* {.importjs: "blockSums".}: GPUBuffer
+    blockOffsets* {.importjs: "blockOffsets".}: GPUBuffer
+    # Staging buffers for GPU->CPU readback (reused every frame)
+    stagingPx* {.importjs: "stagingPx".}: GPUBuffer
+    stagingPy* {.importjs: "stagingPy".}: GPUBuffer
+    stagingVx* {.importjs: "stagingVx".}: GPUBuffer
+    stagingVy* {.importjs: "stagingVy".}: GPUBuffer
+    stagingDen* {.importjs: "stagingDen".}: GPUBuffer
+    stagingSpecies* {.importjs: "stagingSpecies".}: GPUBuffer
 
   InitResult* = ref object of JsObject
     success* {.importjs: "success".}: bool
@@ -340,6 +349,23 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   # Initialized from gridOffsets before bin-scatter, then incremented per particle.
   # This is separate from gridCounts because forces needs the original counts.
   buffers.fillPointers = createBuf(sizes.gridOffsets, bufferUsage, "Fill Pointers Buffer")
+
+  # Parallel prefix-sum intermediate buffers
+  # 256 workgroups max (65536 cells / 256 per workgroup), each stores a u32
+  let blockSumsSize = 256 * 4  # 256 blocks * 4 bytes per u32
+  buffers.blockSums = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Totals")
+  buffers.blockOffsets = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Offsets")
+
+  # Staging buffers for GPU->CPU readback (reused every frame to avoid allocation)
+  # Usage: COPY_DST (receive GPU copies) | MAP_READ (CPU can read)
+  let stagingUsage = bitwiseOr(gpuBufferUsageCopyDst, gpuBufferUsageMapRead)
+  let stagingSize = sizes.position div 2  # Same size as position buffers (per buffer set)
+  buffers.stagingPx = createBuf(stagingSize, stagingUsage, "Staging Px")
+  buffers.stagingPy = createBuf(stagingSize, stagingUsage, "Staging Py")
+  buffers.stagingVx = createBuf(stagingSize, stagingUsage, "Staging Vx")
+  buffers.stagingVy = createBuf(stagingSize, stagingUsage, "Staging Vy")
+  buffers.stagingDen = createBuf(sizes.density, stagingUsage, "Staging Density")
+  buffers.stagingSpecies = createBuf(sizes.species, stagingUsage, "Staging Species")
 
   let bufferCount = jsObjectLength(cast[JsObject](buffers))
   {.emit: "console.log('WebGPU buffers created:', `bufferCount`, 'buffers');".}
