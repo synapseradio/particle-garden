@@ -47,6 +47,9 @@ export webgpu_init
 import webgpu_compute
 export webgpu_compute
 
+import webgpu_render
+export webgpu_render
+
 # ==============================================================================
 # BINDINGS - Helper procs
 # ==============================================================================
@@ -81,6 +84,20 @@ proc bitwiseOr(x: float, y: int): int {.importjs: "(#|#)".}
 var particleCount* {.exportc.}: int = 0
 var isRunning* {.exportc.}: bool = false
 var useWebGPU* {.exportc.}: bool = false
+var useWebGPURender* {.exportc.}: bool = false  # WebGPU rendering (no readback)
+
+# Canvas dimension helpers - use correct canvas based on active renderer
+proc canvasWidth*(): int =
+  if useWebGPURender:
+    webgpu_render.canvas.width
+  else:
+    renderer.canvas["width"].to(int)
+
+proc canvasHeight*(): int =
+  if useWebGPURender:
+    webgpu_render.canvas.height
+  else:
+    renderer.canvas["height"].to(int)
 
 # Timing and stats
 var lastTime {.exportc.}: float = 0
@@ -119,8 +136,8 @@ proc initParticles*() {.exportc.} =
   let ns = config.CONFIG.speciesCount
 
   # Get canvas dimensions
-  let W = float(renderer.canvas.width)
-  let H = float(renderer.canvas.height)
+  let W = float(canvasWidth())
+  let H = float(canvasHeight())
 
   # Initialize buffer A as starting point
   for i in 0 ..< particleCount:
@@ -163,7 +180,7 @@ proc physics(dt: float): Future[void] {.async.} =
     # ═══════════════════════════════════════════════════════════════════════
 
     # Only compute grid dimensions - no CPU sorting
-    let gridResult = grid.computeGridDimensions(renderer.canvas.width, renderer.canvas.height)
+    let gridResult = grid.computeGridDimensions(canvasWidth(), canvasHeight())
     gridTimeMs = 0  # Grid built on GPU
 
     let tPhysics0 = performanceNow()
@@ -172,8 +189,8 @@ proc physics(dt: float): Future[void] {.async.} =
     let params = makeJsObject()
     params["dt"] = toJs(dt)
     params["particleCount"] = toJs(particleCount)
-    params["width"] = toJs(renderer.canvas.width)
-    params["height"] = toJs(renderer.canvas.height)
+    params["width"] = toJs(canvasWidth())
+    params["height"] = toJs(canvasHeight())
     params["gridW"] = gridResult["gridW"]
     params["gridH"] = gridResult["gridH"]
     params["rMax"] = toJs(config.CONFIG.interactionRadius)
@@ -199,7 +216,7 @@ proc physics(dt: float): Future[void] {.async.} =
 
     # Phase 1: Build spatial grid - sorts particles by cell and flips parity
     let tGrid0 = performanceNow()
-    let gridResult = grid.buildGrid(particleCount, renderer.canvas.width, renderer.canvas.height)
+    let gridResult = grid.buildGrid(particleCount, canvasWidth(), canvasHeight())
     gridTimeMs = performanceNow() - tGrid0
 
     # Phase 2: Dispatch to WASM workers - they compute velocity deltas
@@ -207,8 +224,8 @@ proc physics(dt: float): Future[void] {.async.} =
     await workers.dispatchPhysicsShared(
       dt,
       particleCount,
-      float(renderer.canvas.width),
-      float(renderer.canvas.height),
+      float(canvasWidth()),
+      float(canvasHeight()),
       gridResult["gridW"].to(int),
       gridResult["gridH"].to(int),
       float(gridResult["cellSize"].to(int)),
@@ -231,8 +248,8 @@ proc physics(dt: float): Future[void] {.async.} =
     let vxDeltaArr = buffers.vxDelta
     let vyDeltaArr = buffers.vyDelta
 
-    let W = toJs(renderer.canvas.width)
-    let H = toJs(renderer.canvas.height)
+    let W = toJs(canvasWidth())
+    let H = toJs(canvasHeight())
     let friction = toJs(1.0 - config.CONFIG.friction)
     let zero = toJs(0)
 
@@ -281,7 +298,16 @@ proc loop(now: float): Future[void] {.async.} =
 
   await physics(dt)
 
-  let renderTiming = renderer.render(particleCount)
+  # Render using WebGPU (zero readback) or WebGL (requires readback)
+  var renderTiming: JsObject
+  if useWebGPURender:
+    # WebGPU render path - data stays on GPU, no readback needed
+    # Update bind group to use correct buffer set based on parity
+    webgpu_render.updateBindGroup(buffers.activeParity)
+    renderTiming = webgpu_render.render(particleCount).toJs
+  else:
+    # WebGL render path - requires CPU data (from readback or WASM workers)
+    renderTiming = renderer.render(particleCount)
   renderPackTimeMs = renderTiming["packTimeMs"].to(float)
   renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
 
@@ -326,21 +352,7 @@ proc init(): Future[void] {.async, exportc.} =
   # Allocate shared memory buffers
   buffers.allocateBuffers()
 
-  # Initialize WebGL
-  if not renderer.initGL():
-    return
-
-  # Set up callbacks for UI events
-  ui.setInitParticlesCallback(initParticles)
-  ui.setResizeCallback(renderer.resize)
-
-  # Set up UI bindings
-  ui.setupUI()
-
-  # Set up event handlers (pass canvas from renderer)
-  ui.setupEvents(renderer.canvas)
-
-  # Try to initialize WebGPU (optional acceleration)
+  # Try WebGPU first (must be done BEFORE WebGL since they share the canvas)
   consoleLog(toJs("Attempting WebGPU initialization..."))
   let webgpuResult = await webgpu_init.initWebGPU()
   if webgpuResult["success"].to(bool):
@@ -351,12 +363,40 @@ proc init(): Future[void] {.async, exportc.} =
       consoleLog(toJs("WebGPU compute pipelines ready:"), pipelineResult["info"])
       useWebGPU = true
       consoleLog(toJs("Physics acceleration: WebGPU compute shaders"))
+
+      # Initialize WebGPU render pipeline (zero-readback rendering)
+      # MUST be done before WebGL since canvas can only have one context type
+      consoleLog(toJs("Initializing WebGPU render pipeline..."))
+      if webgpu_render.initWebGPURender():
+        useWebGPURender = true
+        consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
+      else:
+        consoleLog(toJs("WebGPU rendering: DISABLED (will use WebGL fallback)"))
     else:
       consoleWarn(toJs("WebGPU pipeline initialization failed:"), pipelineResult["error"])
       consoleLog(toJs("Falling back to WASM workers"))
   else:
     consoleWarn(toJs("WebGPU not available:"), webgpuResult["error"])
     consoleLog(toJs("Using WASM workers for physics"))
+
+  # Initialize WebGL (only if WebGPU rendering not available)
+  if not useWebGPURender:
+    if not renderer.initGL():
+      return
+
+  # Set up callbacks for UI events
+  ui.setInitParticlesCallback(initParticles)
+
+  # Use appropriate resize callback and canvas
+  if useWebGPURender:
+    ui.setResizeCallback(webgpu_render.resize)
+    ui.setupEvents(cast[JsObject](webgpu_render.canvas))
+  else:
+    ui.setResizeCallback(renderer.resize)
+    ui.setupEvents(renderer.canvas)
+
+  # Set up UI bindings
+  ui.setupUI()
 
   # Set matrix update callback
   ui.setMatrixUpdateCallback(proc() = workers.updateWorkersMatrix())

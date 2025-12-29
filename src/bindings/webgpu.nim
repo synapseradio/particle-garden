@@ -643,3 +643,77 @@ type
 # This allows existing code using JsObject for buffers to continue working
 converter toJsObject*(buffer: GPUBuffer): JsObject = cast[JsObject](buffer)
 converter toGPUBuffer*(obj: JsObject): GPUBuffer = cast[GPUBuffer](obj)
+
+# ==============================================================================
+# SECTION 24: WEBGPU CANVAS CONTEXT
+# ==============================================================================
+
+type
+  GPUCanvasContext* = ref object of JsObject
+    ## WebGPU canvas context for rendering
+
+  GPUTexture* = ref object of JsObject
+    ## GPU texture resource
+
+  GPUTextureView* = ref object of JsObject
+    ## View into a GPU texture
+
+  GPURenderPipeline* = ref object of JsObject
+    ## Render pipeline for graphics operations
+
+  GPURenderPassEncoder* = ref object of JsObject
+    ## Encoder for render pass commands
+
+proc getContextWebGPU*(canvas: JsObject): GPUCanvasContext {.importjs: "#.getContext('webgpu')".}
+  ## Get WebGPU context from canvas
+
+proc configure*(context: GPUCanvasContext, config: JsObject) {.importjs: "#.configure(#)".}
+  ## Configure the canvas context
+
+proc getCurrentTexture*(context: GPUCanvasContext): GPUTexture {.importjs: "#.getCurrentTexture()".}
+  ## Get the current texture to render to
+
+proc createView*(texture: GPUTexture): GPUTextureView {.importjs: "#.createView()".}
+  ## Create a view of the texture
+
+proc getPreferredCanvasFormat*(): cstring {.importjs: "navigator.gpu.getPreferredCanvasFormat()".}
+  ## Get the preferred canvas format for the current GPU
+
+# ==============================================================================
+# SECTION 25: RENDER PIPELINE
+# ==============================================================================
+
+proc createRenderPipeline*(device: GPUDevice, descriptor: JsObject): GPURenderPipeline {.importjs: "#.createRenderPipeline(#)".}
+  ## Create a render pipeline
+
+proc getBindGroupLayout*(pipeline: GPURenderPipeline, index: int): GPUBindGroupLayout {.importjs: "#.getBindGroupLayout(#)".}
+  ## Get the bind group layout at the given index
+
+# ==============================================================================
+# SECTION 26: RENDER PASS
+# ==============================================================================
+
+proc beginRenderPass*(encoder: GPUCommandEncoder, descriptor: JsObject): GPURenderPassEncoder {.importjs: "#.beginRenderPass(#)".}
+  ## Begin a render pass
+
+proc setPipeline*(pass: GPURenderPassEncoder, pipeline: GPURenderPipeline) {.importjs: "#.setPipeline(#)".}
+  ## Set the render pipeline
+
+proc setBindGroup*(pass: GPURenderPassEncoder, index: int, bindGroup: GPUBindGroup) {.importjs: "#.setBindGroup(#, #)".}
+  ## Set a bind group for the render pass
+
+proc draw*(pass: GPURenderPassEncoder, vertexCount: int, instanceCount: int, firstVertex: int, firstInstance: int) {.importjs: "#.draw(#, #, #, #)".}
+  ## Draw primitives
+
+proc endPass*(pass: GPURenderPassEncoder) {.importjs: "#.end()".}
+  ## End the render pass
+
+# ==============================================================================
+# SECTION 27: SHADER STAGE FLAGS
+# ==============================================================================
+
+var gpuShaderStageVertex* {.importjs: "GPUShaderStage.VERTEX", nodecl.}: int
+  ## Vertex shader stage flag
+
+var gpuShaderStageFragment* {.importjs: "GPUShaderStage.FRAGMENT", nodecl.}: int
+  ## Fragment shader stage flag

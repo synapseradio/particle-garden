@@ -2,6 +2,7 @@
 var framePtr = null;
 var excHandler = 0;
 var lastJSError = null;
+var NTI1409286148 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI134217753 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI33555173 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI134217742 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
@@ -767,6 +768,10 @@ NTI33555173.base = NTI33555171;
 var NNI134217753 = {kind: 2, len: 0, offset: 0, typ: null, name: null, sons: []};
 NTI134217753.node = NNI134217753;
 NTI134217753.base = NTI33555172;
+var NNI1409286148 = {kind: 2, len: 2, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "packTimeMs", len: 0, typ: NTI33554445, name: "packTimeMs", sons: null}, 
+{kind: 1, offset: "uploadTimeMs", len: 0, typ: NTI33554445, name: "uploadTimeMs", sons: null}]};
+NTI1409286148.node = NNI1409286148;
+NTI1409286148.base = NTI738197610;
 
 function isObj(obj_p0, subclass_p1) {
   var result_33557457 = false;
@@ -2599,64 +2604,64 @@ window.randomizeMatrix = randomizeMatrix;
 
 
 function calculateBufferSizes() {
-  var result_1358954567 = null;
+  var result_1358954561 = null;
 
-    var floatSize_1358954568 = mulInt(MAX_PARTICLES, 4);
-    var gridCells_1358954569 = mulInt(MAX_GRID, MAX_GRID);
-    var speciesBufferSize_1358954570 = mulInt(MAX_PARTICLES, 4);
-    result_1358954567 = {m_type: NTI1358954505, position: 0, velocity: 0, density: 0, species: 0, velocityDelta: 0, gridCounts: 0, gridOffsets: 0, matrix: 0, sync: 0, sortedIndices: 0};
-    result_1358954567.position = mulInt(floatSize_1358954568, 2);
-    result_1358954567.velocity = mulInt(floatSize_1358954568, 2);
-    result_1358954567.density = floatSize_1358954568;
-    result_1358954567.species = speciesBufferSize_1358954570;
-    result_1358954567.velocityDelta = mulInt(floatSize_1358954568, 2);
-    result_1358954567.gridCounts = mulInt(gridCells_1358954569, 4);
-    result_1358954567.gridOffsets = mulInt(gridCells_1358954569, 4);
-    result_1358954567.matrix = mulInt(mulInt(MAX_SPECIES, MAX_SPECIES), 4);
-    result_1358954567.sync = 1024;
-    result_1358954567.sortedIndices = mulInt(MAX_PARTICLES, 4);
+    var floatSize_1358954562 = mulInt(MAX_PARTICLES, 4);
+    var gridCells_1358954563 = mulInt(MAX_GRID, MAX_GRID);
+    var speciesBufferSize_1358954564 = mulInt(MAX_PARTICLES, 4);
+    result_1358954561 = {m_type: NTI1358954505, position: 0, velocity: 0, density: 0, species: 0, velocityDelta: 0, gridCounts: 0, gridOffsets: 0, matrix: 0, sync: 0, sortedIndices: 0};
+    result_1358954561.position = mulInt(floatSize_1358954562, 2);
+    result_1358954561.velocity = mulInt(floatSize_1358954562, 2);
+    result_1358954561.density = floatSize_1358954562;
+    result_1358954561.species = speciesBufferSize_1358954564;
+    result_1358954561.velocityDelta = mulInt(floatSize_1358954562, 2);
+    result_1358954561.gridCounts = mulInt(gridCells_1358954563, 4);
+    result_1358954561.gridOffsets = mulInt(gridCells_1358954563, 4);
+    result_1358954561.matrix = mulInt(mulInt(MAX_SPECIES, MAX_SPECIES), 4);
+    result_1358954561.sync = 1024;
+    result_1358954561.sortedIndices = mulInt(MAX_PARTICLES, 4);
 
-  return result_1358954567;
+  return result_1358954561;
 
 }
 
 function detectWebGPU() {
-  var result_1358954613 = false;
+  var result_1358954607 = false;
 
   BeforeRet: {
     if (!((typeof navigator !== 'undefined' && !!navigator.gpu))) {
     console.warn('WebGPU not supported: navigator.gpu is undefined');
-    result_1358954613 = false;
+    result_1358954607 = false;
     break BeforeRet;
     }
     
     if (!((typeof (navigator.gpu)["requestAdapter"] === 'function'))) {
     console.warn('WebGPU not supported: requestAdapter method missing');
-    result_1358954613 = false;
+    result_1358954607 = false;
     break BeforeRet;
     }
     
-    result_1358954613 = true;
+    result_1358954607 = true;
     break BeforeRet;
   };
 
-  return result_1358954613;
+  return result_1358954607;
 
 }
 
-function createBuf__webgpu95init_u279(size_p0, usage_p1, label_p2) {
-  var result_1358954779 = null;
+function createBuf__webgpu95init_u273(size_p0, usage_p1, label_p2) {
+  var result_1358954773 = null;
 
   BeforeRet: {
-    var desc_1358954780 = ({});
-    desc_1358954780["size"] = (size_p0);
-    desc_1358954780["usage"] = (usage_p1);
-    desc_1358954780["label"] = (label_p2);
-    result_1358954779 = device.createBuffer(desc_1358954780);
+    var desc_1358954774 = ({});
+    desc_1358954774["size"] = (size_p0);
+    desc_1358954774["usage"] = (usage_p1);
+    desc_1358954774["label"] = (label_p2);
+    result_1358954773 = device.createBuffer(desc_1358954774);
     break BeforeRet;
   };
 
-  return result_1358954779;
+  return result_1358954773;
 
 }
 
@@ -2670,171 +2675,163 @@ async function initWebGPU() {
       var Temporary2;
     var Temporary3;
 
-function HEX3Aanonymous__webgpu95init_u261(event_p0) {
-    var errorObj_1358954759 = event_p0["error"];
-    console.error('WebGPU uncaptured error:', errorObj_1358954759);
+function HEX3Aanonymous__webgpu95init_u255(event_p0) {
+    var errorObj_1358954753 = event_p0["error"];
+    console.error('WebGPU uncaptured error:', errorObj_1358954753);
 
   
 }
     var Temporary4;
 
-function HEX3Aanonymous__webgpu95init_u266(info_p0) {
-  var result_1358954764 = null;
+function HEX3Aanonymous__webgpu95init_u260(info_p0) {
+  var result_1358954758 = null;
 
   BeforeRet: {
-    var msg_1358954765 = info_p0["message"];
-    console.error('WebGPU device lost:', msg_1358954765);
+    var msg_1358954759 = info_p0["message"];
+    console.error('WebGPU device lost:', msg_1358954759);
     isWebGPUAvailable = false;
-    result_1358954764 = null;
+    result_1358954758 = null;
     break BeforeRet;
   };
 
-  return result_1358954764;
+  return result_1358954758;
 
 }
 
-  var result_1358954622 = null;
+  var result_1358954616 = null;
 
   BeforeRet: {
     if (!(detectWebGPU())) {
-    var errorResult_1358954632 = ({});
-    errorResult_1358954632["success"] = (false);
-    errorResult_1358954632["error"] = ("WebGPU is not available in this browser. Try Chrome 113+ or Edge 113+.");
-    result_1358954622 = errorResult_1358954632;
+    var errorResult_1358954626 = ({});
+    errorResult_1358954626["success"] = (false);
+    errorResult_1358954626["error"] = ("WebGPU is not available in this browser. Try Chrome 113+ or Edge 113+.");
+    result_1358954616 = errorResult_1358954626;
     break BeforeRet;
     }
     
-    var adapterOptions_1358954652 = ({});
-    adapterOptions_1358954652["powerPreference"] = ("high-performance");
-    adapter = (await navigator.gpu.requestAdapter(adapterOptions_1358954652));
+    var adapterOptions_1358954646 = ({});
+    adapterOptions_1358954646["powerPreference"] = ("high-performance");
+    adapter = (await navigator.gpu.requestAdapter(adapterOptions_1358954646));
       if ((adapter == null)) Temporary1 = true; else {        Temporary1 = (adapter == null);      }    if (Temporary1) {
-    var errorResult_1358954668 = ({});
-    errorResult_1358954668["success"] = (false);
-    errorResult_1358954668["error"] = ("Failed to obtain WebGPU adapter. Your GPU may not support WebGPU.");
-    result_1358954622 = errorResult_1358954668;
+    var errorResult_1358954662 = ({});
+    errorResult_1358954662["success"] = (false);
+    errorResult_1358954662["error"] = ("Failed to obtain WebGPU adapter. Your GPU may not support WebGPU.");
+    result_1358954616 = errorResult_1358954662;
     break BeforeRet;
     }
     
-    var adapterInfo_1358954688 = adapter.info;
-    if ((adapterInfo_1358954688 == null)) {
+    var adapterInfo_1358954682 = adapter.info;
+    if ((adapterInfo_1358954682 == null)) {
     console.log('WebGPU adapter acquired:', 'Info unavailable');
     }
     else {
-      console.log('WebGPU adapter acquired:', adapterInfo_1358954688);
+      console.log('WebGPU adapter acquired:', adapterInfo_1358954682);
     }
     
-    var sizes_1358954689 = calculateBufferSizes();
-    var maxBufferSize_1358954690 = sizes_1358954689.position;
-    if ((maxBufferSize_1358954690 < sizes_1358954689.velocity)) {
-    maxBufferSize_1358954690 = sizes_1358954689.velocity;
+    var sizes_1358954683 = calculateBufferSizes();
+    var maxBufferSize_1358954684 = sizes_1358954683.position;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.velocity)) {
+    maxBufferSize_1358954684 = sizes_1358954683.velocity;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.density)) {
-    maxBufferSize_1358954690 = sizes_1358954689.density;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.density)) {
+    maxBufferSize_1358954684 = sizes_1358954683.density;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.species)) {
-    maxBufferSize_1358954690 = sizes_1358954689.species;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.species)) {
+    maxBufferSize_1358954684 = sizes_1358954683.species;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.velocityDelta)) {
-    maxBufferSize_1358954690 = sizes_1358954689.velocityDelta;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.velocityDelta)) {
+    maxBufferSize_1358954684 = sizes_1358954683.velocityDelta;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.gridCounts)) {
-    maxBufferSize_1358954690 = sizes_1358954689.gridCounts;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.gridCounts)) {
+    maxBufferSize_1358954684 = sizes_1358954683.gridCounts;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.gridOffsets)) {
-    maxBufferSize_1358954690 = sizes_1358954689.gridOffsets;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.gridOffsets)) {
+    maxBufferSize_1358954684 = sizes_1358954683.gridOffsets;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.matrix)) {
-    maxBufferSize_1358954690 = sizes_1358954689.matrix;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.matrix)) {
+    maxBufferSize_1358954684 = sizes_1358954683.matrix;
     }
     
-    if ((maxBufferSize_1358954690 < sizes_1358954689.sortedIndices)) {
-    maxBufferSize_1358954690 = sizes_1358954689.sortedIndices;
+    if ((maxBufferSize_1358954684 < sizes_1358954683.sortedIndices)) {
+    maxBufferSize_1358954684 = sizes_1358954683.sortedIndices;
     }
     
-    var requiredLimits_1358954691 = ({});
-    requiredLimits_1358954691["maxBufferSize"] = (mulInt(maxBufferSize_1358954690, 4));
-    requiredLimits_1358954691["maxStorageBufferBindingSize"] = (mulInt(maxBufferSize_1358954690, 4));
-    requiredLimits_1358954691["maxComputeWorkgroupSizeX"] = (256);
-    requiredLimits_1358954691["maxComputeWorkgroupsPerDimension"] = (Math.ceil(MAX_PARTICLES / 256));
-    var deviceDescriptor_1358954724 = ({});
-    deviceDescriptor_1358954724["requiredLimits"] = requiredLimits_1358954691;
-    device = (await adapter.requestDevice(deviceDescriptor_1358954724));
+    var requiredLimits_1358954685 = ({});
+    requiredLimits_1358954685["maxBufferSize"] = (mulInt(maxBufferSize_1358954684, 4));
+    requiredLimits_1358954685["maxStorageBufferBindingSize"] = (mulInt(maxBufferSize_1358954684, 4));
+    requiredLimits_1358954685["maxComputeWorkgroupSizeX"] = (256);
+    requiredLimits_1358954685["maxComputeWorkgroupsPerDimension"] = (Math.ceil(MAX_PARTICLES / 256));
+    var deviceDescriptor_1358954718 = ({});
+    deviceDescriptor_1358954718["requiredLimits"] = requiredLimits_1358954685;
+    device = (await adapter.requestDevice(deviceDescriptor_1358954718));
       if ((device == null)) Temporary2 = true; else {        Temporary2 = (device == null);      }    if (Temporary2) {
-    var errorResult_1358954737 = ({});
-    errorResult_1358954737["success"] = (false);
-    errorResult_1358954737["error"] = ("Failed to create WebGPU device.");
-    result_1358954622 = errorResult_1358954737;
+    var errorResult_1358954731 = ({});
+    errorResult_1358954731["success"] = (false);
+    errorResult_1358954731["error"] = ("Failed to create WebGPU device.");
+    result_1358954616 = errorResult_1358954731;
     break BeforeRet;
     }
     
     queue = device.queue;
-    Temporary3 = HEX3Aanonymous__webgpu95init_u261.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__webgpu95init_u261; Temporary3.ClE_0 = null;
+    Temporary3 = HEX3Aanonymous__webgpu95init_u255.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__webgpu95init_u255; Temporary3.ClE_0 = null;
     device.addEventListener("uncapturederror", Temporary3);
-    var lostPromise_1358954761 = device.lost;
-    Temporary4 = HEX3Aanonymous__webgpu95init_u266.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__webgpu95init_u266; Temporary4.ClE_0 = null;
-    (lostPromise_1358954761.then(Temporary4));
+    var lostPromise_1358954755 = device.lost;
+    Temporary4 = HEX3Aanonymous__webgpu95init_u260.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__webgpu95init_u260; Temporary4.ClE_0 = null;
+    (lostPromise_1358954755.then(Temporary4));
     console.log('WebGPU device created with limits:', device.limits);
-    var bufferUsage_1358954773 = ((GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC) | GPUBufferUsage.COPY_DST);
-    var bufferUsageWithUniform_1358954774 = (bufferUsage_1358954773 | GPUBufferUsage.UNIFORM);
-    buffers.pxA = createBuf__webgpu95init_u279(divInt(sizes_1358954689.position, 2), bufferUsage_1358954773, "Particle Positions X (Set A)");
-    buffers.pyA = createBuf__webgpu95init_u279(divInt(sizes_1358954689.position, 2), bufferUsage_1358954773, "Particle Positions Y (Set A)");
-    buffers.pxB = createBuf__webgpu95init_u279(divInt(sizes_1358954689.position, 2), bufferUsage_1358954773, "Particle Positions X (Set B)");
-    buffers.pyB = createBuf__webgpu95init_u279(divInt(sizes_1358954689.position, 2), bufferUsage_1358954773, "Particle Positions Y (Set B)");
-    buffers.vxA = createBuf__webgpu95init_u279(divInt(sizes_1358954689.velocity, 2), bufferUsage_1358954773, "Particle Velocities X (Set A)");
-    buffers.vyA = createBuf__webgpu95init_u279(divInt(sizes_1358954689.velocity, 2), bufferUsage_1358954773, "Particle Velocities Y (Set A)");
-    buffers.vxB = createBuf__webgpu95init_u279(divInt(sizes_1358954689.velocity, 2), bufferUsage_1358954773, "Particle Velocities X (Set B)");
-    buffers.vyB = createBuf__webgpu95init_u279(divInt(sizes_1358954689.velocity, 2), bufferUsage_1358954773, "Particle Velocities Y (Set B)");
-    buffers.denA = createBuf__webgpu95init_u279(sizes_1358954689.density, bufferUsage_1358954773, "Particle Density (Set A)");
-    buffers.denB = createBuf__webgpu95init_u279(sizes_1358954689.density, bufferUsage_1358954773, "Particle Density (Set B)");
-    buffers.speciesA = createBuf__webgpu95init_u279(sizes_1358954689.species, bufferUsage_1358954773, "Particle Species (Set A)");
-    buffers.speciesB = createBuf__webgpu95init_u279(sizes_1358954689.species, bufferUsage_1358954773, "Particle Species (Set B)");
-    buffers.vxDelta = createBuf__webgpu95init_u279(divInt(sizes_1358954689.velocityDelta, 2), bufferUsage_1358954773, "Velocity Delta X");
-    buffers.vyDelta = createBuf__webgpu95init_u279(divInt(sizes_1358954689.velocityDelta, 2), bufferUsage_1358954773, "Velocity Delta Y");
-    buffers.gridCounts = createBuf__webgpu95init_u279(sizes_1358954689.gridCounts, bufferUsage_1358954773, "Grid Cell Counts");
-    buffers.gridOffsets = createBuf__webgpu95init_u279(sizes_1358954689.gridOffsets, bufferUsage_1358954773, "Grid Cell Offsets");
-    buffers.matrix = createBuf__webgpu95init_u279(sizes_1358954689.matrix, bufferUsageWithUniform_1358954774, "Attraction Matrix");
-    buffers.sync = createBuf__webgpu95init_u279(sizes_1358954689.sync, bufferUsage_1358954773, "Synchronization Buffer");
-    buffers.sortedIndices = createBuf__webgpu95init_u279(sizes_1358954689.sortedIndices, bufferUsage_1358954773, "Sorted Indices Buffer");
-    buffers.fillPointers = createBuf__webgpu95init_u279(sizes_1358954689.gridOffsets, bufferUsage_1358954773, "Fill Pointers Buffer");
-    var blockSumsSize_1358954805 = 1024;
-    buffers.blockSums = createBuf__webgpu95init_u279(blockSumsSize_1358954805, bufferUsage_1358954773, "Prefix Sum Block Totals");
-    buffers.blockOffsets = createBuf__webgpu95init_u279(blockSumsSize_1358954805, bufferUsage_1358954773, "Prefix Sum Block Offsets");
-    var stagingUsage_1358954806 = (GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ);
-    var stagingSize_1358954807 = divInt(sizes_1358954689.position, 2);
-    buffers.stagingPx = createBuf__webgpu95init_u279(stagingSize_1358954807, stagingUsage_1358954806, "Staging Px");
-    buffers.stagingPy = createBuf__webgpu95init_u279(stagingSize_1358954807, stagingUsage_1358954806, "Staging Py");
-    buffers.stagingVx = createBuf__webgpu95init_u279(stagingSize_1358954807, stagingUsage_1358954806, "Staging Vx");
-    buffers.stagingVy = createBuf__webgpu95init_u279(stagingSize_1358954807, stagingUsage_1358954806, "Staging Vy");
-    buffers.stagingDen = createBuf__webgpu95init_u279(sizes_1358954689.density, stagingUsage_1358954806, "Staging Density");
-    buffers.stagingSpecies = createBuf__webgpu95init_u279(sizes_1358954689.species, stagingUsage_1358954806, "Staging Species");
-    var bufferCount_1358954808 = Object.keys(buffers).length;
-    console.log('WebGPU buffers created:', bufferCount_1358954808, 'buffers');
+    var bufferUsage_1358954767 = ((GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC) | GPUBufferUsage.COPY_DST);
+    var bufferUsageWithUniform_1358954768 = (bufferUsage_1358954767 | GPUBufferUsage.UNIFORM);
+    buffers.pxA = createBuf__webgpu95init_u273(divInt(sizes_1358954683.position, 2), bufferUsage_1358954767, "Particle Positions X (Set A)");
+    buffers.pyA = createBuf__webgpu95init_u273(divInt(sizes_1358954683.position, 2), bufferUsage_1358954767, "Particle Positions Y (Set A)");
+    buffers.pxB = createBuf__webgpu95init_u273(divInt(sizes_1358954683.position, 2), bufferUsage_1358954767, "Particle Positions X (Set B)");
+    buffers.pyB = createBuf__webgpu95init_u273(divInt(sizes_1358954683.position, 2), bufferUsage_1358954767, "Particle Positions Y (Set B)");
+    buffers.vxA = createBuf__webgpu95init_u273(divInt(sizes_1358954683.velocity, 2), bufferUsage_1358954767, "Particle Velocities X (Set A)");
+    buffers.vyA = createBuf__webgpu95init_u273(divInt(sizes_1358954683.velocity, 2), bufferUsage_1358954767, "Particle Velocities Y (Set A)");
+    buffers.vxB = createBuf__webgpu95init_u273(divInt(sizes_1358954683.velocity, 2), bufferUsage_1358954767, "Particle Velocities X (Set B)");
+    buffers.vyB = createBuf__webgpu95init_u273(divInt(sizes_1358954683.velocity, 2), bufferUsage_1358954767, "Particle Velocities Y (Set B)");
+    buffers.denA = createBuf__webgpu95init_u273(sizes_1358954683.density, bufferUsage_1358954767, "Particle Density (Set A)");
+    buffers.denB = createBuf__webgpu95init_u273(sizes_1358954683.density, bufferUsage_1358954767, "Particle Density (Set B)");
+    buffers.speciesA = createBuf__webgpu95init_u273(sizes_1358954683.species, bufferUsage_1358954767, "Particle Species (Set A)");
+    buffers.speciesB = createBuf__webgpu95init_u273(sizes_1358954683.species, bufferUsage_1358954767, "Particle Species (Set B)");
+    buffers.vxDelta = createBuf__webgpu95init_u273(divInt(sizes_1358954683.velocityDelta, 2), bufferUsage_1358954767, "Velocity Delta X");
+    buffers.vyDelta = createBuf__webgpu95init_u273(divInt(sizes_1358954683.velocityDelta, 2), bufferUsage_1358954767, "Velocity Delta Y");
+    buffers.gridCounts = createBuf__webgpu95init_u273(sizes_1358954683.gridCounts, bufferUsage_1358954767, "Grid Cell Counts");
+    buffers.gridOffsets = createBuf__webgpu95init_u273(sizes_1358954683.gridOffsets, bufferUsage_1358954767, "Grid Cell Offsets");
+    buffers.matrix = createBuf__webgpu95init_u273(sizes_1358954683.matrix, bufferUsageWithUniform_1358954768, "Attraction Matrix");
+    buffers.sync = createBuf__webgpu95init_u273(sizes_1358954683.sync, bufferUsage_1358954767, "Synchronization Buffer");
+    buffers.sortedIndices = createBuf__webgpu95init_u273(sizes_1358954683.sortedIndices, bufferUsage_1358954767, "Sorted Indices Buffer");
+    buffers.fillPointers = createBuf__webgpu95init_u273(sizes_1358954683.gridOffsets, bufferUsage_1358954767, "Fill Pointers Buffer");
+    var blockSumsSize_1358954799 = 1024;
+    buffers.blockSums = createBuf__webgpu95init_u273(blockSumsSize_1358954799, bufferUsage_1358954767, "Prefix Sum Block Totals");
+    buffers.blockOffsets = createBuf__webgpu95init_u273(blockSumsSize_1358954799, bufferUsage_1358954767, "Prefix Sum Block Offsets");
+    var bufferCount_1358954800 = Object.keys(buffers).length;
+    console.log('WebGPU buffers created:', bufferCount_1358954800, 'buffers');
     isWebGPUAvailable = true;
-    var infoObj_1358954809 = ({});
+    var infoObj_1358954801 = ({});
     if ((adapter.info == null)) {
-    infoObj_1358954809["adapter"] = ("Unknown adapter");
+    infoObj_1358954801["adapter"] = ("Unknown adapter");
     }
     else {
-    infoObj_1358954809["adapter"] = (adapter.info);
+    infoObj_1358954801["adapter"] = (adapter.info);
     }
     
-    infoObj_1358954809["limits"] = (device.limits);
-    infoObj_1358954809["bufferCount"] = (Object.keys(buffers).length);
-    infoObj_1358954809["totalMemory"] = (Object.values(sizes_1358954689).reduce((sum, size) => sum + size, 0));
-    var successResult_1358954850 = ({});
-    successResult_1358954850["success"] = (true);
-    successResult_1358954850["info"] = infoObj_1358954809;
-    result_1358954622 = successResult_1358954850;
+    infoObj_1358954801["limits"] = (device.limits);
+    infoObj_1358954801["bufferCount"] = (Object.keys(buffers).length);
+    infoObj_1358954801["totalMemory"] = (Object.values(sizes_1358954683).reduce((sum, size) => sum + size, 0));
+    var successResult_1358954842 = ({});
+    successResult_1358954842["success"] = (true);
+    successResult_1358954842["info"] = infoObj_1358954801;
+    result_1358954616 = successResult_1358954842;
     break BeforeRet;
   };
 
-  return result_1358954622;
+  return result_1358954616;
 
 }
 
@@ -2896,16 +2893,16 @@ function HEX3Aanonymous__webgpu95compute_u73(msg_p0) {
     var errorDetails_1392509005 = [];
     Label3: {
       var i_1392509010 = 0;
-      var colontmp__1392510411 = 0;
-      colontmp__1392510411 = errors_1392509000.length;
-      var i_1392510412 = 0;
+      var colontmp__1392510353 = 0;
+      colontmp__1392510353 = errors_1392509000.length;
+      var i_1392510354 = 0;
       Label4: {
           Label5: while (true) {
-          if (!(i_1392510412 < colontmp__1392510411)) break Label5;
-            i_1392509010 = i_1392510412;
+          if (!(i_1392510354 < colontmp__1392510353)) break Label5;
+            i_1392509010 = i_1392510354;
             var err_1392509011 = errors_1392509000[i_1392509010];
             errorDetails_1392509005.push.apply(errorDetails_1392509005, ([32,32,76,105,110,101,32]).concat(HEX24__systemZdollars_u14(err_1392509011.lineNum),[58,32],cstrToNimstr(err_1392509011.message),[10]));;
-            i_1392510412 = addInt(i_1392510412, 1);
+            i_1392510354 = addInt(i_1392510354, 1);
           }
       };
     };
@@ -2916,16 +2913,16 @@ function HEX3Aanonymous__webgpu95compute_u73(msg_p0) {
     if ((0 < warnings_1392509004.length)) {
     Label6: {
       var i_1392509018 = 0;
-      var colontmp__1392510415 = 0;
-      colontmp__1392510415 = warnings_1392509004.length;
-      var i_1392510416 = 0;
+      var colontmp__1392510357 = 0;
+      colontmp__1392510357 = warnings_1392509004.length;
+      var i_1392510358 = 0;
       Label7: {
           Label8: while (true) {
-          if (!(i_1392510416 < colontmp__1392510415)) break Label8;
-            i_1392509018 = i_1392510416;
+          if (!(i_1392510358 < colontmp__1392510357)) break Label8;
+            i_1392509018 = i_1392510358;
             var w_1392509019 = warnings_1392509004[i_1392509018];
             console.warn([((toJSStr(([83,104,97,100,101,114,32,119,97,114,110,105,110,103,32,102,111,114,32,34]).concat(cstrToNimstr(label_p1),[34,32,76,105,110,101,32],HEX24__systemZdollars_u14(w_1392509019.lineNum),[58,32],cstrToNimstr(w_1392509019.message)))))]);
-            i_1392510416 = addInt(i_1392510416, 1);
+            i_1392510358 = addInt(i_1392510358, 1);
           }
       };
     };
@@ -3039,13 +3036,13 @@ async function createBindGroupWithValidation(passName_p0, layout_p1, entries_p2,
     var entryDetails_1392509206 = [];
     Label1: {
       var i_1392509211 = 0;
-      var colontmp__1392510419 = 0;
-      colontmp__1392510419 = entries_p2.length;
-      var i_1392510420 = 0;
+      var colontmp__1392510361 = 0;
+      colontmp__1392510361 = entries_p2.length;
+      var i_1392510362 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1392510420 < colontmp__1392510419)) break Label3;
-            i_1392509211 = i_1392510420;
+          if (!(i_1392510362 < colontmp__1392510361)) break Label3;
+            i_1392509211 = i_1392510362;
             var e_1392509212 = entries_p2[i_1392509211];
             var binding_1392509213 = e_1392509212["binding"];
             var resource_1392509214 = e_1392509212["resource"];
@@ -3059,7 +3056,7 @@ async function createBindGroupWithValidation(passName_p0, layout_p1, entries_p2,
             
             var bufferLabel_1392509220 = nimCopy(null, Temporary4, NTI33554449);
             entryDetails_1392509206.push.apply(entryDetails_1392509206, ([32,32,32,32,98,105,110,100,105,110,103,32]).concat(HEX24__systemZdollars_u14(to__webgpu95compute_u293(binding_1392509213)),[58,32,98,117,102,102,101,114,61],bufferLabel_1392509220,[10]));;
-            i_1392510420 = addInt(i_1392510420, 1);
+            i_1392510362 = addInt(i_1392510362, 1);
           }
       };
     };
@@ -3423,18 +3420,6 @@ function to__webgpu95compute_u1140(obj_p0) {
 async function runPhysicsFrame(params_p0) {
     var Temporary1;
     var Temporary2;
-    var Temporary6;
-    var Temporary7;
-    var Temporary8;
-    var Temporary9;
-    var Temporary10;
-    var Temporary11;
-    var Temporary12;
-    var Temporary13;
-    var Temporary14;
-    var Temporary15;
-    var Temporary16;
-    var Temporary17;
 
   var result_1392510061 = null;
 
@@ -3504,13 +3489,13 @@ async function runPhysicsFrame(params_p0) {
     simParamsUint_1392510148[11] = particleCount_1392510078;
     Label3: {
       var i_1392510153 = 0;
-      var i_1392510423 = 0;
+      var i_1392510365 = 0;
       Label4: {
           Label5: while (true) {
-          if (!(i_1392510423 < 36)) break Label5;
-            i_1392510153 = i_1392510423;
+          if (!(i_1392510365 < 36)) break Label5;
+            i_1392510153 = i_1392510365;
             simParamsData_1392510147[addInt(12, i_1392510153)] = to__webgpu95compute_u1140(matrix_1392510139[i_1392510153]);
-            i_1392510423 = addInt(i_1392510423, 1);
+            i_1392510365 = addInt(i_1392510365, 1);
           }
       };
     };
@@ -3573,155 +3558,10 @@ async function runPhysicsFrame(params_p0) {
     physicsPass_1392510191.setBindGroup(0, bindGroups["integrate"]);
     physicsPass_1392510191.dispatchWorkgroups(particleWorkgroups_1392510142);
     physicsPass_1392510191.end();
-    if ((parity_1392510138 == 0)) {
-    Temporary6 = buffers["pxA"];
-    }
-    else {
-    Temporary6 = buffers["pxB"];
-    }
-    
-    var pxGPU_1392510192 = Temporary6;
-    if ((parity_1392510138 == 0)) {
-    Temporary7 = buffers["pyA"];
-    }
-    else {
-    Temporary7 = buffers["pyB"];
-    }
-    
-    var pyGPU_1392510193 = Temporary7;
-    if ((parity_1392510138 == 0)) {
-    Temporary8 = buffers["vxA"];
-    }
-    else {
-    Temporary8 = buffers["vxB"];
-    }
-    
-    var vxGPU_1392510194 = Temporary8;
-    if ((parity_1392510138 == 0)) {
-    Temporary9 = buffers["vyA"];
-    }
-    else {
-    Temporary9 = buffers["vyB"];
-    }
-    
-    var vyGPU_1392510195 = Temporary9;
-    if ((parity_1392510138 == 0)) {
-    Temporary10 = buffers["denA"];
-    }
-    else {
-    Temporary10 = buffers["denB"];
-    }
-    
-    var denGPU_1392510196 = Temporary10;
-    if ((parity_1392510138 == 0)) {
-    Temporary11 = buffers["speciesA"];
-    }
-    else {
-    Temporary11 = buffers["speciesB"];
-    }
-    
-    var speciesGPU_1392510197 = Temporary11;
-    if ((parity_1392510138 == 0)) {
-    Temporary12 = pxA;
-    }
-    else {
-    Temporary12 = pxB;
-    }
-    
-    var pxCPU_1392510198 = Temporary12;
-    if ((parity_1392510138 == 0)) {
-    Temporary13 = pyA;
-    }
-    else {
-    Temporary13 = pyB;
-    }
-    
-    var pyCPU_1392510199 = Temporary13;
-    if ((parity_1392510138 == 0)) {
-    Temporary14 = vxA;
-    }
-    else {
-    Temporary14 = vxB;
-    }
-    
-    var vxCPU_1392510200 = Temporary14;
-    if ((parity_1392510138 == 0)) {
-    Temporary15 = vyA;
-    }
-    else {
-    Temporary15 = vyB;
-    }
-    
-    var vyCPU_1392510201 = Temporary15;
-    if ((parity_1392510138 == 0)) {
-    Temporary16 = denA;
-    }
-    else {
-    Temporary16 = denB;
-    }
-    
-    var denCPU_1392510202 = Temporary16;
-    if ((parity_1392510138 == 0)) {
-    Temporary17 = speciesA;
-    }
-    else {
-    Temporary17 = speciesB;
-    }
-    
-    var speciesCPU_1392510203 = Temporary17;
-    var bytesPerParticle_1392510204 = mulInt(particleCount_1392510078, 4);
-    var stagingPx_1392510205 = buffers["stagingPx"];
-    var stagingPy_1392510206 = buffers["stagingPy"];
-    var stagingVx_1392510207 = buffers["stagingVx"];
-    var stagingVy_1392510208 = buffers["stagingVy"];
-    var stagingDen_1392510209 = buffers["stagingDen"];
-    var stagingSpecies_1392510210 = buffers["stagingSpecies"];
-    commandEncoder_1392510166.copyBufferToBuffer(pxGPU_1392510192, 0, stagingPx_1392510205, 0, bytesPerParticle_1392510204);
-    commandEncoder_1392510166.copyBufferToBuffer(pyGPU_1392510193, 0, stagingPy_1392510206, 0, bytesPerParticle_1392510204);
-    commandEncoder_1392510166.copyBufferToBuffer(vxGPU_1392510194, 0, stagingVx_1392510207, 0, bytesPerParticle_1392510204);
-    commandEncoder_1392510166.copyBufferToBuffer(vyGPU_1392510195, 0, stagingVy_1392510208, 0, bytesPerParticle_1392510204);
-    commandEncoder_1392510166.copyBufferToBuffer(denGPU_1392510196, 0, stagingDen_1392510209, 0, bytesPerParticle_1392510204);
-    commandEncoder_1392510166.copyBufferToBuffer(speciesGPU_1392510197, 0, stagingSpecies_1392510210, 0, bytesPerParticle_1392510204);
-    var commandBuffer_1392510211 = commandEncoder_1392510166.finish();
-    var commandBufferArray_1392510212 = ([]);
-    (commandBufferArray_1392510212.push(commandBuffer_1392510211));
-    queue.submit(commandBufferArray_1392510212);
-    (await queue.onSubmittedWorkDone());
-    (await stagingPx_1392510205.mapAsync(GPUMapMode.READ));
-    (await stagingPy_1392510206.mapAsync(GPUMapMode.READ));
-    (await stagingVx_1392510207.mapAsync(GPUMapMode.READ));
-    (await stagingVy_1392510208.mapAsync(GPUMapMode.READ));
-    (await stagingDen_1392510209.mapAsync(GPUMapMode.READ));
-    (await stagingSpecies_1392510210.mapAsync(GPUMapMode.READ));
-    var pxMapped_1392510241 = new Float32Array(stagingPx_1392510205.getMappedRange());
-    var pyMapped_1392510242 = new Float32Array(stagingPy_1392510206.getMappedRange());
-    var vxMapped_1392510243 = new Float32Array(stagingVx_1392510207.getMappedRange());
-    var vyMapped_1392510244 = new Float32Array(stagingVy_1392510208.getMappedRange());
-    var denMapped_1392510245 = new Float32Array(stagingDen_1392510209.getMappedRange());
-    var speciesMapped_1392510246 = new Uint32Array(stagingSpecies_1392510210.getMappedRange());
-    pxCPU_1392510198.set(pxMapped_1392510241.subarray(0, particleCount_1392510078), 0);
-    pyCPU_1392510199.set(pyMapped_1392510242.subarray(0, particleCount_1392510078), 0);
-    vxCPU_1392510200.set(vxMapped_1392510243.subarray(0, particleCount_1392510078), 0);
-    vyCPU_1392510201.set(vyMapped_1392510244.subarray(0, particleCount_1392510078), 0);
-    denCPU_1392510202.set(denMapped_1392510245.subarray(0, particleCount_1392510078), 0);
-    Label18: {
-      var i_1392510251 = 0;
-      var i_1392510426 = 0;
-      Label19: {
-          Label20: while (true) {
-          if (!(i_1392510426 < particleCount_1392510078)) break Label20;
-            i_1392510251 = i_1392510426;
-            speciesCPU_1392510203[i_1392510251] = speciesMapped_1392510246[i_1392510251];
-            i_1392510426 = addInt(i_1392510426, 1);
-          }
-      };
-    };
-    stagingPx_1392510205.unmap();
-    stagingPy_1392510206.unmap();
-    stagingVx_1392510207.unmap();
-    stagingVy_1392510208.unmap();
-    stagingDen_1392510209.unmap();
-    stagingSpecies_1392510210.unmap();
+    var commandBuffer_1392510192 = commandEncoder_1392510166.finish();
+    var commandBufferArray_1392510193 = ([]);
+    (commandBufferArray_1392510193.push(commandBuffer_1392510192));
+    queue.submit(commandBufferArray_1392510193);
     result_1392510061 = undefined;
     break BeforeRet;
   };
@@ -3730,53 +3570,53 @@ async function runPhysicsFrame(params_p0) {
 
 }
 async function uploadInitialData(particleCount_p0) {
-  var result_1392510306 = null;
+  var result_1392510248 = null;
 
   BeforeRet: {
     if (((device == null) || (queue == null))) {
     console.error([(("Cannot upload initial data: WebGPU device not initialized"))]);
-    var resultObj_1392510331 = ({});
-    resultObj_1392510331["success"] = (false);
-    resultObj_1392510331["error"] = ("Device not initialized");
-    result_1392510306 = resultObj_1392510331;
+    var resultObj_1392510273 = ({});
+    resultObj_1392510273["success"] = (false);
+    resultObj_1392510273["error"] = ("Device not initialized");
+    result_1392510248 = resultObj_1392510273;
     break BeforeRet;
     }
     
 ++excHandler;
     try {
-    var bytesPerParticle_1392510351 = mulInt(particleCount_p0, 4);
-    var speciesA_u32_1392510352 = new Uint32Array(particleCount_p0);
-    var speciesB_u32_1392510353 = new Uint32Array(particleCount_p0);
+    var bytesPerParticle_1392510293 = mulInt(particleCount_p0, 4);
+    var speciesA_u32_1392510294 = new Uint32Array(particleCount_p0);
+    var speciesB_u32_1392510295 = new Uint32Array(particleCount_p0);
     Label2: {
-      var i_1392510358 = 0;
-      var i_1392510429 = 0;
+      var i_1392510300 = 0;
+      var i_1392510368 = 0;
       Label3: {
           Label4: while (true) {
-          if (!(i_1392510429 < particleCount_p0)) break Label4;
-            i_1392510358 = i_1392510429;
-            speciesA_u32_1392510352[i_1392510358] = speciesA[i_1392510358];
-            speciesB_u32_1392510353[i_1392510358] = speciesB[i_1392510358];
-            i_1392510429 = addInt(i_1392510429, 1);
+          if (!(i_1392510368 < particleCount_p0)) break Label4;
+            i_1392510300 = i_1392510368;
+            speciesA_u32_1392510294[i_1392510300] = speciesA[i_1392510300];
+            speciesB_u32_1392510295[i_1392510300] = speciesB[i_1392510300];
+            i_1392510368 = addInt(i_1392510368, 1);
           }
       };
     };
-    queue.writeBuffer(buffers["pxA"], 0, pxA.buffer, pxA.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["pyA"], 0, pyA.buffer, pyA.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["vxA"], 0, vxA.buffer, vxA.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["vyA"], 0, vyA.buffer, vyA.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["speciesA"], 0, speciesA_u32_1392510352);
-    queue.writeBuffer(buffers["denA"], 0, denA.buffer, denA.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["pxB"], 0, pxB.buffer, pxB.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["pyB"], 0, pyB.buffer, pyB.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["vxB"], 0, vxB.buffer, vxB.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["vyB"], 0, vyB.buffer, vyB.byteOffset, bytesPerParticle_1392510351);
-    queue.writeBuffer(buffers["speciesB"], 0, speciesB_u32_1392510353);
-    queue.writeBuffer(buffers["denB"], 0, denB.buffer, denB.byteOffset, bytesPerParticle_1392510351);
+    queue.writeBuffer(buffers["pxA"], 0, pxA.buffer, pxA.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["pyA"], 0, pyA.buffer, pyA.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["vxA"], 0, vxA.buffer, vxA.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["vyA"], 0, vyA.buffer, vyA.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["speciesA"], 0, speciesA_u32_1392510294);
+    queue.writeBuffer(buffers["denA"], 0, denA.buffer, denA.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["pxB"], 0, pxB.buffer, pxB.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["pyB"], 0, pyB.buffer, pyB.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["vxB"], 0, vxB.buffer, vxB.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["vyB"], 0, vyB.buffer, vyB.byteOffset, bytesPerParticle_1392510293);
+    queue.writeBuffer(buffers["speciesB"], 0, speciesB_u32_1392510295);
+    queue.writeBuffer(buffers["denB"], 0, denB.buffer, denB.byteOffset, bytesPerParticle_1392510293);
     queue.writeBuffer(buffers["matrix"], 0, matrix.buffer, matrix.byteOffset, matrix.byteLength);
-    console.log([((toJSStr(([85,112,108,111,97,100,101,100,32]).concat(HEX24__systemZdollars_u14(particleCount_p0),[32,112,97,114,116,105,99,108,101,115,32,116,111,32,71,80,85,32,40],HEX24__systemZdollars_u14(addInt(mulInt(bytesPerParticle_1392510351, 12), matrix.byteLength)),[32,98,121,116,101,115,41]))))]);
-    var resultObj_1392510368 = ({});
-    resultObj_1392510368["success"] = (true);
-    result_1392510306 = resultObj_1392510368;
+    console.log([((toJSStr(([85,112,108,111,97,100,101,100,32]).concat(HEX24__systemZdollars_u14(particleCount_p0),[32,112,97,114,116,105,99,108,101,115,32,116,111,32,71,80,85,32,40],HEX24__systemZdollars_u14(addInt(mulInt(bytesPerParticle_1392510293, 12), matrix.byteLength)),[32,98,121,116,101,115,41]))))]);
+    var resultObj_1392510310 = ({});
+    resultObj_1392510310["success"] = (true);
+    result_1392510248 = resultObj_1392510310;
     break BeforeRet;
 --excHandler;
 } catch (EXCEPTION) {
@@ -3784,12 +3624,12 @@ async function uploadInitialData(particleCount_p0) {
  lastJSError = EXCEPTION;
  --excHandler;
     if (lastJSError && (isObj(lastJSError.m_type, NTI33555173))) {
-    var e_1392510380 = getCurrentException();
-    console.error([((toJSStr(([70,97,105,108,101,100,32,116,111,32,117,112,108,111,97,100,32,105,110,105,116,105,97,108,32,100,97,116,97,58,32]).concat(e_1392510380.message))))]);
-    var resultObj_1392510390 = ({});
-    resultObj_1392510390["success"] = (false);
-    resultObj_1392510390["error"] = (toJSStr(e_1392510380.message));
-    result_1392510306 = resultObj_1392510390;
+    var e_1392510322 = getCurrentException();
+    console.error([((toJSStr(([70,97,105,108,101,100,32,116,111,32,117,112,108,111,97,100,32,105,110,105,116,105,97,108,32,100,97,116,97,58,32]).concat(e_1392510322.message))))]);
+    var resultObj_1392510332 = ({});
+    resultObj_1392510332["success"] = (false);
+    resultObj_1392510332["error"] = (toJSStr(e_1392510322.message));
+    result_1392510248 = resultObj_1392510332;
     break BeforeRet;
     }
     else {
@@ -3800,7 +3640,7 @@ async function uploadInitialData(particleCount_p0) {
     }
   };
 
-  return result_1392510306;
+  return result_1392510248;
 
 }
 var shaderModules = ({});
@@ -3809,43 +3649,86 @@ var bindGroupLayouts = ({});
 var uniformBuffers = ({});
 var bindGroups = ({});
 var isPipelineReady = false;
+var canvas_1409286158 = [null];
+var gpuContext_1409286159 = [null];
+var renderPipeline_1409286160 = [null];
+var renderBindGroup_1409286161 = [null];
+var renderParamsBuffer_1409286162 = [null];
+var isInitialized_1409286163 = [false];
+var activeParity_1409286164 = [0];
+
+function canvasWidth__app_u41() {
+    var Temporary1;
+
+  var result_587202602 = 0;
+
+    if (useWebGPURender) {
+    Temporary1 = canvas_1409286158[0].width;
+    }
+    else {
+    Temporary1 = (canvas["width"]);
+    }
+    
+    result_587202602 = Temporary1;
+
+  return result_587202602;
+
+}
+
+function canvasHeight__app_u47() {
+    var Temporary1;
+
+  var result_587202608 = 0;
+
+    if (useWebGPURender) {
+    Temporary1 = canvas_1409286158[0].height;
+    }
+    else {
+    Temporary1 = (canvas["height"]);
+    }
+    
+    result_587202608 = Temporary1;
+
+  return result_587202608;
+
+}
 
 function initParticles() {
-    var newCount_587202617 = CONFIG.particleCount;
-    particleCount = newCount_587202617;
-    var ns_587202618 = CONFIG.speciesCount;
-    var W_587202619 = canvas.width;
-    var H_587202620 = canvas.height;
+    var newCount_587202631 = CONFIG.particleCount;
+    particleCount = newCount_587202631;
+    var ns_587202632 = CONFIG.speciesCount;
+    var W_587202633 = canvasWidth__app_u41();
+    var H_587202634 = canvasHeight__app_u47();
     Label1: {
-      var i_587202625 = 0;
-      var i_587203143 = 0;
+      var i_587202639 = 0;
+      var i_587203187 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_587203143 < particleCount)) break Label3;
-            i_587202625 = i_587203143;
-            pxA[i_587202625] = (Math.random() * W_587202619);
-            pyA[i_587202625] = (Math.random() * H_587202620);
-            vxA[i_587202625] = ((Math.random() - 0.5) * 2.0);
-            vyA[i_587202625] = ((Math.random() - 0.5) * 2.0);
-            speciesA[i_587202625] = modInt(i_587202625, ns_587202618);
-            i_587203143 = addInt(i_587203143, 1);
+          if (!(i_587203187 < particleCount)) break Label3;
+            i_587202639 = i_587203187;
+            pxA[i_587202639] = (Math.random() * W_587202633);
+            pyA[i_587202639] = (Math.random() * H_587202634);
+            vxA[i_587202639] = ((Math.random() - 0.5) * 2.0);
+            vyA[i_587202639] = ((Math.random() - 0.5) * 2.0);
+            speciesA[i_587202639] = modInt(i_587202639, ns_587202632);
+            i_587203187 = addInt(i_587203187, 1);
           }
       };
     };
     Label4: {
-      var i_587202656 = 0;
-      var colontmp__587203146 = 0;
-      colontmp__587203146 = subInt(particleCount, 1);
-      var res_587203148 = colontmp__587203146;
+      var i_587202670 = 0;
+      var colontmp__587203190 = 0;
+      colontmp__587203190 = subInt(particleCount, 1);
+      var res_587203192 = colontmp__587203190;
       Label5: {
           Label6: while (true) {
-          if (!(1 <= res_587203148)) break Label6;
-            i_587202656 = res_587203148;
-            var j_587202657 = ((Math.random() * addInt(i_587202656, 1))|0);
-            var t_587202658 = speciesA[i_587202656];
-            speciesA[i_587202656] = speciesA[j_587202657];
-            speciesA[j_587202657] = t_587202658;
-            res_587203148 = subInt(res_587203148, 1);
+          if (!(1 <= res_587203192)) break Label6;
+            i_587202670 = res_587203192;
+            var j_587202671 = ((Math.random() * addInt(i_587202670, 1))|0);
+            var t_587202672 = speciesA[i_587202670];
+            speciesA[i_587202670] = speciesA[j_587202671];
+            speciesA[j_587202671] = t_587202672;
+            res_587203192 = subInt(res_587203192, 1);
           }
       };
     };
@@ -3864,7 +3747,234 @@ function resetParticles() {
 
   
 }
-async function physics__app_u111(dt_p0) {
+
+function toHTMLCanvasElement__bindingsZdom95extensions_u92(el_p0) {
+  var result_1342177374 = null;
+
+    result_1342177374 = el_p0;
+
+  return result_1342177374;
+
+}
+
+function updateBindGroup__webgpu95render_u22(parity_p0) {
+    var Temporary1;
+    var Temporary2;
+    var Temporary3;
+    var Temporary4;
+
+    if ((parity_p0 == 0)) {
+    Temporary1 = buffers.pxA;
+    }
+    else {
+    Temporary1 = buffers.pxB;
+    }
+    
+    var px_1409286650 = Temporary1;
+    if ((parity_p0 == 0)) {
+    Temporary2 = buffers.pyA;
+    }
+    else {
+    Temporary2 = buffers.pyB;
+    }
+    
+    var py_1409286651 = Temporary2;
+    if ((parity_p0 == 0)) {
+    Temporary3 = buffers.speciesA;
+    }
+    else {
+    Temporary3 = buffers.speciesB;
+    }
+    
+    var species_1409286652 = Temporary3;
+    if ((parity_p0 == 0)) {
+    Temporary4 = buffers.denA;
+    }
+    else {
+    Temporary4 = buffers.denB;
+    }
+    
+    var density_1409286653 = Temporary4;
+    var bindGroupDesc_1409286654 = ({});
+    bindGroupDesc_1409286654["label"] = (toJSStr(([82,101,110,100,101,114,32,66,105,110,100,32,71,114,111,117,112,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
+    bindGroupDesc_1409286654["layout"] = (renderPipeline_1409286160[0].getBindGroupLayout(0));
+    var entries_1409286671 = ([]);
+    var e0_1409286672 = ({});
+    e0_1409286672["binding"] = (0);
+    var r0_1409286681 = ({});
+    r0_1409286681["buffer"] = (px_1409286650);
+    e0_1409286672["resource"] = r0_1409286681;
+    (entries_1409286671.push(e0_1409286672));
+    var e1_1409286695 = ({});
+    e1_1409286695["binding"] = (1);
+    var r1_1409286704 = ({});
+    r1_1409286704["buffer"] = (py_1409286651);
+    e1_1409286695["resource"] = r1_1409286704;
+    (entries_1409286671.push(e1_1409286695));
+    var e2_1409286718 = ({});
+    e2_1409286718["binding"] = (2);
+    var r2_1409286727 = ({});
+    r2_1409286727["buffer"] = (species_1409286652);
+    e2_1409286718["resource"] = r2_1409286727;
+    (entries_1409286671.push(e2_1409286718));
+    var e3_1409286741 = ({});
+    e3_1409286741["binding"] = (3);
+    var r3_1409286750 = ({});
+    r3_1409286750["buffer"] = (density_1409286653);
+    e3_1409286741["resource"] = r3_1409286750;
+    (entries_1409286671.push(e3_1409286741));
+    var e4_1409286764 = ({});
+    e4_1409286764["binding"] = (4);
+    var r4_1409286773 = ({});
+    r4_1409286773["buffer"] = (renderParamsBuffer_1409286162[0]);
+    e4_1409286764["resource"] = r4_1409286773;
+    (entries_1409286671.push(e4_1409286764));
+    bindGroupDesc_1409286654["entries"] = entries_1409286671;
+    renderBindGroup_1409286161[0] = device.createBindGroup(bindGroupDesc_1409286654);
+    activeParity_1409286164[0] = parity_p0;
+
+  
+}
+
+function initWebGPURender__webgpu95render_u24() {
+  var result_1409286169 = false;
+
+  BeforeRet: {
+    if ((device == null)) {
+    console.error('WebGPU device not initialized');
+    result_1409286169 = false;
+    break BeforeRet;
+    }
+    
+    canvas_1409286158[0] = toHTMLCanvasElement__bindingsZdom95extensions_u92(document.getElementById("canvas"));
+    if ((canvas_1409286158[0] == null)) {
+    console.error('Canvas not found');
+    result_1409286169 = false;
+    break BeforeRet;
+    }
+    
+    canvas_1409286158[0].width = (window.innerWidth);
+    canvas_1409286158[0].height = (window.innerHeight);
+    gpuContext_1409286159[0] = canvas_1409286158[0].getContext('webgpu');
+    if ((gpuContext_1409286159[0] == null)) {
+    console.error('Failed to get WebGPU context');
+    result_1409286169 = false;
+    break BeforeRet;
+    }
+    
+    var canvasFormat_1409286179 = navigator.gpu.getPreferredCanvasFormat();
+    var configObj_1409286180 = ({});
+    configObj_1409286180["device"] = (device);
+    configObj_1409286180["format"] = (canvasFormat_1409286179);
+    configObj_1409286180["alphaMode"] = ("opaque");
+    gpuContext_1409286159[0].configure(configObj_1409286180);
+    var shaderDesc_1409286205 = ({});
+    shaderDesc_1409286205["label"] = ("Particle Render Shader");
+    shaderDesc_1409286205["code"] = ("/**\n * Particle Render Shader - WebGPU Vertex Pulling\n *\n * Based on lisyarus's approach: https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n *\n * Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n * No instancing needed - just draw(6 * particleCount) vertices.\n *\n * BINDING MANIFEST:\n * ┌─────────┬──────────────────────────┬─────────────────┬────────┐\n * │ Binding │ Shader Type              │ Buffer          │ Access │\n * ├─────────┼──────────────────────────┼─────────────────┼────────┤\n * │ 0       │ storage array<f32>       │ px (positions)  │ read   │\n * │ 1       │ storage array<f32>       │ py (positions)  │ read   │\n * │ 2       │ storage array<u32>       │ species         │ read   │\n * │ 3       │ storage array<f32>       │ density         │ read   │\n * │ 4       │ uniform RenderParams     │ renderParams    │ read   │\n * └─────────┴──────────────────────────┴─────────────────┴────────┘\n */\n\nstruct RenderParams {\n  resolution: vec2f,   // Canvas width, height in pixels\n  baseSize: f32,       // Base particle size in pixels\n  padding: f32,\n};\n\n// Species colors (matches WebGL renderer COLORS array)\nconst COLORS = array<vec3f, 6>(\n  vec3f(1.0, 0.4, 0.4),   // Species 0: Red\n  vec3f(0.4, 1.0, 0.4),   // Species 1: Green\n  vec3f(0.4, 0.7, 1.0),   // Species 2: Blue\n  vec3f(1.0, 1.0, 0.4),   // Species 3: Yellow\n  vec3f(1.0, 0.4, 1.0),   // Species 4: Magenta\n  vec3f(0.4, 1.0, 1.0),   // Species 5: Cyan\n);\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) ≈ 1.41 from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Particle data buffers (shared with compute shaders)\n@group(0) @binding(0) var<storage, read> px: array<f32>;\n@group(0) @binding(1) var<storage, read> py: array<f32>;\n@group(0) @binding(2) var<storage, read> species: array<u32>;\n@group(0) @binding(3) var<storage, read> density: array<f32>;\n@group(0) @binding(4) var<uniform> params: RenderParams;\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from storage buffers\n  let particleX = px[particleId];\n  let particleY = py[particleId];\n  let particleSpecies = species[particleId];\n  let particleDensity = density[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let offset = OFFSETS[cornerId];\n\n  // Calculate point size based on density (matches WebGL: max(1.0, 4.0 - den * 0.5))\n  let sizeMod = max(1.0, 4.0 - particleDensity * 0.5);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  let halfSize = pointSize * 0.5;\n  let worldPos = vec2f(particleX, particleY) + offset * halfSize;\n\n  // Transform to clip space: (0,0) is top-left, (width,height) is bottom-right\n  // WebGPU clip space: (-1,-1) is bottom-left, (1,1) is top-right\n  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  output.offset = offset;\n\n  // Look up species color\n  let speciesIdx = min(particleSpecies, 5u);\n  output.color = vec4f(COLORS[speciesIdx], 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  // Anti-aliased circle: alpha based on distance from center\n  // offset is -1 to 1, corners at sqrt(2) ≈ 1.41\n  // Circle edge at length = 1.0, fade over ~0.5 units for anti-aliasing\n  let dist = length(input.offset);\n\n  // Smooth falloff: full opacity inside circle, fade to 0 at edge\n  let alpha = 1.0 - smoothstep(0.7, 1.0, dist);\n\n  // Discard fully transparent pixels\n  if (alpha <= 0.0) {\n    discard;\n  }\n\n  return vec4f(input.color.rgb, alpha);\n}\n");
+    var shaderModule_1409286222 = device.createShaderModule(shaderDesc_1409286205);
+    var paramsSize_1409286223 = 16;
+    var paramsDesc_1409286224 = ({});
+    paramsDesc_1409286224["size"] = (paramsSize_1409286223);
+    paramsDesc_1409286224["usage"] = ((GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST));
+    paramsDesc_1409286224["label"] = ("Render Params Buffer");
+    renderParamsBuffer_1409286162[0] = device.createBuffer(paramsDesc_1409286224);
+    var layoutDesc_1409286249 = ({});
+    layoutDesc_1409286249["label"] = ("Render Bind Group Layout");
+    var entries_1409286258 = ([]);
+    var entry0_1409286259 = ({});
+    entry0_1409286259["binding"] = (0);
+    entry0_1409286259["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer0_1409286276 = ({});
+    buffer0_1409286276["type"] = ("read-only-storage");
+    entry0_1409286259["buffer"] = buffer0_1409286276;
+    (entries_1409286258.push(entry0_1409286259));
+    var entry1_1409286290 = ({});
+    entry1_1409286290["binding"] = (1);
+    entry1_1409286290["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer1_1409286307 = ({});
+    buffer1_1409286307["type"] = ("read-only-storage");
+    entry1_1409286290["buffer"] = buffer1_1409286307;
+    (entries_1409286258.push(entry1_1409286290));
+    var entry2_1409286321 = ({});
+    entry2_1409286321["binding"] = (2);
+    entry2_1409286321["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer2_1409286338 = ({});
+    buffer2_1409286338["type"] = ("read-only-storage");
+    entry2_1409286321["buffer"] = buffer2_1409286338;
+    (entries_1409286258.push(entry2_1409286321));
+    var entry3_1409286352 = ({});
+    entry3_1409286352["binding"] = (3);
+    entry3_1409286352["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer3_1409286369 = ({});
+    buffer3_1409286369["type"] = ("read-only-storage");
+    entry3_1409286352["buffer"] = buffer3_1409286369;
+    (entries_1409286258.push(entry3_1409286352));
+    var entry4_1409286383 = ({});
+    entry4_1409286383["binding"] = (4);
+    entry4_1409286383["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer4_1409286400 = ({});
+    buffer4_1409286400["type"] = ("uniform");
+    entry4_1409286383["buffer"] = buffer4_1409286400;
+    (entries_1409286258.push(entry4_1409286383));
+    layoutDesc_1409286249["entries"] = entries_1409286258;
+    var bindGroupLayout_1409286419 = device.createBindGroupLayout(layoutDesc_1409286249);
+    var pipelineLayoutDesc_1409286420 = ({});
+    var layouts_1409286421 = ([]);
+    (layouts_1409286421.push(bindGroupLayout_1409286419));
+    pipelineLayoutDesc_1409286420["bindGroupLayouts"] = layouts_1409286421;
+    pipelineLayoutDesc_1409286420["label"] = ("Render Pipeline Layout");
+    var pipelineLayout_1409286435 = device.createPipelineLayout(pipelineLayoutDesc_1409286420);
+    var pipelineDesc_1409286436 = ({});
+    pipelineDesc_1409286436["label"] = ("Particle Render Pipeline");
+    pipelineDesc_1409286436["layout"] = (pipelineLayout_1409286435);
+    var vertexStage_1409286453 = ({});
+    vertexStage_1409286453["module"] = (shaderModule_1409286222);
+    vertexStage_1409286453["entryPoint"] = ("vs_main");
+    pipelineDesc_1409286436["vertex"] = vertexStage_1409286453;
+    var fragmentStage_1409286475 = ({});
+    fragmentStage_1409286475["module"] = (shaderModule_1409286222);
+    fragmentStage_1409286475["entryPoint"] = ("fs_main");
+    var targets_1409286492 = ([]);
+    var target0_1409286493 = ({});
+    target0_1409286493["format"] = (canvasFormat_1409286179);
+    var blend_1409286502 = ({});
+    var colorBlend_1409286503 = ({});
+    colorBlend_1409286503["srcFactor"] = ("src-alpha");
+    colorBlend_1409286503["dstFactor"] = ("one-minus-src-alpha");
+    colorBlend_1409286503["operation"] = ("add");
+    blend_1409286502["color"] = colorBlend_1409286503;
+    var alphaBlend_1409286533 = ({});
+    alphaBlend_1409286533["srcFactor"] = ("one");
+    alphaBlend_1409286533["dstFactor"] = ("zero");
+    alphaBlend_1409286533["operation"] = ("add");
+    blend_1409286502["alpha"] = alphaBlend_1409286533;
+    target0_1409286493["blend"] = blend_1409286502;
+    (targets_1409286492.push(target0_1409286493));
+    fragmentStage_1409286475["targets"] = targets_1409286492;
+    pipelineDesc_1409286436["fragment"] = fragmentStage_1409286475;
+    var primitive_1409286578 = ({});
+    primitive_1409286578["topology"] = ("triangle-list");
+    primitive_1409286578["cullMode"] = ("none");
+    pipelineDesc_1409286436["primitive"] = primitive_1409286578;
+    renderPipeline_1409286160[0] = device.createRenderPipeline(pipelineDesc_1409286436);
+    updateBindGroup__webgpu95render_u22(0);
+    isInitialized_1409286163[0] = true;
+    console.log('WebGPU render pipeline initialized');
+    result_1409286169 = true;
+    break BeforeRet;
+  };
+
+  return result_1409286169;
+
+}
+
+function resize__webgpu95render_u826() {
+    canvas_1409286158[0].width = (window.innerWidth);
+    canvas_1409286158[0].height = (window.innerHeight);
+
+  
+}
+async function physics__app_u125(dt_p0) {
     var Temporary1;
     var Temporary2;
       var Temporary3;
@@ -3872,26 +3982,26 @@ async function physics__app_u111(dt_p0) {
       var Temporary5;
       var Temporary6;
 
-  var result_587202674 = null;
+  var result_587202688 = null;
 
   BeforeRet: {
-    var t0_587202680 = performance.now();
+    var t0_587202694 = performance.now();
     if ((useWebGPU && isPipelineReady)) {
-    var gridResult_587202681 = computeGridDimensions(canvas.width, canvas.height);
+    var gridResult_587202695 = computeGridDimensions(canvasWidth__app_u41(), canvasHeight__app_u47());
     gridTimeMs = 0.0;
-    var tPhysics0_587202682 = performance.now();
-    var params_587202683 = ({});
-    params_587202683["dt"] = (dt_p0);
-    params_587202683["particleCount"] = (particleCount);
-    params_587202683["width"] = (canvas.width);
-    params_587202683["height"] = (canvas.height);
-    params_587202683["gridW"] = gridResult_587202681["gridW"];
-    params_587202683["gridH"] = gridResult_587202681["gridH"];
-    params_587202683["rMax"] = (CONFIG.interactionRadius);
-    params_587202683["fMul"] = (CONFIG.forceStrength);
-    params_587202683["friction"] = ((1.0 - CONFIG.friction));
-    params_587202683["mouseX"] = (mouseX);
-    params_587202683["mouseY"] = (mouseY);
+    var tPhysics0_587202696 = performance.now();
+    var params_587202697 = ({});
+    params_587202697["dt"] = (dt_p0);
+    params_587202697["particleCount"] = (particleCount);
+    params_587202697["width"] = (canvasWidth__app_u41());
+    params_587202697["height"] = (canvasHeight__app_u47());
+    params_587202697["gridW"] = gridResult_587202695["gridW"];
+    params_587202697["gridH"] = gridResult_587202695["gridH"];
+    params_587202697["rMax"] = (CONFIG.interactionRadius);
+    params_587202697["fMul"] = (CONFIG.forceStrength);
+    params_587202697["friction"] = ((1.0 - CONFIG.friction));
+    params_587202697["mouseX"] = (mouseX);
+    params_587202697["mouseY"] = (mouseY);
     if (mouseDown) {
     Temporary1 = 1;
     }
@@ -3899,7 +4009,7 @@ async function physics__app_u111(dt_p0) {
     Temporary1 = 0;
     }
     
-    params_587202683["mouseDown"] = (Temporary1);
+    params_587202697["mouseDown"] = (Temporary1);
     if (mouseRightDown) {
     Temporary2 = 1;
     }
@@ -3907,146 +4017,206 @@ async function physics__app_u111(dt_p0) {
     Temporary2 = 0;
     }
     
-    params_587202683["mouseRightDown"] = (Temporary2);
-    params_587202683["parity"] = (activeParity);
-    params_587202683["matrix"] = (matrix);
-    (await runPhysicsFrame(params_587202683));
-    physicsTimeMs = (performance.now() - tPhysics0_587202682);
+    params_587202697["mouseRightDown"] = (Temporary2);
+    params_587202697["parity"] = (activeParity);
+    params_587202697["matrix"] = (matrix);
+    (await runPhysicsFrame(params_587202697));
+    physicsTimeMs = (performance.now() - tPhysics0_587202696);
     integrationTimeMs = 0.0;
-    workerTimeMs = (performance.now() - t0_587202680);
+    workerTimeMs = (performance.now() - t0_587202694);
     }
     else {
-      var tGrid0_587202802 = performance.now();
-      var gridResult_587202803 = buildGrid(particleCount, canvas.width, canvas.height);
-      gridTimeMs = (performance.now() - tGrid0_587202802);
-      var tPhysics0_587202804 = performance.now();
-      (await dispatchPhysicsShared(dt_p0, particleCount, canvas.width, canvas.height, (gridResult_587202803["gridW"]), (gridResult_587202803["gridH"]), (gridResult_587202803["cellSize"]), mouseX, mouseY, mouseDown, mouseRightDown));
-      physicsTimeMs = (performance.now() - tPhysics0_587202804);
-      var tIntegration0_587202821 = performance.now();
-      var currentParity_587202822 = activeParity;
-      if ((currentParity_587202822 == 1)) {
+      var tGrid0_587202816 = performance.now();
+      var gridResult_587202817 = buildGrid(particleCount, canvasWidth__app_u41(), canvasHeight__app_u47());
+      gridTimeMs = (performance.now() - tGrid0_587202816);
+      var tPhysics0_587202818 = performance.now();
+      (await dispatchPhysicsShared(dt_p0, particleCount, canvasWidth__app_u41(), canvasHeight__app_u47(), (gridResult_587202817["gridW"]), (gridResult_587202817["gridH"]), (gridResult_587202817["cellSize"]), mouseX, mouseY, mouseDown, mouseRightDown));
+      physicsTimeMs = (performance.now() - tPhysics0_587202818);
+      var tIntegration0_587202835 = performance.now();
+      var currentParity_587202836 = activeParity;
+      if ((currentParity_587202836 == 1)) {
       Temporary3 = pxB;
       }
       else {
       Temporary3 = pxA;
       }
       
-      var pxActive_587202823 = Temporary3;
-      if ((currentParity_587202822 == 1)) {
+      var pxActive_587202837 = Temporary3;
+      if ((currentParity_587202836 == 1)) {
       Temporary4 = pyB;
       }
       else {
       Temporary4 = pyA;
       }
       
-      var pyActive_587202824 = Temporary4;
-      if ((currentParity_587202822 == 1)) {
+      var pyActive_587202838 = Temporary4;
+      if ((currentParity_587202836 == 1)) {
       Temporary5 = vxB;
       }
       else {
       Temporary5 = vxA;
       }
       
-      var vxActive_587202825 = Temporary5;
-      if ((currentParity_587202822 == 1)) {
+      var vxActive_587202839 = Temporary5;
+      if ((currentParity_587202836 == 1)) {
       Temporary6 = vyB;
       }
       else {
       Temporary6 = vyA;
       }
       
-      var vyActive_587202826 = Temporary6;
-      var vxDeltaArr_587202827 = vxDelta;
-      var vyDeltaArr_587202828 = vyDelta;
-      var W_587202832 = (canvas.width);
-      var H_587202836 = (canvas.height);
-      var friction_587202840 = ((1.0 - CONFIG.friction));
-      var zero_587202844 = (0);
+      var vyActive_587202840 = Temporary6;
+      var vxDeltaArr_587202841 = vxDelta;
+      var vyDeltaArr_587202842 = vyDelta;
+      var W_587202846 = (canvasWidth__app_u41());
+      var H_587202850 = (canvasHeight__app_u47());
+      var friction_587202854 = ((1.0 - CONFIG.friction));
+      var zero_587202858 = (0);
       Label7: {
-        var i_587202849 = 0;
-        var i_587203151 = 0;
+        var i_587202863 = 0;
+        var i_587203195 = 0;
         Label8: {
             Label9: while (true) {
-            if (!(i_587203151 < particleCount)) break Label9;
-              i_587202849 = i_587203151;
-              vxActive_587202825[i_587202849] = ((vxActive_587202825[i_587202849] + vxDeltaArr_587202827[i_587202849]) * friction_587202840);
-              vyActive_587202826[i_587202849] = ((vyActive_587202826[i_587202849] + vyDeltaArr_587202828[i_587202849]) * friction_587202840);
-              var x_587202860 = (pxActive_587202823[i_587202849] + vxActive_587202825[i_587202849]);
-              var y_587202861 = (pyActive_587202824[i_587202849] + vyActive_587202826[i_587202849]);
-              if (((x_587202860 < zero_587202844))) {
-              x_587202860 = (x_587202860 + W_587202832);
+            if (!(i_587203195 < particleCount)) break Label9;
+              i_587202863 = i_587203195;
+              vxActive_587202839[i_587202863] = ((vxActive_587202839[i_587202863] + vxDeltaArr_587202841[i_587202863]) * friction_587202854);
+              vyActive_587202840[i_587202863] = ((vyActive_587202840[i_587202863] + vyDeltaArr_587202842[i_587202863]) * friction_587202854);
+              var x_587202874 = (pxActive_587202837[i_587202863] + vxActive_587202839[i_587202863]);
+              var y_587202875 = (pyActive_587202838[i_587202863] + vyActive_587202840[i_587202863]);
+              if (((x_587202874 < zero_587202858))) {
+              x_587202874 = (x_587202874 + W_587202846);
               }
               else {
-              if (((x_587202860 >= W_587202832))) {
-              x_587202860 = (x_587202860 - W_587202832);
+              if (((x_587202874 >= W_587202846))) {
+              x_587202874 = (x_587202874 - W_587202846);
               }
               }
-              if (((y_587202861 < zero_587202844))) {
-              y_587202861 = (y_587202861 + H_587202836);
+              if (((y_587202875 < zero_587202858))) {
+              y_587202875 = (y_587202875 + H_587202850);
               }
               else {
-              if (((y_587202861 >= H_587202836))) {
-              y_587202861 = (y_587202861 - H_587202836);
+              if (((y_587202875 >= H_587202850))) {
+              y_587202875 = (y_587202875 - H_587202850);
               }
               }
-              pxActive_587202823[i_587202849] = x_587202860;
-              pyActive_587202824[i_587202849] = y_587202861;
-              i_587203151 = addInt(i_587203151, 1);
+              pxActive_587202837[i_587202863] = x_587202874;
+              pyActive_587202838[i_587202863] = y_587202875;
+              i_587203195 = addInt(i_587203195, 1);
             }
         };
       };
-      integrationTimeMs = (performance.now() - tIntegration0_587202821);
-      workerTimeMs = (performance.now() - t0_587202680);
+      integrationTimeMs = (performance.now() - tIntegration0_587202835);
+      workerTimeMs = (performance.now() - t0_587202694);
     }
     
-    result_587202674 = undefined;
+    result_587202688 = undefined;
     break BeforeRet;
   };
 
-  return result_587202674;
+  return result_587202688;
 
 }
-async function loop__app_u328(now_p0) {
+
+function render__webgpu95render_u648(particleCount_p0) {
+  var result_1409286794 = null;
+
+  BeforeRet: {
+    result_1409286794 = {m_type: NTI1409286148, packTimeMs: 0.0, uploadTimeMs: 0.0};
+    result_1409286794.packTimeMs = 0.0;
+    result_1409286794.uploadTimeMs = 0.0;
+    if (!(isInitialized_1409286163[0])) {
+    break BeforeRet;
+    }
+    
+    var paramsData_1409286795 = new Float32Array(4);
+    paramsData_1409286795[0] = canvas_1409286158[0].width;
+    paramsData_1409286795[1] = canvas_1409286158[0].height;
+    paramsData_1409286795[2] = addInt(CONFIG.particleSize, 1);
+    paramsData_1409286795[3] = 0.0;
+    queue.writeBuffer(renderParamsBuffer_1409286162[0], 0, paramsData_1409286795);
+    var currentTexture_1409286796 = gpuContext_1409286159[0].getCurrentTexture();
+    var textureView_1409286797 = currentTexture_1409286796.createView();
+    var encoderDesc_1409286798 = ({});
+    encoderDesc_1409286798["label"] = ("Render Command Encoder");
+    var commandEncoder_1409286807 = device.createCommandEncoder(encoderDesc_1409286798);
+    var renderPassDesc_1409286808 = ({});
+    renderPassDesc_1409286808["label"] = ("Particle Render Pass");
+    var colorAttachments_1409286817 = ([]);
+    var colorAttachment_1409286818 = ({});
+    colorAttachment_1409286818["view"] = (textureView_1409286797);
+    colorAttachment_1409286818["loadOp"] = ("clear");
+    colorAttachment_1409286818["storeOp"] = ("store");
+    var clearColor_1409286843 = ({});
+    clearColor_1409286843["r"] = (0.04);
+    clearColor_1409286843["g"] = (0.04);
+    clearColor_1409286843["b"] = (0.06);
+    clearColor_1409286843["a"] = (1.0);
+    colorAttachment_1409286818["clearValue"] = clearColor_1409286843;
+    (colorAttachments_1409286817.push(colorAttachment_1409286818));
+    renderPassDesc_1409286808["colorAttachments"] = colorAttachments_1409286817;
+    var renderPass_1409286886 = commandEncoder_1409286807.beginRenderPass(renderPassDesc_1409286808);
+    renderPass_1409286886.setPipeline(renderPipeline_1409286160[0]);
+    renderPass_1409286886.setBindGroup(0, renderBindGroup_1409286161[0]);
+    renderPass_1409286886.draw(mulInt(6, particleCount_p0), 1, 0, 0);
+    renderPass_1409286886.end();
+    var commandBuffer_1409286887 = commandEncoder_1409286807.finish();
+    var commandBufferArray_1409286888 = ([]);
+    (commandBufferArray_1409286888.push(commandBuffer_1409286887));
+    queue.submit(commandBufferArray_1409286888);
+  };
+
+  return result_1409286794;
+
+}
+async function loop__app_u342(now_p0) {
     var Temporary1;
     var Temporary2;
 
-function HEX3Aanonymous__app_u359(t_p0) {
-    (loop__app_u328(t_p0));
+function HEX3Aanonymous__app_u376(t_p0) {
+    (loop__app_u342(t_p0));
 
   
 }
 
-  var result_587202895 = null;
+  var result_587202909 = null;
 
   BeforeRet: {
     if (!(isRunning)) {
-    result_587202895 = undefined;
+    result_587202909 = undefined;
     break BeforeRet;
     }
     
-    var frameStart_587202901 = performance.now();
-    var rawDt_587202902 = ((now_p0 - lastTime) / 1000.0);
-    if ((0.05 < rawDt_587202902)) {
+    var frameStart_587202915 = performance.now();
+    var rawDt_587202916 = ((now_p0 - lastTime) / 1000.0);
+    if ((0.05 < rawDt_587202916)) {
     Temporary1 = 0.05;
     }
     else {
-    Temporary1 = rawDt_587202902;
+    Temporary1 = rawDt_587202916;
     }
     
-    var cappedDt_587202903 = Temporary1;
-    var dt_587202904 = (cappedDt_587202903 * CONFIG.timeScale);
+    var cappedDt_587202917 = Temporary1;
+    var dt_587202918 = (cappedDt_587202917 * CONFIG.timeScale);
     lastTime = now_p0;
-    (await physics__app_u111(dt_587202904));
-    var renderTiming_587202909 = render(particleCount);
-    renderPackTimeMs = (renderTiming_587202909["packTimeMs"]);
-    renderUploadTimeMs = (renderTiming_587202909["uploadTimeMs"]);
-    var frameTotal_587202918 = (performance.now() - frameStart_587202901);
+    (await physics__app_u125(dt_587202918));
+    var renderTiming_587202923 = null;
+    if (useWebGPURender) {
+    updateBindGroup__webgpu95render_u22(activeParity);
+    renderTiming_587202923 = (render__webgpu95render_u648(particleCount));
+    }
+    else {
+      renderTiming_587202923 = render(particleCount);
+    }
+    
+    renderPackTimeMs = (renderTiming_587202923["packTimeMs"]);
+    renderUploadTimeMs = (renderTiming_587202923["uploadTimeMs"]);
+    var frameTotal_587202935 = (performance.now() - frameStart_587202915);
     gridTimeSum = (gridTimeSum + gridTimeMs);
     physicsTimeSum = (physicsTimeSum + physicsTimeMs);
     integrationTimeSum = (integrationTimeSum + integrationTimeMs);
     renderPackTimeSum = (renderPackTimeSum + renderPackTimeMs);
     renderUploadTimeSum = (renderUploadTimeSum + renderUploadTimeMs);
-    totalTimeSum = (totalTimeSum + frameTotal_587202918);
+    totalTimeSum = (totalTimeSum + frameTotal_587202935);
     profilingFrameCount = addInt(profilingFrameCount, 1);
     frameCount = addInt(frameCount, 1);
     if ((500.0 < (now_p0 - lastFpsTime))) {
@@ -4066,82 +4236,103 @@ function HEX3Aanonymous__app_u359(t_p0) {
     totalTimeSum = 0.0;
     }
     
-    Temporary2 = HEX3Aanonymous__app_u359.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__app_u359; Temporary2.ClE_0 = null;
+    Temporary2 = HEX3Aanonymous__app_u376.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__app_u376; Temporary2.ClE_0 = null;
     (window.requestAnimationFrame(Temporary2));
-    result_587202895 = undefined;
+    result_587202909 = undefined;
     break BeforeRet;
   };
 
-  return result_587202895;
+  return result_587202909;
 
 }
 async function init() {
     var Temporary1;
     var Temporary2;
-    var Temporary3;
+      var Temporary3;
+    var Temporary4;
 
-function HEX3Aanonymous__app_u524() {
+function HEX3Aanonymous__app_u568() {
     updateWorkersMatrix();
 
   
 }
-    var Temporary4;
+    var Temporary5;
 
-function HEX3Aanonymous__app_u579(t_p0) {
-    (loop__app_u328(t_p0));
+function HEX3Aanonymous__app_u623(t_p0) {
+    (loop__app_u342(t_p0));
 
   
 }
 
-  var result_587202955 = null;
+  var result_587202972 = null;
 
   BeforeRet: {
     allocateBuffers();
-    if (!(initGL())) {
-    result_587202955 = undefined;
-    break BeforeRet;
-    }
-    
-    Temporary1 = initParticles.bind(null); Temporary1.ClP_0 = initParticles; Temporary1.ClE_0 = null;
-    setInitParticlesCallback(Temporary1);
-    Temporary2 = resize.bind(null); Temporary2.ClP_0 = resize; Temporary2.ClE_0 = null;
-    setResizeCallback(Temporary2);
-    setupUI();
-    setupEvents(canvas);
     console.log([(("Attempting WebGPU initialization..."))]);
-    var webgpuResult_587202974 = (await initWebGPU());
-    if ((webgpuResult_587202974["success"])) {
-    console.log([(("WebGPU device acquired:")), (webgpuResult_587202974["info"])]);
+    var webgpuResult_587202991 = (await initWebGPU());
+    if ((webgpuResult_587202991["success"])) {
+    console.log([(("WebGPU device acquired:")), (webgpuResult_587202991["info"])]);
     console.log([(("Initializing WebGPU compute pipelines..."))]);
-    var pipelineResult_587203007 = (await initPipelines());
-    if ((pipelineResult_587203007["success"])) {
-    console.log([(("WebGPU compute pipelines ready:")), (pipelineResult_587203007["info"])]);
+    var pipelineResult_587203024 = (await initPipelines());
+    if ((pipelineResult_587203024["success"])) {
+    console.log([(("WebGPU compute pipelines ready:")), (pipelineResult_587203024["info"])]);
     useWebGPU = true;
     console.log([(("Physics acceleration: WebGPU compute shaders"))]);
+    console.log([(("Initializing WebGPU render pipeline..."))]);
+    if (initWebGPURender__webgpu95render_u24()) {
+    useWebGPURender = true;
+    console.log([(("WebGPU rendering: ENABLED (zero CPU readback)"))]);
     }
     else {
-      console.warn([(("WebGPU pipeline initialization failed:")), (pipelineResult_587203007["error"])]);
+    console.log([(("WebGPU rendering: DISABLED (will use WebGL fallback)"))]);
+    }
+    
+    }
+    else {
+      console.warn([(("WebGPU pipeline initialization failed:")), (pipelineResult_587203024["error"])]);
       console.log([(("Falling back to WASM workers"))]);
     }
     
     }
     else {
-      console.warn([(("WebGPU not available:")), (webgpuResult_587202974["error"])]);
+      console.warn([(("WebGPU not available:")), (webgpuResult_587202991["error"])]);
       console.log([(("Using WASM workers for physics"))]);
     }
     
-    Temporary3 = HEX3Aanonymous__app_u524.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__app_u524; Temporary3.ClE_0 = null;
-    setMatrixUpdateCallback(Temporary3);
+    if (!(useWebGPURender)) {
+    if (!(initGL())) {
+    result_587202972 = undefined;
+    break BeforeRet;
+    }
+    
+    }
+    
+    Temporary1 = initParticles.bind(null); Temporary1.ClP_0 = initParticles; Temporary1.ClE_0 = null;
+    setInitParticlesCallback(Temporary1);
+    if (useWebGPURender) {
+    Temporary2 = resize__webgpu95render_u826.bind(null); Temporary2.ClP_0 = resize__webgpu95render_u826; Temporary2.ClE_0 = null;
+    setResizeCallback(Temporary2);
+    setupEvents(canvas_1409286158[0]);
+    }
+    else {
+      Temporary3 = resize.bind(null); Temporary3.ClP_0 = resize; Temporary3.ClE_0 = null;
+      setResizeCallback(Temporary3);
+      setupEvents(canvas);
+    }
+    
+    setupUI();
+    Temporary4 = HEX3Aanonymous__app_u568.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__app_u568; Temporary4.ClE_0 = null;
+    setMatrixUpdateCallback(Temporary4);
     randomizeMatrix();
     initParticles();
     if (useWebGPU) {
     console.log([(("Uploading initial particle data to GPU..."))]);
-    var uploadResult_587203098 = (await uploadInitialData(particleCount));
-    if ((uploadResult_587203098["success"])) {
+    var uploadResult_587203142 = (await uploadInitialData(particleCount));
+    if ((uploadResult_587203142["success"])) {
     console.log([(("Initial data uploaded to GPU"))]);
     }
     else {
-      console.warn([(("Failed to upload initial data:")), (uploadResult_587203098["error"])]);
+      console.warn([(("Failed to upload initial data:")), (uploadResult_587203142["error"])]);
       console.log([(("Falling back to WASM workers"))]);
       useWebGPU = false;
     }
@@ -4156,18 +4347,18 @@ function HEX3Aanonymous__app_u579(t_p0) {
     lastTime = performance.now();
     lastFpsTime = lastTime;
     isRunning = true;
-    Temporary4 = HEX3Aanonymous__app_u579.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__app_u579; Temporary4.ClE_0 = null;
-    (window.requestAnimationFrame(Temporary4));
-    result_587202955 = undefined;
+    Temporary5 = HEX3Aanonymous__app_u623.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__app_u623; Temporary5.ClE_0 = null;
+    (window.requestAnimationFrame(Temporary5));
+    result_587202972 = undefined;
     break BeforeRet;
   };
 
-  return result_587202955;
+  return result_587202972;
 
 }
 var Temporary3;
 
-function HEX3Aanonymous__app_u581() {
+function HEX3Aanonymous__app_u625() {
     (init());
 
   
@@ -4175,6 +4366,7 @@ function HEX3Aanonymous__app_u581() {
 var particleCount = 0;
 var isRunning = false;
 var useWebGPU = false;
+var useWebGPURender = false;
 var lastTime = 0.0;
 var frameCount = 0;
 var fps = 0;
@@ -4192,7 +4384,7 @@ var integrationTimeSum = 0.0;
 var renderPackTimeSum = 0.0;
 var renderUploadTimeSum = 0.0;
 var totalTimeSum = 0.0;
-Temporary3 = HEX3Aanonymous__app_u581.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__app_u581; Temporary3.ClE_0 = null;
+Temporary3 = HEX3Aanonymous__app_u625.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__app_u625; Temporary3.ClE_0 = null;
 document.addEventListener("DOMContentLoaded", Temporary3);
 window.toggleTrails = toggleTrails;
 window.toggleControls = toggleControls;

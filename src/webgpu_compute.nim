@@ -884,86 +884,15 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
 
   physicsPass.endPass()
 
-  # =========================================================================
-  # PHASE: GPU->CPU READBACK
-  # =========================================================================
-  let pxGPU = if parity == 0: gpuBuffers["pxA"] else: gpuBuffers["pxB"]
-  let pyGPU = if parity == 0: gpuBuffers["pyA"] else: gpuBuffers["pyB"]
-  let vxGPU = if parity == 0: gpuBuffers["vxA"] else: gpuBuffers["vxB"]
-  let vyGPU = if parity == 0: gpuBuffers["vyA"] else: gpuBuffers["vyB"]
-  let denGPU = if parity == 0: gpuBuffers["denA"] else: gpuBuffers["denB"]
-  let speciesGPU = if parity == 0: gpuBuffers["speciesA"] else: gpuBuffers["speciesB"]
-
-  let pxCPU = if parity == 0: cpuBuffers.pxA else: cpuBuffers.pxB
-  let pyCPU = if parity == 0: cpuBuffers.pyA else: cpuBuffers.pyB
-  let vxCPU = if parity == 0: cpuBuffers.vxA else: cpuBuffers.vxB
-  let vyCPU = if parity == 0: cpuBuffers.vyA else: cpuBuffers.vyB
-  let denCPU = if parity == 0: cpuBuffers.denA else: cpuBuffers.denB
-  let speciesCPU = if parity == 0: cpuBuffers.speciesA else: cpuBuffers.speciesB
-
-  # Use pre-created staging buffers (created once at init, reused every frame)
-  let bytesPerParticle = particleCount * 4
-  let stagingPx = cast[GPUBuffer](gpuBuffers["stagingPx"])
-  let stagingPy = cast[GPUBuffer](gpuBuffers["stagingPy"])
-  let stagingVx = cast[GPUBuffer](gpuBuffers["stagingVx"])
-  let stagingVy = cast[GPUBuffer](gpuBuffers["stagingVy"])
-  let stagingDen = cast[GPUBuffer](gpuBuffers["stagingDen"])
-  let stagingSpecies = cast[GPUBuffer](gpuBuffers["stagingSpecies"])
-
-  # Encode copy commands
-  commandEncoder.copyBufferToBuffer(cast[GPUBuffer](pxGPU), 0, stagingPx, 0, bytesPerParticle)
-  commandEncoder.copyBufferToBuffer(cast[GPUBuffer](pyGPU), 0, stagingPy, 0, bytesPerParticle)
-  commandEncoder.copyBufferToBuffer(cast[GPUBuffer](vxGPU), 0, stagingVx, 0, bytesPerParticle)
-  commandEncoder.copyBufferToBuffer(cast[GPUBuffer](vyGPU), 0, stagingVy, 0, bytesPerParticle)
-  commandEncoder.copyBufferToBuffer(cast[GPUBuffer](denGPU), 0, stagingDen, 0, bytesPerParticle)
-  commandEncoder.copyBufferToBuffer(cast[GPUBuffer](speciesGPU), 0, stagingSpecies, 0, bytesPerParticle)
-
-  # Submit work
+  # Submit compute work (no readback needed - render shader reads directly from GPU buffers)
   let commandBuffer = commandEncoder.finish()
   let commandBufferArray = createJsArray()
   discard commandBufferArray.push(cast[JsObject](commandBuffer))
   queue.submit(commandBufferArray)
 
-  # Wait for GPU work to complete
-  await queue.onSubmittedWorkDone()
-
-  # Map staging buffers and copy to SharedArrayBuffer
-  await stagingPx.mapAsyncRead()
-  await stagingPy.mapAsyncRead()
-  await stagingVx.mapAsyncRead()
-  await stagingVy.mapAsyncRead()
-  await stagingDen.mapAsyncRead()
-  await stagingSpecies.mapAsyncRead()
-
-  let pxMapped = newFloat32Array(stagingPx.getMappedRange())
-  let pyMapped = newFloat32Array(stagingPy.getMappedRange())
-  let vxMapped = newFloat32Array(stagingVx.getMappedRange())
-  let vyMapped = newFloat32Array(stagingVy.getMappedRange())
-  let denMapped = newFloat32Array(stagingDen.getMappedRange())
-  let speciesMapped = newUint32Array(stagingSpecies.getMappedRange())
-
-  # Copy to CPU buffers
-  pxCPU.set(pxMapped.subarray(0, particleCount))
-  pyCPU.set(pyMapped.subarray(0, particleCount))
-  vxCPU.set(vxMapped.subarray(0, particleCount))
-  vyCPU.set(vyMapped.subarray(0, particleCount))
-  denCPU.set(denMapped.subarray(0, particleCount))
-
-  # Convert species from u32 (GPU) to u8 (CPU)
-  for i in 0..<particleCount:
-    speciesCPU[i] = speciesMapped[i]
-
   # NOTE: WebGPU does IN-PLACE updates on a single buffer set.
   # No parity flip needed - the same buffer that was written is read by renderer.
   # This differs from WASM path which scatters to opposite buffer and flips.
-
-  # Unmap staging buffers (will be reused next frame)
-  stagingPx.unmap()
-  stagingPy.unmap()
-  stagingVx.unmap()
-  stagingVy.unmap()
-  stagingDen.unmap()
-  stagingSpecies.unmap()
 
 # ==============================================================================
 # SECTION 10: INITIAL DATA UPLOAD
