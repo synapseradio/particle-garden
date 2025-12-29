@@ -44,6 +44,49 @@ This is a native desktop wrapper for a particle life simulation that enables Sha
 - `src/worker.nim` - Web Worker source → `web/worker.js` (via `nim js`)
 - `web/` - Frontend modules (compiled from Nim via `nim js`)
 
+## Data Flow Architecture
+
+### Double Buffering & Parity
+
+The simulation uses double-buffered particle state (A/B buffer sets) with `activeParity` tracking which buffer is current.
+
+**Parity Contract:**
+- `activeParity` (0 or 1) points to the buffer containing VALID, COMPLETE particle state
+- Parity flips ONCE per frame, AFTER physics writes complete, BEFORE render reads
+
+| Phase | Buffer Read | Buffer Write | Parity Flip |
+|-------|-------------|--------------|-------------|
+| Physics | `buffer[parity]` | `buffer[parity]` | After completion |
+| Render | `buffer[parity]` | — | Never |
+
+### State Ownership
+
+| State | Owner | When Modified |
+|-------|-------|---------------|
+| pxA/pyA/vxA/vyA | Physics | WebGPU: always; WASM: when parity=0 |
+| pxB/pyB/vxB/vyB | Physics | WebGPU: never; WASM: when parity=1 |
+| species* | initParticles() | Only at init/reset |
+| activeParity | grid.buildGrid() | WASM path only, after scatter |
+| matrix[] | UI | On user input |
+
+### Physics Paths
+
+Two physics implementations exist with **different** parity disciplines:
+
+1. **WebGPU path** (`webgpu_compute.nim`):
+   - Does **in-place updates** on a single buffer set
+   - Reads from buffer[parity], writes back to buffer[parity]
+   - **Does NOT flip parity** - same buffer read by renderer
+   - Parity stays constant (typically 0) throughout WebGPU execution
+
+2. **WASM path** (`workers.nim` + `physics_wasm.nim`):
+   - Uses **double-buffering** via grid scatter
+   - `grid.buildGrid()` scatters particles from buffer[parity] to buffer[1-parity]
+   - **Flips parity** after scatter completes
+   - Renderer reads from the newly-written buffer
+
+**Key difference**: WebGPU modifies buffers in-place; WASM copies between buffer sets.
+
 ## Language Policy
 
 **All source code must be written in Nim.** No hand-written JavaScript.
