@@ -1,43 +1,37 @@
 # ==============================================================================
-# EMERGENT GARDEN - UNIFIED WASM MEMORY BUFFERS
+# EMERGENT GARDEN - UNIFIED MEMORY BUFFERS
 # ==============================================================================
 #
-# This module creates a single WebAssembly.Memory backed by SharedArrayBuffer.
-# All particle data, grid structures, and sync buffers live in this unified memory.
+# This module creates typed array views for particle data and grid structures.
+# Both CPU (for initialization) and GPU (via WebGPU) access this data.
 #
-# ZERO-COPY ARCHITECTURE:
-# - JS creates typed array views into the WASM memory
-# - Workers instantiate WASM with the same memory
-# - WASM reads/writes directly - no uploads or downloads needed
+# ARCHITECTURE: WebGPU-only physics.
+# All physics computation runs on the GPU. The CPU-side buffers are used for:
+# - Initial particle generation (randomization)
+# - Uploading initial state to GPU buffers
+# - WebGL fallback rendering (if WebGPU render unavailable)
 #
 # Memory layout (defined in memory_layout.nim):
-# - Offset 0-1MB: Reserved for WASM stack/heap
-# - Offset 1MB+: Particle data, grid, matrix, sync buffer
+# - Offset 0-1MB: Reserved for future use
+# - Offset 1MB+: Particle data, grid, matrix
 #
 # ==============================================================================
-# PARITY CONTRACT (Double Buffering)
+# BUFFER SETS (A and B)
 # ==============================================================================
 #
-# Two buffer sets (A and B) exist for particle state. `activeParity` tracks
-# which buffer contains VALID, COMPLETE particle data.
+# Two buffer sets exist for historical reasons (legacy double-buffering).
+# In WebGPU mode, only buffer set A is actively used:
+#   - activeParity is always 0
+#   - Physics does IN-PLACE updates on GPU buffers
+#   - No buffer swapping occurs
 #
-# IMPORTANT: Parity semantics differ between physics paths!
-#
-# WASM PATH (workers.nim + physics_wasm.nim):
-#   - Uses grid scatter: particles copied from source to destination buffer
-#   - grid.buildGrid() scatters buffer[parity] → buffer[1-parity]
-#   - Parity FLIPS after scatter: activeParity = 1 - activeParity
-#   - Renderer reads from the newly-written buffer
-#
-# WEBGPU PATH (webgpu_compute.nim):
-#   - Does IN-PLACE updates on a single buffer set
-#   - Reads from buffer[parity], writes back to same buffer[parity]
-#   - Parity NEVER FLIPS - stays constant (typically 0)
-#   - Same buffer read by physics and renderer
+# Buffer set B is retained for:
+#   - GPU-side parity selection (webgpu_compute still references both)
+#   - Potential future use cases
 #
 # INVARIANT:
-#   After physics completes, buffer[activeParity] contains valid particle state.
-#   Renderer should always read from buffer[activeParity].
+#   After physics completes, buffer[activeParity] (always A) contains valid state.
+#   Renderer reads from buffer[activeParity].
 #
 # Compile with: nim js -o:web/buffers.js src/buffers.nim
 #
@@ -88,6 +82,11 @@ var denB* {.exportc.}: Float32Array
 
 var vxDelta* {.exportc.}: Float32Array
 var vyDelta* {.exportc.}: Float32Array
+
+# Fixed-point interleaved velocity deltas for atomic accumulation (Newton's 3rd law)
+# Layout: [deltaVx_0, deltaVy_0, deltaVx_1, deltaVy_1, ...]
+# Scale: 65536 (16-bit fractional precision)
+var velocityDeltaFixed* {.exportc.}: Int32Array
 
 # ==============================================================================
 # SECTION 5: TYPED ARRAY VIEWS - Grid structure
@@ -165,6 +164,9 @@ proc allocateBuffers*() {.exportc.} =
 
   vxDelta = newFloat32Array(sharedBuffer, L.vxDelta, MAX_PARTICLES)
   vyDelta = newFloat32Array(sharedBuffer, L.vyDelta, MAX_PARTICLES)
+
+  # Fixed-point interleaved: 2 int32s per particle (vdx, vdy)
+  velocityDeltaFixed = newInt32Array(sharedBuffer, L.velocityDeltaFixed, MAX_PARTICLES * 2)
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Create typed array views - Grid structure

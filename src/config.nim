@@ -57,6 +57,7 @@ type
     speciesB* {.exportc.}: int
     vxDelta* {.exportc.}: int
     vyDelta* {.exportc.}: int
+    velocityDeltaFixed* {.exportc.}: int  ## Interleaved fixed-point Int32 deltas
     gridCounts* {.exportc.}: int
     gridOffsets* {.exportc.}: int
     matrix* {.exportc.}: int
@@ -122,6 +123,7 @@ proc createMemoryLayout(): MemoryLayoutObject =
   result.speciesB = memory_layout.OFFSETS.speciesB
   result.vxDelta = memory_layout.OFFSETS.vxDelta
   result.vyDelta = memory_layout.OFFSETS.vyDelta
+  result.velocityDeltaFixed = memory_layout.OFFSETS.velocityDeltaFixed
   result.gridCounts = memory_layout.OFFSETS.gridCounts
   result.gridOffsets = memory_layout.OFFSETS.gridOffsets
   result.matrix = memory_layout.OFFSETS.matrix
@@ -143,7 +145,7 @@ proc createConfig(): ConfigObject =
   result.forceStrength = 1.0
   result.friction = 0.05
   result.timeScale = 0.5
-  result.particleSize = 2
+  result.particleSize = 3  # ~30% larger than original (was 2)
   result.trails = false
   result.trailAlpha = 0.92
   result.glowIntensity = 1.0

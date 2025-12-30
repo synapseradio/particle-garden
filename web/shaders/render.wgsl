@@ -48,10 +48,17 @@ const OFFSETS = array<vec2f, 6>(
   vec2f( 1.0,  1.0),  // 5: top-right
 );
 
-// Density-based sizing: particles shrink in crowded areas
-// sizeMod = max(1.0, MAX_SIZE_MULTIPLIER - density * DENSITY_SIZE_SCALE)
-const DENSITY_SIZE_SCALE: f32 = 0.4;       // How much density reduces size
-const MAX_SIZE_MULTIPLIER: f32 = 3.2;      // Size multiplier at zero density
+// Density-based sizing: particles shrink smoothly in crowded areas
+// Uses exponential decay: sizeMod = 1.0 + (MAX-1) * exp(-density * DECAY_RATE)
+// This avoids the hard floor that causes visual "snapping"
+//
+// SIZE_DECAY_RATE calibration:
+// - Controls how quickly particles shrink as local density increases
+// - At density=0: sizeMod = 3.0 (MAX_SIZE_MULTIPLIER)
+// - At density=10: exp(-10 * 0.15) ≈ 0.22, giving 1 + 2*0.22 = 1.44x
+// - Higher values = more aggressive shrinking in crowded areas
+const SIZE_DECAY_RATE: f32 = 0.15;
+const MAX_SIZE_MULTIPLIER: f32 = 3.0;      // Size multiplier at zero density (3x base size)
 
 // Particle data buffers (shared with compute shaders)
 @group(0) @binding(0) var<storage, read> px: array<f32>;
@@ -84,8 +91,9 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Get quad corner offset (unit quad, -1 to 1)
   let offset = OFFSETS[cornerId];
 
-  // Calculate point size based on density
-  let sizeMod = max(1.0, MAX_SIZE_MULTIPLIER - particleDensity * DENSITY_SIZE_SCALE);
+  // Calculate point size based on density using smooth exponential decay
+  // At density=0: sizeMod = 3.0, as density→∞: sizeMod → 1.0
+  let sizeMod = 1.0 + (MAX_SIZE_MULTIPLIER - 1.0) * exp(-particleDensity * SIZE_DECAY_RATE);
   let pointSize = params.baseSize * sizeMod;
 
   // Scale offset by half point size to get world position
@@ -98,7 +106,11 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Transform to clip space: world coords -> normalized device coords
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
-  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);
+
+  // Z-ordering: high density (small particles) = closer to camera (lower Z)
+  // Low density (large particles) = further back (higher Z)
+  let zDepth = 1.0 - clamp(particleDensity * 0.1, 0.0, 0.99);
+  output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
   // Pass offset for circle calculation in fragment shader
   // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range

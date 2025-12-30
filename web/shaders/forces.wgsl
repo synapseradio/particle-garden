@@ -1,264 +1,289 @@
 // =============================================================================
-// PARTICLE FORCES + DENSITY SHADER (Fused Pass)
+// PARTICLE FORCES + DENSITY SHADER (Half-Neighbor with Newton's 3rd Law)
 // =============================================================================
 //
-// Computes inter-particle forces AND local density in a single pass.
-// Both use the same 3×3 neighbor iteration, so fusing saves a full pass.
+// WHY THIS EXISTS (Cache Optimization):
+// This shader reads particle data from SORTED buffers (pxSorted, pySorted, etc.)
+// instead of using indirect indexing (px[sortedIndices[j]]). The physical scatter
+// passes (bin-scatter-positions, bin-scatter-velocities) copy particle data into
+// spatially-sorted order, enabling SEQUENTIAL memory access patterns here.
 //
-// Algorithm:
-// 1. For each particle i, determine its grid cell
-// 2. Iterate 9 neighbor cells (3x3 stencil) with toroidal wrap
-// 3. For each particle j in neighbor cells:
-//    - Compute toroidal distance
-//    - If distance < rMax: compute force based on species attraction
-//    - If same species: accumulate density contribution
-// 4. Apply mouse attraction (if mouse is down)
-// 5. Write velocity deltas and density to output buffers
+// CACHE BEHAVIOR:
+// - OLD: pxA[sortedIndices[j]] = random access = L3 cache misses
+// - NEW: pxSorted[j] = sequential access = L1 cache hits
 //
-// Thread mapping: One particle per thread (@workgroup_size(64, 1, 1))
+// This change alone can yield 2-3x speedup in the forces computation.
+//
+// ALGORITHM:
+// Computes inter-particle forces AND local density using half-neighbor iteration.
+// Each pair (i,j) is computed ONCE, with force applied to both particles via atomics.
+//
+// HALF-NEIGHBOR PATTERN:
+// +---+---+---+
+// |   |   |   |  Skip top row (handled by particles above)
+// +---+---+---+
+// |   | i | Y |  Same cell: j>i only. Right: all.
+// +---+---+---+
+// | Y | Y | Y |  Bottom row: all three cells.
+// +---+---+---+
 //
 // BINDING MANIFEST:
-// ┌─────────┬──────────────────────────┬─────────────────┬────────┐
-// │ Binding │ Shader Type              │ JS Buffer       │ Access │
-// ├─────────┼──────────────────────────┼─────────────────┼────────┤
-// │ 0       │ uniform SimParams        │ simParams       │ read   │
-// │ 1       │ storage array<f32>       │ pxSrc (active)  │ read   │
-// │ 2       │ storage array<f32>       │ pySrc (active)  │ read   │
-// │ 3       │ storage array<u32>       │ speciesSrc      │ read   │
-// │ 4       │ storage array<u32>       │ sortedIndices   │ read   │
-// │ 5       │ storage array<u32>       │ cellOffsets     │ read   │
-// │ 6       │ storage array<u32>       │ cellCounts      │ read   │
-// │ 7       │ storage array<f32>       │ density         │ write  │
-// │ 8       │ storage array<vec2<f32>> │ velocityDelta   │ write  │
-// └─────────┴──────────────────────────┴─────────────────┴────────┘
-// STORAGE BUFFER COUNT: 8 (at WebGPU per-stage limit)
+// +-------+---------------------------+------------------+--------+
+// | Bind  | Shader Type               | JS Buffer        | Access |
+// +-------+---------------------------+------------------+--------+
+// |   0   | uniform SimParams         | simParams        | read   |
+// |   1   | storage array<f32>        | pxSorted         | read   |
+// |   2   | storage array<f32>        | pySorted         | read   |
+// |   3   | storage array<u32>        | speciesSorted    | read   |
+// |   4   | storage array<u32>        | sortedIndices    | read   |
+// |   5   | storage array<u32>        | cellOffsets      | read   |
+// |   6   | storage array<u32>        | cellCounts       | read   |
+// |   7   | storage array<f32>        | densityOutput    | r/w    |
+// |   8   | storage atomic<i32>       | velocityDelta    | r/w    |
+// +-------+---------------------------+------------------+--------+
+// TOTAL: 8 storage buffers (at WebGPU per-stage limit)
+//
+// THREAD MAPPING: One particle per thread (sorted index space)
 // =============================================================================
 
-// Simulation parameters including embedded attraction matrix
 struct SimParams {
-  dt: f32,              // Delta time
-  W: f32,               // World width
-  H: f32,               // World height
-  rMax: f32,            // Maximum interaction radius
-  fMul: f32,            // Force multiplier
-  gridW: u32,           // Grid width (cells)
-  gridH: u32,           // Grid height (cells)
-  mouseX: f32,          // Mouse X position
-  mouseY: f32,          // Mouse Y position
-  mouseDown: f32,       // Mouse left button state (> 0.5 = down)
-  mouseRightDown: f32,  // Mouse right button state (> 0.5 = down)
-  particleCount: u32,   // Active particle count
-  // Attraction matrix embedded in uniform (6x6 = 36 floats, packed as 9 vec4s)
-  // WGSL uniform arrays require 16-byte aligned elements, so we use vec4<f32>
-  // Row-major: to get matrix[i][j], use matrix[(i*6+j)/4][(i*6+j)%4]
-  matrix: array<vec4<f32>, 9>,
+  dt: f32,
+  worldWidth: f32,
+  worldHeight: f32,
+  interactionRadius: f32,
+  forceMultiplier: f32,
+  gridCellsX: u32,
+  gridCellsY: u32,
+  mouseX: f32,
+  mouseY: f32,
+  mouseLeftDown: f32,
+  mouseRightDown: f32,
+  particleCount: u32,
+  attractionMatrix: array<vec4<f32>, 9>,
 };
 
-// Uniform buffer (includes attraction matrix to save storage buffer slot)
 @group(0) @binding(0) var<uniform> params: SimParams;
 
-// Particle data - ACTIVE buffer set only (JS binds correct set based on parity)
-@group(0) @binding(1) var<storage, read> px: array<f32>;
-@group(0) @binding(2) var<storage, read> py: array<f32>;
-@group(0) @binding(3) var<storage, read> species: array<u32>;
+// SORTED buffers - sequential access for cache efficiency
+@group(0) @binding(1) var<storage, read> pxSorted: array<f32>;
+@group(0) @binding(2) var<storage, read> pySorted: array<f32>;
+@group(0) @binding(3) var<storage, read> speciesSorted: array<u32>;
 
-// Spatial grid (output from Pass 2 & 3)
-@group(0) @binding(4) var<storage, read> sortedIndices: array<u32>;
-@group(0) @binding(5) var<storage, read> cellOffsets: array<u32>;
-@group(0) @binding(6) var<storage, read> cellCounts: array<u32>;
+// Index mapping: sortedIdx -> originalIdx (for writing velocity deltas)
+@group(0) @binding(4) var<storage, read> sortedToOriginal: array<u32>;
+@group(0) @binding(5) var<storage, read> cellStartOffsets: array<u32>;
+@group(0) @binding(6) var<storage, read> cellParticleCounts: array<u32>;
 
-// Output buffers
-@group(0) @binding(7) var<storage, read_write> density: array<f32>;
-@group(0) @binding(8) var<storage, read_write> velocityDelta: array<vec2<f32>>;
+@group(0) @binding(7) var<storage, read_write> densityOutput: array<f32>;
+@group(0) @binding(8) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 
-// Constants matching physics_wasm.nim
 const MAX_SPECIES: u32 = 6u;
-const MIN_DIST_SQ: f32 = 4.0;        // Minimum distance squared (2.0²)
-const INV_03: f32 = 3.333333333;     // 1.0 / 0.3
-const INV_07: f32 = 1.428571429;     // 1.0 / 0.7
-const MD2_LIMIT: f32 = 90000.0;      // Mouse distance squared limit
+const MIN_DISTANCE_SQ: f32 = 4.0;
+const REPULSION_ZONE_INV: f32 = 3.333333333;     // 1.0 / 0.3
+const ATTRACTION_FALLOFF_INV: f32 = 1.428571429; // 1.0 / 0.7
+const MOUSE_RANGE_SQ: f32 = 90000.0;
+const FIXED_POINT_SCALE: f32 = 65536.0;
 
 @compute @workgroup_size(128, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
-  let i = globalId.x;
+  let thisSortedIdx = globalId.x;
 
-  // Bounds check
-  if (i >= params.particleCount) {
+  if (thisSortedIdx >= params.particleCount) {
     return;
   }
 
-  // Read particle i data from active buffer set
-  let xi = px[i];
-  let yi = py[i];
-  let si = species[i];
+  // Load this particle's state from SORTED buffers (sequential read)
+  let thisX = pxSorted[thisSortedIdx];
+  let thisY = pySorted[thisSortedIdx];
+  let thisSpecies = speciesSorted[thisSortedIdx];
+  let thisOriginalIdx = sortedToOriginal[thisSortedIdx];
 
-  // Precomputed constants
-  let rMaxSq = params.rMax * params.rMax;
-  let invR = 1.0 / params.rMax;
-  let halfW = params.W * 0.5;
-  let halfH = params.H * 0.5;
+  // Precompute constants
+  let radiusSq = params.interactionRadius * params.interactionRadius;
+  let invRadius = 1.0 / params.interactionRadius;
+  let halfWorldWidth = params.worldWidth * 0.5;
+  let halfWorldHeight = params.worldHeight * 0.5;
+  let invCellWidth = f32(params.gridCellsX) / params.worldWidth;
+  let invCellHeight = f32(params.gridCellsY) / params.worldHeight;
+  let totalCells = i32(params.gridCellsX * params.gridCellsY);
+  let gridWidth = i32(params.gridCellsX);
+  let gridHeight = i32(params.gridCellsY);
 
-  let invCellW = f32(params.gridW) / params.W;
-  let invCellH = f32(params.gridH) / params.H;
-  let numCells = i32(params.gridW * params.gridH);
+  // Accumulators for this particle (register, not memory)
+  var forceOnThisX = 0.0;
+  var forceOnThisY = 0.0;
+  var densityAccum = 0.0;
 
-  let rowOffset = si * MAX_SPECIES;
+  // Find this particle's grid cell
+  var cellX = i32(thisX * invCellWidth);
+  var cellY = i32(thisY * invCellHeight);
+  cellX = clamp(cellX, 0, gridWidth - 1);
+  cellY = clamp(cellY, 0, gridHeight - 1);
 
-  // Force and density accumulators
-  var fx = 0.0;
-  var fy = 0.0;
-  var dens = 0.0;
+  // Half-neighbor iteration: 5 cells instead of 9
+  for (var neighborIdx: i32 = 0; neighborIdx < 5; neighborIdx++) {
+    var offsetX: i32;
+    var offsetY: i32;
 
-  // Find grid cell for particle i
-  var cx = i32(xi * invCellW);
-  var cy = i32(yi * invCellH);
+    // Unrolled offset lookup
+    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }
+    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }
+    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }
+    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }
+    else { offsetX = 1; offsetY = 1; }
 
-  // Clamp to grid bounds
-  cx = clamp(cx, 0, i32(params.gridW) - 1);
-  cy = clamp(cy, 0, i32(params.gridH) - 1);
+    var neighborCellX = cellX + offsetX;
+    var neighborCellY = cellY + offsetY;
+    var toroidalOffsetX = 0.0;
+    var toroidalOffsetY = 0.0;
 
-  // Iterate 3x3 neighborhood with toroidal wrap
-  for (var dy: i32 = -1; dy <= 1; dy++) {
-    var ny = cy + dy;
-    var wrapY = 0.0;
-
-    // Toroidal Y wrap
-    if (ny < 0) {
-      ny += i32(params.gridH);
-      wrapY = -params.H;
-    } else if (ny >= i32(params.gridH)) {
-      ny -= i32(params.gridH);
-      wrapY = params.H;
+    // Toroidal X wrap
+    if (neighborCellX < 0) {
+      neighborCellX += gridWidth;
+      toroidalOffsetX = -params.worldWidth;
+    } else if (neighborCellX >= gridWidth) {
+      neighborCellX -= gridWidth;
+      toroidalOffsetX = params.worldWidth;
     }
 
-    let nyIdx = ny * i32(params.gridW);
+    // Toroidal Y wrap
+    if (neighborCellY < 0) {
+      neighborCellY += gridHeight;
+      toroidalOffsetY = -params.worldHeight;
+    } else if (neighborCellY >= gridHeight) {
+      neighborCellY -= gridHeight;
+      toroidalOffsetY = params.worldHeight;
+    }
 
-    for (var dx: i32 = -1; dx <= 1; dx++) {
-      var nx = cx + dx;
-      var wrapX = 0.0;
+    let neighborCellIndex = neighborCellY * gridWidth + neighborCellX;
+    if (neighborCellIndex < 0 || neighborCellIndex >= totalCells) {
+      continue;
+    }
 
-      // Toroidal X wrap
-      if (nx < 0) {
-        nx += i32(params.gridW);
-        wrapX = -params.W;
-      } else if (nx >= i32(params.gridW)) {
-        nx -= i32(params.gridW);
-        wrapX = params.W;
-      }
+    let particlesInCell = i32(cellParticleCounts[neighborCellIndex]);
+    if (particlesInCell <= 0) {
+      continue;
+    }
 
-      let cell = nyIdx + nx;
+    let cellStart = i32(cellStartOffsets[neighborCellIndex]);
+    if (cellStart < 0 || cellStart + particlesInCell > i32(params.particleCount)) {
+      continue;
+    }
 
-      // Bounds check
-      if (cell < 0 || cell >= numCells) {
+    let isSameCell = (neighborIdx == 0);
+    let cellEnd = cellStart + particlesInCell;
+
+    // Iterate through particles in this cell - SEQUENTIAL access now!
+    for (var otherSortedIdx: i32 = cellStart; otherSortedIdx < cellEnd; otherSortedIdx++) {
+      // For same cell, only process pairs where other > this (avoid double-counting)
+      if (isSameCell && u32(otherSortedIdx) <= thisSortedIdx) {
         continue;
       }
 
-      let count = i32(cellCounts[cell]);
-      if (count <= 0) {
+      // Skip self
+      if (u32(otherSortedIdx) == thisSortedIdx) {
         continue;
       }
 
-      // Exact particle-by-particle iteration for immediate 3x3 neighborhood
-      // (centroid approximation is too inaccurate for nearby cells; see LOD loop below for outer ring)
-      let start = i32(cellOffsets[cell]);
+      // Load other particle's state from SORTED buffers (sequential read = L1 cache hit!)
+      let otherX = pxSorted[otherSortedIdx];
+      let otherY = pySorted[otherSortedIdx];
+      let otherSpecies = speciesSorted[otherSortedIdx];
+      let otherOriginalIdx = sortedToOriginal[otherSortedIdx];
 
-      // Validate cell range
-      if (start < 0 || start + count > i32(params.particleCount)) {
-        continue;
-      }
+      // Compute separation vector
+      let separationX = (otherX + toroidalOffsetX) - thisX;
+      let separationY = (otherY + toroidalOffsetY) - thisY;
+      let distanceSq = separationX * separationX + separationY * separationY;
 
-      let fin = start + count;
+      if (distanceSq > 0.0 && distanceSq < radiusSq) {
+        let clampedDistSq = max(distanceSq, MIN_DISTANCE_SQ);
+        let distance = sqrt(clampedDistSq);
+        let invDistance = 1.0 / distance;
+        let normalizedDist = distance * invRadius;
 
-      for (var j: i32 = start; j < fin; j++) {
-        let jIdx = sortedIndices[j];
+        // Get attraction coefficients for both directions
+        let matrixIdxThisToOther = thisSpecies * MAX_SPECIES + otherSpecies;
+        let matrixIdxOtherToThis = otherSpecies * MAX_SPECIES + thisSpecies;
+        let attractionThisToOther = params.attractionMatrix[matrixIdxThisToOther / 4u][matrixIdxThisToOther % 4u];
+        let attractionOtherToThis = params.attractionMatrix[matrixIdxOtherToThis / 4u][matrixIdxOtherToThis % 4u];
 
-        // Read particle j data (same active buffer set)
-        let xj = px[jIdx];
-        let yj = py[jIdx];
-        let sj = species[jIdx];
+        // Force on THIS particle
+        var forceMagnitudeOnThis: f32;
+        if (normalizedDist < 0.3) {
+          forceMagnitudeOnThis = normalizedDist * REPULSION_ZONE_INV - 1.0;
+        } else {
+          let t = 2.0 * normalizedDist - 1.3;
+          forceMagnitudeOnThis = attractionThisToOther * (1.0 - abs(t) * ATTRACTION_FALLOFF_INV);
+        }
+        forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
 
-        // Toroidal distance
-        let dx_val = (xj + wrapX) - xi;
-        let dy_val = (yj + wrapY) - yi;
+        // Force on OTHER particle (Newton's 3rd law)
+        var forceMagnitudeOnOther: f32;
+        if (normalizedDist < 0.3) {
+          forceMagnitudeOnOther = normalizedDist * REPULSION_ZONE_INV - 1.0;
+        } else {
+          let t = 2.0 * normalizedDist - 1.3;
+          forceMagnitudeOnOther = attractionOtherToThis * (1.0 - abs(t) * ATTRACTION_FALLOFF_INV);
+        }
+        forceMagnitudeOnOther *= params.forceMultiplier * invDistance;
 
-        let d2 = dx_val * dx_val + dy_val * dy_val;
+        // Accumulate force on THIS in register (no atomic needed)
+        forceOnThisX += separationX * forceMagnitudeOnThis;
+        forceOnThisY += separationY * forceMagnitudeOnThis;
 
-        // Skip self and particles beyond rMax
-        if (d2 > 0.0 && d2 < rMaxSq) {
-          // Clamp minimum distance to avoid division issues
-          let d2Clamped = max(d2, MIN_DIST_SQ);
-          let d = sqrt(d2Clamped);
-          let invD = 1.0 / d;
-          let r = d * invR;  // Normalized distance [0, 1]
+        // Apply force to OTHER particle via global atomic
+        // Write to ORIGINAL index since velocityDelta is in original order
+        let forceOnOtherX = -separationX * forceMagnitudeOnOther;
+        let forceOnOtherY = -separationY * forceMagnitudeOnOther;
+        let deltaVxOtherFixed = i32(forceOnOtherX * params.dt * FIXED_POINT_SCALE);
+        let deltaVyOtherFixed = i32(forceOnOtherY * params.dt * FIXED_POINT_SCALE);
+        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], deltaVxOtherFixed);
+        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], deltaVyOtherFixed);
 
-          // Fetch attraction coefficient from embedded matrix (packed as vec4s)
-          let matIdx = rowOffset + sj;
-          let attr = params.matrix[matIdx / 4u][matIdx % 4u];
-
-          // Force calculation (piecewise function)
-          var f: f32;
-          if (r < 0.3) {
-            // Repulsion region
-            f = r * INV_03 - 1.0;
-          } else {
-            // Attraction/repulsion region
-            let t = 2.0 * r - 1.3;
-            let abs_t = abs(t);
-            f = attr * (1.0 - abs_t * INV_07);
-          }
-
-          // Apply force multiplier and normalize by distance
-          f = f * params.fMul * invD;
-          fx += dx_val * f;
-          fy += dy_val * f;
-
-          // Density: same-species neighbors contribute based on proximity
-          if (sj == si) {
-            dens += 1.0 - r;  // Closer = higher density contribution
-          }
+        // Density: same-species neighbors
+        if (otherSpecies == thisSpecies) {
+          densityAccum += 1.0 - normalizedDist;
         }
       }
     }
   }
 
-  // Mouse attraction/repulsion (5x strength for strong gravity feel)
-  if (params.mouseDown > 0.5 || params.mouseRightDown > 0.5) {
-    var mdx = params.mouseX - xi;
-    var mdy = params.mouseY - yi;
+  // Mouse attraction (this particle only)
+  if (params.mouseLeftDown > 0.5 || params.mouseRightDown > 0.5) {
+    var mouseOffsetX = params.mouseX - thisX;
+    var mouseOffsetY = params.mouseY - thisY;
 
-    // Toroidal wrap for mouse distance
-    if (mdx > halfW) {
-      mdx -= params.W;
-    } else if (mdx < -halfW) {
-      mdx += params.W;
-    }
+    if (mouseOffsetX > halfWorldWidth) { mouseOffsetX -= params.worldWidth; }
+    else if (mouseOffsetX < -halfWorldWidth) { mouseOffsetX += params.worldWidth; }
+    if (mouseOffsetY > halfWorldHeight) { mouseOffsetY -= params.worldHeight; }
+    else if (mouseOffsetY < -halfWorldHeight) { mouseOffsetY += params.worldHeight; }
 
-    if (mdy > halfH) {
-      mdy -= params.H;
-    } else if (mdy < -halfH) {
-      mdy += params.H;
-    }
+    let mouseDistSq = mouseOffsetX * mouseOffsetX + mouseOffsetY * mouseOffsetY;
+    if (mouseDistSq > 0.0 && mouseDistSq < MOUSE_RANGE_SQ) {
+      let mouseDist = sqrt(mouseDistSq);
+      let mouseForce = 50.0 * (1.0 - mouseDist / 300.0) / mouseDist;
 
-    let md2 = mdx * mdx + mdy * mdy;
-    if (md2 > 0.0 && md2 < MD2_LIMIT) {
-      let md = sqrt(md2);
-      let mf = 50.0 * (1.0 - md / 300.0) / md;
+      var mouseSign = 0.0;
+      if (params.mouseLeftDown > 0.5) { mouseSign += 1.0; }
+      if (params.mouseRightDown > 0.5) { mouseSign -= 1.0; }
 
-      // Combine left (attraction) and right (repulsion)
-      var sign = 0.0;
-      if (params.mouseDown > 0.5) {
-        sign += 1.0;
-      }
-      if (params.mouseRightDown > 0.5) {
-        sign -= 1.0;
-      }
-
-      fx += mdx * mf * sign;
-      fy += mdy * mf * sign;
+      forceOnThisX += mouseOffsetX * mouseForce * mouseSign;
+      forceOnThisY += mouseOffsetY * mouseForce * mouseSign;
     }
   }
 
-  // Write outputs
-  velocityDelta[i] = vec2f(fx, fy) * params.dt;
-  density[i] = dens;
+  // Apply accumulated force to THIS particle via single atomic
+  // Write to ORIGINAL index since velocityDelta is in original order
+  let deltaVxThisFixed = i32(forceOnThisX * params.dt * FIXED_POINT_SCALE);
+  let deltaVyThisFixed = i32(forceOnThisY * params.dt * FIXED_POINT_SCALE);
+  atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], deltaVxThisFixed);
+  atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], deltaVyThisFixed);
+
+  // Temporal density smoothing: exponential moving average
+  // Write to ORIGINAL index since density buffer is in original order
+  let prevDensity = densityOutput[thisOriginalIdx];
+  const DENSITY_SMOOTH_FACTOR = 0.7;
+  let smoothedDensity = prevDensity * DENSITY_SMOOTH_FACTOR + densityAccum * (1.0 - DENSITY_SMOOTH_FACTOR);
+  densityOutput[thisOriginalIdx] = smoothedDensity;
 }

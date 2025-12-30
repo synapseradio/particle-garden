@@ -5,7 +5,8 @@
 # Single compilation unit for the web frontend.
 # All modules compile together, eliminating duplicate variable problems.
 #
-# This replaces the 9 separate JS files with a single app.js.
+# ARCHITECTURE: WebGPU-only physics and rendering.
+# The WASM worker path has been removed; all computation runs on GPU.
 #
 # Compile with: nim js -d:release --out:web/app.js src/app.nim
 #
@@ -22,7 +23,7 @@ from std/dom import Window, requestAnimationFrame
 # IMPORTANT: These imports MUST remain in layer order. Each layer depends on
 # the previous layers. Reordering (e.g., alphabetizing) will break compilation.
 #
-# Dependency chain: config → buffers → {renderer, grid, workers, ui} → webgpu_*
+# Dependency chain: config → buffers → {renderer, grid, ui} → webgpu_*
 #
 
 # Layer 1: Configuration (no dependencies)
@@ -34,7 +35,6 @@ import buffers
 # Layer 3: Browser integration modules
 import renderer
 import grid
-import workers
 import ui
 
 # Layer 4: WebGPU modules
@@ -48,17 +48,12 @@ import webgpu_render
 
 from bindings/js_interop import
   console, jsRandom, newJsObject,
-  setGlobal, getGlobal, consoleLog, consoleWarn, performanceNow
+  setGlobal, getGlobal, consoleLog, consoleWarn, consoleError, performanceNow
 
 from bindings/dom_extensions import
   HTMLCanvasElement, domDocument, domWindow, addEventListener
 
-# JsObject arithmetic operators - use explicit procs to avoid polluting native float/int types
-proc jsAdd(a, b: JsObject): JsObject {.importjs: "(# + #)".}
-proc jsSub(a, b: JsObject): JsObject {.importjs: "(# - #)".}
-proc jsMul(a, b: JsObject): JsObject {.importjs: "(# * #)".}
-proc jsLt(a, b: JsObject): JsObject {.importjs: "(# < #)".}
-proc jsGe(a, b: JsObject): JsObject {.importjs: "(# >= #)".}
+import bindings/typed_arrays
 
 # Disambiguate newJsObject (both jsffi and js_interop export it)
 proc makeJsObject(): JsObject {.importjs: "({})".}
@@ -156,124 +151,58 @@ proc resetParticles*() {.exportc.} =
   initParticles()  # This now handles GPU upload internally
 
 # ==============================================================================
-# PHYSICS (DUAL PATH: WebGPU or WASM)
+# PHYSICS (WebGPU Compute)
 # ==============================================================================
 
 proc physics(dt: float): Future[void] {.async.} =
-  ## Run one physics step using WebGPU compute shaders (if available) or WASM workers.
+  ## Run one physics step using WebGPU compute shaders.
+  ## All computation (grid building, forces, integration) happens on GPU.
 
   let t0 = performanceNow()
 
-  if useWebGPU and webgpu_compute.isPipelineReady:
-    # ═══════════════════════════════════════════════════════════════════════
-    # WebGPU Compute Path (ALL computation on GPU)
-    # ═══════════════════════════════════════════════════════════════════════
+  if not (useWebGPU and webgpu_compute.isPipelineReady):
+    # WebGPU not available - cannot run physics
+    consoleWarn(toJs("WebGPU not ready - skipping physics frame"))
+    return
 
-    # Only compute grid dimensions - no CPU sorting
-    let gridResult = grid.computeGridDimensions(canvasWidth(), canvasHeight())
-    gridTimeMs = 0  # Grid built on GPU
+  # ═══════════════════════════════════════════════════════════════════════
+  # WebGPU Compute Path (ALL computation on GPU)
+  # ═══════════════════════════════════════════════════════════════════════
 
-    let tPhysics0 = performanceNow()
+  # Only compute grid dimensions - no CPU sorting
+  let gridResult = grid.computeGridDimensions(canvasWidth(), canvasHeight())
+  gridTimeMs = 0  # Grid built on GPU
 
-    # Build physics params object
-    # NOTE: Physics uses WORLD dimensions, not canvas dimensions
-    let params = makeJsObject()
-    params["dt"] = toJs(dt)
-    params["particleCount"] = toJs(particleCount)
-    params["width"] = toJs(config.WORLD_W)
-    params["height"] = toJs(config.WORLD_H)
-    params["gridW"] = gridResult["gridW"]
-    params["gridH"] = gridResult["gridH"]
-    params["rMax"] = toJs(config.CONFIG.interactionRadius)
-    params["fMul"] = toJs(config.CONFIG.forceStrength)
-    params["friction"] = toJs(1.0 - config.CONFIG.friction)
-    # Scale mouse from canvas to world coordinates
-    let mouseScaleX = config.WORLD_W / float(canvasWidth())
-    let mouseScaleY = config.WORLD_H / float(canvasHeight())
-    params["mouseX"] = toJs(ui.mouseX * mouseScaleX)
-    params["mouseY"] = toJs(ui.mouseY * mouseScaleY)
-    params["mouseDown"] = toJs(if ui.mouseDown: 1 else: 0)
-    params["mouseRightDown"] = toJs(if ui.mouseRightDown: 1 else: 0)
-    params["parity"] = toJs(buffers.activeParity)  # Use current parity
-    params["matrix"] = toJs(buffers.matrix)
+  let tPhysics0 = performanceNow()
 
-    await webgpu_compute.runPhysicsFrame(params)
+  # Build physics params object
+  # NOTE: Physics uses WORLD dimensions, not canvas dimensions
+  let params = makeJsObject()
+  params["dt"] = toJs(dt)
+  params["particleCount"] = toJs(particleCount)
+  params["width"] = toJs(config.WORLD_W)
+  params["height"] = toJs(config.WORLD_H)
+  params["gridW"] = gridResult["gridW"]
+  params["gridH"] = gridResult["gridH"]
+  params["rMax"] = toJs(config.CONFIG.interactionRadius)
+  params["fMul"] = toJs(config.CONFIG.forceStrength)
+  params["friction"] = toJs(1.0 - config.CONFIG.friction)
+  # Scale mouse from canvas to world coordinates
+  let mouseScaleX = config.WORLD_W / float(canvasWidth())
+  let mouseScaleY = config.WORLD_H / float(canvasHeight())
+  params["mouseX"] = toJs(ui.mouseX * mouseScaleX)
+  params["mouseY"] = toJs(ui.mouseY * mouseScaleY)
+  params["mouseDown"] = toJs(if ui.mouseDown: 1 else: 0)
+  params["mouseRightDown"] = toJs(if ui.mouseRightDown: 1 else: 0)
+  params["parity"] = toJs(buffers.activeParity)  # Always 0 in WebGPU mode
+  params["matrix"] = toJs(buffers.matrix)
 
-    physicsTimeMs = performanceNow() - tPhysics0
-    integrationTimeMs = 0  # Integration happens on GPU
+  await webgpu_compute.runPhysicsFrame(params)
 
-    workerTimeMs = performanceNow() - t0
-  else:
-    # ═══════════════════════════════════════════════════════════════════════
-    # WASM Worker Path (CPU parallel)
-    # ═══════════════════════════════════════════════════════════════════════
+  physicsTimeMs = performanceNow() - tPhysics0
+  integrationTimeMs = 0  # Integration happens on GPU
 
-    # Phase 1: Build spatial grid - sorts particles by cell and flips parity
-    let tGrid0 = performanceNow()
-    let gridResult = grid.buildGrid(particleCount, canvasWidth(), canvasHeight())
-    gridTimeMs = performanceNow() - tGrid0
-
-    # Phase 2: Dispatch to WASM workers - they compute velocity deltas
-    # NOTE: Physics uses WORLD dimensions, not canvas dimensions
-    let tPhysics0 = performanceNow()
-    # Scale mouse from canvas to world coordinates
-    let mouseScaleX = config.WORLD_W / float(canvasWidth())
-    let mouseScaleY = config.WORLD_H / float(canvasHeight())
-    await workers.dispatchPhysicsShared(
-      dt,
-      particleCount,
-      config.WORLD_W,
-      config.WORLD_H,
-      gridResult["gridW"].to(int),
-      gridResult["gridH"].to(int),
-      float(gridResult["cellSize"].to(int)),
-      ui.mouseX * mouseScaleX,
-      ui.mouseY * mouseScaleY,
-      ui.mouseDown,
-      ui.mouseRightDown
-    )
-    physicsTimeMs = performanceNow() - tPhysics0
-
-    # Phase 3: Integration - apply velocity deltas and integrate positions
-    let tIntegration0 = performanceNow()
-
-    # Select active buffer (buildGrid flipped parity)
-    let currentParity = buffers.activeParity
-    let pxActive = if currentParity == 1: buffers.pxB else: buffers.pxA
-    let pyActive = if currentParity == 1: buffers.pyB else: buffers.pyA
-    let vxActive = if currentParity == 1: buffers.vxB else: buffers.vxA
-    let vyActive = if currentParity == 1: buffers.vyB else: buffers.vyA
-    let vxDeltaArr = buffers.vxDelta
-    let vyDeltaArr = buffers.vyDelta
-
-    # Use WORLD dimensions for toroidal wrap (physics domain)
-    let W = toJs(config.WORLD_W)
-    let H = toJs(config.WORLD_H)
-    let friction = toJs(1.0 - config.CONFIG.friction)
-    let zero = toJs(0)
-
-    # Apply velocity deltas and integrate positions
-    for i in 0 ..< particleCount:
-      # Apply delta and friction
-      vxActive[i] = jsMul(jsAdd(vxActive[i], vxDeltaArr[i]), friction)
-      vyActive[i] = jsMul(jsAdd(vyActive[i], vyDeltaArr[i]), friction)
-
-      # Update position
-      var x = jsAdd(pxActive[i], vxActive[i])
-      var y = jsAdd(pyActive[i], vyActive[i])
-
-      # Toroidal wrap
-      if jsLt(x, zero).to(bool): x = jsAdd(x, W)
-      elif jsGe(x, W).to(bool): x = jsSub(x, W)
-      if jsLt(y, zero).to(bool): y = jsAdd(y, H)
-      elif jsGe(y, H).to(bool): y = jsSub(y, H)
-
-      pxActive[i] = x
-      pyActive[i] = y
-
-    integrationTimeMs = performanceNow() - tIntegration0
-
-    workerTimeMs = performanceNow() - t0
+  workerTimeMs = performanceNow() - t0
 
 # ==============================================================================
 # MAIN LOOP
@@ -347,39 +276,38 @@ proc loop(now: float): Future[void] {.async.} =
 
 proc init(): Future[void] {.async, exportc.} =
   ## Initialize the application.
+  ## Requires WebGPU - no fallback to WASM workers.
 
   # Allocate shared memory buffers
   buffers.allocateBuffers()
 
-  # Try WebGPU first (must be done BEFORE WebGL since they share the canvas)
-  consoleLog(toJs("Attempting WebGPU initialization..."))
+  # Initialize WebGPU (required - no fallback)
+  consoleLog(toJs("Initializing WebGPU..."))
   let webgpuResult = await webgpu_init.initWebGPU()
-  if webgpuResult["success"].to(bool):
-    consoleLog(toJs("WebGPU device acquired:"), webgpuResult["info"])
-    consoleLog(toJs("Initializing WebGPU compute pipelines..."))
-    let pipelineResult = await webgpu_compute.initPipelines()
-    if pipelineResult["success"].to(bool):
-      consoleLog(toJs("WebGPU compute pipelines ready:"), pipelineResult["info"])
-      useWebGPU = true
-      consoleLog(toJs("Physics acceleration: WebGPU compute shaders"))
+  if not webgpuResult["success"].to(bool):
+    consoleError(toJs("WebGPU initialization failed:"), webgpuResult["error"])
+    consoleError(toJs("This application requires WebGPU. Please use a browser with WebGPU support."))
+    return
 
-      # Initialize WebGPU render pipeline (zero-readback rendering)
-      # MUST be done before WebGL since canvas can only have one context type
-      consoleLog(toJs("Initializing WebGPU render pipeline..."))
-      if webgpu_render.initWebGPURender():
-        useWebGPURender = true
-        consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
-      else:
-        consoleLog(toJs("WebGPU rendering: DISABLED (will use WebGL fallback)"))
-    else:
-      consoleWarn(toJs("WebGPU pipeline initialization failed:"), pipelineResult["error"])
-      consoleLog(toJs("Falling back to WASM workers"))
+  consoleLog(toJs("WebGPU device acquired:"), webgpuResult["info"])
+  consoleLog(toJs("Initializing WebGPU compute pipelines..."))
+  let pipelineResult = await webgpu_compute.initPipelines()
+  if not pipelineResult["success"].to(bool):
+    consoleError(toJs("WebGPU pipeline initialization failed:"), pipelineResult["error"])
+    return
+
+  consoleLog(toJs("WebGPU compute pipelines ready:"), pipelineResult["info"])
+  useWebGPU = true
+  consoleLog(toJs("Physics acceleration: WebGPU compute shaders"))
+
+  # Initialize WebGPU render pipeline (zero-readback rendering)
+  consoleLog(toJs("Initializing WebGPU render pipeline..."))
+  if webgpu_render.initWebGPURender():
+    useWebGPURender = true
+    consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
   else:
-    consoleWarn(toJs("WebGPU not available:"), webgpuResult["error"])
-    consoleLog(toJs("Using WASM workers for physics"))
-
-  # Initialize WebGL (only if WebGPU rendering not available)
-  if not useWebGPURender:
+    # Fall back to WebGL for rendering only (physics still on GPU)
+    consoleLog(toJs("WebGPU rendering: DISABLED (will use WebGL fallback)"))
     if not renderer.initGL():
       return
 
@@ -397,8 +325,8 @@ proc init(): Future[void] {.async, exportc.} =
   # Set up UI bindings
   ui.setupUI()
 
-  # Set matrix update callback
-  ui.setMatrixUpdateCallback(proc() = workers.updateWorkersMatrix())
+  # Set matrix update callback (no-op since matrix is in shared GPU buffer)
+  ui.setMatrixUpdateCallback(proc() = discard)
 
   # Initialize attraction matrix with random values
   ui.randomizeMatrix()
@@ -406,20 +334,14 @@ proc init(): Future[void] {.async, exportc.} =
   # Initialize particles
   initParticles()
 
-  # Upload particle data to GPU if using WebGPU
-  if useWebGPU:
-    consoleLog(toJs("Uploading initial particle data to GPU..."))
-    let uploadResult = await webgpu_compute.uploadInitialData(particleCount)
-    if uploadResult["success"].to(bool):
-      consoleLog(toJs("Initial data uploaded to GPU"))
-    else:
-      consoleWarn(toJs("Failed to upload initial data:"), uploadResult["error"])
-      consoleLog(toJs("Falling back to WASM workers"))
-      useWebGPU = false
+  # Upload particle data to GPU
+  consoleLog(toJs("Uploading initial particle data to GPU..."))
+  let uploadResult = await webgpu_compute.uploadInitialData(particleCount)
+  if not uploadResult["success"].to(bool):
+    consoleError(toJs("Failed to upload initial data:"), uploadResult["error"])
+    return
 
-  # Only create worker pool if WebGPU is not available
-  if not useWebGPU:
-    workers.createWorkers()
+  consoleLog(toJs("Initial data uploaded to GPU"))
 
   # Expose resetParticles globally for HTML onclick handler
   setGlobal("resetParticles", toJs(resetParticles))

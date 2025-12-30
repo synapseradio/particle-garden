@@ -61,6 +61,13 @@ type
     blockSums* {.importjs: "blockSums".}: GPUBuffer
     blockOffsets* {.importjs: "blockOffsets".}: GPUBuffer
     cellStats* {.importjs: "cellStats".}: GPUBuffer
+    # Physical scatter buffers (cache-optimized sorted particle data)
+    pxSorted* {.importjs: "pxSorted".}: GPUBuffer
+    pySorted* {.importjs: "pySorted".}: GPUBuffer
+    vxSorted* {.importjs: "vxSorted".}: GPUBuffer
+    vySorted* {.importjs: "vySorted".}: GPUBuffer
+    speciesSorted* {.importjs: "speciesSorted".}: GPUBuffer
+    reverseIndices* {.importjs: "reverseIndices".}: GPUBuffer
 
   InitResult* = ref object of JsObject
     success* {.importjs: "success".}: bool
@@ -79,6 +86,13 @@ type
     sync* {.importjs: "sync".}: int
     sortedIndices* {.importjs: "sortedIndices".}: int
     cellStats* {.importjs: "cellStats".}: int
+    # Physical scatter buffer sizes (cache optimization)
+    pxSorted* {.importjs: "pxSorted".}: int
+    pySorted* {.importjs: "pySorted".}: int
+    vxSorted* {.importjs: "vxSorted".}: int
+    vySorted* {.importjs: "vySorted".}: int
+    speciesSorted* {.importjs: "speciesSorted".}: int
+    reverseIndices* {.importjs: "reverseIndices".}: int
 
 # ==============================================================================
 # SECTION 2: HELPER BINDINGS
@@ -171,6 +185,16 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   # Cell statistics for hierarchical forces (8 floats per cell: 2 centroid + 6 species counts)
   result.cellStats = gridCells * 8 * 4  # 32 bytes per cell
 
+  # Physical scatter buffers (cache-optimized sorted particle data)
+  # These buffers hold particle data in spatially-sorted order, enabling sequential
+  # memory access in the forces pass for L1 cache hits instead of random access L3 misses.
+  result.pxSorted = floatSize        # Sorted X positions (f32 per particle)
+  result.pySorted = floatSize        # Sorted Y positions (f32 per particle)
+  result.vxSorted = floatSize        # Sorted X velocities (f32 per particle)
+  result.vySorted = floatSize        # Sorted Y velocities (f32 per particle)
+  result.speciesSorted = speciesBufferSize  # Sorted species (u32 per particle)
+  result.reverseIndices = MAX_PARTICLES * 4  # Maps original_idx -> sorted_idx (for velocity scatter)
+
 # ==============================================================================
 # SECTION 5: FEATURE DETECTION
 # ==============================================================================
@@ -251,6 +275,12 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   if sizes.gridOffsets > maxBufferSize: maxBufferSize = sizes.gridOffsets
   if sizes.matrix > maxBufferSize: maxBufferSize = sizes.matrix
   if sizes.sortedIndices > maxBufferSize: maxBufferSize = sizes.sortedIndices
+  if sizes.pxSorted > maxBufferSize: maxBufferSize = sizes.pxSorted
+  if sizes.pySorted > maxBufferSize: maxBufferSize = sizes.pySorted
+  if sizes.vxSorted > maxBufferSize: maxBufferSize = sizes.vxSorted
+  if sizes.vySorted > maxBufferSize: maxBufferSize = sizes.vySorted
+  if sizes.speciesSorted > maxBufferSize: maxBufferSize = sizes.speciesSorted
+  if sizes.reverseIndices > maxBufferSize: maxBufferSize = sizes.reverseIndices
 
   # Build required limits object
   let requiredLimits = makeJsObject()
@@ -354,6 +384,17 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
 
   # Cell statistics for hierarchical forces LOD
   buffers.cellStats = createBuf(sizes.cellStats, bufferUsage, "Cell Statistics (LOD)")
+
+  # Physical scatter buffers (cache-optimized sorted particle data)
+  # These buffers hold particle data in spatially-sorted order for sequential L1 cache access.
+  # The bin-scatter pass physically copies particle data into these buffers, eliminating
+  # the indirect indexing (pxA[sortedIndices[j]]) that caused L3 cache misses.
+  buffers.pxSorted = createBuf(sizes.pxSorted, bufferUsage, "Sorted Positions X")
+  buffers.pySorted = createBuf(sizes.pySorted, bufferUsage, "Sorted Positions Y")
+  buffers.vxSorted = createBuf(sizes.vxSorted, bufferUsage, "Sorted Velocities X")
+  buffers.vySorted = createBuf(sizes.vySorted, bufferUsage, "Sorted Velocities Y")
+  buffers.speciesSorted = createBuf(sizes.speciesSorted, bufferUsage, "Sorted Species")
+  buffers.reverseIndices = createBuf(sizes.reverseIndices, bufferUsage, "Reverse Indices (original -> sorted)")
 
   # NOTE: Staging buffers removed - WebGPU render reads directly from GPU buffers (zero readback)
 

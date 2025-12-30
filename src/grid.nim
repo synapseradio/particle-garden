@@ -1,30 +1,25 @@
 # ==============================================================================
-# EMERGENT GARDEN - SPATIAL GRID CONSTRUCTION
+# EMERGENT GARDEN - SPATIAL GRID DIMENSIONS
 # ==============================================================================
 #
-# Spatial partitioning grid for Goober Garden particle simulation.
+# Spatial partitioning grid dimensions for particle simulation.
 #
-# This module handles the spatial grid used for efficient neighbor queries.
-# The grid enables O(n) physics by limiting particle interactions to nearby cells.
+# ARCHITECTURE: WebGPU-only physics.
+# This module only computes grid dimensions. The actual grid building
+# (counting, prefix sum, scatter) happens entirely on the GPU via
+# WebGPU compute shaders in webgpu_compute.nim.
 #
-# Key algorithm:
-# 1. Count particles per cell using source buffer positions
-# 2. Compute prefix sum to get cell offsets
-# 3. Scatter particles into destination buffer in sorted cell order
-# 4. Flip buffer parity so workers read from newly sorted buffer
-#
-# This "sort by cell" approach ensures particles in the same spatial region
-# are contiguous in memory, enabling cache-friendly iteration in workers.
+# The computeGridDimensions() proc calculates how many cells to use
+# based on world size and interaction radius. This info is passed
+# to the GPU for the bin-count, prefix-sum, and bin-scatter passes.
 #
 # Compile with: nim js -o:web/grid.js src/grid.nim
 #
 # ==============================================================================
 
 from std/jsffi import JsObject
-import bindings/typed_arrays
 import bindings/js_interop
 import config
-import buffers
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -77,151 +72,16 @@ proc computeGridDimensions*(canvasWidth: int, canvasHeight: int): GridDimensions
   result.cellSize = cellSize
 
 # ==============================================================================
-# SECTION 4: GRID BUILDING AND PARTICLE SORTING
+# SECTION 4: LEGACY BUILDGRID REMOVED
 # ==============================================================================
-
-proc buildGrid*(particleCount: int, canvasWidth: int, canvasHeight: int): GridDimensions {.exportc.} =
-  ## Build the spatial partitioning grid and sort particles by cell.
-  ##
-  ## This function:
-  ## 1. Determines grid dimensions from WORLD size and interaction radius
-  ## 2. Counts particles per cell
-  ## 3. Computes prefix sums for cell offsets
-  ## 4. Scatters particles into destination buffer in sorted order
-  ## 5. Flips the active parity so workers read from sorted data
-  ##
-  ## NOTE: Grid dimensions are computed from WORLD size, not canvas size.
-  ## The canvas parameters are ignored but kept for API compatibility.
-  ##
-  ## particleCount - Number of active particles
-  ## Returns object with gridW, gridH, cellSize
-
-  let t0 = performanceNow()
-  let n = particleCount
-
-  # Cell size equals interaction radius - classic spatial hash, no LOD artifacts
-  cellSize = max(CONFIG.interactionRadius, 16)
-
-  # Compute grid dimensions from WORLD size (decoupled from display)
-  gridW = jsFloor(config.WORLD_W / cellSize.float)
-  gridH = jsFloor(config.WORLD_H / cellSize.float)
-  gridW = int(jsMax(1.0, jsMin(gridW.float, MAX_GRID.float)))
-  gridH = int(jsMax(1.0, jsMin(gridH.float, MAX_GRID.float)))
-
-  let numCells = gridW * gridH
-  let invCellW = gridW.float / config.WORLD_W
-  let invCellH = gridH.float / config.WORLD_H
-
-  # ---------------------------------------------------------------------------
-  # SCATTER DIRECTION & PARITY:
-  # The scatter operation copies particles from buffer[parity] to buffer[1-parity]
-  # in sorted order (grouped by grid cell for cache-friendly neighbor iteration).
-  #
-  # Before scatter:  buffer[activeParity] = valid unsorted state
-  # After scatter:   buffer[1-activeParity] = valid SORTED state
-  #
-  # We then flip parity (see line ~198), so:
-  #   - activeParity now points to the sorted buffer
-  #   - Workers/renderer read from the newly-sorted data
-  #   - The old buffer becomes "stale" (will be overwritten next frame)
-  #
-  # This is the key difference from WebGPU path, which does in-place updates
-  # and never flips parity.
-  # ---------------------------------------------------------------------------
-  var pxSrc, pySrc, vxSrc, vySrc: Float32Array
-  var sSrc: Uint8Array
-  var pxDst, pyDst, vxDst, vyDst: Float32Array
-  var sDst: Uint8Array
-
-  if activeParity == 0:
-    pxSrc = pxA
-    pySrc = pyA
-    vxSrc = vxA
-    vySrc = vyA
-    sSrc = speciesA
-    pxDst = pxB
-    pyDst = pyB
-    vxDst = vxB
-    vyDst = vyB
-    sDst = speciesB
-  else:
-    pxSrc = pxB
-    pySrc = pyB
-    vxSrc = vxB
-    vySrc = vyB
-    sSrc = speciesB
-    pxDst = pxA
-    pyDst = pyA
-    vxDst = vxA
-    vyDst = vyA
-    sDst = speciesA
-
-  # Clear counts - clear entire buffer to prevent stale data access
-  # WASM might access cells beyond numCells if particle positions are out of bounds
-  let maxCells = gridCounts.len
-  for i in 0 ..< maxCells:
-    gridCounts[i] = 0
-
-  # Count particles per cell using source positions
-  for i in 0 ..< n:
-    var cx = int(pxSrc[i] * invCellW)
-    var cy = int(pySrc[i] * invCellH)
-
-    if cx >= gridW:
-      cx = gridW - 1
-    elif cx < 0:
-      cx = 0
-
-    if cy >= gridH:
-      cy = gridH - 1
-    elif cy < 0:
-      cy = 0
-
-    let cellIdx = cy * gridW + cx
-    gridCounts[cellIdx] = gridCounts[cellIdx] + 1
-
-  # Prefix sum for offsets
-  var off = 0
-  for i in 0 ..< numCells:
-    gridOffsets[i] = off
-    fillOffsets[i] = off  # Keep a copy for filling
-    off = off + gridCounts[i]
-
-  # SCATTER: Reorder particles into destination buffers
-  # This is the sort - particles are copied to contiguous positions by cell
-  for i in 0 ..< n:
-    var cx = int(pxSrc[i] * invCellW)
-    var cy = int(pySrc[i] * invCellH)
-
-    if cx >= gridW:
-      cx = gridW - 1
-    elif cx < 0:
-      cx = 0
-
-    if cy >= gridH:
-      cy = gridH - 1
-    elif cy < 0:
-      cy = 0
-
-    let cell = cy * gridW + cx
-    let dstIdx = fillOffsets[cell]
-    fillOffsets[cell] = fillOffsets[cell] + 1
-
-    # Copy all particle data to sorted position
-    pxDst[dstIdx] = pxSrc[i]
-    pyDst[dstIdx] = pySrc[i]
-    vxDst[dstIdx] = vxSrc[i]
-    vyDst[dstIdx] = vySrc[i]
-    sDst[dstIdx] = sSrc[i]
-
-  # Flip the buffer parity
-  # Workers will now read from destination buffer (which is sorted)
-  setActiveParity(1 - activeParity)
-
-  gridTimeMs = performanceNow() - t0
-
-  result = GridDimensions()
-  result.gridW = gridW
-  result.gridH = gridH
-  result.cellSize = cellSize
+#
+# The buildGrid() proc that performed CPU-side grid construction and particle
+# sorting has been removed. In WebGPU mode, grid building happens entirely
+# on the GPU via compute shaders:
+#   - bin-count.wgsl: Count particles per cell
+#   - prefix-sum*.wgsl: Compute cell offsets
+#   - bin-scatter.wgsl: Build sorted index mapping
+#
+# Only computeGridDimensions() remains to calculate grid parameters.
+# ==============================================================================
 

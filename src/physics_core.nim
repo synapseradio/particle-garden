@@ -3,11 +3,12 @@
 # ==============================================================================
 #
 # Pure functions for particle physics calculations. These have no side effects
-# and can be tested in isolation without buffer access or WASM memory.
+# and can be tested in isolation without buffer access.
 #
 # Used by:
-#   - physics_wasm.nim (WASM compilation)
 #   - tests/test_physics.nim (native test compilation)
+#
+# Note: WebGPU compute shaders (forces.wgsl) use equivalent GPU implementations.
 #
 # ==============================================================================
 

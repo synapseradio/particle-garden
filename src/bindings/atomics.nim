@@ -324,18 +324,18 @@ proc getWaitAsyncPromise*(waitResult: AtomicsWaitAsyncResult): JsPromise[cstring
 # SECTION 9: TYPE ALIASES FOR BACKWARDS COMPATIBILITY
 # ==============================================================================
 
-# Legacy naming from workers.nim (atomicsStore vs atomicStore)
+# Legacy naming (atomicsStore vs atomicStore)
 proc atomicsStore*(arr: Int32Array, index: int, value: int): int {.importjs: "Atomics.store(#, #, #)".}
-  ## Legacy alias for atomicStore (matches workers.nim naming)
+  ## Legacy alias for atomicStore
 
 proc atomicsLoad*(arr: Int32Array, index: int): int {.importjs: "Atomics.load(#, #)".}
-  ## Legacy alias for atomicLoad (matches workers.nim naming)
+  ## Legacy alias for atomicLoad
 
 proc atomicsNotify*(arr: Int32Array, index: int): int {.importjs: "Atomics.notify(#, #)".}
-  ## Legacy alias for atomicNotify (matches workers.nim naming)
+  ## Legacy alias for atomicNotify
 
 proc atomicsWaitAsync*(arr: Int32Array, index: int, value: int): AtomicsWaitAsyncResult {.importjs: "Atomics.waitAsync(#, #, #)".}
-  ## Legacy alias for atomicWaitAsync (matches workers.nim naming)
+  ## Legacy alias for atomicWaitAsync
 
 # Note: Int32ArrayView is a type alias for Int32Array in typed_arrays.nim,
 # so all Int32Array procs automatically work with Int32ArrayView.

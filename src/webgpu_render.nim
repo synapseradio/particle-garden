@@ -11,6 +11,12 @@
 # - Vertex shader pulls data from storage buffers via instance_index
 # - Fragment shader creates circular point sprites with soft edges
 #
+# PARITY NOTE:
+# The updateBindGroup(parity) proc accepts a parity parameter for historical
+# reasons (legacy double-buffering support). In the current WebGPU-only
+# architecture, parity is always 0 - physics does in-place updates on a
+# single buffer set. The parity parameter is retained for API compatibility.
+#
 # ==============================================================================
 
 from std/jsffi import JsObject, toJs, `[]`, `[]=`
@@ -65,6 +71,10 @@ var fadeBindGroupReadB: GPUBindGroup  # Fade pass reads from B
 # Shared sampler for texture reads
 var linearSampler: GPUSampler
 
+# Depth texture for Z-ordering (larger particles behind smaller ones)
+var depthTexture: GPUTexture
+var depthTextureView: GPUTextureView
+
 # Canvas format for texture creation
 var canvasFormat: cstring
 
@@ -101,15 +111,6 @@ const OFFSETS = array<vec2f, 6>(
   vec2f( 1.0,  1.0),
 );
 
-const COLORS = array<vec3f, 6>(
-  vec3f(1.0, 0.4, 0.4),
-  vec3f(0.4, 1.0, 0.4),
-  vec3f(0.4, 0.7, 1.0),
-  vec3f(1.0, 1.0, 0.4),
-  vec3f(1.0, 0.4, 1.0),
-  vec3f(0.4, 1.0, 1.0),
-);
-
 @group(0) @binding(0) var<storage, read> px: array<f32>;
 @group(0) @binding(1) var<storage, read> py: array<f32>;
 @group(0) @binding(2) var<storage, read> species: array<u32>;
@@ -118,8 +119,8 @@ const COLORS = array<vec3f, 6>(
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
-  @location(0) color: vec3f,
-  @location(1) offset: vec2f,
+  @location(0) offset: vec2f,
+  @location(1) densityVal: f32,
 };
 
 @vertex
@@ -130,8 +131,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   let particleX = px[particleId];
   let particleY = py[particleId];
-  let particleSpecies = species[particleId];
-
+  let particleDensity = density[particleId];
   let offset = OFFSETS[cornerId];
 
   // Glow radius scaled by canvas/world ratio
@@ -140,9 +140,14 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let worldPos = vec2f(particleX, particleY) + offset * glowRadius / scale;
 
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
-  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);
+
+  // Z-ordering: high density (small particles) = closer to camera (lower Z)
+  // Low density (large particles) = further back (higher Z)
+  // Using 1-saturate(density/10) so dense particles are in front
+  let zDepth = 1.0 - clamp(particleDensity * 0.1, 0.0, 0.99);
+  output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
   output.offset = offset;
-  output.color = COLORS[min(particleSpecies, 5u)];
+  output.densityVal = particleDensity;
 
   return output;
 }
@@ -151,11 +156,14 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let l = length(input.offset);
 
-  // Gaussian falloff with configurable intensity
-  let alpha = exp(-6.0 * l * l) * params.glowIntensity / 24.0;
+  // Glow intensity modulated by density:
+  // High density (small particles) = more glow
+  // Low density (large particles) = less glow
+  let densityFactor = clamp(input.densityVal * 0.15, 0.1, 1.0);
+  let alpha = exp(-6.0 * l * l) * params.glowIntensity * densityFactor / 24.0;
 
-  // Premultiplied alpha for additive blending
-  return vec4f(input.color * alpha, alpha);
+  // White glow with premultiplied alpha for additive blending
+  return vec4f(alpha, alpha, alpha, alpha);
 }
 """
 
@@ -394,6 +402,13 @@ proc initWebGPURender*(): bool =
   primitive["cullMode"] = "none".cstring.toJs
   pipelineDesc["primitive"] = primitive
 
+  # Depth stencil state for Z-ordering (larger particles behind smaller ones)
+  let depthStencil = newJsObject()
+  depthStencil["format"] = "depth24plus".cstring.toJs
+  depthStencil["depthWriteEnabled"] = true.toJs
+  depthStencil["depthCompare"] = "less".cstring.toJs  # Lower Z = closer to camera
+  pipelineDesc["depthStencil"] = depthStencil
+
   renderPipeline = webgpu_init.device.createRenderPipeline(pipelineDesc)
 
   # Create glow shader module
@@ -445,6 +460,13 @@ proc initWebGPURender*(): bool =
   glowPrimitive["topology"] = "triangle-list".cstring.toJs
   glowPrimitive["cullMode"] = "none".cstring.toJs
   glowPipelineDesc["primitive"] = glowPrimitive
+
+  # Depth stencil for glow (read depth, don't write - glow layers on top)
+  let glowDepthStencil = newJsObject()
+  glowDepthStencil["format"] = "depth24plus".cstring.toJs
+  glowDepthStencil["depthWriteEnabled"] = false.toJs  # Don't overwrite particle depth
+  glowDepthStencil["depthCompare"] = "less".cstring.toJs
+  glowPipelineDesc["depthStencil"] = glowDepthStencil
 
   glowPipeline = webgpu_init.device.createRenderPipeline(glowPipelineDesc)
 
@@ -541,6 +563,14 @@ proc initWebGPURender*(): bool =
   fadePrimitive["cullMode"] = "none".cstring.toJs
   fadePipelineDesc["primitive"] = fadePrimitive
 
+  # Depth-stencil config required when render pass has depth attachment
+  # Fade is fullscreen overlay - always pass depth test, don't write depth
+  let fadeDepthStencil = newJsObject()
+  fadeDepthStencil["format"] = "depth24plus".cstring.toJs
+  fadeDepthStencil["depthWriteEnabled"] = false.toJs
+  fadeDepthStencil["depthCompare"] = "always".cstring.toJs
+  fadePipelineDesc["depthStencil"] = fadeDepthStencil
+
   fadePipeline = webgpu_init.device.createRenderPipeline(fadePipelineDesc)
 
   # ==========================================================================
@@ -629,6 +659,18 @@ proc initWebGPURender*(): bool =
 
   trailViewA = trailTextureA.createView()
   trailViewB = trailTextureB.createView()
+
+  # Create depth texture for Z-ordering (larger particles behind smaller ones)
+  let depthTextureDesc = newJsObject()
+  let depthSize = newJsArray()
+  discard depthSize.push(canvas.width.toJs)
+  discard depthSize.push(canvas.height.toJs)
+  depthTextureDesc["size"] = depthSize
+  depthTextureDesc["format"] = "depth24plus".cstring.toJs
+  depthTextureDesc["usage"] = gpuTextureUsageRenderAttachment.toJs
+  depthTextureDesc["label"] = "Depth Texture".cstring.toJs
+  depthTexture = webgpu_init.device.createTexture(depthTextureDesc)
+  depthTextureView = depthTexture.createView()
 
   # ==========================================================================
   # CLEAR TRAIL TEXTURES (ensure valid initial state for ping-pong)
@@ -905,6 +947,14 @@ proc render*(particleCount: int): RenderTiming =
   discard offscreenAttachments.push(offscreenAttachment)
   offscreenPassDesc["colorAttachments"] = offscreenAttachments
 
+  # Add depth attachment for Z-ordering
+  let depthAttachment = newJsObject()
+  depthAttachment["view"] = depthTextureView.toJs
+  depthAttachment["depthLoadOp"] = "clear".cstring.toJs
+  depthAttachment["depthClearValue"] = 1.0.toJs  # Far plane
+  depthAttachment["depthStoreOp"] = "store".cstring.toJs
+  offscreenPassDesc["depthStencilAttachment"] = depthAttachment
+
   let offscreenPass = commandEncoder.beginRenderPass(offscreenPassDesc)
 
   # Step 1: Draw faded previous frame (if trails enabled)
@@ -968,6 +1018,8 @@ proc recreateTrailTextures() =
     trailTextureA.destroy()
   if not trailTextureB.isNil:
     trailTextureB.destroy()
+  if not depthTexture.isNil:
+    depthTexture.destroy()
 
   # Create new textures at current canvas size
   let trailTextureDesc = newJsObject()
@@ -984,6 +1036,18 @@ proc recreateTrailTextures() =
 
   trailViewA = trailTextureA.createView()
   trailViewB = trailTextureB.createView()
+
+  # Recreate depth texture at new canvas size
+  let depthTextureDesc = newJsObject()
+  let depthSize = newJsArray()
+  discard depthSize.push(canvas.width.toJs)
+  discard depthSize.push(canvas.height.toJs)
+  depthTextureDesc["size"] = depthSize
+  depthTextureDesc["format"] = "depth24plus".cstring.toJs
+  depthTextureDesc["usage"] = gpuTextureUsageRenderAttachment.toJs
+  depthTextureDesc["label"] = "Depth Texture".cstring.toJs
+  depthTexture = webgpu_init.device.createTexture(depthTextureDesc)
+  depthTextureView = depthTexture.createView()
 
   # Clear new textures to background color (same as initWebGPURender)
   let clearEncoderDesc = newJsObject()

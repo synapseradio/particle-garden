@@ -1,29 +1,22 @@
 # ==============================================================================
-# GOOBER GARDEN - NATIVE DESKTOP WRAPPER
+# EMERGENT GARDEN - NATIVE DESKTOP WRAPPER
 # ==============================================================================
 #
-# ARCHITECTURE EXPLANATION:
-# This application uses a hybrid "Native + Web" architecture to enable high-performance
-# features (SharedArrayBuffer) that are restricted in modern browsers.
+# ARCHITECTURE: WebGPU-only physics with native window wrapper.
+#
+# This application uses a hybrid "Native + Web" architecture:
 #
 # 1. Local HTTP Server (Port 8089):
-#    - We spawn a lightweight async HTTP server.
-#    - Its primary purpose is to serve the web content with specific security headers.
-#    - Serving from "file://" protocol blocks SharedArrayBuffer in most browsers.
+#    - Lightweight async HTTP server serving web content
+#    - Provides COOP/COEP headers for SharedArrayBuffer support
 #
 # 2. Native Window (WebUI):
-#    - We use the WebUI library to open a native browser window.
-#    - This window navigates to "http://localhost:8089".
+#    - Opens a native browser window pointing to localhost:8089
 #
 # SECURITY HEADERS (COOP/COEP):
-# To enable SharedArrayBuffer (required for zero-copy worker synchronization),
-# the browser requires the page to be "Cross-Origin Isolated". This is achieved
-# by serving the following headers:
+# The server provides Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy
+# headers to enable SharedArrayBuffer (used for memory buffer initialization).
 #
-# - Cross-Origin-Opener-Policy: same-origin
-# - Cross-Origin-Embedder-Policy: require-corp
-#
-# Without these headers, `SharedArrayBuffer` is undefined in the JS environment.
 # ==============================================================================
 
 import webui
@@ -35,28 +28,28 @@ const ServerPort = 8089
 const MimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript",
-  ".wasm": "application/wasm",
   ".wgsl": "text/plain",
 }.toTable
 
 # Static file registry: path -> content
 # Files are embedded at compile time via staticRead
+# NOTE: WASM artifacts (worker.js, physics.js, physics.wasm) have been removed.
+# Physics now runs entirely on WebGPU compute shaders.
 const StaticFiles = {
   "/index.html": staticRead("../web/index.html"),
   "/app.js": staticRead("../web/app.js"),
-  "/worker.js": staticRead("../web/worker.js"),
-  "/physics.js": staticRead("../web/physics.js"),
-  "/physics.wasm": staticRead("../web/physics.wasm"),
   "/shaders/bin-count.wgsl": staticRead("../web/shaders/bin-count.wgsl"),
   "/shaders/prefix-sum.wgsl": staticRead("../web/shaders/prefix-sum.wgsl"),
   "/shaders/prefix-sum-local.wgsl": staticRead("../web/shaders/prefix-sum-local.wgsl"),
   "/shaders/prefix-sum-blocks.wgsl": staticRead("../web/shaders/prefix-sum-blocks.wgsl"),
   "/shaders/prefix-sum-final.wgsl": staticRead("../web/shaders/prefix-sum-final.wgsl"),
-  "/shaders/bin-scatter.wgsl": staticRead("../web/shaders/bin-scatter.wgsl"),
+  "/shaders/bin-scatter-positions.wgsl": staticRead("../web/shaders/bin-scatter-positions.wgsl"),
+  "/shaders/bin-scatter-velocities.wgsl": staticRead("../web/shaders/bin-scatter-velocities.wgsl"),
   "/shaders/cell-stats.wgsl": staticRead("../web/shaders/cell-stats.wgsl"),
   "/shaders/forces.wgsl": staticRead("../web/shaders/forces.wgsl"),
   "/shaders/density.wgsl": staticRead("../web/shaders/density.wgsl"),
-  "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),
+  "/shaders/integrate-velocities.wgsl": staticRead("../web/shaders/integrate-velocities.wgsl"),
+  "/shaders/integrate-positions.wgsl": staticRead("../web/shaders/integrate-positions.wgsl"),
   "/shaders/render.wgsl": staticRead("../web/shaders/render.wgsl"),
 }.toTable
 
@@ -109,7 +102,7 @@ proc main() =
 
   # Navigate to our cross-origin isolated server
   let url = "http://127.0.0.1:" & $ServerPort
-  echo "🌐 Opening browser to ", url
+  echo "Opening browser to ", url
   window.show(url)
 
   # Wait for window to close

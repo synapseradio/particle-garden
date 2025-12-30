@@ -2,21 +2,23 @@
 # EMERGENT GARDEN - MEMORY LAYOUT (Single Source of Truth)
 # ==============================================================================
 #
-# This module defines the memory layout for SharedArrayBuffer / WASM memory.
+# This module defines the memory layout for ArrayBuffer-backed typed arrays.
 # It is the ONLY place where memory offsets are computed.
 #
-# CROSS-COMPILATION:
-#   This module compiles for BOTH targets:
-#   - `nim js` (browser) - used by config.nim, buffers.nim
-#   - `nim c -d:emscripten` (WASM) - used by physics_wasm.nim
+# ARCHITECTURE: WebGPU-only physics.
+# The layout defines CPU-side buffer structure for:
+#   - Initial particle data generation
+#   - Upload to GPU buffers
+#   - WebGL fallback rendering (reading positions for display)
 #
+# CROSS-COMPILATION:
+#   This module compiles for `nim js` (browser).
 #   No jsffi, no browser APIs, no DOM - pure Nim with compile-time constants.
 #
 # IMPORTED BY:
 #   - config.nim (JS compilation)
 #   - buffers.nim (JS compilation)
-#   - physics_wasm.nim (WASM compilation)
-#   - grid_core.nim (both targets)
+#   - grid_core.nim (JS compilation)
 #   - tests/* (native compilation)
 #
 # INVARIANTS:
@@ -97,8 +99,13 @@ type
     speciesB*: int
 
     # Velocity deltas (written by physics, applied by integration)
-    vxDelta*: int   ## Float32Array: X velocity deltas
-    vyDelta*: int   ## Float32Array: Y velocity deltas
+    vxDelta*: int   ## Float32Array: X velocity deltas (legacy, kept for compatibility)
+    vyDelta*: int   ## Float32Array: Y velocity deltas (legacy, kept for compatibility)
+
+    # Fixed-point interleaved velocity deltas for atomic accumulation
+    # Layout: [deltaVx_0, deltaVy_0, deltaVx_1, deltaVy_1, ...]
+    # Scale: 65536 (16-bit fractional precision)
+    velocityDeltaFixed*: int  ## Int32Array: interleaved [vdx, vdy] pairs
 
     # Spatial grid (for O(n*k) neighbor lookup)
     gridCounts*: int   ## Uint16Array: particles per cell
@@ -160,6 +167,12 @@ func computeMemoryOffsets(): MemoryOffsets =
   let vyDelta = offset
   offset += FLOAT_SIZE
 
+  # Fixed-point interleaved velocity deltas for atomic accumulation
+  # Layout: [deltaVx_0, deltaVy_0, deltaVx_1, deltaVy_1, ...]
+  # Size: 2 * MAX_PARTICLES * sizeof(int32) = 2 * MAX_PARTICLES * 4 bytes
+  let velocityDeltaFixed = offset
+  offset += MAX_PARTICLES * 2 * 4  # 2 int32s per particle
+
   # Spatial grid
   let gridCounts = offset
   offset += GRID_CELLS * 2  # Uint16Array = 2 bytes per cell
@@ -182,6 +195,7 @@ func computeMemoryOffsets(): MemoryOffsets =
     pxA: pxA, pyA: pyA, vxA: vxA, vyA: vyA, denA: denA, speciesA: speciesA,
     pxB: pxB, pyB: pyB, vxB: vxB, vyB: vyB, denB: denB, speciesB: speciesB,
     vxDelta: vxDelta, vyDelta: vyDelta,
+    velocityDeltaFixed: velocityDeltaFixed,
     gridCounts: gridCounts, gridOffsets: gridOffsets,
     matrix: matrix, sync: sync,
     totalSize: totalSize
@@ -220,6 +234,7 @@ const
 
   VX_DELTA_OFFSET* = OFFSETS.vxDelta
   VY_DELTA_OFFSET* = OFFSETS.vyDelta
+  VELOCITY_DELTA_FIXED_OFFSET* = OFFSETS.velocityDeltaFixed
 
   GRID_COUNTS_OFFSET* = OFFSETS.gridCounts
   GRID_OFFSETS_OFFSET* = OFFSETS.gridOffsets
@@ -237,6 +252,7 @@ static:
   # Verify alignment
   assert OFFSETS.pxB mod 4 == 0, "Buffer B must be 4-byte aligned"
   assert OFFSETS.vxDelta mod 4 == 0, "vxDelta must be 4-byte aligned"
+  assert OFFSETS.velocityDeltaFixed mod 4 == 0, "velocityDeltaFixed must be 4-byte aligned"
   assert OFFSETS.gridOffsets mod 4 == 0, "gridOffsets must be 4-byte aligned"
   assert OFFSETS.sync mod 4 == 0, "sync buffer must be 4-byte aligned"
 
@@ -244,6 +260,7 @@ static:
   # Use >= because align4 may place next region exactly at end of previous
   assert OFFSETS.pxB >= OFFSETS.speciesA + MAX_PARTICLES, "Buffer B must not overlap Buffer A"
   assert OFFSETS.vxDelta >= OFFSETS.speciesB + MAX_PARTICLES, "vxDelta must not overlap Buffer B"
+  assert OFFSETS.velocityDeltaFixed >= OFFSETS.vyDelta + MAX_PARTICLES * 4, "velocityDeltaFixed must not overlap vyDelta"
 
   # Verify total size fits in allocated memory
   assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated WASM memory"
