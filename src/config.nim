@@ -139,7 +139,7 @@ var MEMORY_LAYOUT* {.exportc.}: MemoryLayoutObject = createMemoryLayout()
 # Runtime configuration - these values can be modified during simulation
 proc createConfig(): ConfigObject =
   result = ConfigObject()
-  result.particleCount = 16000
+  result.particleCount = 64000
   result.speciesCount = 4
   result.interactionRadius = 50
   result.forceStrength = 1.0
