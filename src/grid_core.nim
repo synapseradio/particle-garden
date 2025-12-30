@@ -31,10 +31,10 @@ proc computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
   ##   gridW, gridH - Grid dimensions (clamped to [1, MAX_GRID])
   ##   cellSize - Actual cell size (equals interactionRadius)
   ##
-  ## The cell size matches the interaction radius so that particles only
-  ## need to check neighboring cells (3x3 region) for interactions.
+  ## Cell size equals interaction radius - the classic spatial hash approach.
+  ## 3×3 stencil covers all interactions. No LOD artifacts.
   ##
-  let cellSize = interactionRadius
+  let cellSize = max(interactionRadius, 16)
 
   var gridW = canvasW div cellSize
   var gridH = canvasH div cellSize
