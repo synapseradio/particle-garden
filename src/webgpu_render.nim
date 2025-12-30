@@ -41,13 +41,36 @@ var gpuContext: GPUCanvasContext
 var renderPipeline: GPURenderPipeline
 var glowPipeline: GPURenderPipeline
 var fadePipeline: GPURenderPipeline
+var blitPipeline: GPURenderPipeline
 var renderBindGroup: GPUBindGroup
 var glowBindGroup: GPUBindGroup
-var fadeBindGroup: GPUBindGroup
 var renderParamsBuffer: GPUBuffer
 var fadeParamsBuffer: GPUBuffer
 var bindGroupLayout: GPUBindGroupLayout  # Store original layout for bind group creation
 var isInitialized: bool = false
+
+# Ping-pong trail textures (persistent across frames)
+var trailTextureA: GPUTexture
+var trailTextureB: GPUTexture
+var trailViewA: GPUTextureView
+var trailViewB: GPUTextureView
+var trailParity: int = 0  # 0 = read A write B, 1 = read B write A
+
+# Cached bind groups for trail rendering (created once, selected at runtime)
+var blitBindGroupA: GPUBindGroup  # Blit from trail texture A
+var blitBindGroupB: GPUBindGroup  # Blit from trail texture B
+var fadeBindGroupReadA: GPUBindGroup  # Fade pass reads from A
+var fadeBindGroupReadB: GPUBindGroup  # Fade pass reads from B
+
+# Shared sampler for texture reads
+var linearSampler: GPUSampler
+
+# Canvas format for texture creation
+var canvasFormat: cstring
+
+# Bind group layouts (needed for resize to recreate bind groups)
+var fadeBindGroupLayout: GPUBindGroupLayout
+var blitBindGroupLayout: GPUBindGroupLayout
 
 # Current parity for which buffer set to read from
 var activeParity*: int = 0
@@ -132,16 +155,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 }
 """
 
-# Fade overlay shader - fullscreen quad with configurable alpha for trail effect
+# Fade overlay shader - samples previous frame and fades toward background
 const FADE_SHADER = """
 struct FadeParams {
-  alpha: f32,
+  fadeAmount: f32,  // 0.0 = no fade (keep previous), 1.0 = instant clear
   pad0: f32,
   pad1: f32,
   pad2: f32,
 };
 
-@group(0) @binding(0) var<uniform> params: FadeParams;
+@group(0) @binding(0) var prevFrame: texture_2d<f32>;
+@group(0) @binding(1) var prevSampler: sampler;
+@group(0) @binding(2) var<uniform> params: FadeParams;
 
 // Fullscreen triangle (3 vertices cover entire screen)
 const POSITIONS = array<vec2f, 3>(
@@ -150,15 +175,60 @@ const POSITIONS = array<vec2f, 3>(
   vec2f(-1.0,  3.0),
 );
 
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
 @vertex
-fn vs_main(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
-  return vec4f(POSITIONS[id], 0.0, 1.0);
+fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
+  var output: VertexOutput;
+  output.position = vec4f(POSITIONS[id], 0.0, 1.0);
+  // Convert clip space (-1 to 1) to UV space (0 to 1)
+  output.uv = (POSITIONS[id] + 1.0) * 0.5;
+  output.uv.y = 1.0 - output.uv.y;  // Flip Y for texture coordinates
+  return output;
 }
 
 @fragment
-fn fs_main() -> @location(0) vec4f {
-  // Dark background color with fade alpha
-  return vec4f(0.04, 0.04, 0.06, params.alpha);
+fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+  let prev = textureSample(prevFrame, prevSampler, input.uv);
+
+  // Fade toward background color
+  // Higher fadeAmount = MORE of previous frame = LONGER trails
+  let bg = vec4f(0.04, 0.04, 0.06, 1.0);
+  return mix(bg, prev, params.fadeAmount);
+}
+"""
+
+# Blit shader - copies texture to swap chain
+const BLIT_SHADER = """
+@group(0) @binding(0) var inputTexture: texture_2d<f32>;
+@group(0) @binding(1) var inputSampler: sampler;
+
+const POSITIONS = array<vec2f, 3>(
+  vec2f(-1.0, -1.0),
+  vec2f( 3.0, -1.0),
+  vec2f(-1.0,  3.0),
+);
+
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
+  var output: VertexOutput;
+  output.position = vec4f(POSITIONS[id], 0.0, 1.0);
+  output.uv = (POSITIONS[id] + 1.0) * 0.5;
+  output.uv.y = 1.0 - output.uv.y;
+  return output;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+  return textureSample(inputTexture, inputSampler, input.uv);
 }
 """
 
@@ -193,7 +263,7 @@ proc initWebGPURender*(): bool =
     {.emit: "console.error('Failed to get WebGPU context');".}
     return false
 
-  let canvasFormat = getPreferredCanvasFormat()
+  canvasFormat = getPreferredCanvasFormat()  # Store in module variable
   let configObj = newJsObject()
   configObj["device"] = webgpu_init.device.toJs
   configObj["format"] = canvasFormat.toJs
@@ -374,13 +444,18 @@ proc initWebGPURender*(): bool =
 
   glowPipeline = webgpu_init.device.createRenderPipeline(glowPipelineDesc)
 
-  # Create fade overlay shader module
-  let fadeShaderDesc = newJsObject()
-  fadeShaderDesc["label"] = "Fade Overlay Shader".cstring.toJs
-  fadeShaderDesc["code"] = FADE_SHADER.cstring.toJs
-  let fadeShaderModule = webgpu_init.device.createShaderModule(fadeShaderDesc)
+  # ==========================================================================
+  # TRAIL RENDERING INFRASTRUCTURE
+  # ==========================================================================
 
-  # Create fade params uniform buffer (alpha + 3 padding floats = 16 bytes)
+  # Create shared sampler for texture reads (created once, reused everywhere)
+  let samplerDesc = newJsObject()
+  samplerDesc["magFilter"] = "linear".cstring.toJs
+  samplerDesc["minFilter"] = "linear".cstring.toJs
+  samplerDesc["label"] = "Linear Sampler".cstring.toJs
+  linearSampler = webgpu_init.device.createSampler(samplerDesc)
+
+  # Create fade params uniform buffer (fadeAmount + 3 padding floats = 16 bytes)
   let fadeParamsSize = 16
   let fadeParamsDesc = newJsObject()
   fadeParamsDesc["size"] = fadeParamsSize.toJs
@@ -388,19 +463,46 @@ proc initWebGPURender*(): bool =
   fadeParamsDesc["label"] = "Fade Params Buffer".cstring.toJs
   fadeParamsBuffer = webgpu_init.device.createBuffer(fadeParamsDesc)
 
-  # Create fade bind group layout
+  # Create fade shader module (samples previous frame texture)
+  let fadeShaderDesc = newJsObject()
+  fadeShaderDesc["label"] = "Fade Overlay Shader".cstring.toJs
+  fadeShaderDesc["code"] = FADE_SHADER.cstring.toJs
+  let fadeShaderModule = webgpu_init.device.createShaderModule(fadeShaderDesc)
+
+  # Create fade bind group layout (texture + sampler + uniform)
   let fadeLayoutDesc = newJsObject()
   fadeLayoutDesc["label"] = "Fade Bind Group Layout".cstring.toJs
   let fadeLayoutEntries = newJsArray()
+
+  # Binding 0: Previous frame texture
   let fadeEntry0 = newJsObject()
   fadeEntry0["binding"] = 0.toJs
   fadeEntry0["visibility"] = gpuShaderStageFragment.toJs
-  let fadeBuffer0 = newJsObject()
-  fadeBuffer0["type"] = "uniform".cstring.toJs
-  fadeEntry0["buffer"] = fadeBuffer0
+  let fadeTexture0 = newJsObject()
+  fadeTexture0["sampleType"] = "float".cstring.toJs
+  fadeEntry0["texture"] = fadeTexture0
   discard fadeLayoutEntries.push(fadeEntry0)
+
+  # Binding 1: Sampler
+  let fadeEntry1 = newJsObject()
+  fadeEntry1["binding"] = 1.toJs
+  fadeEntry1["visibility"] = gpuShaderStageFragment.toJs
+  let fadeSampler1 = newJsObject()
+  fadeSampler1["type"] = "filtering".cstring.toJs
+  fadeEntry1["sampler"] = fadeSampler1
+  discard fadeLayoutEntries.push(fadeEntry1)
+
+  # Binding 2: Fade params uniform
+  let fadeEntry2 = newJsObject()
+  fadeEntry2["binding"] = 2.toJs
+  fadeEntry2["visibility"] = gpuShaderStageFragment.toJs
+  let fadeBuffer2 = newJsObject()
+  fadeBuffer2["type"] = "uniform".cstring.toJs
+  fadeEntry2["buffer"] = fadeBuffer2
+  discard fadeLayoutEntries.push(fadeEntry2)
+
   fadeLayoutDesc["entries"] = fadeLayoutEntries
-  let fadeBindGroupLayout = webgpu_init.device.createBindGroupLayout(fadeLayoutDesc)
+  fadeBindGroupLayout = webgpu_init.device.createBindGroupLayout(fadeLayoutDesc)
 
   # Create fade pipeline layout
   let fadePipelineLayoutDesc = newJsObject()
@@ -409,7 +511,7 @@ proc initWebGPURender*(): bool =
   fadePipelineLayoutDesc["bindGroupLayouts"] = fadeLayouts
   let fadePipelineLayout = webgpu_init.device.createPipelineLayout(fadePipelineLayoutDesc)
 
-  # Create fade pipeline with alpha blending
+  # Create fade pipeline (no blending needed - just outputs faded color)
   let fadePipelineDesc = newJsObject()
   fadePipelineDesc["label"] = "Fade Overlay Pipeline".cstring.toJs
   fadePipelineDesc["layout"] = fadePipelineLayout.toJs
@@ -426,21 +528,6 @@ proc initWebGPURender*(): bool =
   let fadeTargets = newJsArray()
   let fadeTarget0 = newJsObject()
   fadeTarget0["format"] = canvasFormat.toJs
-
-  # Alpha blending for fade overlay
-  let fadeBlend = newJsObject()
-  let fadeColorBlend = newJsObject()
-  fadeColorBlend["srcFactor"] = "src-alpha".cstring.toJs
-  fadeColorBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
-  fadeColorBlend["operation"] = "add".cstring.toJs
-  fadeBlend["color"] = fadeColorBlend
-  let fadeAlphaBlend = newJsObject()
-  fadeAlphaBlend["srcFactor"] = "one".cstring.toJs
-  fadeAlphaBlend["dstFactor"] = "zero".cstring.toJs
-  fadeAlphaBlend["operation"] = "add".cstring.toJs
-  fadeBlend["alpha"] = fadeAlphaBlend
-  fadeTarget0["blend"] = fadeBlend
-
   discard fadeTargets.push(fadeTarget0)
   fadeFragmentStage["targets"] = fadeTargets
   fadePipelineDesc["fragment"] = fadeFragmentStage
@@ -452,19 +539,222 @@ proc initWebGPURender*(): bool =
 
   fadePipeline = webgpu_init.device.createRenderPipeline(fadePipelineDesc)
 
-  # Create fade bind group
-  let fadeBindGroupDesc = newJsObject()
-  fadeBindGroupDesc["label"] = "Fade Bind Group".cstring.toJs
-  fadeBindGroupDesc["layout"] = fadeBindGroupLayout.toJs
-  let fadeBindGroupEntries = newJsArray()
-  let fadeBGEntry0 = newJsObject()
-  fadeBGEntry0["binding"] = 0.toJs
-  let fadeBGResource0 = newJsObject()
-  fadeBGResource0["buffer"] = fadeParamsBuffer.toJs
-  fadeBGEntry0["resource"] = fadeBGResource0
-  discard fadeBindGroupEntries.push(fadeBGEntry0)
-  fadeBindGroupDesc["entries"] = fadeBindGroupEntries
-  fadeBindGroup = webgpu_init.device.createBindGroup(fadeBindGroupDesc)
+  # ==========================================================================
+  # BLIT PIPELINE (copies offscreen texture to swap chain)
+  # ==========================================================================
+
+  let blitShaderDesc = newJsObject()
+  blitShaderDesc["label"] = "Blit Shader".cstring.toJs
+  blitShaderDesc["code"] = BLIT_SHADER.cstring.toJs
+  let blitShaderModule = webgpu_init.device.createShaderModule(blitShaderDesc)
+
+  # Create blit bind group layout (texture + sampler)
+  let blitLayoutDesc = newJsObject()
+  blitLayoutDesc["label"] = "Blit Bind Group Layout".cstring.toJs
+  let blitLayoutEntries = newJsArray()
+
+  let blitEntry0 = newJsObject()
+  blitEntry0["binding"] = 0.toJs
+  blitEntry0["visibility"] = gpuShaderStageFragment.toJs
+  let blitTexture0 = newJsObject()
+  blitTexture0["sampleType"] = "float".cstring.toJs
+  blitEntry0["texture"] = blitTexture0
+  discard blitLayoutEntries.push(blitEntry0)
+
+  let blitEntry1 = newJsObject()
+  blitEntry1["binding"] = 1.toJs
+  blitEntry1["visibility"] = gpuShaderStageFragment.toJs
+  let blitSampler1 = newJsObject()
+  blitSampler1["type"] = "filtering".cstring.toJs
+  blitEntry1["sampler"] = blitSampler1
+  discard blitLayoutEntries.push(blitEntry1)
+
+  blitLayoutDesc["entries"] = blitLayoutEntries
+  blitBindGroupLayout = webgpu_init.device.createBindGroupLayout(blitLayoutDesc)
+
+  # Create blit pipeline layout
+  let blitPipelineLayoutDesc = newJsObject()
+  let blitLayouts = newJsArray()
+  discard blitLayouts.push(blitBindGroupLayout)
+  blitPipelineLayoutDesc["bindGroupLayouts"] = blitLayouts
+  let blitPipelineLayout = webgpu_init.device.createPipelineLayout(blitPipelineLayoutDesc)
+
+  # Create blit pipeline (no blending - just copy)
+  let blitPipelineDesc = newJsObject()
+  blitPipelineDesc["label"] = "Blit Pipeline".cstring.toJs
+  blitPipelineDesc["layout"] = blitPipelineLayout.toJs
+
+  let blitVertexStage = newJsObject()
+  blitVertexStage["module"] = blitShaderModule.toJs
+  blitVertexStage["entryPoint"] = "vs_main".cstring.toJs
+  blitPipelineDesc["vertex"] = blitVertexStage
+
+  let blitFragmentStage = newJsObject()
+  blitFragmentStage["module"] = blitShaderModule.toJs
+  blitFragmentStage["entryPoint"] = "fs_main".cstring.toJs
+
+  let blitTargets = newJsArray()
+  let blitTarget0 = newJsObject()
+  blitTarget0["format"] = canvasFormat.toJs
+  discard blitTargets.push(blitTarget0)
+  blitFragmentStage["targets"] = blitTargets
+  blitPipelineDesc["fragment"] = blitFragmentStage
+
+  let blitPrimitive = newJsObject()
+  blitPrimitive["topology"] = "triangle-list".cstring.toJs
+  blitPrimitive["cullMode"] = "none".cstring.toJs
+  blitPipelineDesc["primitive"] = blitPrimitive
+
+  blitPipeline = webgpu_init.device.createRenderPipeline(blitPipelineDesc)
+
+  # ==========================================================================
+  # PERSISTENT TRAIL TEXTURES (survive across frames for ping-pong)
+  # ==========================================================================
+
+  let trailTextureDesc = newJsObject()
+  let trailSize = newJsArray()
+  discard trailSize.push(canvas.width.toJs)
+  discard trailSize.push(canvas.height.toJs)
+  trailTextureDesc["size"] = trailSize
+  trailTextureDesc["format"] = canvasFormat.toJs
+  trailTextureDesc["usage"] = bitwiseOr(gpuTextureUsageRenderAttachment, gpuTextureUsageTextureBinding).toJs
+  trailTextureDesc["label"] = "Trail Texture A".cstring.toJs
+  trailTextureA = webgpu_init.device.createTexture(trailTextureDesc)
+  trailTextureDesc["label"] = "Trail Texture B".cstring.toJs
+  trailTextureB = webgpu_init.device.createTexture(trailTextureDesc)
+
+  trailViewA = trailTextureA.createView()
+  trailViewB = trailTextureB.createView()
+
+  # ==========================================================================
+  # CLEAR TRAIL TEXTURES (ensure valid initial state for ping-pong)
+  # ==========================================================================
+  # WebGPU doesn't guarantee zero-initialized textures. Without clearing,
+  # frame 0 reads GPU garbage when sampling the "previous frame" texture.
+
+  let initEncoderDesc = newJsObject()
+  initEncoderDesc["label"] = "Trail Texture Init".cstring.toJs
+  let initEncoder = webgpu_init.device.createCommandEncoder(initEncoderDesc)
+
+  let bgColor = newJsObject()
+  bgColor["r"] = 0.04.toJs
+  bgColor["g"] = 0.04.toJs
+  bgColor["b"] = 0.06.toJs
+  bgColor["a"] = 1.0.toJs
+
+  # Clear texture A
+  let clearPassDescA = newJsObject()
+  clearPassDescA["label"] = "Clear Trail Texture A".cstring.toJs
+  let attachmentsA = newJsArray()
+  let attachmentA = newJsObject()
+  attachmentA["view"] = trailViewA.toJs
+  attachmentA["loadOp"] = "clear".cstring.toJs
+  attachmentA["clearValue"] = bgColor
+  attachmentA["storeOp"] = "store".cstring.toJs
+  discard attachmentsA.push(attachmentA)
+  clearPassDescA["colorAttachments"] = attachmentsA
+  let clearPassA = initEncoder.beginRenderPass(clearPassDescA)
+  clearPassA.endPass()
+
+  # Clear texture B
+  let clearPassDescB = newJsObject()
+  clearPassDescB["label"] = "Clear Trail Texture B".cstring.toJs
+  let attachmentsB = newJsArray()
+  let attachmentB = newJsObject()
+  attachmentB["view"] = trailViewB.toJs
+  attachmentB["loadOp"] = "clear".cstring.toJs
+  attachmentB["clearValue"] = bgColor
+  attachmentB["storeOp"] = "store".cstring.toJs
+  discard attachmentsB.push(attachmentB)
+  clearPassDescB["colorAttachments"] = attachmentsB
+  let clearPassB = initEncoder.beginRenderPass(clearPassDescB)
+  clearPassB.endPass()
+
+  # Submit initialization commands
+  let initCommandBuffer = initEncoder.finish()
+  let initCommandArray = newJsArray()
+  discard initCommandArray.push(cast[JsObject](initCommandBuffer))
+  webgpu_init.queue.submit(initCommandArray)
+
+  # ==========================================================================
+  # PRE-CACHED BIND GROUPS (created once, selected at runtime)
+  # ==========================================================================
+
+  # Blit bind group A (reads from trail texture A)
+  let blitBGA = newJsObject()
+  blitBGA["label"] = "Blit Bind Group A".cstring.toJs
+  blitBGA["layout"] = blitBindGroupLayout.toJs
+  let blitEntriesA = newJsArray()
+  let blitBGAE0 = newJsObject()
+  blitBGAE0["binding"] = 0.toJs
+  blitBGAE0["resource"] = trailViewA.toJs
+  discard blitEntriesA.push(blitBGAE0)
+  let blitBGAE1 = newJsObject()
+  blitBGAE1["binding"] = 1.toJs
+  blitBGAE1["resource"] = linearSampler.toJs
+  discard blitEntriesA.push(blitBGAE1)
+  blitBGA["entries"] = blitEntriesA
+  blitBindGroupA = webgpu_init.device.createBindGroup(blitBGA)
+
+  # Blit bind group B (reads from trail texture B)
+  let blitBGB = newJsObject()
+  blitBGB["label"] = "Blit Bind Group B".cstring.toJs
+  blitBGB["layout"] = blitBindGroupLayout.toJs
+  let blitEntriesB = newJsArray()
+  let blitBGBE0 = newJsObject()
+  blitBGBE0["binding"] = 0.toJs
+  blitBGBE0["resource"] = trailViewB.toJs
+  discard blitEntriesB.push(blitBGBE0)
+  let blitBGBE1 = newJsObject()
+  blitBGBE1["binding"] = 1.toJs
+  blitBGBE1["resource"] = linearSampler.toJs
+  discard blitEntriesB.push(blitBGBE1)
+  blitBGB["entries"] = blitEntriesB
+  blitBindGroupB = webgpu_init.device.createBindGroup(blitBGB)
+
+  # Fade bind group A (reads from trail texture A)
+  let fadeBGA = newJsObject()
+  fadeBGA["label"] = "Fade Bind Group Read A".cstring.toJs
+  fadeBGA["layout"] = fadeBindGroupLayout.toJs
+  let fadeEntriesA = newJsArray()
+  let fadeBGAE0 = newJsObject()
+  fadeBGAE0["binding"] = 0.toJs
+  fadeBGAE0["resource"] = trailViewA.toJs
+  discard fadeEntriesA.push(fadeBGAE0)
+  let fadeBGAE1 = newJsObject()
+  fadeBGAE1["binding"] = 1.toJs
+  fadeBGAE1["resource"] = linearSampler.toJs
+  discard fadeEntriesA.push(fadeBGAE1)
+  let fadeBGAE2 = newJsObject()
+  fadeBGAE2["binding"] = 2.toJs
+  let fadeBGAR2 = newJsObject()
+  fadeBGAR2["buffer"] = fadeParamsBuffer.toJs
+  fadeBGAE2["resource"] = fadeBGAR2
+  discard fadeEntriesA.push(fadeBGAE2)
+  fadeBGA["entries"] = fadeEntriesA
+  fadeBindGroupReadA = webgpu_init.device.createBindGroup(fadeBGA)
+
+  # Fade bind group B (reads from trail texture B)
+  let fadeBGB = newJsObject()
+  fadeBGB["label"] = "Fade Bind Group Read B".cstring.toJs
+  fadeBGB["layout"] = fadeBindGroupLayout.toJs
+  let fadeEntriesB = newJsArray()
+  let fadeBGBE0 = newJsObject()
+  fadeBGBE0["binding"] = 0.toJs
+  fadeBGBE0["resource"] = trailViewB.toJs
+  discard fadeEntriesB.push(fadeBGBE0)
+  let fadeBGBE1 = newJsObject()
+  fadeBGBE1["binding"] = 1.toJs
+  fadeBGBE1["resource"] = linearSampler.toJs
+  discard fadeEntriesB.push(fadeBGBE1)
+  let fadeBGBE2 = newJsObject()
+  fadeBGBE2["binding"] = 2.toJs
+  let fadeBGBR2 = newJsObject()
+  fadeBGBR2["buffer"] = fadeParamsBuffer.toJs
+  fadeBGBE2["resource"] = fadeBGBR2
+  discard fadeEntriesB.push(fadeBGBE2)
+  fadeBGB["entries"] = fadeEntriesB
+  fadeBindGroupReadB = webgpu_init.device.createBindGroup(fadeBGB)
 
   # Create initial bind group with buffer set A
   updateBindGroup(0)
@@ -546,8 +836,12 @@ proc updateBindGroup*(parity: int) =
 # ==============================================================================
 
 proc render*(particleCount: int): RenderTiming =
-  ## Render particles using WebGPU.
+  ## Render particles using WebGPU with ping-pong trail rendering.
   ## Returns timing info (always 0 since no CPU work).
+  ##
+  ## Ping-pong architecture:
+  ##   Frame N (trailParity=0): Read from A, Write to B, Blit B to screen
+  ##   Frame N+1 (trailParity=1): Read from B, Write to A, Blit A to screen
 
   result = RenderTiming()
   result.packTimeMs = 0.0
@@ -564,67 +858,89 @@ proc render*(particleCount: int): RenderTiming =
   paramsData[3] = float32(config.CONFIG.glowIntensity)
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
-  # Update fade params if trails enabled
-  if config.CONFIG.trails:
-    let fadeData = newFloat32Array(4)
-    fadeData[0] = float32(1.0 - config.CONFIG.trailAlpha)  # fade alpha
-    fadeData[1] = 0.0  # padding
-    fadeData[2] = 0.0
-    fadeData[3] = 0.0
-    webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
+  # Update fade params (fadeAmount = how much to fade toward background)
+  let fadeData = newFloat32Array(4)
+  fadeData[0] = float32(config.CONFIG.trailAlpha)  # fadeAmount (0 = no fade, 1 = instant clear)
+  fadeData[1] = 0.0  # padding
+  fadeData[2] = 0.0
+  fadeData[3] = 0.0
+  webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
-  # Get current texture to render to
-  let currentTexture = gpuContext.getCurrentTexture()
-  let textureView = currentTexture.createView()
+  # Select pre-created resources based on trail parity (ZERO allocations)
+  let writeView = if trailParity == 0: trailViewB else: trailViewA
+  let fadeReadBG = if trailParity == 0: fadeBindGroupReadA else: fadeBindGroupReadB
+  let blitBG = if trailParity == 0: blitBindGroupB else: blitBindGroupA
 
   # Create command encoder
   let encoderDesc = newJsObject()
   encoderDesc["label"] = "Render Command Encoder".cstring.toJs
   let commandEncoder = webgpu_init.device.createCommandEncoder(encoderDesc)
 
-  # Begin render pass
-  let renderPassDesc = newJsObject()
-  renderPassDesc["label"] = "Particle Render Pass".cstring.toJs
+  # ==========================================================================
+  # PASS 1: OFFSCREEN RENDER (to persistent trail texture)
+  # ==========================================================================
 
-  let colorAttachments = newJsArray()
-  let colorAttachment = newJsObject()
-  colorAttachment["view"] = textureView.toJs
+  let offscreenPassDesc = newJsObject()
+  offscreenPassDesc["label"] = "Offscreen Render Pass".cstring.toJs
 
-  # When trails enabled: load previous frame; otherwise clear
+  let offscreenAttachments = newJsArray()
+  let offscreenAttachment = newJsObject()
+  offscreenAttachment["view"] = writeView.toJs
+  offscreenAttachment["loadOp"] = "clear".cstring.toJs
+  let clearColor = newJsObject()
+  clearColor["r"] = 0.04.toJs
+  clearColor["g"] = 0.04.toJs
+  clearColor["b"] = 0.06.toJs
+  clearColor["a"] = 1.0.toJs
+  offscreenAttachment["clearValue"] = clearColor
+  offscreenAttachment["storeOp"] = "store".cstring.toJs
+  discard offscreenAttachments.push(offscreenAttachment)
+  offscreenPassDesc["colorAttachments"] = offscreenAttachments
+
+  let offscreenPass = commandEncoder.beginRenderPass(offscreenPassDesc)
+
+  # Step 1: Draw faded previous frame (if trails enabled)
   if config.CONFIG.trails:
-    colorAttachment["loadOp"] = "load".cstring.toJs
-  else:
-    colorAttachment["loadOp"] = "clear".cstring.toJs
-    let clearColor = newJsObject()
-    clearColor["r"] = 0.04.toJs
-    clearColor["g"] = 0.04.toJs
-    clearColor["b"] = 0.06.toJs
-    clearColor["a"] = 1.0.toJs
-    colorAttachment["clearValue"] = clearColor
+    offscreenPass.setPipeline(fadePipeline)
+    offscreenPass.setBindGroup(0, fadeReadBG)
+    offscreenPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
-  colorAttachment["storeOp"] = "store".cstring.toJs
-  discard colorAttachments.push(colorAttachment)
-  renderPassDesc["colorAttachments"] = colorAttachments
+  # Step 2: Draw glow (additive blending, larger radius)
+  offscreenPass.setPipeline(glowPipeline)
+  offscreenPass.setBindGroup(0, glowBindGroup)
+  offscreenPass.draw(6 * particleCount, 1, 0, 0)
 
-  let renderPass = commandEncoder.beginRenderPass(renderPassDesc)
+  # Step 3: Draw particles (alpha blending, crisp circles)
+  offscreenPass.setPipeline(renderPipeline)
+  offscreenPass.setBindGroup(0, renderBindGroup)
+  offscreenPass.draw(6 * particleCount, 1, 0, 0)
 
-  # Pass 0: Draw fade overlay if trails enabled
-  if config.CONFIG.trails:
-    renderPass.setPipeline(fadePipeline)
-    renderPass.setBindGroup(0, fadeBindGroup)
-    renderPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+  offscreenPass.endPass()
 
-  # Pass 1: Draw glow (additive blending, larger radius)
-  renderPass.setPipeline(glowPipeline)
-  renderPass.setBindGroup(0, glowBindGroup)
-  renderPass.draw(6 * particleCount, 1, 0, 0)
+  # ==========================================================================
+  # PASS 2: BLIT TO SWAP CHAIN (always use loadOp="clear" per WebGPU spec)
+  # ==========================================================================
 
-  # Pass 2: Draw particles (alpha blending, crisp circles)
-  renderPass.setPipeline(renderPipeline)
-  renderPass.setBindGroup(0, renderBindGroup)
-  renderPass.draw(6 * particleCount, 1, 0, 0)
+  let currentTexture = gpuContext.getCurrentTexture()
+  let swapChainView = currentTexture.createView()
 
-  renderPass.endPass()
+  let presentPassDesc = newJsObject()
+  presentPassDesc["label"] = "Present Pass".cstring.toJs
+
+  let presentAttachments = newJsArray()
+  let presentAttachment = newJsObject()
+  presentAttachment["view"] = swapChainView.toJs
+  presentAttachment["loadOp"] = "clear".cstring.toJs
+  presentAttachment["clearValue"] = clearColor
+  presentAttachment["storeOp"] = "store".cstring.toJs
+  discard presentAttachments.push(presentAttachment)
+  presentPassDesc["colorAttachments"] = presentAttachments
+
+  let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
+  presentPass.setPipeline(blitPipeline)
+  presentPass.setBindGroup(0, blitBG)
+  presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+  presentPass.endPass()
 
   # Submit
   let commandBuffer = commandEncoder.finish()
@@ -632,10 +948,165 @@ proc render*(particleCount: int): RenderTiming =
   discard commandBufferArray.push(cast[JsObject](commandBuffer))
   webgpu_init.queue.submit(commandBufferArray)
 
+  # Flip trail parity for next frame
+  trailParity = 1 - trailParity
+
+proc recreateTrailTextures() =
+  ## Recreate trail textures and bind groups at current canvas size.
+  ## Called on resize. Destroys old resources before creating new ones.
+
+  # Destroy old textures (safe even if nil on first call)
+  if not trailTextureA.isNil:
+    trailTextureA.destroy()
+  if not trailTextureB.isNil:
+    trailTextureB.destroy()
+
+  # Create new textures at current canvas size
+  let trailTextureDesc = newJsObject()
+  let trailSize = newJsArray()
+  discard trailSize.push(canvas.width.toJs)
+  discard trailSize.push(canvas.height.toJs)
+  trailTextureDesc["size"] = trailSize
+  trailTextureDesc["format"] = canvasFormat.toJs
+  trailTextureDesc["usage"] = bitwiseOr(gpuTextureUsageRenderAttachment, gpuTextureUsageTextureBinding).toJs
+  trailTextureDesc["label"] = "Trail Texture A".cstring.toJs
+  trailTextureA = webgpu_init.device.createTexture(trailTextureDesc)
+  trailTextureDesc["label"] = "Trail Texture B".cstring.toJs
+  trailTextureB = webgpu_init.device.createTexture(trailTextureDesc)
+
+  trailViewA = trailTextureA.createView()
+  trailViewB = trailTextureB.createView()
+
+  # Clear new textures to background color (same as initWebGPURender)
+  let clearEncoderDesc = newJsObject()
+  clearEncoderDesc["label"] = "Trail Texture Clear (resize)".cstring.toJs
+  let clearEncoder = webgpu_init.device.createCommandEncoder(clearEncoderDesc)
+
+  let bgColorResize = newJsObject()
+  bgColorResize["r"] = 0.04.toJs
+  bgColorResize["g"] = 0.04.toJs
+  bgColorResize["b"] = 0.06.toJs
+  bgColorResize["a"] = 1.0.toJs
+
+  # Clear texture A
+  let clearDescA = newJsObject()
+  clearDescA["label"] = "Clear Trail A (resize)".cstring.toJs
+  let clearAttachA = newJsArray()
+  let clearAttA = newJsObject()
+  clearAttA["view"] = trailViewA.toJs
+  clearAttA["loadOp"] = "clear".cstring.toJs
+  clearAttA["clearValue"] = bgColorResize
+  clearAttA["storeOp"] = "store".cstring.toJs
+  discard clearAttachA.push(clearAttA)
+  clearDescA["colorAttachments"] = clearAttachA
+  let clearA = clearEncoder.beginRenderPass(clearDescA)
+  clearA.endPass()
+
+  # Clear texture B
+  let clearDescB = newJsObject()
+  clearDescB["label"] = "Clear Trail B (resize)".cstring.toJs
+  let clearAttachB = newJsArray()
+  let clearAttB = newJsObject()
+  clearAttB["view"] = trailViewB.toJs
+  clearAttB["loadOp"] = "clear".cstring.toJs
+  clearAttB["clearValue"] = bgColorResize
+  clearAttB["storeOp"] = "store".cstring.toJs
+  discard clearAttachB.push(clearAttB)
+  clearDescB["colorAttachments"] = clearAttachB
+  let clearB = clearEncoder.beginRenderPass(clearDescB)
+  clearB.endPass()
+
+  # Submit clear commands
+  let clearCmdBuf = clearEncoder.finish()
+  let clearCmdArr = newJsArray()
+  discard clearCmdArr.push(cast[JsObject](clearCmdBuf))
+  webgpu_init.queue.submit(clearCmdArr)
+
+  # Recreate blit bind groups (reference trail texture views)
+  let blitBGA = newJsObject()
+  blitBGA["label"] = "Blit Bind Group A".cstring.toJs
+  blitBGA["layout"] = blitBindGroupLayout.toJs
+  let blitEntriesA = newJsArray()
+  let blitBGAE0 = newJsObject()
+  blitBGAE0["binding"] = 0.toJs
+  blitBGAE0["resource"] = trailViewA.toJs
+  discard blitEntriesA.push(blitBGAE0)
+  let blitBGAE1 = newJsObject()
+  blitBGAE1["binding"] = 1.toJs
+  blitBGAE1["resource"] = linearSampler.toJs
+  discard blitEntriesA.push(blitBGAE1)
+  blitBGA["entries"] = blitEntriesA
+  blitBindGroupA = webgpu_init.device.createBindGroup(blitBGA)
+
+  let blitBGB = newJsObject()
+  blitBGB["label"] = "Blit Bind Group B".cstring.toJs
+  blitBGB["layout"] = blitBindGroupLayout.toJs
+  let blitEntriesB = newJsArray()
+  let blitBGBE0 = newJsObject()
+  blitBGBE0["binding"] = 0.toJs
+  blitBGBE0["resource"] = trailViewB.toJs
+  discard blitEntriesB.push(blitBGBE0)
+  let blitBGBE1 = newJsObject()
+  blitBGBE1["binding"] = 1.toJs
+  blitBGBE1["resource"] = linearSampler.toJs
+  discard blitEntriesB.push(blitBGBE1)
+  blitBGB["entries"] = blitEntriesB
+  blitBindGroupB = webgpu_init.device.createBindGroup(blitBGB)
+
+  # Recreate fade bind groups (reference trail texture views)
+  let fadeBGA = newJsObject()
+  fadeBGA["label"] = "Fade Bind Group Read A".cstring.toJs
+  fadeBGA["layout"] = fadeBindGroupLayout.toJs
+  let fadeEntriesA = newJsArray()
+  let fadeBGAE0 = newJsObject()
+  fadeBGAE0["binding"] = 0.toJs
+  fadeBGAE0["resource"] = trailViewA.toJs
+  discard fadeEntriesA.push(fadeBGAE0)
+  let fadeBGAE1 = newJsObject()
+  fadeBGAE1["binding"] = 1.toJs
+  fadeBGAE1["resource"] = linearSampler.toJs
+  discard fadeEntriesA.push(fadeBGAE1)
+  let fadeBGAE2 = newJsObject()
+  fadeBGAE2["binding"] = 2.toJs
+  let fadeBGAR2 = newJsObject()
+  fadeBGAR2["buffer"] = fadeParamsBuffer.toJs
+  fadeBGAE2["resource"] = fadeBGAR2
+  discard fadeEntriesA.push(fadeBGAE2)
+  fadeBGA["entries"] = fadeEntriesA
+  fadeBindGroupReadA = webgpu_init.device.createBindGroup(fadeBGA)
+
+  let fadeBGB = newJsObject()
+  fadeBGB["label"] = "Fade Bind Group Read B".cstring.toJs
+  fadeBGB["layout"] = fadeBindGroupLayout.toJs
+  let fadeEntriesB = newJsArray()
+  let fadeBGBE0 = newJsObject()
+  fadeBGBE0["binding"] = 0.toJs
+  fadeBGBE0["resource"] = trailViewB.toJs
+  discard fadeEntriesB.push(fadeBGBE0)
+  let fadeBGBE1 = newJsObject()
+  fadeBGBE1["binding"] = 1.toJs
+  fadeBGBE1["resource"] = linearSampler.toJs
+  discard fadeEntriesB.push(fadeBGBE1)
+  let fadeBGBE2 = newJsObject()
+  fadeBGBE2["binding"] = 2.toJs
+  let fadeBGBR2 = newJsObject()
+  fadeBGBR2["buffer"] = fadeParamsBuffer.toJs
+  fadeBGBE2["resource"] = fadeBGBR2
+  discard fadeEntriesB.push(fadeBGBE2)
+  fadeBGB["entries"] = fadeEntriesB
+  fadeBindGroupReadB = webgpu_init.device.createBindGroup(fadeBGB)
+
+  # Reset trail parity to start fresh
+  trailParity = 0
+
 proc resize*() =
-  ## Handle canvas resize. Must set canvas dimensions explicitly.
+  ## Handle canvas resize. Recreates trail textures at new dimensions.
   canvas.width = windowInnerWidth()
   canvas.height = windowInnerHeight()
+
+  # Recreate trail textures and bind groups at new size
+  if isInitialized:
+    recreateTrailTextures()
 
 # ==============================================================================
 # SECTION 6: COMPATIBILITY SHIM

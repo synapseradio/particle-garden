@@ -698,6 +698,9 @@ proc getCurrentTexture*(context: GPUCanvasContext): GPUTexture {.importjs: "#.ge
 proc createView*(texture: GPUTexture): GPUTextureView {.importjs: "#.createView()".}
   ## Create a view of the texture
 
+proc destroy*(texture: GPUTexture) {.importjs: "#.destroy()".}
+  ## Destroy the texture and release GPU memory
+
 proc createTexture*(device: GPUDevice, descriptor: JsObject): GPUTexture {.importjs: "#.createTexture(#)".}
   ## Create a GPU texture
 
