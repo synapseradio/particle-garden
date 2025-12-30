@@ -27,12 +27,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const BYPASS_PHYSICS: bool = false;
 
-// Simulation parameters (uniform)
+// Simulation parameters (uniform) - 32 bytes total
 struct IntegrationParams {
-  W: f32,               // World width
-  H: f32,               // World height
-  friction: f32,        // Friction coefficient (0.95)
-  particleCount: u32,   // Active particle count
+  W: f32,               // World width (offset 0)
+  H: f32,               // World height (offset 4)
+  friction: f32,        // Friction coefficient (offset 8)
+  maxVelocity: f32,     // Maximum velocity (offset 12)
+  particleCount: u32,   // Active particle count (offset 16)
+  pad0: u32,            // Padding (offset 20)
+  pad1: u32,            // Padding (offset 24)
+  pad2: u32,            // Padding (offset 28)
 };
 
 // Uniform buffer
@@ -89,8 +93,23 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // Apply velocity delta and friction
   // Matches main.js:189-190: vxActive[i] = (vxActive[i] + vxDelta[i]) * friction;
   let vDelta = velocityDelta[i];
-  let vx_new = (vx_old + vDelta.x) * params.friction;
-  let vy_new = (vy_old + vDelta.y) * params.friction;
+  var vx_new = (vx_old + vDelta.x) * params.friction;
+  var vy_new = (vy_old + vDelta.y) * params.friction;
+
+  // Logarithmic velocity capping to reduce jank in high-activity areas
+  // Soft cap: velocities above threshold are compressed logarithmically
+  let speed = sqrt(vx_new * vx_new + vy_new * vy_new);
+  let threshold = params.maxVelocity * 0.5;  // Start compressing at half max
+  if (speed > threshold && speed > 0.0) {
+    let excess = speed - threshold;
+    // log(1 + x) gives smooth compression; scale so speed at 2*threshold = threshold + log(1 + threshold)
+    let compressed = threshold + log(1.0 + excess);
+    // Cap at maxVelocity as hard limit
+    let finalSpeed = min(compressed, params.maxVelocity);
+    let scale = finalSpeed / speed;
+    vx_new *= scale;
+    vy_new *= scale;
+  }
 
   // Update position
   // Matches main.js:193-194: let x = pxActive[i] + vxActive[i];

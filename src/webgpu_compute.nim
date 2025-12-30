@@ -139,6 +139,7 @@ proc typeofJs(obj: JsObject): cstring {.importjs: "(typeof #)".}
 
 import webgpu_init
 import buffers as cpuBuffers
+import config
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -644,7 +645,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     uniformBuffers["simParams"] = device.createBufferLabeled(192, uniformUsage, "Simulation Parameters Uniform (with matrix)")
 
     # Integration parameters (16 bytes aligned)
-    uniformBuffers["integrationParams"] = device.createBufferLabeled(16, uniformUsage, "Integration Parameters Uniform")
+    uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
 
     # Density parameters (32 bytes aligned)
     uniformBuffers["densityParams"] = device.createBufferLabeled(32, uniformUsage, "Density Parameters Uniform")
@@ -809,13 +810,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   densityParamsUint[7] = 0 # padding
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["densityParams"]), 0, densityParamsData)
 
-  # Integration parameters
-  let integrationParamsData = newFloat32Array(4)
+  # Integration parameters (8 values = 32 bytes)
+  let integrationParamsData = newFloat32Array(8)
   integrationParamsData[0] = width
   integrationParamsData[1] = height
   integrationParamsData[2] = friction
+  integrationParamsData[3] = float32(config.CONFIG.maxVelocity)
   let integrationParamsUint = newUint32Array(integrationParamsData.buffer)
-  integrationParamsUint[3] = particleCount
+  integrationParamsUint[4] = particleCount
+  integrationParamsUint[5] = 0  # padding
+  integrationParamsUint[6] = 0  # padding
+  integrationParamsUint[7] = 0  # padding
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # Cell statistics parameters (for hierarchical forces LOD)

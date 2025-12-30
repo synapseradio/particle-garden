@@ -40,9 +40,12 @@ var canvas*: HTMLCanvasElement
 var gpuContext: GPUCanvasContext
 var renderPipeline: GPURenderPipeline
 var glowPipeline: GPURenderPipeline
+var fadePipeline: GPURenderPipeline
 var renderBindGroup: GPUBindGroup
 var glowBindGroup: GPUBindGroup
+var fadeBindGroup: GPUBindGroup
 var renderParamsBuffer: GPUBuffer
+var fadeParamsBuffer: GPUBuffer
 var bindGroupLayout: GPUBindGroupLayout  # Store original layout for bind group creation
 var isInitialized: bool = false
 
@@ -60,7 +63,7 @@ const GLOW_SHADER = """
 struct RenderParams {
   resolution: vec2f,
   baseSize: f32,
-  padding: f32,
+  glowIntensity: f32,
 };
 
 const OFFSETS = array<vec2f, 6>(
@@ -121,11 +124,41 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let l = length(input.offset);
 
-  // Gaussian falloff: exp(-6 * l^2) / 64
-  let alpha = exp(-6.0 * l * l) / 64.0;
+  // Gaussian falloff with configurable intensity
+  let alpha = exp(-6.0 * l * l) * params.glowIntensity / 24.0;
 
   // Premultiplied alpha for additive blending
   return vec4f(input.color * alpha, alpha);
+}
+"""
+
+# Fade overlay shader - fullscreen quad with configurable alpha for trail effect
+const FADE_SHADER = """
+struct FadeParams {
+  alpha: f32,
+  pad0: f32,
+  pad1: f32,
+  pad2: f32,
+};
+
+@group(0) @binding(0) var<uniform> params: FadeParams;
+
+// Fullscreen triangle (3 vertices cover entire screen)
+const POSITIONS = array<vec2f, 3>(
+  vec2f(-1.0, -1.0),
+  vec2f( 3.0, -1.0),
+  vec2f(-1.0,  3.0),
+);
+
+@vertex
+fn vs_main(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
+  return vec4f(POSITIONS[id], 0.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4f {
+  // Dark background color with fade alpha
+  return vec4f(0.04, 0.04, 0.06, params.alpha);
 }
 """
 
@@ -223,10 +256,10 @@ proc initWebGPURender*(): bool =
   entry3["buffer"] = buffer3
   discard entries.push(entry3)
 
-  # Binding 4: render params (uniform buffer)
+  # Binding 4: render params (uniform buffer) - needs vertex AND fragment for glow intensity
   let entry4 = newJsObject()
   entry4["binding"] = 4.toJs
-  entry4["visibility"] = gpuShaderStageVertex.toJs
+  entry4["visibility"] = bitwiseOr(gpuShaderStageVertex, gpuShaderStageFragment).toJs
   let buffer4 = newJsObject()
   buffer4["type"] = "uniform".cstring.toJs
   entry4["buffer"] = buffer4
@@ -341,11 +374,103 @@ proc initWebGPURender*(): bool =
 
   glowPipeline = webgpu_init.device.createRenderPipeline(glowPipelineDesc)
 
+  # Create fade overlay shader module
+  let fadeShaderDesc = newJsObject()
+  fadeShaderDesc["label"] = "Fade Overlay Shader".cstring.toJs
+  fadeShaderDesc["code"] = FADE_SHADER.cstring.toJs
+  let fadeShaderModule = webgpu_init.device.createShaderModule(fadeShaderDesc)
+
+  # Create fade params uniform buffer (alpha + 3 padding floats = 16 bytes)
+  let fadeParamsSize = 16
+  let fadeParamsDesc = newJsObject()
+  fadeParamsDesc["size"] = fadeParamsSize.toJs
+  fadeParamsDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  fadeParamsDesc["label"] = "Fade Params Buffer".cstring.toJs
+  fadeParamsBuffer = webgpu_init.device.createBuffer(fadeParamsDesc)
+
+  # Create fade bind group layout
+  let fadeLayoutDesc = newJsObject()
+  fadeLayoutDesc["label"] = "Fade Bind Group Layout".cstring.toJs
+  let fadeLayoutEntries = newJsArray()
+  let fadeEntry0 = newJsObject()
+  fadeEntry0["binding"] = 0.toJs
+  fadeEntry0["visibility"] = gpuShaderStageFragment.toJs
+  let fadeBuffer0 = newJsObject()
+  fadeBuffer0["type"] = "uniform".cstring.toJs
+  fadeEntry0["buffer"] = fadeBuffer0
+  discard fadeLayoutEntries.push(fadeEntry0)
+  fadeLayoutDesc["entries"] = fadeLayoutEntries
+  let fadeBindGroupLayout = webgpu_init.device.createBindGroupLayout(fadeLayoutDesc)
+
+  # Create fade pipeline layout
+  let fadePipelineLayoutDesc = newJsObject()
+  let fadeLayouts = newJsArray()
+  discard fadeLayouts.push(fadeBindGroupLayout)
+  fadePipelineLayoutDesc["bindGroupLayouts"] = fadeLayouts
+  let fadePipelineLayout = webgpu_init.device.createPipelineLayout(fadePipelineLayoutDesc)
+
+  # Create fade pipeline with alpha blending
+  let fadePipelineDesc = newJsObject()
+  fadePipelineDesc["label"] = "Fade Overlay Pipeline".cstring.toJs
+  fadePipelineDesc["layout"] = fadePipelineLayout.toJs
+
+  let fadeVertexStage = newJsObject()
+  fadeVertexStage["module"] = fadeShaderModule.toJs
+  fadeVertexStage["entryPoint"] = "vs_main".cstring.toJs
+  fadePipelineDesc["vertex"] = fadeVertexStage
+
+  let fadeFragmentStage = newJsObject()
+  fadeFragmentStage["module"] = fadeShaderModule.toJs
+  fadeFragmentStage["entryPoint"] = "fs_main".cstring.toJs
+
+  let fadeTargets = newJsArray()
+  let fadeTarget0 = newJsObject()
+  fadeTarget0["format"] = canvasFormat.toJs
+
+  # Alpha blending for fade overlay
+  let fadeBlend = newJsObject()
+  let fadeColorBlend = newJsObject()
+  fadeColorBlend["srcFactor"] = "src-alpha".cstring.toJs
+  fadeColorBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  fadeColorBlend["operation"] = "add".cstring.toJs
+  fadeBlend["color"] = fadeColorBlend
+  let fadeAlphaBlend = newJsObject()
+  fadeAlphaBlend["srcFactor"] = "one".cstring.toJs
+  fadeAlphaBlend["dstFactor"] = "zero".cstring.toJs
+  fadeAlphaBlend["operation"] = "add".cstring.toJs
+  fadeBlend["alpha"] = fadeAlphaBlend
+  fadeTarget0["blend"] = fadeBlend
+
+  discard fadeTargets.push(fadeTarget0)
+  fadeFragmentStage["targets"] = fadeTargets
+  fadePipelineDesc["fragment"] = fadeFragmentStage
+
+  let fadePrimitive = newJsObject()
+  fadePrimitive["topology"] = "triangle-list".cstring.toJs
+  fadePrimitive["cullMode"] = "none".cstring.toJs
+  fadePipelineDesc["primitive"] = fadePrimitive
+
+  fadePipeline = webgpu_init.device.createRenderPipeline(fadePipelineDesc)
+
+  # Create fade bind group
+  let fadeBindGroupDesc = newJsObject()
+  fadeBindGroupDesc["label"] = "Fade Bind Group".cstring.toJs
+  fadeBindGroupDesc["layout"] = fadeBindGroupLayout.toJs
+  let fadeBindGroupEntries = newJsArray()
+  let fadeBGEntry0 = newJsObject()
+  fadeBGEntry0["binding"] = 0.toJs
+  let fadeBGResource0 = newJsObject()
+  fadeBGResource0["buffer"] = fadeParamsBuffer.toJs
+  fadeBGEntry0["resource"] = fadeBGResource0
+  discard fadeBindGroupEntries.push(fadeBGEntry0)
+  fadeBindGroupDesc["entries"] = fadeBindGroupEntries
+  fadeBindGroup = webgpu_init.device.createBindGroup(fadeBindGroupDesc)
+
   # Create initial bind group with buffer set A
   updateBindGroup(0)
 
   isInitialized = true
-  {.emit: "console.log('WebGPU render pipeline initialized with glow');".}
+  {.emit: "console.log('WebGPU render pipeline initialized with glow and trails');".}
   return true
 
 proc updateBindGroup*(parity: int) =
@@ -436,8 +561,17 @@ proc render*(particleCount: int): RenderTiming =
   paramsData[0] = float32(canvas.width)
   paramsData[1] = float32(canvas.height)
   paramsData[2] = float32(config.CONFIG.particleSize + 1)
-  paramsData[3] = 0.0  # padding
+  paramsData[3] = float32(config.CONFIG.glowIntensity)
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
+
+  # Update fade params if trails enabled
+  if config.CONFIG.trails:
+    let fadeData = newFloat32Array(4)
+    fadeData[0] = float32(1.0 - config.CONFIG.trailAlpha)  # fade alpha
+    fadeData[1] = 0.0  # padding
+    fadeData[2] = 0.0
+    fadeData[3] = 0.0
+    webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
   # Get current texture to render to
   let currentTexture = gpuContext.getCurrentTexture()
@@ -455,18 +589,30 @@ proc render*(particleCount: int): RenderTiming =
   let colorAttachments = newJsArray()
   let colorAttachment = newJsObject()
   colorAttachment["view"] = textureView.toJs
-  colorAttachment["loadOp"] = "clear".cstring.toJs
+
+  # When trails enabled: load previous frame; otherwise clear
+  if config.CONFIG.trails:
+    colorAttachment["loadOp"] = "load".cstring.toJs
+  else:
+    colorAttachment["loadOp"] = "clear".cstring.toJs
+    let clearColor = newJsObject()
+    clearColor["r"] = 0.04.toJs
+    clearColor["g"] = 0.04.toJs
+    clearColor["b"] = 0.06.toJs
+    clearColor["a"] = 1.0.toJs
+    colorAttachment["clearValue"] = clearColor
+
   colorAttachment["storeOp"] = "store".cstring.toJs
-  let clearColor = newJsObject()
-  clearColor["r"] = 0.04.toJs
-  clearColor["g"] = 0.04.toJs
-  clearColor["b"] = 0.06.toJs
-  clearColor["a"] = 1.0.toJs
-  colorAttachment["clearValue"] = clearColor
   discard colorAttachments.push(colorAttachment)
   renderPassDesc["colorAttachments"] = colorAttachments
 
   let renderPass = commandEncoder.beginRenderPass(renderPassDesc)
+
+  # Pass 0: Draw fade overlay if trails enabled
+  if config.CONFIG.trails:
+    renderPass.setPipeline(fadePipeline)
+    renderPass.setBindGroup(0, fadeBindGroup)
+    renderPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
   # Pass 1: Draw glow (additive blending, larger radius)
   renderPass.setPipeline(glowPipeline)

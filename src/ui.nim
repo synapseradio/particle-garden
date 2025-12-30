@@ -174,6 +174,24 @@ proc setupUI*() {.exportc.} =
     trailValueEl.textContent = toFixed(CONFIG.trailAlpha, 2)
   )
 
+  # Glow intensity slider
+  let glowEl = cast[HTMLInputElement](getElementById("glowIntensity"))
+  let glowValueEl = getElementById("glowValue")
+  glowEl.addEventListener("input", proc(e: Event) =
+    let target = cast[HTMLInputElement](e.target)
+    CONFIG.glowIntensity = parseFloatJS(target.value)
+    glowValueEl.textContent = toFixed(CONFIG.glowIntensity, 1)
+  )
+
+  # Max velocity slider
+  let velocityEl = cast[HTMLInputElement](getElementById("maxVelocity"))
+  let velocityValueEl = getElementById("velocityValue")
+  velocityEl.addEventListener("input", proc(e: Event) =
+    let target = cast[HTMLInputElement](e.target)
+    CONFIG.maxVelocity = parseFloatJS(target.value)
+    velocityValueEl.textContent = toFixed(CONFIG.maxVelocity, 0)
+  )
+
 # ==============================================================================
 # SECTION 8: EVENT SETUP
 # ==============================================================================

@@ -57,9 +57,6 @@ proc jsGe(a, b: JsObject): JsObject {.importjs: "(# >= #)".}
 # Disambiguate newJsObject (both jsffi and js_interop export it)
 proc makeJsObject(): JsObject {.importjs: "({})".}
 
-# Number formatting
-proc toFixed(x: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
-
 # Bitwise OR for int truncation
 proc bitwiseOr(x: float, y: int): int {.importjs: "(#|#)".}
 

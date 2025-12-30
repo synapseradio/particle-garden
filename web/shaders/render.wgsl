@@ -76,8 +76,8 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Get quad corner offset (unit quad, -1 to 1)
   let offset = OFFSETS[cornerId];
 
-  // Calculate point size based on density (matches WebGL: max(1.0, 4.0 - den * 0.5))
-  let sizeMod = max(1.0, 4.0 - particleDensity * 0.5);
+  // Calculate point size based on density (reduced max by 20%)
+  let sizeMod = max(1.0, 3.2 - particleDensity * 0.4);
   let pointSize = params.baseSize * sizeMod;
 
   // Scale offset by half point size to get world position

@@ -37,6 +37,8 @@ type
     particleSize* {.exportc.}: int
     trails* {.exportc.}: bool
     trailAlpha* {.exportc.}: float
+    glowIntensity* {.exportc.}: float
+    maxVelocity* {.exportc.}: float
 
   MemoryLayoutObject* = ref object of JsObject
     ## WASM memory layout offsets for particle buffers.
@@ -126,6 +128,8 @@ proc createConfig(): ConfigObject =
   result.particleSize = 2
   result.trails = false
   result.trailAlpha = 0.92
+  result.glowIntensity = 1.0
+  result.maxVelocity = 10.0
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 
