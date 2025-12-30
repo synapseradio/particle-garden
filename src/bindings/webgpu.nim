@@ -148,6 +148,25 @@ proc bitwiseOr*(a, b: int): int {.importjs: "(# | #)".}
   ## Bitwise OR for integers (for combining buffer usage flags)
 
 # ==============================================================================
+# SECTION 2B: GPU TEXTURE USAGE FLAGS
+# ==============================================================================
+
+var gpuTextureUsageCopySrc* {.importjs: "GPUTextureUsage.COPY_SRC".}: int
+  ## Texture can be used as copy source
+
+var gpuTextureUsageCopyDst* {.importjs: "GPUTextureUsage.COPY_DST".}: int
+  ## Texture can be used as copy destination
+
+var gpuTextureUsageTextureBinding* {.importjs: "GPUTextureUsage.TEXTURE_BINDING".}: int
+  ## Texture can be bound for sampling in shaders
+
+var gpuTextureUsageStorageBinding* {.importjs: "GPUTextureUsage.STORAGE_BINDING".}: int
+  ## Texture can be bound as storage texture in compute shaders
+
+var gpuTextureUsageRenderAttachment* {.importjs: "GPUTextureUsage.RENDER_ATTACHMENT".}: int
+  ## Texture can be used as render target
+
+# ==============================================================================
 # SECTION 3: GPU MAP MODE FLAGS
 # ==============================================================================
 
@@ -658,6 +677,9 @@ type
   GPUTextureView* = ref object of JsObject
     ## View into a GPU texture
 
+  GPUSampler* = ref object of JsObject
+    ## GPU texture sampler for filtering and addressing
+
   GPURenderPipeline* = ref object of JsObject
     ## Render pipeline for graphics operations
 
@@ -675,6 +697,12 @@ proc getCurrentTexture*(context: GPUCanvasContext): GPUTexture {.importjs: "#.ge
 
 proc createView*(texture: GPUTexture): GPUTextureView {.importjs: "#.createView()".}
   ## Create a view of the texture
+
+proc createTexture*(device: GPUDevice, descriptor: JsObject): GPUTexture {.importjs: "#.createTexture(#)".}
+  ## Create a GPU texture
+
+proc createSampler*(device: GPUDevice, descriptor: JsObject): GPUSampler {.importjs: "#.createSampler(#)".}
+  ## Create a texture sampler
 
 proc getPreferredCanvasFormat*(): cstring {.importjs: "navigator.gpu.getPreferredCanvasFormat()".}
   ## Get the preferred canvas format for the current GPU
@@ -717,3 +745,6 @@ var gpuShaderStageVertex* {.importjs: "GPUShaderStage.VERTEX", nodecl.}: int
 
 var gpuShaderStageFragment* {.importjs: "GPUShaderStage.FRAGMENT", nodecl.}: int
   ## Fragment shader stage flag
+
+var gpuShaderStageCompute* {.importjs: "GPUShaderStage.COMPUTE", nodecl.}: int
+  ## Compute shader stage flag

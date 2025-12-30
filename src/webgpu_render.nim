@@ -39,8 +39,11 @@ type
 var canvas*: HTMLCanvasElement
 var gpuContext: GPUCanvasContext
 var renderPipeline: GPURenderPipeline
+var glowPipeline: GPURenderPipeline
 var renderBindGroup: GPUBindGroup
+var glowBindGroup: GPUBindGroup
 var renderParamsBuffer: GPUBuffer
+var bindGroupLayout: GPUBindGroupLayout  # Store original layout for bind group creation
 var isInitialized: bool = false
 
 # Current parity for which buffer set to read from
@@ -51,6 +54,80 @@ var activeParity*: int = 0
 # ==============================================================================
 
 const RENDER_SHADER = staticRead("../web/shaders/render.wgsl")
+
+# Glow shader - larger particles with Gaussian falloff
+const GLOW_SHADER = """
+struct RenderParams {
+  resolution: vec2f,
+  baseSize: f32,
+  padding: f32,
+};
+
+const OFFSETS = array<vec2f, 6>(
+  vec2f(-1.0, -1.0),
+  vec2f( 1.0, -1.0),
+  vec2f(-1.0,  1.0),
+  vec2f(-1.0,  1.0),
+  vec2f( 1.0, -1.0),
+  vec2f( 1.0,  1.0),
+);
+
+const COLORS = array<vec3f, 6>(
+  vec3f(1.0, 0.4, 0.4),
+  vec3f(0.4, 1.0, 0.4),
+  vec3f(0.4, 0.7, 1.0),
+  vec3f(1.0, 1.0, 0.4),
+  vec3f(1.0, 0.4, 1.0),
+  vec3f(0.4, 1.0, 1.0),
+);
+
+@group(0) @binding(0) var<storage, read> px: array<f32>;
+@group(0) @binding(1) var<storage, read> py: array<f32>;
+@group(0) @binding(2) var<storage, read> species: array<u32>;
+@group(0) @binding(3) var<storage, read> density: array<f32>;
+@group(0) @binding(4) var<uniform> params: RenderParams;
+
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) color: vec3f,
+  @location(1) offset: vec2f,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
+  var output: VertexOutput;
+  let particleId = id / 6u;
+  let cornerId = id % 6u;
+
+  let particleX = px[particleId];
+  let particleY = py[particleId];
+  let particleSpecies = species[particleId];
+
+  let offset = OFFSETS[cornerId];
+
+  // Glow is 12 pixels radius
+  let glowRadius = 12.0;
+  let worldPos = vec2f(particleX, particleY) + offset * glowRadius;
+
+  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;
+  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);
+  output.offset = offset;
+  output.color = COLORS[min(particleSpecies, 5u)];
+
+  return output;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+  let l = length(input.offset);
+
+  // Gaussian falloff: exp(-6 * l^2) / 64
+  let alpha = exp(-6.0 * l * l) / 64.0;
+
+  // Premultiplied alpha for additive blending
+  return vec4f(input.color * alpha, alpha);
+}
+"""
 
 # ==============================================================================
 # SECTION 4: INITIALIZATION
@@ -156,7 +233,7 @@ proc initWebGPURender*(): bool =
   discard entries.push(entry4)
 
   layoutDesc["entries"] = entries
-  let bindGroupLayout = webgpu_init.device.createBindGroupLayout(layoutDesc)
+  bindGroupLayout = webgpu_init.device.createBindGroupLayout(layoutDesc)
 
   # Create pipeline layout
   let pipelineLayoutDesc = newJsObject()
@@ -212,11 +289,63 @@ proc initWebGPURender*(): bool =
 
   renderPipeline = webgpu_init.device.createRenderPipeline(pipelineDesc)
 
+  # Create glow shader module
+  let glowShaderDesc = newJsObject()
+  glowShaderDesc["label"] = "Glow Render Shader".cstring.toJs
+  glowShaderDesc["code"] = GLOW_SHADER.cstring.toJs
+  let glowShaderModule = webgpu_init.device.createShaderModule(glowShaderDesc)
+
+  # Create glow pipeline (same layout, different blending)
+  let glowPipelineDesc = newJsObject()
+  glowPipelineDesc["label"] = "Glow Render Pipeline".cstring.toJs
+  glowPipelineDesc["layout"] = pipelineLayout.toJs
+
+  # Vertex stage (same structure as particle shader)
+  let glowVertexStage = newJsObject()
+  glowVertexStage["module"] = glowShaderModule.toJs
+  glowVertexStage["entryPoint"] = "vs_main".cstring.toJs
+  glowPipelineDesc["vertex"] = glowVertexStage
+
+  # Fragment stage with additive blending
+  let glowFragmentStage = newJsObject()
+  glowFragmentStage["module"] = glowShaderModule.toJs
+  glowFragmentStage["entryPoint"] = "fs_main".cstring.toJs
+
+  let glowTargets = newJsArray()
+  let glowTarget0 = newJsObject()
+  glowTarget0["format"] = canvasFormat.toJs
+
+  # Additive blending for glow: src + dst
+  let glowBlend = newJsObject()
+  let glowColorBlend = newJsObject()
+  glowColorBlend["srcFactor"] = "one".cstring.toJs
+  glowColorBlend["dstFactor"] = "one".cstring.toJs
+  glowColorBlend["operation"] = "add".cstring.toJs
+  glowBlend["color"] = glowColorBlend
+  let glowAlphaBlend = newJsObject()
+  glowAlphaBlend["srcFactor"] = "one".cstring.toJs
+  glowAlphaBlend["dstFactor"] = "one".cstring.toJs
+  glowAlphaBlend["operation"] = "add".cstring.toJs
+  glowBlend["alpha"] = glowAlphaBlend
+  glowTarget0["blend"] = glowBlend
+
+  discard glowTargets.push(glowTarget0)
+  glowFragmentStage["targets"] = glowTargets
+  glowPipelineDesc["fragment"] = glowFragmentStage
+
+  # Primitive state
+  let glowPrimitive = newJsObject()
+  glowPrimitive["topology"] = "triangle-list".cstring.toJs
+  glowPrimitive["cullMode"] = "none".cstring.toJs
+  glowPipelineDesc["primitive"] = glowPrimitive
+
+  glowPipeline = webgpu_init.device.createRenderPipeline(glowPipelineDesc)
+
   # Create initial bind group with buffer set A
   updateBindGroup(0)
 
   isInitialized = true
-  {.emit: "console.log('WebGPU render pipeline initialized');".}
+  {.emit: "console.log('WebGPU render pipeline initialized with glow');".}
   return true
 
 proc updateBindGroup*(parity: int) =
@@ -278,6 +407,13 @@ proc updateBindGroup*(parity: int) =
   bindGroupDesc["entries"] = entries
   renderBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
 
+  # Create glow bind group (same layout and buffers)
+  let glowBindGroupDesc = newJsObject()
+  glowBindGroupDesc["label"] = ("Glow Bind Group (parity " & $parity & ")").cstring.toJs
+  glowBindGroupDesc["layout"] = glowPipeline.getBindGroupLayout(0).toJs
+  glowBindGroupDesc["entries"] = entries  # Reuse same entries
+  glowBindGroup = webgpu_init.device.createBindGroup(glowBindGroupDesc)
+
   activeParity = parity
 
 # ==============================================================================
@@ -332,11 +468,14 @@ proc render*(particleCount: int): RenderTiming =
 
   let renderPass = commandEncoder.beginRenderPass(renderPassDesc)
 
+  # Pass 1: Draw glow (additive blending, larger radius)
+  renderPass.setPipeline(glowPipeline)
+  renderPass.setBindGroup(0, glowBindGroup)
+  renderPass.draw(6 * particleCount, 1, 0, 0)
+
+  # Pass 2: Draw particles (alpha blending, crisp circles)
   renderPass.setPipeline(renderPipeline)
   renderPass.setBindGroup(0, renderBindGroup)
-
-  # Draw 6 vertices per particle using vertex pulling (not instancing)
-  # Shader uses vertex_index / 6 to get particle ID
   renderPass.draw(6 * particleCount, 1, 0, 0)
 
   renderPass.endPass()

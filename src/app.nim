@@ -21,34 +21,20 @@ from std/dom import Window, requestAnimationFrame
 
 # Layer 1: Configuration (no dependencies)
 import config
-export config
 
 # Layer 2: Buffers (depends on config)
 import buffers
-export buffers
 
 # Layer 3: Browser integration modules
 import renderer
-export renderer
-
 import grid
-export grid
-
 import workers
-export workers
-
 import ui
-export ui
 
 # Layer 4: WebGPU modules
 import webgpu_init
-export webgpu_init
-
 import webgpu_compute
-export webgpu_compute
-
 import webgpu_render
-export webgpu_render
 
 # ==============================================================================
 # BINDINGS - Helper procs

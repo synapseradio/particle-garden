@@ -3686,10 +3686,13 @@ var isPipelineReady = false;
 var canvas_1409286158 = [null];
 var gpuContext_1409286159 = [null];
 var renderPipeline_1409286160 = [null];
-var renderBindGroup_1409286161 = [null];
-var renderParamsBuffer_1409286162 = [null];
-var isInitialized_1409286163 = [false];
-var activeParity_1409286164 = [0];
+var glowPipeline_1409286161 = [null];
+var renderBindGroup_1409286162 = [null];
+var glowBindGroup_1409286163 = [null];
+var renderParamsBuffer_1409286164 = [null];
+var bindGroupLayout_1409286165 = [null];
+var isInitialized_1409286166 = [false];
+var activeParity_1409286167 = [0];
 
 function canvasWidth__app_u41() {
     var Temporary1;
@@ -3791,7 +3794,7 @@ function toHTMLCanvasElement__bindingsZdom95extensions_u92(el_p0) {
 
 }
 
-function updateBindGroup__webgpu95render_u22(parity_p0) {
+function updateBindGroup__webgpu95render_u26(parity_p0) {
     var Temporary1;
     var Temporary2;
     var Temporary3;
@@ -3804,7 +3807,7 @@ function updateBindGroup__webgpu95render_u22(parity_p0) {
     Temporary1 = buffers.pxB;
     }
     
-    var px_1409286650 = Temporary1;
+    var px_1409286835 = Temporary1;
     if ((parity_p0 == 0)) {
     Temporary2 = buffers.pyA;
     }
@@ -3812,7 +3815,7 @@ function updateBindGroup__webgpu95render_u22(parity_p0) {
     Temporary2 = buffers.pyB;
     }
     
-    var py_1409286651 = Temporary2;
+    var py_1409286836 = Temporary2;
     if ((parity_p0 == 0)) {
     Temporary3 = buffers.speciesA;
     }
@@ -3820,7 +3823,7 @@ function updateBindGroup__webgpu95render_u22(parity_p0) {
     Temporary3 = buffers.speciesB;
     }
     
-    var species_1409286652 = Temporary3;
+    var species_1409286837 = Temporary3;
     if ((parity_p0 == 0)) {
     Temporary4 = buffers.denA;
     }
@@ -3828,62 +3831,67 @@ function updateBindGroup__webgpu95render_u22(parity_p0) {
     Temporary4 = buffers.denB;
     }
     
-    var density_1409286653 = Temporary4;
-    var bindGroupDesc_1409286654 = ({});
-    bindGroupDesc_1409286654["label"] = (toJSStr(([82,101,110,100,101,114,32,66,105,110,100,32,71,114,111,117,112,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
-    bindGroupDesc_1409286654["layout"] = (renderPipeline_1409286160[0].getBindGroupLayout(0));
-    var entries_1409286671 = ([]);
-    var e0_1409286672 = ({});
-    e0_1409286672["binding"] = (0);
-    var r0_1409286681 = ({});
-    r0_1409286681["buffer"] = (px_1409286650);
-    e0_1409286672["resource"] = r0_1409286681;
-    (entries_1409286671.push(e0_1409286672));
-    var e1_1409286695 = ({});
-    e1_1409286695["binding"] = (1);
-    var r1_1409286704 = ({});
-    r1_1409286704["buffer"] = (py_1409286651);
-    e1_1409286695["resource"] = r1_1409286704;
-    (entries_1409286671.push(e1_1409286695));
-    var e2_1409286718 = ({});
-    e2_1409286718["binding"] = (2);
-    var r2_1409286727 = ({});
-    r2_1409286727["buffer"] = (species_1409286652);
-    e2_1409286718["resource"] = r2_1409286727;
-    (entries_1409286671.push(e2_1409286718));
-    var e3_1409286741 = ({});
-    e3_1409286741["binding"] = (3);
-    var r3_1409286750 = ({});
-    r3_1409286750["buffer"] = (density_1409286653);
-    e3_1409286741["resource"] = r3_1409286750;
-    (entries_1409286671.push(e3_1409286741));
-    var e4_1409286764 = ({});
-    e4_1409286764["binding"] = (4);
-    var r4_1409286773 = ({});
-    r4_1409286773["buffer"] = (renderParamsBuffer_1409286162[0]);
-    e4_1409286764["resource"] = r4_1409286773;
-    (entries_1409286671.push(e4_1409286764));
-    bindGroupDesc_1409286654["entries"] = entries_1409286671;
-    renderBindGroup_1409286161[0] = device.createBindGroup(bindGroupDesc_1409286654);
-    activeParity_1409286164[0] = parity_p0;
+    var density_1409286838 = Temporary4;
+    var bindGroupDesc_1409286839 = ({});
+    bindGroupDesc_1409286839["label"] = (toJSStr(([82,101,110,100,101,114,32,66,105,110,100,32,71,114,111,117,112,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
+    bindGroupDesc_1409286839["layout"] = (renderPipeline_1409286160[0].getBindGroupLayout(0));
+    var entries_1409286856 = ([]);
+    var e0_1409286857 = ({});
+    e0_1409286857["binding"] = (0);
+    var r0_1409286866 = ({});
+    r0_1409286866["buffer"] = (px_1409286835);
+    e0_1409286857["resource"] = r0_1409286866;
+    (entries_1409286856.push(e0_1409286857));
+    var e1_1409286880 = ({});
+    e1_1409286880["binding"] = (1);
+    var r1_1409286889 = ({});
+    r1_1409286889["buffer"] = (py_1409286836);
+    e1_1409286880["resource"] = r1_1409286889;
+    (entries_1409286856.push(e1_1409286880));
+    var e2_1409286903 = ({});
+    e2_1409286903["binding"] = (2);
+    var r2_1409286912 = ({});
+    r2_1409286912["buffer"] = (species_1409286837);
+    e2_1409286903["resource"] = r2_1409286912;
+    (entries_1409286856.push(e2_1409286903));
+    var e3_1409286926 = ({});
+    e3_1409286926["binding"] = (3);
+    var r3_1409286935 = ({});
+    r3_1409286935["buffer"] = (density_1409286838);
+    e3_1409286926["resource"] = r3_1409286935;
+    (entries_1409286856.push(e3_1409286926));
+    var e4_1409286949 = ({});
+    e4_1409286949["binding"] = (4);
+    var r4_1409286958 = ({});
+    r4_1409286958["buffer"] = (renderParamsBuffer_1409286164[0]);
+    e4_1409286949["resource"] = r4_1409286958;
+    (entries_1409286856.push(e4_1409286949));
+    bindGroupDesc_1409286839["entries"] = entries_1409286856;
+    renderBindGroup_1409286162[0] = device.createBindGroup(bindGroupDesc_1409286839);
+    var glowBindGroupDesc_1409286977 = ({});
+    glowBindGroupDesc_1409286977["label"] = (toJSStr(([71,108,111,119,32,66,105,110,100,32,71,114,111,117,112,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
+    glowBindGroupDesc_1409286977["layout"] = (glowPipeline_1409286161[0].getBindGroupLayout(0));
+    glowBindGroupDesc_1409286977["entries"] = entries_1409286856;
+    glowBindGroup_1409286163[0] = device.createBindGroup(glowBindGroupDesc_1409286977);
+    activeParity_1409286167[0] = parity_p0;
 
   
 }
 
-function initWebGPURender__webgpu95render_u24() {
-  var result_1409286169 = false;
+function initWebGPURender__webgpu95render_u28() {
+  var result_1409286173 = false;
 
   BeforeRet: {
     if ((device == null)) {
     console.error('WebGPU device not initialized');
-    result_1409286169 = false;
+    result_1409286173 = false;
     break BeforeRet;
     }
     
     canvas_1409286158[0] = toHTMLCanvasElement__bindingsZdom95extensions_u92(document.getElementById("canvas"));
     if ((canvas_1409286158[0] == null)) {
     console.error('Canvas not found');
-    result_1409286169 = false;
+    result_1409286173 = false;
     break BeforeRet;
     }
     
@@ -3892,117 +3900,154 @@ function initWebGPURender__webgpu95render_u24() {
     gpuContext_1409286159[0] = canvas_1409286158[0].getContext('webgpu');
     if ((gpuContext_1409286159[0] == null)) {
     console.error('Failed to get WebGPU context');
-    result_1409286169 = false;
+    result_1409286173 = false;
     break BeforeRet;
     }
     
-    var canvasFormat_1409286179 = navigator.gpu.getPreferredCanvasFormat();
-    var configObj_1409286180 = ({});
-    configObj_1409286180["device"] = (device);
-    configObj_1409286180["format"] = (canvasFormat_1409286179);
-    configObj_1409286180["alphaMode"] = ("opaque");
-    gpuContext_1409286159[0].configure(configObj_1409286180);
-    var shaderDesc_1409286205 = ({});
-    shaderDesc_1409286205["label"] = ("Particle Render Shader");
-    shaderDesc_1409286205["code"] = ("/**\n * Particle Render Shader - WebGPU Vertex Pulling\n *\n * Based on lisyarus's approach: https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n *\n * Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n * No instancing needed - just draw(6 * particleCount) vertices.\n *\n * BINDING MANIFEST:\n * ┌─────────┬──────────────────────────┬─────────────────┬────────┐\n * │ Binding │ Shader Type              │ Buffer          │ Access │\n * ├─────────┼──────────────────────────┼─────────────────┼────────┤\n * │ 0       │ storage array<f32>       │ px (positions)  │ read   │\n * │ 1       │ storage array<f32>       │ py (positions)  │ read   │\n * │ 2       │ storage array<u32>       │ species         │ read   │\n * │ 3       │ storage array<f32>       │ density         │ read   │\n * │ 4       │ uniform RenderParams     │ renderParams    │ read   │\n * └─────────┴──────────────────────────┴─────────────────┴────────┘\n */\n\nstruct RenderParams {\n  resolution: vec2f,   // Canvas width, height in pixels\n  baseSize: f32,       // Base particle size in pixels\n  padding: f32,\n};\n\n// Species colors (matches WebGL renderer COLORS array)\nconst COLORS = array<vec3f, 6>(\n  vec3f(1.0, 0.4, 0.4),   // Species 0: Red\n  vec3f(0.4, 1.0, 0.4),   // Species 1: Green\n  vec3f(0.4, 0.7, 1.0),   // Species 2: Blue\n  vec3f(1.0, 1.0, 0.4),   // Species 3: Yellow\n  vec3f(1.0, 0.4, 1.0),   // Species 4: Magenta\n  vec3f(0.4, 1.0, 1.0),   // Species 5: Cyan\n);\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) ≈ 1.41 from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Particle data buffers (shared with compute shaders)\n@group(0) @binding(0) var<storage, read> px: array<f32>;\n@group(0) @binding(1) var<storage, read> py: array<f32>;\n@group(0) @binding(2) var<storage, read> species: array<u32>;\n@group(0) @binding(3) var<storage, read> density: array<f32>;\n@group(0) @binding(4) var<uniform> params: RenderParams;\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n  @location(2) density: f32,       // Local particle density for glow effect\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from storage buffers\n  let particleX = px[particleId];\n  let particleY = py[particleId];\n  let particleSpecies = species[particleId];\n  let particleDensity = density[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let offset = OFFSETS[cornerId];\n\n  // Calculate point size based on density (matches WebGL: max(1.0, 4.0 - den * 0.5))\n  let sizeMod = max(1.0, 4.0 - particleDensity * 0.5);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  let halfSize = pointSize * 0.5;\n  let worldPos = vec2f(particleX, particleY) + offset * halfSize;\n\n  // Transform to clip space: (0,0) is top-left, (width,height) is bottom-right\n  // WebGPU clip space: (-1,-1) is bottom-left, (1,1) is top-right\n  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range\n  output.offset = offset;\n\n  // Pass density for glow intensity calculation\n  output.density = particleDensity;\n\n  // Look up species color\n  let speciesIdx = min(particleSpecies, 5u);\n  output.color = vec4f(COLORS[speciesIdx], 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let dist = length(input.offset);\n\n  // Circle with soft edge (known working)\n  if (dist > 1.0) {\n    discard;\n  }\n\n  let alpha = 1.0 - smoothstep(0.7, 1.0, dist);\n  return vec4f(input.color.rgb, alpha);\n}\n");
-    var shaderModule_1409286222 = device.createShaderModule(shaderDesc_1409286205);
-    var paramsSize_1409286223 = 16;
-    var paramsDesc_1409286224 = ({});
-    paramsDesc_1409286224["size"] = (paramsSize_1409286223);
-    paramsDesc_1409286224["usage"] = ((GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST));
-    paramsDesc_1409286224["label"] = ("Render Params Buffer");
-    renderParamsBuffer_1409286162[0] = device.createBuffer(paramsDesc_1409286224);
-    var layoutDesc_1409286249 = ({});
-    layoutDesc_1409286249["label"] = ("Render Bind Group Layout");
-    var entries_1409286258 = ([]);
-    var entry0_1409286259 = ({});
-    entry0_1409286259["binding"] = (0);
-    entry0_1409286259["visibility"] = (GPUShaderStage.VERTEX);
-    var buffer0_1409286276 = ({});
-    buffer0_1409286276["type"] = ("read-only-storage");
-    entry0_1409286259["buffer"] = buffer0_1409286276;
-    (entries_1409286258.push(entry0_1409286259));
-    var entry1_1409286290 = ({});
-    entry1_1409286290["binding"] = (1);
-    entry1_1409286290["visibility"] = (GPUShaderStage.VERTEX);
-    var buffer1_1409286307 = ({});
-    buffer1_1409286307["type"] = ("read-only-storage");
-    entry1_1409286290["buffer"] = buffer1_1409286307;
-    (entries_1409286258.push(entry1_1409286290));
-    var entry2_1409286321 = ({});
-    entry2_1409286321["binding"] = (2);
-    entry2_1409286321["visibility"] = (GPUShaderStage.VERTEX);
-    var buffer2_1409286338 = ({});
-    buffer2_1409286338["type"] = ("read-only-storage");
-    entry2_1409286321["buffer"] = buffer2_1409286338;
-    (entries_1409286258.push(entry2_1409286321));
-    var entry3_1409286352 = ({});
-    entry3_1409286352["binding"] = (3);
-    entry3_1409286352["visibility"] = (GPUShaderStage.VERTEX);
-    var buffer3_1409286369 = ({});
-    buffer3_1409286369["type"] = ("read-only-storage");
-    entry3_1409286352["buffer"] = buffer3_1409286369;
-    (entries_1409286258.push(entry3_1409286352));
-    var entry4_1409286383 = ({});
-    entry4_1409286383["binding"] = (4);
-    entry4_1409286383["visibility"] = (GPUShaderStage.VERTEX);
-    var buffer4_1409286400 = ({});
-    buffer4_1409286400["type"] = ("uniform");
-    entry4_1409286383["buffer"] = buffer4_1409286400;
-    (entries_1409286258.push(entry4_1409286383));
-    layoutDesc_1409286249["entries"] = entries_1409286258;
-    var bindGroupLayout_1409286419 = device.createBindGroupLayout(layoutDesc_1409286249);
-    var pipelineLayoutDesc_1409286420 = ({});
-    var layouts_1409286421 = ([]);
-    (layouts_1409286421.push(bindGroupLayout_1409286419));
-    pipelineLayoutDesc_1409286420["bindGroupLayouts"] = layouts_1409286421;
-    pipelineLayoutDesc_1409286420["label"] = ("Render Pipeline Layout");
-    var pipelineLayout_1409286435 = device.createPipelineLayout(pipelineLayoutDesc_1409286420);
-    var pipelineDesc_1409286436 = ({});
-    pipelineDesc_1409286436["label"] = ("Particle Render Pipeline");
-    pipelineDesc_1409286436["layout"] = (pipelineLayout_1409286435);
-    var vertexStage_1409286453 = ({});
-    vertexStage_1409286453["module"] = (shaderModule_1409286222);
-    vertexStage_1409286453["entryPoint"] = ("vs_main");
-    pipelineDesc_1409286436["vertex"] = vertexStage_1409286453;
-    var fragmentStage_1409286475 = ({});
-    fragmentStage_1409286475["module"] = (shaderModule_1409286222);
-    fragmentStage_1409286475["entryPoint"] = ("fs_main");
-    var targets_1409286492 = ([]);
-    var target0_1409286493 = ({});
-    target0_1409286493["format"] = (canvasFormat_1409286179);
-    var blend_1409286502 = ({});
-    var colorBlend_1409286503 = ({});
-    colorBlend_1409286503["srcFactor"] = ("src-alpha");
-    colorBlend_1409286503["dstFactor"] = ("one-minus-src-alpha");
-    colorBlend_1409286503["operation"] = ("add");
-    blend_1409286502["color"] = colorBlend_1409286503;
-    var alphaBlend_1409286533 = ({});
-    alphaBlend_1409286533["srcFactor"] = ("one");
-    alphaBlend_1409286533["dstFactor"] = ("zero");
-    alphaBlend_1409286533["operation"] = ("add");
-    blend_1409286502["alpha"] = alphaBlend_1409286533;
-    target0_1409286493["blend"] = blend_1409286502;
-    (targets_1409286492.push(target0_1409286493));
-    fragmentStage_1409286475["targets"] = targets_1409286492;
-    pipelineDesc_1409286436["fragment"] = fragmentStage_1409286475;
-    var primitive_1409286578 = ({});
-    primitive_1409286578["topology"] = ("triangle-list");
-    primitive_1409286578["cullMode"] = ("none");
-    pipelineDesc_1409286436["primitive"] = primitive_1409286578;
-    renderPipeline_1409286160[0] = device.createRenderPipeline(pipelineDesc_1409286436);
-    updateBindGroup__webgpu95render_u22(0);
-    isInitialized_1409286163[0] = true;
-    console.log('WebGPU render pipeline initialized');
-    result_1409286169 = true;
+    var canvasFormat_1409286183 = navigator.gpu.getPreferredCanvasFormat();
+    var configObj_1409286184 = ({});
+    configObj_1409286184["device"] = (device);
+    configObj_1409286184["format"] = (canvasFormat_1409286183);
+    configObj_1409286184["alphaMode"] = ("opaque");
+    gpuContext_1409286159[0].configure(configObj_1409286184);
+    var shaderDesc_1409286209 = ({});
+    shaderDesc_1409286209["label"] = ("Particle Render Shader");
+    shaderDesc_1409286209["code"] = ("/**\n * Particle Render Shader - WebGPU Vertex Pulling\n *\n * Based on lisyarus's approach: https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n *\n * Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n * No instancing needed - just draw(6 * particleCount) vertices.\n *\n * BINDING MANIFEST:\n * ┌─────────┬──────────────────────────┬─────────────────┬────────┐\n * │ Binding │ Shader Type              │ Buffer          │ Access │\n * ├─────────┼──────────────────────────┼─────────────────┼────────┤\n * │ 0       │ storage array<f32>       │ px (positions)  │ read   │\n * │ 1       │ storage array<f32>       │ py (positions)  │ read   │\n * │ 2       │ storage array<u32>       │ species         │ read   │\n * │ 3       │ storage array<f32>       │ density         │ read   │\n * │ 4       │ uniform RenderParams     │ renderParams    │ read   │\n * └─────────┴──────────────────────────┴─────────────────┴────────┘\n */\n\nstruct RenderParams {\n  resolution: vec2f,   // Canvas width, height in pixels\n  baseSize: f32,       // Base particle size in pixels\n  padding: f32,\n};\n\n// Species colors (matches WebGL renderer COLORS array)\nconst COLORS = array<vec3f, 6>(\n  vec3f(1.0, 0.4, 0.4),   // Species 0: Red\n  vec3f(0.4, 1.0, 0.4),   // Species 1: Green\n  vec3f(0.4, 0.7, 1.0),   // Species 2: Blue\n  vec3f(1.0, 1.0, 0.4),   // Species 3: Yellow\n  vec3f(1.0, 0.4, 1.0),   // Species 4: Magenta\n  vec3f(0.4, 1.0, 1.0),   // Species 5: Cyan\n);\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) ≈ 1.41 from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Particle data buffers (shared with compute shaders)\n@group(0) @binding(0) var<storage, read> px: array<f32>;\n@group(0) @binding(1) var<storage, read> py: array<f32>;\n@group(0) @binding(2) var<storage, read> species: array<u32>;\n@group(0) @binding(3) var<storage, read> density: array<f32>;\n@group(0) @binding(4) var<uniform> params: RenderParams;\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n  @location(2) density: f32,       // Local particle density for glow effect\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from storage buffers\n  let particleX = px[particleId];\n  let particleY = py[particleId];\n  let particleSpecies = species[particleId];\n  let particleDensity = density[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let offset = OFFSETS[cornerId];\n\n  // Calculate point size based on density (matches WebGL: max(1.0, 4.0 - den * 0.5))\n  let sizeMod = max(1.0, 4.0 - particleDensity * 0.5);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  let halfSize = pointSize * 0.5;\n  let worldPos = vec2f(particleX, particleY) + offset * halfSize;\n\n  // Transform to clip space: (0,0) is top-left, (width,height) is bottom-right\n  // WebGPU clip space: (-1,-1) is bottom-left, (1,1) is top-right\n  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range\n  output.offset = offset;\n\n  // Pass density for glow intensity calculation\n  output.density = particleDensity;\n\n  // Look up species color\n  let speciesIdx = min(particleSpecies, 5u);\n  output.color = vec4f(COLORS[speciesIdx], 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let dist = length(input.offset);\n\n  // Circle with soft edge (known working)\n  if (dist > 1.0) {\n    discard;\n  }\n\n  let alpha = 1.0 - smoothstep(0.7, 1.0, dist);\n  return vec4f(input.color.rgb, alpha);\n}\n");
+    var shaderModule_1409286226 = device.createShaderModule(shaderDesc_1409286209);
+    var paramsSize_1409286227 = 16;
+    var paramsDesc_1409286228 = ({});
+    paramsDesc_1409286228["size"] = (paramsSize_1409286227);
+    paramsDesc_1409286228["usage"] = ((GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST));
+    paramsDesc_1409286228["label"] = ("Render Params Buffer");
+    renderParamsBuffer_1409286164[0] = device.createBuffer(paramsDesc_1409286228);
+    var layoutDesc_1409286253 = ({});
+    layoutDesc_1409286253["label"] = ("Render Bind Group Layout");
+    var entries_1409286262 = ([]);
+    var entry0_1409286263 = ({});
+    entry0_1409286263["binding"] = (0);
+    entry0_1409286263["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer0_1409286280 = ({});
+    buffer0_1409286280["type"] = ("read-only-storage");
+    entry0_1409286263["buffer"] = buffer0_1409286280;
+    (entries_1409286262.push(entry0_1409286263));
+    var entry1_1409286294 = ({});
+    entry1_1409286294["binding"] = (1);
+    entry1_1409286294["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer1_1409286311 = ({});
+    buffer1_1409286311["type"] = ("read-only-storage");
+    entry1_1409286294["buffer"] = buffer1_1409286311;
+    (entries_1409286262.push(entry1_1409286294));
+    var entry2_1409286325 = ({});
+    entry2_1409286325["binding"] = (2);
+    entry2_1409286325["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer2_1409286342 = ({});
+    buffer2_1409286342["type"] = ("read-only-storage");
+    entry2_1409286325["buffer"] = buffer2_1409286342;
+    (entries_1409286262.push(entry2_1409286325));
+    var entry3_1409286356 = ({});
+    entry3_1409286356["binding"] = (3);
+    entry3_1409286356["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer3_1409286373 = ({});
+    buffer3_1409286373["type"] = ("read-only-storage");
+    entry3_1409286356["buffer"] = buffer3_1409286373;
+    (entries_1409286262.push(entry3_1409286356));
+    var entry4_1409286387 = ({});
+    entry4_1409286387["binding"] = (4);
+    entry4_1409286387["visibility"] = (GPUShaderStage.VERTEX);
+    var buffer4_1409286404 = ({});
+    buffer4_1409286404["type"] = ("uniform");
+    entry4_1409286387["buffer"] = buffer4_1409286404;
+    (entries_1409286262.push(entry4_1409286387));
+    layoutDesc_1409286253["entries"] = entries_1409286262;
+    bindGroupLayout_1409286165[0] = device.createBindGroupLayout(layoutDesc_1409286253);
+    var pipelineLayoutDesc_1409286423 = ({});
+    var layouts_1409286424 = ([]);
+    (layouts_1409286424.push(bindGroupLayout_1409286165[0]));
+    pipelineLayoutDesc_1409286423["bindGroupLayouts"] = layouts_1409286424;
+    pipelineLayoutDesc_1409286423["label"] = ("Render Pipeline Layout");
+    var pipelineLayout_1409286438 = device.createPipelineLayout(pipelineLayoutDesc_1409286423);
+    var pipelineDesc_1409286439 = ({});
+    pipelineDesc_1409286439["label"] = ("Particle Render Pipeline");
+    pipelineDesc_1409286439["layout"] = (pipelineLayout_1409286438);
+    var vertexStage_1409286456 = ({});
+    vertexStage_1409286456["module"] = (shaderModule_1409286226);
+    vertexStage_1409286456["entryPoint"] = ("vs_main");
+    pipelineDesc_1409286439["vertex"] = vertexStage_1409286456;
+    var fragmentStage_1409286478 = ({});
+    fragmentStage_1409286478["module"] = (shaderModule_1409286226);
+    fragmentStage_1409286478["entryPoint"] = ("fs_main");
+    var targets_1409286495 = ([]);
+    var target0_1409286496 = ({});
+    target0_1409286496["format"] = (canvasFormat_1409286183);
+    var blend_1409286505 = ({});
+    var colorBlend_1409286506 = ({});
+    colorBlend_1409286506["srcFactor"] = ("src-alpha");
+    colorBlend_1409286506["dstFactor"] = ("one-minus-src-alpha");
+    colorBlend_1409286506["operation"] = ("add");
+    blend_1409286505["color"] = colorBlend_1409286506;
+    var alphaBlend_1409286536 = ({});
+    alphaBlend_1409286536["srcFactor"] = ("one");
+    alphaBlend_1409286536["dstFactor"] = ("zero");
+    alphaBlend_1409286536["operation"] = ("add");
+    blend_1409286505["alpha"] = alphaBlend_1409286536;
+    target0_1409286496["blend"] = blend_1409286505;
+    (targets_1409286495.push(target0_1409286496));
+    fragmentStage_1409286478["targets"] = targets_1409286495;
+    pipelineDesc_1409286439["fragment"] = fragmentStage_1409286478;
+    var primitive_1409286581 = ({});
+    primitive_1409286581["topology"] = ("triangle-list");
+    primitive_1409286581["cullMode"] = ("none");
+    pipelineDesc_1409286439["primitive"] = primitive_1409286581;
+    renderPipeline_1409286160[0] = device.createRenderPipeline(pipelineDesc_1409286439);
+    var glowShaderDesc_1409286603 = ({});
+    glowShaderDesc_1409286603["label"] = ("Glow Render Shader");
+    glowShaderDesc_1409286603["code"] = ("struct RenderParams {\n  resolution: vec2f,\n  baseSize: f32,\n  padding: f32,\n};\n\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),\n  vec2f( 1.0, -1.0),\n  vec2f(-1.0,  1.0),\n  vec2f(-1.0,  1.0),\n  vec2f( 1.0, -1.0),\n  vec2f( 1.0,  1.0),\n);\n\nconst COLORS = array<vec3f, 6>(\n  vec3f(1.0, 0.4, 0.4),\n  vec3f(0.4, 1.0, 0.4),\n  vec3f(0.4, 0.7, 1.0),\n  vec3f(1.0, 1.0, 0.4),\n  vec3f(1.0, 0.4, 1.0),\n  vec3f(0.4, 1.0, 1.0),\n);\n\n@group(0) @binding(0) var<storage, read> px: array<f32>;\n@group(0) @binding(1) var<storage, read> py: array<f32>;\n@group(0) @binding(2) var<storage, read> species: array<u32>;\n@group(0) @binding(3) var<storage, read> density: array<f32>;\n@group(0) @binding(4) var<uniform> params: RenderParams;\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec3f,\n  @location(1) offset: vec2f,\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  let particleX = px[particleId];\n  let particleY = py[particleId];\n  let particleSpecies = species[particleId];\n\n  let offset = OFFSETS[cornerId];\n\n  // Glow is 12 pixels radius\n  let glowRadius = 12.0;\n  let worldPos = vec2f(particleX, particleY) + offset * glowRadius;\n\n  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);\n  output.offset = offset;\n  output.color = COLORS[min(particleSpecies, 5u)];\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let l = length(input.offset);\n\n  // Gaussian falloff: exp(-6 * l^2) / 64\n  let alpha = exp(-6.0 * l * l) / 64.0;\n\n  // Premultiplied alpha for additive blending\n  return vec4f(input.color * alpha, alpha);\n}\n");
+    var glowShaderModule_1409286620 = device.createShaderModule(glowShaderDesc_1409286603);
+    var glowPipelineDesc_1409286621 = ({});
+    glowPipelineDesc_1409286621["label"] = ("Glow Render Pipeline");
+    glowPipelineDesc_1409286621["layout"] = (pipelineLayout_1409286438);
+    var glowVertexStage_1409286638 = ({});
+    glowVertexStage_1409286638["module"] = (glowShaderModule_1409286620);
+    glowVertexStage_1409286638["entryPoint"] = ("vs_main");
+    glowPipelineDesc_1409286621["vertex"] = glowVertexStage_1409286638;
+    var glowFragmentStage_1409286660 = ({});
+    glowFragmentStage_1409286660["module"] = (glowShaderModule_1409286620);
+    glowFragmentStage_1409286660["entryPoint"] = ("fs_main");
+    var glowTargets_1409286677 = ([]);
+    var glowTarget0_1409286678 = ({});
+    glowTarget0_1409286678["format"] = (canvasFormat_1409286183);
+    var glowBlend_1409286687 = ({});
+    var glowColorBlend_1409286688 = ({});
+    glowColorBlend_1409286688["srcFactor"] = ("one");
+    glowColorBlend_1409286688["dstFactor"] = ("one");
+    glowColorBlend_1409286688["operation"] = ("add");
+    glowBlend_1409286687["color"] = glowColorBlend_1409286688;
+    var glowAlphaBlend_1409286718 = ({});
+    glowAlphaBlend_1409286718["srcFactor"] = ("one");
+    glowAlphaBlend_1409286718["dstFactor"] = ("one");
+    glowAlphaBlend_1409286718["operation"] = ("add");
+    glowBlend_1409286687["alpha"] = glowAlphaBlend_1409286718;
+    glowTarget0_1409286678["blend"] = glowBlend_1409286687;
+    (glowTargets_1409286677.push(glowTarget0_1409286678));
+    glowFragmentStage_1409286660["targets"] = glowTargets_1409286677;
+    glowPipelineDesc_1409286621["fragment"] = glowFragmentStage_1409286660;
+    var glowPrimitive_1409286763 = ({});
+    glowPrimitive_1409286763["topology"] = ("triangle-list");
+    glowPrimitive_1409286763["cullMode"] = ("none");
+    glowPipelineDesc_1409286621["primitive"] = glowPrimitive_1409286763;
+    glowPipeline_1409286161[0] = device.createRenderPipeline(glowPipelineDesc_1409286621);
+    updateBindGroup__webgpu95render_u26(0);
+    isInitialized_1409286166[0] = true;
+    console.log('WebGPU render pipeline initialized with glow');
+    result_1409286173 = true;
     break BeforeRet;
   };
 
-  return result_1409286169;
+  return result_1409286173;
 
 }
 
-function resize__webgpu95render_u826() {
+function resize__webgpu95render_u1033() {
     canvas_1409286158[0].width = (window.innerWidth);
     canvas_1409286158[0].height = (window.innerHeight);
 
@@ -4151,55 +4196,58 @@ async function physics__app_u125(dt_p0) {
 
 }
 
-function render__webgpu95render_u648(particleCount_p0) {
-  var result_1409286794 = null;
+function render__webgpu95render_u855(particleCount_p0) {
+  var result_1409287001 = null;
 
   BeforeRet: {
-    result_1409286794 = {m_type: NTI1409286148, packTimeMs: 0.0, uploadTimeMs: 0.0};
-    result_1409286794.packTimeMs = 0.0;
-    result_1409286794.uploadTimeMs = 0.0;
-    if (!(isInitialized_1409286163[0])) {
+    result_1409287001 = {m_type: NTI1409286148, packTimeMs: 0.0, uploadTimeMs: 0.0};
+    result_1409287001.packTimeMs = 0.0;
+    result_1409287001.uploadTimeMs = 0.0;
+    if (!(isInitialized_1409286166[0])) {
     break BeforeRet;
     }
     
-    var paramsData_1409286795 = new Float32Array(4);
-    paramsData_1409286795[0] = canvas_1409286158[0].width;
-    paramsData_1409286795[1] = canvas_1409286158[0].height;
-    paramsData_1409286795[2] = addInt(CONFIG.particleSize, 1);
-    paramsData_1409286795[3] = 0.0;
-    queue.writeBuffer(renderParamsBuffer_1409286162[0], 0, paramsData_1409286795);
-    var currentTexture_1409286796 = gpuContext_1409286159[0].getCurrentTexture();
-    var textureView_1409286797 = currentTexture_1409286796.createView();
-    var encoderDesc_1409286798 = ({});
-    encoderDesc_1409286798["label"] = ("Render Command Encoder");
-    var commandEncoder_1409286807 = device.createCommandEncoder(encoderDesc_1409286798);
-    var renderPassDesc_1409286808 = ({});
-    renderPassDesc_1409286808["label"] = ("Particle Render Pass");
-    var colorAttachments_1409286817 = ([]);
-    var colorAttachment_1409286818 = ({});
-    colorAttachment_1409286818["view"] = (textureView_1409286797);
-    colorAttachment_1409286818["loadOp"] = ("clear");
-    colorAttachment_1409286818["storeOp"] = ("store");
-    var clearColor_1409286843 = ({});
-    clearColor_1409286843["r"] = (0.04);
-    clearColor_1409286843["g"] = (0.04);
-    clearColor_1409286843["b"] = (0.06);
-    clearColor_1409286843["a"] = (1.0);
-    colorAttachment_1409286818["clearValue"] = clearColor_1409286843;
-    (colorAttachments_1409286817.push(colorAttachment_1409286818));
-    renderPassDesc_1409286808["colorAttachments"] = colorAttachments_1409286817;
-    var renderPass_1409286886 = commandEncoder_1409286807.beginRenderPass(renderPassDesc_1409286808);
-    renderPass_1409286886.setPipeline(renderPipeline_1409286160[0]);
-    renderPass_1409286886.setBindGroup(0, renderBindGroup_1409286161[0]);
-    renderPass_1409286886.draw(mulInt(6, particleCount_p0), 1, 0, 0);
-    renderPass_1409286886.end();
-    var commandBuffer_1409286887 = commandEncoder_1409286807.finish();
-    var commandBufferArray_1409286888 = ([]);
-    (commandBufferArray_1409286888.push(commandBuffer_1409286887));
-    queue.submit(commandBufferArray_1409286888);
+    var paramsData_1409287002 = new Float32Array(4);
+    paramsData_1409287002[0] = canvas_1409286158[0].width;
+    paramsData_1409287002[1] = canvas_1409286158[0].height;
+    paramsData_1409287002[2] = addInt(CONFIG.particleSize, 1);
+    paramsData_1409287002[3] = 0.0;
+    queue.writeBuffer(renderParamsBuffer_1409286164[0], 0, paramsData_1409287002);
+    var currentTexture_1409287003 = gpuContext_1409286159[0].getCurrentTexture();
+    var textureView_1409287004 = currentTexture_1409287003.createView();
+    var encoderDesc_1409287005 = ({});
+    encoderDesc_1409287005["label"] = ("Render Command Encoder");
+    var commandEncoder_1409287014 = device.createCommandEncoder(encoderDesc_1409287005);
+    var renderPassDesc_1409287015 = ({});
+    renderPassDesc_1409287015["label"] = ("Particle Render Pass");
+    var colorAttachments_1409287024 = ([]);
+    var colorAttachment_1409287025 = ({});
+    colorAttachment_1409287025["view"] = (textureView_1409287004);
+    colorAttachment_1409287025["loadOp"] = ("clear");
+    colorAttachment_1409287025["storeOp"] = ("store");
+    var clearColor_1409287050 = ({});
+    clearColor_1409287050["r"] = (0.04);
+    clearColor_1409287050["g"] = (0.04);
+    clearColor_1409287050["b"] = (0.06);
+    clearColor_1409287050["a"] = (1.0);
+    colorAttachment_1409287025["clearValue"] = clearColor_1409287050;
+    (colorAttachments_1409287024.push(colorAttachment_1409287025));
+    renderPassDesc_1409287015["colorAttachments"] = colorAttachments_1409287024;
+    var renderPass_1409287093 = commandEncoder_1409287014.beginRenderPass(renderPassDesc_1409287015);
+    renderPass_1409287093.setPipeline(glowPipeline_1409286161[0]);
+    renderPass_1409287093.setBindGroup(0, glowBindGroup_1409286163[0]);
+    renderPass_1409287093.draw(mulInt(6, particleCount_p0), 1, 0, 0);
+    renderPass_1409287093.setPipeline(renderPipeline_1409286160[0]);
+    renderPass_1409287093.setBindGroup(0, renderBindGroup_1409286162[0]);
+    renderPass_1409287093.draw(mulInt(6, particleCount_p0), 1, 0, 0);
+    renderPass_1409287093.end();
+    var commandBuffer_1409287094 = commandEncoder_1409287014.finish();
+    var commandBufferArray_1409287095 = ([]);
+    (commandBufferArray_1409287095.push(commandBuffer_1409287094));
+    queue.submit(commandBufferArray_1409287095);
   };
 
-  return result_1409286794;
+  return result_1409287001;
 
 }
 async function loop__app_u342(now_p0) {
@@ -4235,8 +4283,8 @@ function HEX3Aanonymous__app_u376(t_p0) {
     (await physics__app_u125(dt_587202918));
     var renderTiming_587202923 = null;
     if (useWebGPURender) {
-    updateBindGroup__webgpu95render_u22(activeParity);
-    renderTiming_587202923 = (render__webgpu95render_u648(particleCount));
+    updateBindGroup__webgpu95render_u26(activeParity);
+    renderTiming_587202923 = (render__webgpu95render_u855(particleCount));
     }
     else {
       renderTiming_587202923 = render(particleCount);
@@ -4313,7 +4361,7 @@ function HEX3Aanonymous__app_u623(t_p0) {
     useWebGPU = true;
     console.log([(("Physics acceleration: WebGPU compute shaders"))]);
     console.log([(("Initializing WebGPU render pipeline..."))]);
-    if (initWebGPURender__webgpu95render_u24()) {
+    if (initWebGPURender__webgpu95render_u28()) {
     useWebGPURender = true;
     console.log([(("WebGPU rendering: ENABLED (zero CPU readback)"))]);
     }
@@ -4344,7 +4392,7 @@ function HEX3Aanonymous__app_u623(t_p0) {
     Temporary1 = initParticles.bind(null); Temporary1.ClP_0 = initParticles; Temporary1.ClE_0 = null;
     setInitParticlesCallback(Temporary1);
     if (useWebGPURender) {
-    Temporary2 = resize__webgpu95render_u826.bind(null); Temporary2.ClP_0 = resize__webgpu95render_u826; Temporary2.ClE_0 = null;
+    Temporary2 = resize__webgpu95render_u1033.bind(null); Temporary2.ClP_0 = resize__webgpu95render_u1033; Temporary2.ClE_0 = null;
     setResizeCallback(Temporary2);
     setupEvents(canvas_1409286158[0]);
     }
