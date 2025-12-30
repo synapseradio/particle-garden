@@ -76,7 +76,7 @@
 # ARCHITECTURAL NOTE: JS binds only the ACTIVE buffer set (A or B) based on
 # parity - shader doesn't select at runtime. Matrix is embedded in SimParams
 # uniform to stay at exactly 8 storage buffers (the WebGPU per-stage limit).
-# Density computation removed; add separate pass if needed.
+# Uses exact particle iteration for all 9 neighbor cells.
 #
 # +-------+---------------+----------------+------------------+------------+
 # |Binding| Shader Type   | Access         | JS Buffer        | Size       |
@@ -89,11 +89,10 @@
 # |   4   | storage       | read           | sortedIndices    | N * 4      |
 # |   5   | storage       | read           | cellOffsets      | cells * 4  |
 # |   6   | storage       | read           | cellCounts       | cells * 4  |
-# |   7   | storage       | read_write     | vxDelta          | N * 4      |
-# |   8   | storage       | read_write     | vyDelta          | N * 4      |
+# |   7   | storage       | read_write     | velocityDelta    | N * 8      |
 # +-------+---------------+----------------+------------------+------------+
-# EXPECTED ENTRY COUNT: 9
-# STORAGE BUFFER COUNT: 8 (at WebGPU limit)
+# EXPECTED ENTRY COUNT: 8
+# STORAGE BUFFER COUNT: 7 (1 slot available for future use)
 #
 # PASS 4b: DENSITY (density.wgsl)
 # +-------+---------------+----------------+------------------+------------+
@@ -119,10 +118,9 @@
 # |   2   | storage       | read_write     | py (active)      | N * 4      |
 # |   3   | storage       | read_write     | vx (active)      | N * 4      |
 # |   4   | storage       | read_write     | vy (active)      | N * 4      |
-# |   5   | storage       | read           | vxDelta          | N * 4      |
-# |   6   | storage       | read           | vyDelta          | N * 4      |
+# |   5   | storage       | read           | velocityDelta    | N * 8      |
 # +-------+---------------+----------------+------------------+------------+
-# EXPECTED ENTRY COUNT: 7
+# EXPECTED ENTRY COUNT: 6
 #
 # Compile with: nim js -d:release -d:danger --out:web/webgpu-compute.js src/webgpu_compute.nim
 #
@@ -157,9 +155,10 @@ const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL* = 4
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 5
-const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 9
+const EXPECTED_BIND_GROUP_ENTRIES_CELL_STATS* = 8
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 8  # LOD disabled - exact iteration for all cells
 const EXPECTED_BIND_GROUP_ENTRIES_DENSITY* = 8
-const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 7
+const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6
 
 proc getExpectedEntryCount(passName: cstring): int =
   ## Get expected bind group entry count for a pass name.
@@ -170,6 +169,7 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "prefixBlocks": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS
   of "prefixFinal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL
   of "binScatter": result = EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER
+  of "cellStats": result = EXPECTED_BIND_GROUP_ENTRIES_CELL_STATS
   of "forces": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES
   of "density": result = EXPECTED_BIND_GROUP_ENTRIES_DENSITY
   of "integrate": result = EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE
@@ -447,7 +447,26 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
     "Bin Scatter Bind Group"
   )
 
-  # Pass 4: Forces
+  # Pass 3b: Cell Statistics (for hierarchical forces LOD)
+  let cellStatsEntries = createJsArray()
+  discard cellStatsEntries.push(createBindGroupEntry(0, uniformBuffers["cellStatsParams"]))
+  discard cellStatsEntries.push(createBindGroupEntry(1, pxSrc))
+  discard cellStatsEntries.push(createBindGroupEntry(2, pySrc))
+  discard cellStatsEntries.push(createBindGroupEntry(3, speciesSrc))
+  discard cellStatsEntries.push(createBindGroupEntry(4, gpuBuffers["sortedIndices"]))
+  discard cellStatsEntries.push(createBindGroupEntry(5, gpuBuffers["gridOffsets"]))
+  discard cellStatsEntries.push(createBindGroupEntry(6, gpuBuffers["gridCounts"]))
+  discard cellStatsEntries.push(createBindGroupEntry(7, gpuBuffers["cellStats"]))
+
+  validateBindGroupEntryCount(cellStatsEntries, "cellStats", "bind group creation")
+  bindGroups["cellStats"] = await createBindGroupWithValidation(
+    "Cell Stats",
+    cast[GPUBindGroupLayout](bindGroupLayouts["cellStats"]),
+    cellStatsEntries,
+    "Cell Stats Bind Group"
+  )
+
+  # Pass 4: Forces (exact iteration for all cells)
   let forcesEntries = createJsArray()
   discard forcesEntries.push(createBindGroupEntry(0, uniformBuffers["simParams"]))
   discard forcesEntries.push(createBindGroupEntry(1, pxSrc))
@@ -456,8 +475,7 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
   discard forcesEntries.push(createBindGroupEntry(4, gpuBuffers["sortedIndices"]))
   discard forcesEntries.push(createBindGroupEntry(5, gpuBuffers["gridOffsets"]))
   discard forcesEntries.push(createBindGroupEntry(6, gpuBuffers["gridCounts"]))
-  discard forcesEntries.push(createBindGroupEntry(7, gpuBuffers["vxDelta"]))
-  discard forcesEntries.push(createBindGroupEntry(8, gpuBuffers["vyDelta"]))
+  discard forcesEntries.push(createBindGroupEntry(7, gpuBuffers["velocityDelta"]))
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
   bindGroups["forces"] = await createBindGroupWithValidation(
@@ -498,8 +516,7 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
   discard integrateEntries.push(createBindGroupEntry(2, pyActive))
   discard integrateEntries.push(createBindGroupEntry(3, vxActive))
   discard integrateEntries.push(createBindGroupEntry(4, vyActive))
-  discard integrateEntries.push(createBindGroupEntry(5, gpuBuffers["vxDelta"]))
-  discard integrateEntries.push(createBindGroupEntry(6, gpuBuffers["vyDelta"]))
+  discard integrateEntries.push(createBindGroupEntry(5, gpuBuffers["velocityDelta"]))
 
   validateBindGroupEntryCount(integrateEntries, "integrate", "bind group creation")
   bindGroups["integrate"] = await createBindGroupWithValidation(
@@ -594,10 +611,12 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     let prefixBlocksModule = await loadShader("./shaders/prefix-sum-blocks.wgsl", "Prefix Sum Blocks Shader")
     let prefixFinalModule = await loadShader("./shaders/prefix-sum-final.wgsl", "Prefix Sum Final Shader")
     let binScatterModule = await loadShader("./shaders/bin-scatter.wgsl", "Bin Scatter Shader")
+    let cellStatsModule = await loadShader("./shaders/cell-stats.wgsl", "Cell Stats Shader")
     let forcesModule = await loadShader("./shaders/forces.wgsl", "Forces Shader")
     let densityModule = await loadShader("./shaders/density.wgsl", "Density Shader")
     let integrateModule = await loadShader("./shaders/integrate.wgsl", "Integration Shader")
 
+    shaderModules["cellStats"] = cast[JsObject](cellStatsModule)
     shaderModules["binCount"] = cast[JsObject](binCountModule)
     shaderModules["prefixSum"] = cast[JsObject](prefixSumModule)
     shaderModules["prefixLocal"] = cast[JsObject](prefixLocalModule)
@@ -608,7 +627,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     shaderModules["density"] = cast[JsObject](densityModule)
     shaderModules["integrate"] = cast[JsObject](integrateModule)
 
-    consoleLog(("[PHASE: SHADER LOADING] Success - Shaders loaded: 9").toJs)
+    consoleLog(("[PHASE: SHADER LOADING] Success - Shaders loaded: 10").toJs)
 
     # =========================================================================
     # PHASE: UNIFORM BUFFER CREATION
@@ -630,7 +649,10 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     # Density parameters (32 bytes aligned)
     uniformBuffers["densityParams"] = device.createBufferLabeled(32, uniformUsage, "Density Parameters Uniform")
 
-    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - Uniform buffers created: 5".toJs)
+    # Cell stats parameters (16 bytes aligned)
+    uniformBuffers["cellStatsParams"] = device.createBufferLabeled(16, uniformUsage, "Cell Stats Parameters Uniform")
+
+    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - Uniform buffers created: 6".toJs)
 
     # =========================================================================
     # PHASE: PIPELINE CREATION
@@ -643,6 +665,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     pipelines["prefixBlocks"] = await createPipelineWithValidation("Prefix Blocks", prefixBlocksModule, "main")
     pipelines["prefixFinal"] = await createPipelineWithValidation("Prefix Final", prefixFinalModule, "main")
     pipelines["binScatter"] = await createPipelineWithValidation("Bin Scatter", binScatterModule, "main")
+    pipelines["cellStats"] = await createPipelineWithValidation("Cell Stats", cellStatsModule, "computeCellStats")
     pipelines["forces"] = await createPipelineWithValidation("Forces", forcesModule, "computeForces")
     pipelines["density"] = await createPipelineWithValidation("Density", densityModule, "computeDensity")
     pipelines["integrate"] = await createPipelineWithValidation("Integration", integrateModule, "integrate")
@@ -657,6 +680,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     bindGroupLayouts["prefixBlocks"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixBlocks"]).getBindGroupLayout(0))
     bindGroupLayouts["prefixFinal"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixFinal"]).getBindGroupLayout(0))
     bindGroupLayouts["binScatter"] = cast[JsObject](cast[GPUComputePipeline](pipelines["binScatter"]).getBindGroupLayout(0))
+    bindGroupLayouts["cellStats"] = cast[JsObject](cast[GPUComputePipeline](pipelines["cellStats"]).getBindGroupLayout(0))
     bindGroupLayouts["forces"] = cast[JsObject](cast[GPUComputePipeline](pipelines["forces"]).getBindGroupLayout(0))
     bindGroupLayouts["density"] = cast[JsObject](cast[GPUComputePipeline](pipelines["density"]).getBindGroupLayout(0))
     bindGroupLayouts["integrate"] = cast[JsObject](cast[GPUComputePipeline](pipelines["integrate"]).getBindGroupLayout(0))
@@ -672,6 +696,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixBlocks"]), "prefixBlocks")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixFinal"]), "prefixFinal")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["binScatter"]), "binScatter")
+    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["cellStats"]), "cellStats")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["forces"]), "forces")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["density"]), "density")
     validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["integrate"]), "integrate")
@@ -683,8 +708,8 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     let resultObj = createJsObject()
     resultObj["success"] = true.toJs
     let infoObj = createJsObject()
-    infoObj["shaderCount"] = 9.toJs
-    infoObj["pipelineCount"] = 9.toJs
+    infoObj["shaderCount"] = 10.toJs
+    infoObj["pipelineCount"] = 10.toJs
     resultObj["info"] = infoObj
     return resultObj
 
@@ -793,6 +818,14 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsUint[3] = particleCount
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
+  # Cell statistics parameters (for hierarchical forces LOD)
+  let cellStatsParamsData = newUint32Array(4)
+  cellStatsParamsData[0] = numCells
+  cellStatsParamsData[1] = particleCount
+  cellStatsParamsData[2] = 0 # padding
+  cellStatsParamsData[3] = 0 # padding
+  queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["cellStatsParams"]), 0, cellStatsParamsData)
+
   # =========================================================================
   # PHASE: BIND GROUP CREATION (cached)
   # =========================================================================
@@ -870,6 +903,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["binScatter"]))
   physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["binScatter"]))
   physicsPass.dispatchWorkgroups(particleWorkgroups)
+
+  # Pass 3b: Cell Statistics (for hierarchical forces LOD)
+  physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["cellStats"]))
+  physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["cellStats"]))
+  physicsPass.dispatchWorkgroups(numCells)  # One workgroup per cell
 
   # Pass 4: Forces
   physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["forces"]))

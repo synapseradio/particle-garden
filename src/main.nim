@@ -53,6 +53,7 @@ const StaticFiles = {
   "/shaders/prefix-sum-blocks.wgsl": staticRead("../web/shaders/prefix-sum-blocks.wgsl"),
   "/shaders/prefix-sum-final.wgsl": staticRead("../web/shaders/prefix-sum-final.wgsl"),
   "/shaders/bin-scatter.wgsl": staticRead("../web/shaders/bin-scatter.wgsl"),
+  "/shaders/cell-stats.wgsl": staticRead("../web/shaders/cell-stats.wgsl"),
   "/shaders/forces.wgsl": staticRead("../web/shaders/forces.wgsl"),
   "/shaders/density.wgsl": staticRead("../web/shaders/density.wgsl"),
   "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),

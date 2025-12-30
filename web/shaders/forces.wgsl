@@ -35,13 +35,9 @@
 // │ 4       │ storage array<u32>       │ sortedIndices   │ read   │
 // │ 5       │ storage array<u32>       │ cellOffsets     │ read   │
 // │ 6       │ storage array<u32>       │ cellCounts      │ read   │
-// │ 7       │ storage array<f32>       │ vxDelta         │ write  │
-// │ 8       │ storage array<f32>       │ vyDelta         │ write  │
+// │ 7       │ storage array<vec2<f32>> │ velocityDelta   │ write  │
 // └─────────┴──────────────────────────┴─────────────────┴────────┘
-// STORAGE BUFFER COUNT: 8 (at WebGPU limit)
-//
-// NOTE: Density computation removed to meet buffer limit. If density-based
-// rendering is needed, add a separate density pass.
+// STORAGE BUFFER COUNT: 7 (1 slot available)
 // =============================================================================
 
 // Simulation parameters including embedded attraction matrix
@@ -77,9 +73,8 @@ struct SimParams {
 @group(0) @binding(5) var<storage, read> cellOffsets: array<u32>;
 @group(0) @binding(6) var<storage, read> cellCounts: array<u32>;
 
-// Output buffers
-@group(0) @binding(7) var<storage, read_write> vxDelta: array<f32>;
-@group(0) @binding(8) var<storage, read_write> vyDelta: array<f32>;
+// Output buffer (packed vec2 for velocity delta)
+@group(0) @binding(7) var<storage, read_write> velocityDelta: array<vec2<f32>>;
 
 // Constants matching physics_wasm.nim
 const MAX_SPECIES: u32 = 6u;
@@ -162,8 +157,14 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         continue;
       }
 
-      let start = i32(cellOffsets[cell]);
       let count = i32(cellCounts[cell]);
+      if (count <= 0) {
+        continue;
+      }
+
+      // Exact particle-by-particle iteration for all cells
+      // (LOD approximation disabled - immediate neighbors are too close for centroid approximation)
+      let start = i32(cellOffsets[cell]);
 
       // Validate cell range
       if (start < 0 || start + count > i32(params.particleCount)) {
@@ -172,7 +173,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
       let fin = start + count;
 
-      // Iterate particles in cell
       for (var j: i32 = start; j < fin; j++) {
         let jIdx = sortedIndices[j];
 
@@ -257,7 +257,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     }
   }
 
-  // Write velocity deltas
-  vxDelta[i] = fx * params.dt;
-  vyDelta[i] = fy * params.dt;
+  // Write velocity delta (packed vec2)
+  velocityDelta[i] = vec2f(fx, fy) * params.dt;
 }

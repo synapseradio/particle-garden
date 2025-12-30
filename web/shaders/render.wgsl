@@ -56,6 +56,7 @@ struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha
   @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)
+  @location(2) density: f32,       // Local particle density for glow effect
 };
 
 @vertex
@@ -90,7 +91,11 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);
 
   // Pass offset for circle calculation in fragment shader
+  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range
   output.offset = offset;
+
+  // Pass density for glow intensity calculation
+  output.density = particleDensity;
 
   // Look up species color
   let speciesIdx = min(particleSpecies, 5u);
@@ -101,18 +106,13 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  // Anti-aliased circle: alpha based on distance from center
-  // offset is -1 to 1, corners at sqrt(2) ≈ 1.41
-  // Circle edge at length = 1.0, fade over ~0.5 units for anti-aliasing
   let dist = length(input.offset);
 
-  // Smooth falloff: full opacity inside circle, fade to 0 at edge
-  let alpha = 1.0 - smoothstep(0.7, 1.0, dist);
-
-  // Discard fully transparent pixels
-  if (alpha <= 0.0) {
+  // Circle with soft edge (known working)
+  if (dist > 1.0) {
     discard;
   }
 
+  let alpha = 1.0 - smoothstep(0.7, 1.0, dist);
   return vec4f(input.color.rgb, alpha);
 }

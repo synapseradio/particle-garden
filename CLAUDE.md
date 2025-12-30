@@ -39,7 +39,7 @@ This is a native desktop wrapper for a particle life simulation that enables Sha
 **Why this design:** Browsers require Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers to enable SharedArrayBuffer. The Nim server provides these headers; webui handles the native window lifecycle.
 
 **Key files:**
-- `src/main.nim` - HTTP server with COOP/COEP headers + webui window management
+- `src/main.nim` - **HTTP server** with COOP/COEP headers + webui window management. **Contains the StaticFiles table that registers all servable assets.** When adding new shaders or web files, you MUST add them to the StaticFiles table or they won't be served.
 - `src/physics_wasm.nim` - WASM physics module → `web/physics.js` + `web/physics.wasm` (via emscripten)
 - `src/worker.nim` - Web Worker source → `web/worker.js` (via `nim js`)
 - `web/` - Frontend modules (compiled from Nim via `nim js`)

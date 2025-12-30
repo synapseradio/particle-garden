@@ -51,8 +51,7 @@ type
     denB* {.importjs: "denB".}: GPUBuffer
     speciesA* {.importjs: "speciesA".}: GPUBuffer
     speciesB* {.importjs: "speciesB".}: GPUBuffer
-    vxDelta* {.importjs: "vxDelta".}: GPUBuffer
-    vyDelta* {.importjs: "vyDelta".}: GPUBuffer
+    velocityDelta* {.importjs: "velocityDelta".}: GPUBuffer
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
     gridOffsets* {.importjs: "gridOffsets".}: GPUBuffer
     matrix* {.importjs: "matrix".}: GPUBuffer
@@ -61,6 +60,7 @@ type
     fillPointers* {.importjs: "fillPointers".}: GPUBuffer
     blockSums* {.importjs: "blockSums".}: GPUBuffer
     blockOffsets* {.importjs: "blockOffsets".}: GPUBuffer
+    cellStats* {.importjs: "cellStats".}: GPUBuffer
 
   InitResult* = ref object of JsObject
     success* {.importjs: "success".}: bool
@@ -78,6 +78,7 @@ type
     matrix* {.importjs: "matrix".}: int
     sync* {.importjs: "sync".}: int
     sortedIndices* {.importjs: "sortedIndices".}: int
+    cellStats* {.importjs: "cellStats".}: int
 
 # ==============================================================================
 # SECTION 2: HELPER BINDINGS
@@ -166,6 +167,9 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 
   # Sorted indices mapping (uint32 per particle)
   result.sortedIndices = MAX_PARTICLES * 4  # Maps sorted index -> original particle index
+
+  # Cell statistics for hierarchical forces (8 floats per cell: 2 centroid + 6 species counts)
+  result.cellStats = gridCells * 8 * 4  # 32 bytes per cell
 
 # ==============================================================================
 # SECTION 5: FEATURE DETECTION
@@ -321,9 +325,8 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   buffers.speciesA = createBuf(sizes.species, bufferUsage, "Particle Species (Set A)")
   buffers.speciesB = createBuf(sizes.species, bufferUsage, "Particle Species (Set B)")
 
-  # Velocity deltas (workers write here, physics integrates)
-  buffers.vxDelta = createBuf(sizes.velocityDelta div 2, bufferUsage, "Velocity Delta X")
-  buffers.vyDelta = createBuf(sizes.velocityDelta div 2, bufferUsage, "Velocity Delta Y")
+  # Velocity deltas (packed vec2 per particle)
+  buffers.velocityDelta = createBuf(sizes.velocityDelta, bufferUsage, "Velocity Delta (vec2)")
 
   # Spatial grid buffers
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")
@@ -348,6 +351,9 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   let blockSumsSize = 256 * 4  # 256 blocks * 4 bytes per u32
   buffers.blockSums = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Totals")
   buffers.blockOffsets = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Offsets")
+
+  # Cell statistics for hierarchical forces LOD
+  buffers.cellStats = createBuf(sizes.cellStats, bufferUsage, "Cell Statistics (LOD)")
 
   # NOTE: Staging buffers removed - WebGPU render reads directly from GPU buffers (zero readback)
 

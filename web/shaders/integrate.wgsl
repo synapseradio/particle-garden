@@ -44,9 +44,8 @@ struct IntegrationParams {
 @group(0) @binding(3) var<storage, read_write> vx: array<f32>;
 @group(0) @binding(4) var<storage, read_write> vy: array<f32>;
 
-// Velocity deltas (output from Pass 4)
-@group(0) @binding(5) var<storage, read> vxDelta: array<f32>;
-@group(0) @binding(6) var<storage, read> vyDelta: array<f32>;
+// Velocity delta (output from Pass 4, packed vec2)
+@group(0) @binding(5) var<storage, read> velocityDelta: array<vec2<f32>>;
 
 // Frame counter for animation (incremented via uniform or derived)
 var<private> frameCounter: f32 = 0.0;
@@ -89,8 +88,9 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   // Apply velocity delta and friction
   // Matches main.js:189-190: vxActive[i] = (vxActive[i] + vxDelta[i]) * friction;
-  let vx_new = (vx_old + vxDelta[i]) * params.friction;
-  let vy_new = (vy_old + vyDelta[i]) * params.friction;
+  let vDelta = velocityDelta[i];
+  let vx_new = (vx_old + vDelta.x) * params.friction;
+  let vy_new = (vy_old + vDelta.y) * params.friction;
 
   // Update position
   // Matches main.js:193-194: let x = pxActive[i] + vxActive[i];
