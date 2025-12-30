@@ -32,7 +32,7 @@ struct GridParams {
 @group(0) @binding(2) var<storage, read> py: array<f32>;
 @group(0) @binding(3) var<storage, read_write> cellCounts: array<atomic<u32>>;
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(128)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let particleIdx = global_id.x;
 

@@ -162,7 +162,7 @@ const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 5
 const EXPECTED_BIND_GROUP_ENTRIES_CELL_STATS* = 8
-const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 9  # LOD enabled - cellStats + velocityDelta
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 9  # Fused pass - density + velocityDelta outputs
 const EXPECTED_BIND_GROUP_ENTRIES_DENSITY* = 8
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6
 
@@ -481,7 +481,7 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
   discard forcesEntries.push(createBindGroupEntry(4, gpuBuffers["sortedIndices"]))
   discard forcesEntries.push(createBindGroupEntry(5, gpuBuffers["gridOffsets"]))
   discard forcesEntries.push(createBindGroupEntry(6, gpuBuffers["gridCounts"]))
-  discard forcesEntries.push(createBindGroupEntry(7, gpuBuffers["cellStats"]))     # LOD centroid data
+  discard forcesEntries.push(createBindGroupEntry(7, denSrc))                      # Density output (fused pass)
   discard forcesEntries.push(createBindGroupEntry(8, gpuBuffers["velocityDelta"]))
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
@@ -757,7 +757,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let matrix = params["matrix"]
 
   let numCells = gridW * gridH
-  let workgroupSize = 64
+  let workgroupSize = 128  # Tuned for performance - must match shader @workgroup_size
   let particleWorkgroups = jsCeil(particleCount.float / workgroupSize.float)
 
   # =========================================================================
@@ -915,20 +915,14 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["binScatter"]))
   physicsPass.dispatchWorkgroups(particleWorkgroups)
 
-  # Pass 3b: Cell Statistics (for hierarchical forces LOD)
-  physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["cellStats"]))
-  physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["cellStats"]))
-  physicsPass.dispatchWorkgroups(numCells)  # One workgroup per cell
+  # Cell-stats pass removed - LOD disabled due to visual artifacts
 
-  # Pass 4: Forces
+  # Pass 4: Forces (also computes density - fused pass)
   physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["forces"]))
   physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["forces"]))
   physicsPass.dispatchWorkgroups(particleWorkgroups)
 
-  # Pass 4b: Density
-  physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["density"]))
-  physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["density"]))
-  physicsPass.dispatchWorkgroups(particleWorkgroups)
+  # Density pass removed - fused into forces pass
 
   # Pass 5: Integration
   physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["integrate"]))

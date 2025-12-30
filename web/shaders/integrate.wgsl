@@ -44,7 +44,7 @@ struct IntegrationParams {
 // Velocity delta (output from Pass 4, packed vec2)
 @group(0) @binding(5) var<storage, read> velocityDelta: array<vec2<f32>>;
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(128, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let i = globalId.x;
 

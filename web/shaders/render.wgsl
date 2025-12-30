@@ -20,8 +20,11 @@
 
 struct RenderParams {
   resolution: vec2f,   // Canvas width, height in pixels
+  worldSize: vec2f,    // World width, height (physics domain)
   baseSize: f32,       // Base particle size in pixels
-  padding: f32,
+  padding0: f32,
+  padding1: f32,
+  padding2: f32,
 };
 
 // Species colors (matches WebGL renderer COLORS array)
@@ -87,12 +90,14 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // Scale offset by half point size to get world position
   // offset is -1 to 1, so multiply by halfSize to get pixel offset
+  // Scale point size by canvas/world ratio to maintain visual size
+  let scale = params.resolution / params.worldSize;
   let halfSize = pointSize * 0.5;
-  let worldPos = vec2f(particleX, particleY) + offset * halfSize;
+  let worldPos = vec2f(particleX, particleY) + offset * halfSize / scale;
 
-  // Transform to clip space: (0,0) is top-left, (width,height) is bottom-right
-  // WebGPU clip space: (-1,-1) is bottom-left, (1,1) is top-right
-  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;
+  // Transform to clip space: world coords -> normalized device coords
+  // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
+  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);
 
   // Pass offset for circle calculation in fragment shader

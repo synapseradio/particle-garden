@@ -56,14 +56,18 @@ proc computeGridDimensions*(canvasWidth: int, canvasHeight: int): GridDimensions
   ## Compute grid dimensions without doing any sorting.
   ## Used by WebGPU path which builds the grid on the GPU.
   ##
-  ## canvasWidth - Canvas width in pixels
-  ## canvasHeight - Canvas height in pixels
+  ## NOTE: Grid dimensions are computed from WORLD size, not canvas size.
+  ## This decouples physics resolution from display resolution.
+  ## The canvas parameters are ignored but kept for API compatibility.
+  ##
   ## Returns object with gridW, gridH, cellSize
 
-  cellSize = CONFIG.interactionRadius
+  # Cell size equals interaction radius - classic spatial hash, no LOD artifacts
+  cellSize = max(CONFIG.interactionRadius, 16)
 
-  gridW = jsFloor(canvasWidth.float / cellSize.float)
-  gridH = jsFloor(canvasHeight.float / cellSize.float)
+  # Use WORLD dimensions for grid computation (decoupled from display)
+  gridW = jsFloor(config.WORLD_W / cellSize.float)
+  gridH = jsFloor(config.WORLD_H / cellSize.float)
   gridW = int(jsMax(1.0, jsMin(gridW.float, MAX_GRID.float)))
   gridH = int(jsMax(1.0, jsMin(gridH.float, MAX_GRID.float)))
 
@@ -80,31 +84,33 @@ proc buildGrid*(particleCount: int, canvasWidth: int, canvasHeight: int): GridDi
   ## Build the spatial partitioning grid and sort particles by cell.
   ##
   ## This function:
-  ## 1. Determines grid dimensions from canvas size and interaction radius
+  ## 1. Determines grid dimensions from WORLD size and interaction radius
   ## 2. Counts particles per cell
   ## 3. Computes prefix sums for cell offsets
   ## 4. Scatters particles into destination buffer in sorted order
   ## 5. Flips the active parity so workers read from sorted data
   ##
+  ## NOTE: Grid dimensions are computed from WORLD size, not canvas size.
+  ## The canvas parameters are ignored but kept for API compatibility.
+  ##
   ## particleCount - Number of active particles
-  ## canvasWidth - Canvas width in pixels
-  ## canvasHeight - Canvas height in pixels
   ## Returns object with gridW, gridH, cellSize
 
   let t0 = performanceNow()
   let n = particleCount
 
-  cellSize = CONFIG.interactionRadius
+  # Cell size equals interaction radius - classic spatial hash, no LOD artifacts
+  cellSize = max(CONFIG.interactionRadius, 16)
 
-  # Compute grid dimensions - perfect division of domain
-  gridW = jsFloor(canvasWidth.float / cellSize.float)
-  gridH = jsFloor(canvasHeight.float / cellSize.float)
+  # Compute grid dimensions from WORLD size (decoupled from display)
+  gridW = jsFloor(config.WORLD_W / cellSize.float)
+  gridH = jsFloor(config.WORLD_H / cellSize.float)
   gridW = int(jsMax(1.0, jsMin(gridW.float, MAX_GRID.float)))
   gridH = int(jsMax(1.0, jsMin(gridH.float, MAX_GRID.float)))
 
   let numCells = gridW * gridH
-  let invCellW = gridW.float / canvasWidth.float
-  let invCellH = gridH.float / canvasHeight.float
+  let invCellW = gridW.float / config.WORLD_W
+  let invCellH = gridH.float / config.WORLD_H
 
   # ---------------------------------------------------------------------------
   # SCATTER DIRECTION & PARITY:

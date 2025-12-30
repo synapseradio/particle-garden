@@ -51,7 +51,7 @@ struct GridParams {
 @group(0) @binding(3) var<storage, read_write> sortedIndices: array<u32>;
 @group(0) @binding(4) var<storage, read_write> fillOffsets: array<atomic<u32>>;
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(128)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let particleIdx = global_id.x;
 

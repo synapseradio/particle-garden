@@ -84,9 +84,12 @@ const RENDER_SHADER = staticRead("../web/shaders/render.wgsl")
 # Glow shader - larger particles with Gaussian falloff
 const GLOW_SHADER = """
 struct RenderParams {
-  resolution: vec2f,
+  resolution: vec2f,   // Canvas size
+  worldSize: vec2f,    // World size (physics domain)
   baseSize: f32,
   glowIntensity: f32,
+  padding0: f32,
+  padding1: f32,
 };
 
 const OFFSETS = array<vec2f, 6>(
@@ -131,11 +134,12 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   let offset = OFFSETS[cornerId];
 
-  // Glow is 12 pixels radius
+  // Glow radius scaled by canvas/world ratio
+  let scale = params.resolution / params.worldSize;
   let glowRadius = 12.0;
-  let worldPos = vec2f(particleX, particleY) + offset * glowRadius;
+  let worldPos = vec2f(particleX, particleY) + offset * glowRadius / scale;
 
-  let normalizedPos = (worldPos / params.resolution) * 2.0 - 1.0;
+  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, 0.0, 1.0);
   output.offset = offset;
   output.color = COLORS[min(particleSpecies, 5u)];
@@ -276,8 +280,8 @@ proc initWebGPURender*(): bool =
   shaderDesc["code"] = RENDER_SHADER.cstring.toJs
   let shaderModule = webgpu_init.device.createShaderModule(shaderDesc)
 
-  # Create render params uniform buffer (resolution, baseSize)
-  let paramsSize = 16  # vec2f + f32 + padding = 16 bytes
+  # Create render params uniform buffer (resolution, worldSize, baseSize, glowIntensity, padding)
+  let paramsSize = 32  # vec2f + vec2f + f32 + f32 + f32 + f32 = 32 bytes
   let paramsDesc = newJsObject()
   paramsDesc["size"] = paramsSize.toJs
   paramsDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
@@ -850,12 +854,16 @@ proc render*(particleCount: int): RenderTiming =
   if not isInitialized:
     return result
 
-  # Update render params uniform
-  let paramsData = newFloat32Array(4)
-  paramsData[0] = float32(canvas.width)
-  paramsData[1] = float32(canvas.height)
-  paramsData[2] = float32(config.CONFIG.particleSize + 1)
-  paramsData[3] = float32(config.CONFIG.glowIntensity)
+  # Update render params uniform (resolution, worldSize, baseSize, glowIntensity, padding)
+  let paramsData = newFloat32Array(8)
+  paramsData[0] = float32(canvas.width)   # resolution.x
+  paramsData[1] = float32(canvas.height)  # resolution.y
+  paramsData[2] = float32(config.WORLD_W) # worldSize.x
+  paramsData[3] = float32(config.WORLD_H) # worldSize.y
+  paramsData[4] = float32(config.CONFIG.particleSize + 1)  # baseSize
+  paramsData[5] = float32(config.CONFIG.glowIntensity)     # glowIntensity
+  paramsData[6] = 0.0  # padding0
+  paramsData[7] = 0.0  # padding1
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
   # Update fade params (fadeAmount = how much to fade toward background)

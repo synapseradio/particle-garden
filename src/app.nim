@@ -118,15 +118,16 @@ var totalTimeSum {.exportc.}: float = 0
 proc initParticles*() {.exportc.} =
   ## Initialize particles with random positions and velocities.
   ## Particles are distributed evenly among species, then shuffled.
+  ## Positions are in WORLD coordinates (decoupled from canvas).
 
   # Get config values - direct access via imported module
   let newCount = config.CONFIG.particleCount
   particleCount = newCount
   let ns = config.CONFIG.speciesCount
 
-  # Get canvas dimensions
-  let W = float(canvasWidth())
-  let H = float(canvasHeight())
+  # Use WORLD dimensions for particle positions (physics domain)
+  let W = config.WORLD_W
+  let H = config.WORLD_H
 
   # Initialize buffer A as starting point
   for i in 0 ..< particleCount:
@@ -175,18 +176,22 @@ proc physics(dt: float): Future[void] {.async.} =
     let tPhysics0 = performanceNow()
 
     # Build physics params object
+    # NOTE: Physics uses WORLD dimensions, not canvas dimensions
     let params = makeJsObject()
     params["dt"] = toJs(dt)
     params["particleCount"] = toJs(particleCount)
-    params["width"] = toJs(canvasWidth())
-    params["height"] = toJs(canvasHeight())
+    params["width"] = toJs(config.WORLD_W)
+    params["height"] = toJs(config.WORLD_H)
     params["gridW"] = gridResult["gridW"]
     params["gridH"] = gridResult["gridH"]
     params["rMax"] = toJs(config.CONFIG.interactionRadius)
     params["fMul"] = toJs(config.CONFIG.forceStrength)
     params["friction"] = toJs(1.0 - config.CONFIG.friction)
-    params["mouseX"] = toJs(ui.mouseX)
-    params["mouseY"] = toJs(ui.mouseY)
+    # Scale mouse from canvas to world coordinates
+    let mouseScaleX = config.WORLD_W / float(canvasWidth())
+    let mouseScaleY = config.WORLD_H / float(canvasHeight())
+    params["mouseX"] = toJs(ui.mouseX * mouseScaleX)
+    params["mouseY"] = toJs(ui.mouseY * mouseScaleY)
     params["mouseDown"] = toJs(if ui.mouseDown: 1 else: 0)
     params["mouseRightDown"] = toJs(if ui.mouseRightDown: 1 else: 0)
     params["parity"] = toJs(buffers.activeParity)  # Use current parity
@@ -209,17 +214,21 @@ proc physics(dt: float): Future[void] {.async.} =
     gridTimeMs = performanceNow() - tGrid0
 
     # Phase 2: Dispatch to WASM workers - they compute velocity deltas
+    # NOTE: Physics uses WORLD dimensions, not canvas dimensions
     let tPhysics0 = performanceNow()
+    # Scale mouse from canvas to world coordinates
+    let mouseScaleX = config.WORLD_W / float(canvasWidth())
+    let mouseScaleY = config.WORLD_H / float(canvasHeight())
     await workers.dispatchPhysicsShared(
       dt,
       particleCount,
-      float(canvasWidth()),
-      float(canvasHeight()),
+      config.WORLD_W,
+      config.WORLD_H,
       gridResult["gridW"].to(int),
       gridResult["gridH"].to(int),
       float(gridResult["cellSize"].to(int)),
-      ui.mouseX,
-      ui.mouseY,
+      ui.mouseX * mouseScaleX,
+      ui.mouseY * mouseScaleY,
       ui.mouseDown,
       ui.mouseRightDown
     )
@@ -237,8 +246,9 @@ proc physics(dt: float): Future[void] {.async.} =
     let vxDeltaArr = buffers.vxDelta
     let vyDeltaArr = buffers.vyDelta
 
-    let W = toJs(canvasWidth())
-    let H = toJs(canvasHeight())
+    # Use WORLD dimensions for toroidal wrap (physics domain)
+    let W = toJs(config.WORLD_W)
+    let H = toJs(config.WORLD_H)
     let friction = toJs(1.0 - config.CONFIG.friction)
     let zero = toJs(0)
 

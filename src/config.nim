@@ -75,6 +75,24 @@ let MAX_GRID* {.exportc.}: int = memory_layout.MAX_GRID
 let MAX_WORKERS* {.exportc.}: int = memory_layout.MAX_WORKERS
 
 # ==============================================================================
+# SECTION 2b: WORLD DIMENSIONS (decoupled from canvas/display)
+# ==============================================================================
+
+# Fixed world size for physics simulation. This is independent of canvas/display
+# resolution. Using 4K as reference ensures consistent particle density and
+# physics behavior across all display sizes.
+#
+# The grid cell count depends on WORLD dimensions, not canvas dimensions.
+# With WORLD_W=3840, WORLD_H=2160, and interactionRadius=120:
+#   gridW = 3840/120 = 32 cells
+#   gridH = 2160/120 = 18 cells
+#   576 total cells → ~83 particles/cell at 48K particles
+#
+# Rendering scales world coords to canvas coords.
+let WORLD_W* {.exportc.}: float = 3840.0
+let WORLD_H* {.exportc.}: float = 2160.0
+
+# ==============================================================================
 # SECTION 3: WASM MEMORY CONFIGURATION (re-exported from memory_layout)
 # ==============================================================================
 
