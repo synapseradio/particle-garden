@@ -50,14 +50,18 @@ This is a native desktop wrapper for a particle life simulation that enables Sha
 
 The simulation uses double-buffered particle state (A/B buffer sets) with `activeParity` tracking which buffer is current.
 
-**Parity Contract:**
-- `activeParity` (0 or 1) points to the buffer containing VALID, COMPLETE particle state
-- Parity flips ONCE per frame, AFTER physics writes complete, BEFORE render reads
+**Parity Invariant (universal):**
+- `activeParity` (0 or 1) ALWAYS points to the buffer containing VALID, COMPLETE particle state
+- After physics completes, `buffer[activeParity]` is ready for rendering
+- This invariant holds for BOTH physics paths, despite different implementations
 
-| Phase | Buffer Read | Buffer Write | Parity Flip |
-|-------|-------------|--------------|-------------|
-| Physics | `buffer[parity]` | `buffer[parity]` | After completion |
-| Render | `buffer[parity]` | — | Never |
+**Parity Behavior (path-specific):**
+| Path | Parity Flip? | Why |
+|------|--------------|-----|
+| WebGPU | **Never** | In-place updates; same buffer read/written |
+| WASM | **After scatter** | Double-buffering; scatter writes to opposite buffer |
+
+See "Physics Paths" below for implementation details.
 
 ### State Ownership
 

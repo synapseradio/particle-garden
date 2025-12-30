@@ -20,13 +20,6 @@
 // Thread mapping: One particle per thread (@workgroup_size(64, 1, 1))
 // =============================================================================
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DIAGNOSTIC: Bypass Mode
-// Set to true to force visible particle movement (spiral pattern)
-// This isolates readback issues from physics issues
-// ─────────────────────────────────────────────────────────────────────────────
-const BYPASS_PHYSICS: bool = false;
-
 // Simulation parameters (uniform) - 32 bytes total
 struct IntegrationParams {
   W: f32,               // World width (offset 0)
@@ -51,36 +44,12 @@ struct IntegrationParams {
 // Velocity delta (output from Pass 4, packed vec2)
 @group(0) @binding(5) var<storage, read> velocityDelta: array<vec2<f32>>;
 
-// Frame counter for animation (incremented via uniform or derived)
-var<private> frameCounter: f32 = 0.0;
-
 @compute @workgroup_size(64, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let i = globalId.x;
 
   // Bounds check
   if (i >= params.particleCount) {
-    return;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // DIAGNOSTIC: Bypass mode - force visible spiral movement
-  // If particles appear: readback works, issue is in physics
-  // If no particles: readback is broken
-  // ─────────────────────────────────────────────────────────────────────────────
-  if (BYPASS_PHYSICS) {
-    // Use friction as a crude frame counter (it's constant 0.95)
-    // Generate spiral pattern based on particle index
-    let angle = f32(i) * 0.0001 + px[i] * 0.01;
-    let radius = 100.0 + f32(i % 200u);
-    let centerX = params.W * 0.5;
-    let centerY = params.H * 0.5;
-
-    // Animate position in a spiral
-    px[i] = centerX + radius * cos(angle);
-    py[i] = centerY + radius * sin(angle);
-    vx[i] = 0.0;
-    vy[i] = 0.0;
     return;
   }
 

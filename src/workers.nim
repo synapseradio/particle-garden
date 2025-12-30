@@ -158,6 +158,28 @@ proc dispatchPhysicsShared*(
   let n = particleCount
   let perWorker = jsCeil(n.float / workerCount.float)
 
+  # ---------------------------------------------------------------------------
+  # MEMORY ORDERING NOTE:
+  # The following writes to syncArray do NOT use atomics, but this is safe:
+  #
+  # 1. Workers are blocked on Atomics.wait(SYNC_FRAME_COUNTER) — they cannot
+  #    read any config values until we wake them.
+  #
+  # 2. The atomicStore(SYNC_FRAME_COUNTER) at the end of this block provides
+  #    a RELEASE fence — all prior writes become visible before the store.
+  #
+  # 3. The atomicWait() in workers provides an ACQUIRE fence — they see all
+  #    writes that happened before the release.
+  #
+  # This release-acquire pair ensures config values are visible to workers
+  # when they wake. No data race exists because workers cannot access config
+  # until after the frame counter increment.
+  #
+  # WARNING: This relies on JavaScript's memory model guarantees. If porting
+  # to native SharedArrayBuffer without JS Atomics, explicit fences may be
+  # needed on weakly-ordered architectures (ARM, RISC-V).
+  # ---------------------------------------------------------------------------
+
   # Write worker assignments to sync buffer using sync_protocol
   syncArray[SYNC_WORKER_COUNT] = workerCount
 

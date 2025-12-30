@@ -106,7 +106,22 @@ proc buildGrid*(particleCount: int, canvasWidth: int, canvasHeight: int): GridDi
   let invCellW = gridW.float / canvasWidth.float
   let invCellH = gridH.float / canvasHeight.float
 
-  # Determine source and destination buffers based on current parity
+  # ---------------------------------------------------------------------------
+  # SCATTER DIRECTION & PARITY:
+  # The scatter operation copies particles from buffer[parity] to buffer[1-parity]
+  # in sorted order (grouped by grid cell for cache-friendly neighbor iteration).
+  #
+  # Before scatter:  buffer[activeParity] = valid unsorted state
+  # After scatter:   buffer[1-activeParity] = valid SORTED state
+  #
+  # We then flip parity (see line ~198), so:
+  #   - activeParity now points to the sorted buffer
+  #   - Workers/renderer read from the newly-sorted data
+  #   - The old buffer becomes "stale" (will be overwritten next frame)
+  #
+  # This is the key difference from WebGPU path, which does in-place updates
+  # and never flips parity.
+  # ---------------------------------------------------------------------------
   var pxSrc, pySrc, vxSrc, vySrc: Float32Array
   var sSrc: Uint8Array
   var pxDst, pyDst, vxDst, vyDst: Float32Array

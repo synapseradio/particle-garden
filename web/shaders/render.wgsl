@@ -45,6 +45,11 @@ const OFFSETS = array<vec2f, 6>(
   vec2f( 1.0,  1.0),  // 5: top-right
 );
 
+// Density-based sizing: particles shrink in crowded areas
+// sizeMod = max(1.0, MAX_SIZE_MULTIPLIER - density * DENSITY_SIZE_SCALE)
+const DENSITY_SIZE_SCALE: f32 = 0.4;       // How much density reduces size
+const MAX_SIZE_MULTIPLIER: f32 = 3.2;      // Size multiplier at zero density
+
 // Particle data buffers (shared with compute shaders)
 @group(0) @binding(0) var<storage, read> px: array<f32>;
 @group(0) @binding(1) var<storage, read> py: array<f32>;
@@ -76,8 +81,8 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Get quad corner offset (unit quad, -1 to 1)
   let offset = OFFSETS[cornerId];
 
-  // Calculate point size based on density (reduced max by 20%)
-  let sizeMod = max(1.0, 3.2 - particleDensity * 0.4);
+  // Calculate point size based on density
+  let sizeMod = max(1.0, MAX_SIZE_MULTIPLIER - particleDensity * DENSITY_SIZE_SCALE);
   let pointSize = params.baseSize * sizeMod;
 
   // Scale offset by half point size to get world position

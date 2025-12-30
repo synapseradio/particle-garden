@@ -10,11 +10,15 @@
 # - Pass 4b: density (compute particle density)
 # - Pass 5: integrate (apply forces and update positions)
 #
-# BUFFER PARITY:
-# The simulation uses double-buffering (A/B sets) to avoid read-write hazards.
-# - Read from buffer set with parity N
-# - Write to buffer set with parity (1-N)
-# - After integration, flip parity
+# BUFFER PARITY (WebGPU path):
+# Unlike the WASM path which uses double-buffering with scatter, the WebGPU
+# pipeline performs IN-PLACE updates on a single buffer set (always parity 0).
+# - Bind groups select buffers based on activeParity at dispatch time
+# - All passes read and write to the SAME buffer set
+# - No parity flip occurs — the renderer reads from the same buffers
+#
+# This works because GPU commands execute sequentially within a command buffer,
+# and WebGPU handles inter-pass synchronization via implicit barriers.
 #
 # SYNCHRONIZATION:
 # All 5 passes are encoded into a single command buffer and submitted together.
@@ -75,8 +79,8 @@
 #
 # ARCHITECTURAL NOTE: JS binds only the ACTIVE buffer set (A or B) based on
 # parity - shader doesn't select at runtime. Matrix is embedded in SimParams
-# uniform to stay at exactly 8 storage buffers (the WebGPU per-stage limit).
-# Uses exact particle iteration for all 9 neighbor cells.
+# uniform. Uses exact particle iteration for 3x3 neighborhood + LOD (Level of Detail) centroid
+# approximation for outer 5x5 ring (16 cells). This is at the 8-buffer limit.
 #
 # +-------+---------------+----------------+------------------+------------+
 # |Binding| Shader Type   | Access         | JS Buffer        | Size       |
@@ -89,10 +93,11 @@
 # |   4   | storage       | read           | sortedIndices    | N * 4      |
 # |   5   | storage       | read           | cellOffsets      | cells * 4  |
 # |   6   | storage       | read           | cellCounts       | cells * 4  |
-# |   7   | storage       | read_write     | velocityDelta    | N * 8      |
+# |   7   | storage       | read           | cellStats        | cells * 32 |
+# |   8   | storage       | read_write     | velocityDelta    | N * 8      |
 # +-------+---------------+----------------+------------------+------------+
-# EXPECTED ENTRY COUNT: 8
-# STORAGE BUFFER COUNT: 7 (1 slot available for future use)
+# EXPECTED ENTRY COUNT: 9
+# STORAGE BUFFER COUNT: 8 (at WebGPU per-stage limit)
 #
 # PASS 4b: DENSITY (density.wgsl)
 # +-------+---------------+----------------+------------------+------------+
@@ -157,7 +162,7 @@ const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 5
 const EXPECTED_BIND_GROUP_ENTRIES_CELL_STATS* = 8
-const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 8  # LOD disabled - exact iteration for all cells
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 9  # LOD enabled - cellStats + velocityDelta
 const EXPECTED_BIND_GROUP_ENTRIES_DENSITY* = 8
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6
 
@@ -467,7 +472,7 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
     "Cell Stats Bind Group"
   )
 
-  # Pass 4: Forces (exact iteration for all cells)
+  # Pass 4: Forces (exact 3x3 + LOD outer ring)
   let forcesEntries = createJsArray()
   discard forcesEntries.push(createBindGroupEntry(0, uniformBuffers["simParams"]))
   discard forcesEntries.push(createBindGroupEntry(1, pxSrc))
@@ -476,7 +481,8 @@ proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.asyn
   discard forcesEntries.push(createBindGroupEntry(4, gpuBuffers["sortedIndices"]))
   discard forcesEntries.push(createBindGroupEntry(5, gpuBuffers["gridOffsets"]))
   discard forcesEntries.push(createBindGroupEntry(6, gpuBuffers["gridCounts"]))
-  discard forcesEntries.push(createBindGroupEntry(7, gpuBuffers["velocityDelta"]))
+  discard forcesEntries.push(createBindGroupEntry(7, gpuBuffers["cellStats"]))     # LOD centroid data
+  discard forcesEntries.push(createBindGroupEntry(8, gpuBuffers["velocityDelta"]))
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
   bindGroups["forces"] = await createBindGroupWithValidation(

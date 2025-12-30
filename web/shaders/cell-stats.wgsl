@@ -2,7 +2,7 @@
 // CELL STATISTICS SHADER (Pre-pass for Hierarchical Forces)
 // =============================================================================
 //
-// Computes per-cell aggregate statistics for LOD force approximation:
+// Computes per-cell aggregate statistics for LOD (Level of Detail) force approximation:
 // - Centroid (center of mass) per cell
 // - Particle count per species (6 species max)
 //

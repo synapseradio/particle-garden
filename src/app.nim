@@ -18,6 +18,12 @@ from std/dom import Window, requestAnimationFrame
 # ==============================================================================
 # CORE MODULES - Import in dependency order
 # ==============================================================================
+#
+# IMPORTANT: These imports MUST remain in layer order. Each layer depends on
+# the previous layers. Reordering (e.g., alphabetizing) will break compilation.
+#
+# Dependency chain: config → buffers → {renderer, grid, workers, ui} → webgpu_*
+#
 
 # Layer 1: Configuration (no dependencies)
 import config
