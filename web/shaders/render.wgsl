@@ -49,16 +49,18 @@ const OFFSETS = array<vec2f, 6>(
 );
 
 // Density-based sizing: particles shrink smoothly in crowded areas
-// Uses exponential decay: sizeMod = 1.0 + (MAX-1) * exp(-density * DECAY_RATE)
+// Uses exponential decay: sizeMod = MIN + (MAX-MIN) * exp(-density * DECAY_RATE)
 // This avoids the hard floor that causes visual "snapping"
 //
 // SIZE_DECAY_RATE calibration:
 // - Controls how quickly particles shrink as local density increases
-// - At density=0: sizeMod = 3.0 (MAX_SIZE_MULTIPLIER)
-// - At density=10: exp(-10 * 0.15) ≈ 0.22, giving 1 + 2*0.22 = 1.44x
-// - Higher values = more aggressive shrinking in crowded areas
+// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)
+// - At density=10: exp(-10 * 0.15) ≈ 0.22, giving 1.3 + 1.7*0.22 = 1.67x
+// - As density→∞: sizeMod → MIN_SIZE_MULTIPLIER (1.3x base size)
+// - Higher decay rate = more aggressive shrinking in crowded areas
 const SIZE_DECAY_RATE: f32 = 0.15;
-const MAX_SIZE_MULTIPLIER: f32 = 3.0;      // Size multiplier at zero density (3x base size)
+const MIN_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at high density (floor)
+const MAX_SIZE_MULTIPLIER: f32 = 3.0;      // Size multiplier at zero density (ceiling)
 
 // Particle data buffers (shared with compute shaders)
 @group(0) @binding(0) var<storage, read> px: array<f32>;
@@ -92,8 +94,8 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let offset = OFFSETS[cornerId];
 
   // Calculate point size based on density using smooth exponential decay
-  // At density=0: sizeMod = 3.0, as density→∞: sizeMod → 1.0
-  let sizeMod = 1.0 + (MAX_SIZE_MULTIPLIER - 1.0) * exp(-particleDensity * SIZE_DECAY_RATE);
+  // At density=0: sizeMod = 3.0, as density→∞: sizeMod → 1.3
+  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-particleDensity * SIZE_DECAY_RATE);
   let pointSize = params.baseSize * sizeMod;
 
   // Scale offset by half point size to get world position
