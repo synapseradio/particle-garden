@@ -9,7 +9,7 @@ binDir        = "."
 
 # Dependencies
 requires "nim >= 2.0.0 & < 3.0.0"
-requires "webui == 2.4.0.0"
+requires "webui#head"
 
 # Compiler flags for style and warning enforcement
 const styleFlags = "--styleCheck:error --styleCheck:usages"
