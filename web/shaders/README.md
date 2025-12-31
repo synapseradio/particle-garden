@@ -1,32 +1,94 @@
 # WebGPU Compute Shaders for Particle Life Simulation
 
-This directory contains WebGPU compute shaders for the Particle Garden particle life simulation.
+This guide is for developers modifying GPU physics. For running the app, see the [main README](../../README.md). For building from source, see the [Developer Guide](../../src/README.md).
+
+---
+
+This directory contains the GPU code that makes particles move.
+
+## Before You Start
+
+If you've never worked with GPU programming, work through [Your First WebGPU App](https://codelabs.developers.google.com/your-first-webgpu-app) (Google Codelabs). It covers GPU vs CPU fundamentals, parallel processing, shaders, and buffers — all using JavaScript with no prior graphics experience required.
+
+For reference material: [WebGPU Fundamentals](https://webgpufundamentals.org) and [MDN WebGPU API](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API).
 
 ## Overview
 
-The simulation uses a **five-pass GPU compute pipeline** for spatial grid-accelerated physics:
+**What this does:** Every frame, the GPU calculates forces between thousands of particles in parallel. Doing this efficiently requires organizing particles by location so each one only checks nearby neighbors instead of all 16,000+ others.
+
+**GPU Terms for JS Developers:**
+| Term | Meaning |
+|------|---------|
+| **Pass** | Sequential step (like `Promise.then()` — each must complete before the next starts) |
+| **Buffer** | GPU memory array (like typed array, but lives on GPU — can't console.log it) |
+| **Atomic** | Thread-safe operation (like mutex for `++` — prevents race conditions) |
+| **Workgroup** | Batch of 64 threads processed together |
+
+The simulation uses a **five-pass GPU compute pipeline**:
 
 ```
-Pass 1: Grid Assignment (bin-count.wgsl)
-  ├─ Input:  Particle positions
-  └─ Output: Cell counts per grid cell
-
-Pass 2: Prefix Sum (TODO)
-  ├─ Input:  Cell counts
-  └─ Output: Cell offsets (cumulative sum)
-
-Pass 3: Particle Sorting (TODO)
-  ├─ Input:  Particle positions, cell offsets
-  └─ Output: Sorted particle indices
-
-Pass 4: Force Computation (forces.wgsl) ← IMPLEMENTED
-  ├─ Input:  Particles, sorted indices, grid, attraction matrix
-  └─ Output: Velocity deltas, density
-
-Pass 5: Integration (TODO)
-  ├─ Input:  Particles, velocity deltas
-  └─ Output: Updated positions/velocities
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          GPU COMPUTE PIPELINE                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐                                                        │
+│  │  particlesA[]   │ ← 32-byte Particle structs (Array-of-Structs layout)    │
+│  └────────┬────────┘                                                        │
+│           │                                                                 │
+│           ▼                                                                 │
+│  ┌─────────────────────────────────────────────────────┐                    │
+│  │ PASS 1: bin-count.wgsl                              │                    │
+│  │ Count particles per grid cell (thread-safe counting)│                    │
+│  └────────┬────────────────────────────────────────────┘                    │
+│           │ cellCounts[] (scratch)                                              │
+│           ▼                                                                 │
+│  ┌─────────────────────────────────────────────────────┐                    │
+│  │ PASS 2: prefix-sum (3 shaders)                      │                    │
+│  │ Running total: [3,5,2] → [0,3,8]                    │                    │
+│  │ (where each cell starts in the sorted array)        │                    │
+│  └────────┬────────────────────────────────────────────┘                    │
+│           │ cellOffsets[] (scratch)                                             │
+│           ▼                                                                 │
+│  ┌─────────────────────────────────────────────────────┐                    │
+│  │ PASS 3: bin-scatter (3 shaders)                     │                    │
+│  │ Scatter particles into sorted order by grid cell    │                    │
+│  └────────┬────────────────────────────────────────────┘                    │
+│           │ particlesSorted[] (scratch, sorted by grid cell for GPU cache)      │
+│           ▼                                                                 │
+│  ┌─────────────────────────────────────────────────────┐                    │
+│  │ PASS 4: forces.wgsl                                 │                    │
+│  │ Calculate attraction/repulsion between particles    │                    │
+│  │   • Checks only half the neighbor pairs (A→B also   │                    │
+│  │     applies B→A via Newton's 3rd law)               │                    │
+│  │   • Species-based attraction matrix lookup          │                    │
+│  └────────┬────────────────────────────────────────────┘                    │
+│           │ velocityDeltaFixed[] (scratch, integers → floats in pass 5)       │
+│           ▼                                                                 │
+│  ┌─────────────────────────────────────────────────────┐                    │
+│  │ PASS 5: integrate (3 shaders)                       │                    │
+│  │ Apply velocity deltas, friction, toroidal wrap      │                    │
+│  └────────┬────────────────────────────────────────────┘                    │
+│           │                                                                 │
+│           ▼                                                                 │
+│  ┌─────────────────┐                                                        │
+│  │  particlesA[]   │ ← Updated in-place (no buffer swap)                    │
+│  └─────────────────┘                                                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Data Flow Summary
+
+| Pass | Reads | Writes | Role |
+|------|-------|--------|------|
+| 1: bin-count | particlesA | cellCounts | Count particles per grid cell |
+| 2: prefix-sum | cellCounts | cellOffsets | Compute where each cell starts |
+| 3: bin-scatter | particlesA, cellOffsets | particlesSorted | Reorder by grid cell |
+| 4: forces | particlesSorted, cellOffsets | velocityDeltaFixed | Calculate forces |
+| 5: integrate | velocityDeltaFixed, particlesA | particlesA | Apply forces, update positions |
+
+**particlesA** is both input and output — it persists between frames.
+**All other buffers** are scratch space, overwritten every frame.
 
 ## Files
 
@@ -36,9 +98,6 @@ Pass 5: Integration (TODO)
 
 ### Documentation
 - **`README.md`** - This file
-- **`forces_verification.md`** - Algorithm verification against WASM implementation
-- **`forces_usage.js`** - JavaScript integration example for forces.wgsl
-- **`ARCHITECTURE.md`** - Deep dive into GPU pipeline architecture
 
 ## forces.wgsl - Force Computation Shader
 
@@ -47,7 +106,7 @@ Pass 5: Integration (TODO)
 Computes inter-particle forces using spatial grid acceleration. For each particle:
 
 1. **Find grid cell** - Determine which cell the particle occupies
-2. **Iterate 9 neighbor cells** - Check 3×3 neighborhood with toroidal wrapping
+2. **Iterate 5 half-neighbor cells** - Same cell + 4 neighbors below/right (avoids double-counting pairs)
 3. **Compute forces** - For each nearby particle:
    - Calculate toroidal distance
    - Apply species-based attraction/repulsion
@@ -57,42 +116,57 @@ Computes inter-particle forces using spatial grid acceleration. For each particl
 
 ### Algorithm Parity
 
-This shader is a **1:1 port** of `src/physics_wasm.nim::physicsStepRange()` to WGSL. Every force calculation, distance clamp, and toroidal wrap matches the WASM implementation exactly.
-
-See `forces_verification.md` for line-by-line comparison.
+This shader implements particle life force computation in WGSL. Every force calculation, distance clamp, and toroidal wrap follows the standard particle life algorithm.
 
 ### Buffer Layout
 
-The shader uses **Struct-of-Arrays (SoA)** layout matching `webgpu-init.js`:
+Each particle is stored as a single 32-byte block containing all its data. This "Array-of-Structs" layout keeps each particle's position, velocity, and species together in memory, which is faster than scattering the data across separate arrays:
 
 ```
-Buffer Set A (read when bufferParity == 0):
-  pxA[]:      Float32Array (particle X positions)
-  pyA[]:      Float32Array (particle Y positions)
-  speciesA[]: Uint32Array  (particle species indices)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Particle Struct (32 bytes)                          │
+├──────────┬──────────┬───────┬───────────────────────────────────────────────┤
+│  Offset  │  Field   │ Size  │ Description                                   │
+├──────────┼──────────┼───────┼───────────────────────────────────────────────┤
+│    0     │  pos.x   │  4    │ X position (f32)                              │
+│    4     │  pos.y   │  4    │ Y position (f32)                              │
+│    8     │  vel.x   │  4    │ X velocity (f32)                              │
+│   12     │  vel.y   │  4    │ Y velocity (f32)                              │
+│   16     │  species │  4    │ Species ID (u32, 0-5)                         │
+│   20     │  density │  4    │ Local density (f32)                           │
+│   24     │  _pad0   │  4    │ Padding for 32-byte alignment                 │
+│   28     │  _pad1   │  4    │ Padding for 32-byte alignment                 │
+└──────────┴──────────┴───────┴───────────────────────────────────────────────┘
 
-Buffer Set B (read when bufferParity == 1):
-  pxB[]:      Float32Array
-  pyB[]:      Float32Array
-  speciesB[]: Uint32Array
+Why 32 bytes:
+  • Two particles fit in one 64-byte CPU cache line
+  • Four particles fit in one 128-byte GPU cache line
+  • All fields naturally aligned (f32/u32 at 4-byte boundaries)
+  • Reading one particle brings all its data into cache at once
 
-Spatial Grid (from Pass 2 & 3):
-  sortedIndices[]: Uint32Array (particle indices ordered by cell)
-  cellOffsets[]:   Uint32Array (starting index per cell)
-  cellCounts[]:    Uint32Array (particle count per cell)
+Buffer Bindings (forces.wgsl):
+┌───────┬──────────────────────────┬──────────────────────────────────────────┐
+│ Bind  │ Type                     │ Purpose                                  │
+├───────┼──────────────────────────┼──────────────────────────────────────────┤
+│   0   │ uniform SimParams        │ dt, world size, mouse, attraction matrix │
+│   1   │ storage Particle[]       │ particlesSorted (read)                   │
+│   2   │ storage u32[]            │ sortedToOriginal (read)                  │
+│   3   │ storage u32[]            │ cellStartOffsets (read)                  │
+│   4   │ storage u32[]            │ cellParticleCounts (read)                │
+│   5   │ storage atomic<i32>[]    │ velocityDeltaFixed (read/write)          │
+│   6   │ storage atomic<i32>[]    │ densityDeltaFixed (read/write)           │
+└───────┴──────────────────────────┴──────────────────────────────────────────┘
 
-Attraction Matrix:
-  matrix[]:   Float32Array (6×6 row-major, species interactions)
-
-Outputs:
-  vxDelta[]:    Float32Array (velocity change X)
-  vyDelta[]:    Float32Array (velocity change Y)
-  densityOut[]: Float32Array (local particle density)
+Fixed-Point Atomics (why integers instead of floats?):
+  When multiple GPU threads update the same particle's velocity simultaneously,
+  we need "atomic" operations that don't corrupt data. GPUs only support atomic
+  integers, so we store velocities as integers (×65536), then convert back to
+  floats in the integrate pass. This is a common GPU programming pattern.
 ```
 
 ### Performance
 
-**Expected:** < 1ms for 64K particles on modern GPU (2-10× faster than WASM)
+**Expected:** < 1ms for 64K particles on modern GPU
 
 **Workgroup size:** 64 threads per workgroup (configurable)
 
@@ -108,73 +182,27 @@ const querySet = device.createQuerySet({
 
 ## Integration
 
-### Quick Start
-
-```javascript
-import { device, buffers } from './webgpu-init.js';
-import { setupForcePipeline, computeForces, createUniformData } from './shaders/forces_usage.js';
-
-// Initialize pipeline (once)
-const { pipeline, uniformBuffer, sortedIndices } = await setupForcePipeline(device, buffers);
-
-// Each frame:
-const params = {
-  dt: 0.016,
-  W: 800,
-  H: 600,
-  rMax: 50,
-  fMul: 1.0,
-  gridW: 32,
-  gridH: 24,
-  mouseX: 400,
-  mouseY: 300,
-  mouseDown: 0,
-  particleCount: 16000,
-  bufferParity: frameCount % 2,
-};
-
-computeForces(device, pipeline, { ...buffers, uniformBuffer, sortedIndices }, params);
-```
-
-See `forces_usage.js` for full example.
-
 ### Prerequisites
 
 Before running force computation:
 
-1. **Pass 1 (bin-count.wgsl)** - Populate `cellCounts[]`
-2. **Pass 2 (TODO)** - Compute `cellOffsets[]` via prefix sum
-3. **Pass 3 (TODO)** - Populate `sortedIndices[]` by sorting particles into cells
+1. **Pass 1** — `bin-count.wgsl` populates `cellCounts[]`
+2. **Pass 2** — `prefix-sum*.wgsl` computes `cellOffsets[]` via parallel scan
+3. **Pass 3** — `bin-scatter*.wgsl` copies particles into `particlesSorted[]`
 
-### Next Steps After Force Computation
+### After Force Computation
 
-**Pass 5 (Integration)** - Apply velocity deltas to particle positions:
+**Pass 5** — See `integrate-velocities.wgsl` and `integrate-positions.wgsl`
 
-```wgsl
-@compute @workgroup_size(64)
-fn integrate(@builtin(global_invocation_id) id: vec3<u32>) {
-  let i = id.x;
-  if (i >= params.particleCount) { return; }
-
-  // Read from Set A, write to Set B (or vice versa based on parity)
-  let vx = vxA[i] + vxDelta[i];
-  let vy = vyA[i] + vyDelta[i];
-  let px = pxA[i] + vx * params.dt;
-  let py = pyA[i] + vy * params.dt;
-
-  // Apply friction
-  vxB[i] = vx * (1.0 - params.friction);
-  vyB[i] = vy * (1.0 - params.friction);
-
-  // Toroidal wrap
-  pxB[i] = (px + params.W) % params.W;
-  pyB[i] = (py + params.H) % params.H;
-}
-```
+Key operations:
+- Convert fixed-point deltas (i32) back to floats (scale factor 65536)
+- Apply velocity deltas and friction
+- Euler integration for position update
+- Toroidal wrap at world boundaries
 
 ## Constants
 
-All constants match `src/physics_wasm.nim`:
+Shader constants for the particle life algorithm:
 
 ```wgsl
 const MAX_SPECIES: u32 = 6u;         // Maximum species count
@@ -186,7 +214,7 @@ const MD2_LIMIT: f32 = 90000.0;      // Mouse distance² limit
 
 ## Toroidal Topology
 
-The simulation uses **toroidal wrapping** (both X and Y wrap around):
+The simulation world wraps around like Pac-Man — particles leaving the right edge reappear on the left:
 
 - Particles near the right edge see neighbors on the left edge
 - No boundary artifacts or edge repulsion
@@ -203,8 +231,8 @@ Implementation:
 
 **1. No forces computed**
 - Check `cellCounts[]` is non-zero after Pass 1
-- Verify `cellOffsets[]` and `sortedIndices[]` from Pass 2/3
-- Ensure `bufferParity` toggles each frame
+- Verify `cellOffsets[]` and `particlesSorted[]` from Pass 2/3
+- Ensure all five passes dispatch in sequence each frame
 
 **2. Particles explode**
 - Check `dt` is reasonable (0.001 - 0.05)
@@ -218,24 +246,21 @@ Implementation:
 
 ### Validation
 
-Run WASM and GPU in parallel with identical inputs:
+Verify GPU output against expected physics behavior:
 
 ```javascript
-// Initialize both WASM and GPU with same state
 const tolerance = 1e-4;
 
 for (let i = 0; i < particleCount; i++) {
-  const wasmVx = vxDeltaWASM[i];
-  const gpuVx = vxDeltaGPU[i];
-  const diff = Math.abs(wasmVx - gpuVx);
+  const vx = vxDeltaGPU[i];
 
-  if (diff > tolerance) {
-    console.error(`Mismatch at particle ${i}: WASM=${wasmVx}, GPU=${gpuVx}`);
+  if (!Number.isFinite(vx)) {
+    console.error(`NaN/Inf at particle ${i}: vx=${vx}`);
   }
 }
 ```
 
-Expected difference: < 0.01% due to floating-point rounding.
+Check for NaN/Inf propagation and energy conservation.
 
 ## Future Optimizations
 
@@ -262,11 +287,31 @@ Use hierarchical grid for variable-density simulations.
 
 ## References
 
-- **WASM Implementation:** `src/physics_wasm.nim`
-- **Buffer Layout:** `web/config.js` (MEMORY_LAYOUT)
-- **GPU Initialization:** `web/webgpu-init.js`
+- **Memory Layout:** `src/memory_layout.nim` (single source of truth for buffer offsets)
+- **Particle Struct:** `web/shaders/forces.wgsl` lines 54-64
 - **WebGPU Spec:** https://www.w3.org/TR/webgpu/
 - **WGSL Spec:** https://www.w3.org/TR/WGSL/
+
+## Learn More
+
+### WebGPU Fundamentals
+
+- [GPUComputePassEncoder (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/GPUComputePassEncoder) — Interface for encoding compute pass commands; explains passes as sequential GPU execution steps
+- [GPUBuffer (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/GPUBuffer) — GPU memory blocks for storing data; covers mapping, usage flags, and lifecycle
+- [dispatchWorkgroups (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/GPUComputePassEncoder/dispatchWorkgroups) — How workgroup counts and sizes determine total thread invocations
+- [WebGPU Compute Shader Basics](https://webgpufundamentals.org/webgpu/lessons/webgpu-compute-shaders.html) — Comprehensive tutorial covering workgroups, thread IDs, and parallel execution
+
+### WGSL Reference
+
+- [Atomic Types (Tour of WGSL)](https://google.github.io/tour-of-wgsl/types/atomics/atomic-types/) — Thread-safe integer operations; explains `atomic<i32>` and `atomic<u32>` usage restrictions
+- [Atomic Functions (WebGPU.rocks)](https://webgpu.rocks/wgsl/functions/synchronization-atomic/) — Quick reference for `atomicAdd`, `atomicLoad`, barriers, and other synchronization primitives
+
+### GPU Programming Concepts
+
+- [Parallel Prefix Sum (GPU Gems 3)](https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda) — Canonical reference for scan algorithms; covers work-efficient implementation and bank conflict avoidance
+- [AoS and SoA Memory Layouts (NVIDIA Forums)](https://forums.developer.nvidia.com/t/structures-of-arrays-vs-arrays-of-structures/13581) — Trade-offs between Array-of-Structs and Struct-of-Arrays for GPU memory coalescing
+- [Atomic Float Workarounds](https://unlimited3d.wordpress.com/2020/01/06/atomic-float-arithmetic-on-gpu/) — Why GPUs lack native float atomics and common workarounds including fixed-point scaling
+- [Periodic Boundary Conditions (Oregon State)](http://sites.science.oregonstate.edu/~landaur/CPUG/CPlab/MoleDynam/periodic.html) — Toroidal wrap-around for particle simulations; explains the torus topology used in molecular dynamics
 
 ## License
 

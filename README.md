@@ -1,176 +1,100 @@
-# Particle Garden 🦠
+# Particle Garden
 
-**SharedArrayBuffer-enabled particle life simulation** with zero-copy parallel physics.
-
-## What This Is
-
-A native desktop particle life simulation with WebGPU compute shaders.
+Thousands of particles attract and repel each other based on simple rules. Different species interact differently, creating emergent behaviors — swarms, orbits, symbiosis, predation. You define the rules; the physics creates the patterns.
 
 ## Download
 
-Pre-built binaries available on [Releases](../../releases):
+Pre-built binaries on [Releases](https://github.com/synapseradio/particle-garden/releases):
 
-| Platform | File | Install |
-|----------|------|---------|
-| **macOS** | `particle-garden-macos.zip` | Extract, [see note below](#macos-installation) |
-| **Windows** | `particle-garden-windows.zip` | Extract, run `particle_garden.exe` |
+| Platform | File | Notes |
+|----------|------|-------|
+| **macOS** | `particle-garden-macos.zip` | [See Gatekeeper note](#macos-gatekeeper) |
+| **Windows** | `particle-garden-windows.zip` | Extract and run `particle_garden.exe` |
 | **Linux** | `particle-garden-linux.tar.gz` | Extract, `chmod +x`, run |
 
-### macOS Installation
+### macOS Gatekeeper
 
-macOS may show **"Particle Garden.app is damaged"** — this is a Gatekeeper warning for unsigned apps, not actual corruption.
+macOS may warn that the app is "damaged" — this is a Gatekeeper warning for unsigned apps, not actual corruption.
 
-**To fix**, open Terminal and run:
+To fix, open Terminal and run:
 ```bash
 xattr -dr com.apple.quarantine ~/Downloads/Particle\ Garden.app
 ```
 
-Then move to Applications and launch normally.
+---
 
-## Key Features
+<!-- TODO: Add screenshot or GIF demonstrating the simulation here -->
+<!-- Recommended: 600-800px wide GIF showing particles forming patterns -->
 
-- **Zero-Copy Physics**: Physics engine runs in a Nim-compiled Web Worker, accessing shared memory directly. No serialization overhead.
-- **Density-Based Sizing**: Particles grow larger when isolated from their own species, highlighting outliers.
-- **Editable Rules**: Click any cell in the interaction matrix to manually tune attraction/repulsion forces in real-time.
-- **Configurable Trails**: Toggle motion trails and adjust their length/persistence.
+## What You Can Do
 
-## Architecture
+Particles form swarms, chase each other, or settle into stable orbits — all from simple attraction rules. Click the interaction matrix to change how species react to each other and watch the system reorganize.
 
-```
-┌──────────────────────────────────────────────┐
-│  Nim Binary                                  │
-│  ├── asynchttpserver (port 8089)             │
-│  │   └── Serves HTML with COOP/COEP headers  │
-│  └── webui                                   │
-│      └── Opens browser to localhost:8089    │
-└──────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────┐
-│  Browser (Chrome/Firefox/Edge)               │
-│  ├── window.crossOriginIsolated = true       │
-│  ├── SharedArrayBuffer available             │
-│  └── Web Workers (Nim -> JS) run physics     │
-└──────────────────────────────────────────────┘
-```
+Lonely particles grow bigger. Toggle trails to see where things have been.
 
-## Requirements
+---
 
-- **Nim >= 2.0.0**
-- **webui >= 2.4.0** (nimble will install this)
-- **Emscripten** (for WASM physics build)
-- A modern browser (Chrome, Firefox, Edge)
+<details>
+<summary><strong>How It Works</strong></summary>
 
-## Setup
+All physics runs on your GPU via WebGPU compute shaders. Particles never transfer back to the CPU — they're initialized on the GPU and stay there through simulation and rendering.
 
-**All three build steps are required.** The main app binary embeds the compiled worker and WASM files at compile time.
+The simulation world wraps around like Pac-Man. Particles leaving one edge reappear on the opposite side, so there are no boundary artifacts.
 
+**Why a local server?** Browsers require special security headers (COOP/COEP) to enable SharedArrayBuffer, which GPU memory sharing needs. The app bundles a tiny HTTP server that provides these headers, then opens a browser window pointing to localhost.
+
+For GPU shader implementation details, see [`web/shaders/README.md`](web/shaders/README.md).
+
+</details>
+
+<details>
+<summary><strong>Build from Source</strong></summary>
+
+For building and modifying the code, see the [Developer Guide](src/README.md).
+
+Quick version:
 ```bash
-# Clone/download this project
+git clone https://github.com/synapseradio/particle-garden
 cd particle-garden
-
-# Install dependencies
-nimble install
-
-# Build all (required order):
-nimble worker  # src/worker.nim -> web/worker.js
-nimble wasm    # src/physics_wasm.nim -> web/physics.js + web/physics.wasm
-nimble build   # embeds web/* into the binary
-
-# Or build optimized release
-nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/main.nim
-```
-
-## Run
-
-```bash
-# Run
+nimble install -y
+nimble all
 ./main
-# or on Windows:
-# main.exe
 ```
 
-This will:
-1. Start an HTTP server on `localhost:8089` with COOP/COEP headers
-2. Open your default browser to that URL
-3. The particle simulation runs with SharedArrayBuffer enabled
+Requires [Nim](https://nim-lang.org/) 2.0+.
 
-## Verifying SharedArrayBuffer Works
+</details>
 
-Open browser DevTools (F12) → Console. You should see:
+<details>
+<summary><strong>Troubleshooting</strong></summary>
 
-```
-🦠 Particle Garden - SharedArrayBuffer Edition
-   SharedArrayBuffer: ✅ Available
-```
+**SharedArrayBuffer unavailable**
+Ensure you're running the binary, not opening the HTML file directly. The binary serves the required security headers.
 
-The UI will also show a green "SharedArrayBuffer" badge instead of yellow "Copy Mode".
+**WebGPU unavailable**
+Requires Chrome 113+, Edge 113+, or Firefox (behind a flag).
 
-## Performance Comparison
+**Port 8089 in use**
+Edit `src/main.nim` and change the port constant.
 
-| Mode | Memory Overhead | Description |
-|------|----------------|-------------|
-| **SharedArrayBuffer** | ~0 bytes/frame | Workers read directly from shared memory |
-| Copy (fallback) | ~7 MB/frame | Full buffer copies per worker per frame |
+**Browser doesn't open**
+webui (the library that opens the native window) couldn't find a browser. Install Chrome, Firefox, or Edge.
 
-At 60fps with 16K particles and 7 workers, SAB mode saves **~420 MB/s** of memory bandwidth.
+</details>
 
-## Troubleshooting
+<details>
+<summary><strong>Contributing</strong></summary>
 
-### "SharedArrayBuffer is not defined"
+- All source is Nim — no hand-written JavaScript
+- Run `nimble test` before submitting
+- Code style enforced by compiler flags (see nimble file)
+- When adding shaders, register them in the `StaticFiles` table in `main.nim`
 
-The app isn't serving COOP/COEP headers. Ensure you are running the binary (which starts the internal server), not just opening the HTML file directly. The binary serves the embedded content with the correct security headers.
+See [Developer Guide](src/README.md) for architecture details.
 
-### Browser doesn't open
+</details>
 
-webui couldn't find a browser. Install Chrome, Firefox, or Edge.
-
-### Port 8089 in use
-
-Edit `src/main.nim` and change `PORT = 8089` to another port.
-
-## Packaging
-
-### macOS
-
-Run the included script to create a standalone `.app` bundle:
-
-```bash
-./package_mac.sh
-```
-
-This will create `Particle Garden.app` which can be moved to `/Applications`.
-
-### Windows
-
-Run the included script:
-
-```cmd
-package_win.bat
-```
-
-This creates `particle_garden.exe` which can be distributed as a single file.
-
-## Next Steps → Native Physics (Option 2)
-
-This project validates the SharedArrayBuffer approach. The next evolution would be:
-
-```nim
-# Option 2: Native Nim physics, browser just renders
-import std/threads
-
-# Nim threads compute forces (way faster than JS)
-proc physicsThread(data: ptr ParticleData) {.thread.} =
-  while running:
-    computeForces(data)  # Native speed
-    fence()              # Memory barrier
-
-# Browser polls shared memory via webui bindings
-window.bind("getPositions") do (e: Event):
-  return toJS(sharedPositions)
-```
-
-This would push physics into native code while keeping the WebGL renderer.
+---
 
 ## License
 

@@ -10,94 +10,157 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 nimble install
 
-# Build everything (worker + wasm + main app)
+# Build everything (frontend JS + native binary)
 nimble all
 
 # Run
 ./main
 ```
 
-For reference, `nimble all` runs these steps:
-- `nimble worker` - Build the Web Worker (src/worker.nim -> web/worker.js)
-- `nimble wasm` - Build the WASM physics module (src/physics_wasm.nim -> web/physics.js + web/physics.wasm)
-- `nimble build` - Build the main app (embeds all web/ files)
+For reference, `nimble all` runs:
+- `nimble app` — Compile `src/app.nim` → `web/app.js` (browser frontend)
+- `nim c` — Compile `src/main.nim` → `./main` (native HTTP server)
 
 For release builds:
 ```bash
-nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/main.nim
+nimble release
 ```
 
 ## Architecture
 
-This is a native desktop wrapper for a particle life simulation that enables SharedArrayBuffer in browsers.
+Native desktop wrapper for a particle life simulation with WebGPU compute physics.
 
-**Two-server architecture:**
+**Two-component design:**
 - **Nim asynchttpserver** (port 8089): Serves `web/index.html` with COOP/COEP headers required for SharedArrayBuffer
-- **webui**: Opens the browser window pointing to localhost:8089
+- **webui**: Opens browser window pointing to localhost:8089
 
 **Why this design:** Browsers require Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers to enable SharedArrayBuffer. The Nim server provides these headers; webui handles the native window lifecycle.
 
-**Key files:**
-- `src/main.nim` - **HTTP server** with COOP/COEP headers + webui window management. **Contains the StaticFiles table that registers all servable assets.** When adding new shaders or web files, you MUST add them to the StaticFiles table or they won't be served.
-- `src/physics_wasm.nim` - WASM physics module → `web/physics.js` + `web/physics.wasm` (via emscripten)
-- `src/worker.nim` - Web Worker source → `web/worker.js` (via `nim js`)
-- `web/` - Frontend modules (compiled from Nim via `nim js`)
+## Data Flow
 
-## Data Flow Architecture
+### Buffer Architecture
 
-### Double Buffering & Parity
+All particle data lives in SharedArrayBuffer with AoS (Array of Structures) layout:
 
-The simulation uses double-buffered particle state (A/B buffer sets) with `activeParity` tracking which buffer is current.
+```
+Particle struct (32 bytes, cache-aligned):
+  offset 0:  px (f32)      position x
+  offset 4:  py (f32)      position y
+  offset 8:  vx (f32)      velocity x
+  offset 12: vy (f32)      velocity y
+  offset 16: species (i32) species index (0-5)
+  offset 20: density (f32) local density
+  offset 24: padding       alignment to 32 bytes
+```
 
-**Parity Invariant (universal):**
-- `activeParity` (0 or 1) ALWAYS points to the buffer containing VALID, COMPLETE particle state
-- After physics completes, `buffer[activeParity]` is ready for rendering
-- This invariant holds for BOTH physics paths, despite different implementations
+### GPU Physics Pipeline
 
-**Parity Behavior (path-specific):**
-| Path | Parity Flip? | Why |
-|------|--------------|-----|
-| WebGPU | **Never** | In-place updates; same buffer read/written |
-| WASM | **After scatter** | Double-buffering; scatter writes to opposite buffer |
+All physics runs on WebGPU compute shaders (no CPU physics path):
 
-See "Physics Paths" below for implementation details.
+1. **bin-count** — Count particles per grid cell
+2. **prefix-sum** — Compute cell offsets via parallel scan
+3. **bin-scatter** — Scatter particles to sorted buffer by cell
+4. **forces** — Compute inter-particle forces from sorted buffer
+5. **integrate** — Apply velocity deltas, update positions
 
-### State Ownership
+Particles stay on GPU from initialization through rendering. No CPU readback.
 
-| State | Owner | When Modified |
-|-------|-------|---------------|
-| pxA/pyA/vxA/vyA | Physics | WebGPU: always; WASM: when parity=0 |
-| pxB/pyB/vxB/vyB | Physics | WebGPU: never; WASM: when parity=1 |
-| species* | initParticles() | Only at init/reset |
-| activeParity | grid.buildGrid() | WASM path only, after scatter |
-| matrix[] | UI | On user input |
+### Parity Invariant
 
-### Physics Paths
-
-Two physics implementations exist with **different** parity disciplines:
-
-1. **WebGPU path** (`webgpu_compute.nim`):
-   - Does **in-place updates** on a single buffer set
-   - Reads from buffer[parity], writes back to buffer[parity]
-   - **Does NOT flip parity** - same buffer read by renderer
-   - Parity stays constant (typically 0) throughout WebGPU execution
-
-2. **WASM path** (`workers.nim` + `physics_wasm.nim`):
-   - Uses **double-buffering** via grid scatter
-   - `grid.buildGrid()` scatters particles from buffer[parity] to buffer[1-parity]
-   - **Flips parity** after scatter completes
-   - Renderer reads from the newly-written buffer
-
-**Key difference**: WebGPU modifies buffers in-place; WASM copies between buffer sets.
+`activeParity` (0 or 1) points to the buffer containing valid particle state. WebGPU path does in-place updates — parity stays constant (typically 0).
 
 ## Language Policy
 
 **All source code must be written in Nim.** No hand-written JavaScript.
 
-- Frontend modules compile from `src/*.nim` to `web/*.js` using `nim js`
-- WASM modules compile via emscripten
+- Frontend compiles from `src/*.nim` to `web/app.js` via `nim js`
 - WGSL shaders are the only non-Nim source (GPU shaders have no Nim backend)
 
-When modifying frontend behavior, edit the corresponding `.nim` source file, not the generated `.js` file.
+When modifying frontend behavior, edit the `.nim` source file, not generated `.js`.
 
-**The simulation** uses SharedArrayBuffer for zero-copy parallel physics. The WASM physics module operates directly on shared memory with no data transfer overhead between JS and WASM.
+---
+
+## Source Code Reference
+
+### Compilation Targets
+
+| Source | Compiler | Output | Purpose |
+|--------|----------|--------|---------|
+| `app.nim` | `nim js` | `web/app.js` | Browser frontend (all modules merged) |
+| `main.nim` | `nim c` | `./main` | Native HTTP server + webui window |
+
+### Module Inventory
+
+#### Core Application
+
+| Module | Purpose |
+|--------|---------|
+| **main.nim** | HTTP server (port 8089) with COOP/COEP headers, webui window management, static file serving. Contains `StaticFiles` table — new web assets must be registered here. |
+| **app.nim** | Frontend entry point, imports all modules in dependency order, runs frame loop |
+
+#### Configuration & Memory
+
+| Module | Purpose |
+|--------|---------|
+| **config.nim** | Runtime CONFIG object (particle count, physics params), re-exports memory layout constants |
+| **memory_layout.nim** | Single source of truth for AoS Particle struct (32 bytes), buffer offsets, limits |
+| **buffers.nim** | Creates typed array views (Float32Array, Uint32Array) on SharedArrayBuffer |
+
+#### WebGPU Pipeline
+
+| Module | Purpose |
+|--------|---------|
+| **webgpu_init.nim** | GPU device initialization, feature detection, buffer allocation |
+| **webgpu_compute.nim** | 5-pass compute pipeline: bin-count, prefix-sum, bin-scatter, forces, integrate |
+| **webgpu_render.nim** | GPU rendering: instanced quads, trail effects, glow pipeline |
+
+#### Browser Integration
+
+| Module | Purpose |
+|--------|---------|
+| **ui.nim** | DOM bindings, sliders, mouse/touch events, attraction matrix editing |
+| **renderer.nim** | Legacy WebGL renderer (fallback if WebGPU unavailable) |
+| **grid.nim** | Computes spatial grid dimensions from world size + interaction radius |
+| **grid_core.nim** | Pure grid arithmetic (cell calculations, neighbor iteration) |
+| **physics_core.nim** | Pure mathematical force functions (used by tests) |
+
+#### Bindings (`bindings/`)
+
+| Module | Purpose |
+|--------|---------|
+| **webgpu.nim** | Type-safe WebGPU: adapters, devices, buffers, pipelines, bind groups |
+| **typed_arrays.nim** | Float32Array, Uint32Array, Int32Array, etc. |
+| **dom_extensions.nim** | Canvas, HTMLElement extensions, classList |
+| **js_interop.nim** | Console, random, object creation, general JS utilities |
+| **window.nim** | requestAnimationFrame, performance.now() |
+| **webgl.nim** | WebGL API (for fallback renderer) |
+
+### Dependency Order
+
+Import order in `app.nim` matters. Each layer depends on previous layers:
+
+```
+Layer 1: config (no dependencies)
+    │
+Layer 2: buffers (uses config)
+    │
+Layer 3: renderer, grid, ui (use buffers)
+    │
+Layer 4: webgpu_init, webgpu_compute, webgpu_render (use all above)
+    │
+    └── app.nim imports in this exact order
+```
+
+**Do not alphabetize imports** — Nim's JS backend hoists variables; misordering causes undefined errors at runtime.
+
+### Code Conventions
+
+**Compiler flags (enforced via nimble):**
+- `--styleCheck:error` — snake_case enforcement
+- Warnings as errors: `Deprecated`, `BareExcept`, `CStringConv`, `EnumConv`, `ProveInit`, `UnusedImport`
+
+**Memory layout:**
+All buffer offsets defined in `memory_layout.nim`. Never hardcode offsets elsewhere.
+
+**Static file registration:**
+New shaders or web assets must be added to `StaticFiles` table in `main.nim` or they won't be served.
