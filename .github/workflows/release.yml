@@ -82,7 +82,8 @@ jobs:
           </plist>
           EOF
 
-          zip -r "${{ matrix.artifact }}" "${BUNDLE_DIR}"
+          # Use ditto instead of zip to preserve macOS bundle attributes
+          ditto -c -k --sequesterRsrc --keepParent "${BUNDLE_DIR}" "${{ matrix.artifact }}"
 
       # Windows: Rename and zip
       - name: Package Windows

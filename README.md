@@ -12,9 +12,20 @@ Pre-built binaries available on [Releases](../../releases):
 
 | Platform | File | Install |
 |----------|------|---------|
-| **macOS** | `particle-garden-macos.zip` | Extract, drag to Applications |
+| **macOS** | `particle-garden-macos.zip` | Extract, [see note below](#macos-installation) |
 | **Windows** | `particle-garden-windows.zip` | Extract, run `particle_garden.exe` |
 | **Linux** | `particle-garden-linux.tar.gz` | Extract, `chmod +x`, run |
+
+### macOS Installation
+
+macOS may show **"Particle Garden.app is damaged"** — this is a Gatekeeper warning for unsigned apps, not actual corruption.
+
+**To fix**, open Terminal and run:
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/Particle\ Garden.app
+```
+
+Then move to Applications and launch normally.
 
 ## Key Features
 
