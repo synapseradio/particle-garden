@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - PHYSICS CORE (Pure Mathematical Functions)
+# PARTICLE GARDEN - PHYSICS CORE (Pure Mathematical Functions)
 # ==============================================================================
 #
 # Pure functions for particle physics calculations. These have no side effects

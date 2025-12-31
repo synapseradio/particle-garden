@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - PHYSICS CORE TESTS
+# PARTICLE GARDEN - PHYSICS CORE TESTS
 # ==============================================================================
 #
 # Unit tests for pure physics functions in physics_core.nim

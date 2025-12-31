@@ -1,8 +1,8 @@
 # ==============================================================================
-# EMERGENT GARDEN - UI MODULE
+# PARTICLE GARDEN - UI MODULE
 # ==============================================================================
 #
-# UI and DOM interaction module for Goober Garden.
+# UI and DOM interaction module for Particle Garden.
 #
 # Handles:
 # - Slider/input bindings to CONFIG values

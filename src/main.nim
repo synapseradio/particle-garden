@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - NATIVE DESKTOP WRAPPER
+# PARTICLE GARDEN - NATIVE DESKTOP WRAPPER
 # ==============================================================================
 #
 # ARCHITECTURE: WebGPU-only physics with native window wrapper.

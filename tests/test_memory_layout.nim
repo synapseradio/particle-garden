@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - MEMORY LAYOUT TESTS
+# PARTICLE GARDEN - MEMORY LAYOUT TESTS
 # ==============================================================================
 #
 # Unit tests for memory layout constants and offset calculations.

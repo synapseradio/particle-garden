@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - SYNC PROTOCOL TESTS
+# PARTICLE GARDEN - SYNC PROTOCOL TESTS
 # ==============================================================================
 #
 # Unit tests for sync buffer protocol offset calculations.

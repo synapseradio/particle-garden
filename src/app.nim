@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - CONSOLIDATED WEB APPLICATION
+# PARTICLE GARDEN - CONSOLIDATED WEB APPLICATION
 # ==============================================================================
 #
 # Single compilation unit for the web frontend.

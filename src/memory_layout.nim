@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - MEMORY LAYOUT (Single Source of Truth)
+# PARTICLE GARDEN - MEMORY LAYOUT (Single Source of Truth)
 # ==============================================================================
 #
 # This module defines the memory layout for ArrayBuffer-backed typed arrays.

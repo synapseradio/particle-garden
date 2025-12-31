@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - WEBGPU RENDER MODULE
+# PARTICLE GARDEN - WEBGPU RENDER MODULE
 # ==============================================================================
 #
 # GPU-only particle rendering using WebGPU render pipeline.

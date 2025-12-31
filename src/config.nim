@@ -1,8 +1,8 @@
 # ==============================================================================
-# EMERGENT GARDEN - CONFIGURATION MODULE
+# PARTICLE GARDEN - CONFIGURATION MODULE
 # ==============================================================================
 #
-# Configuration and constants for Goober Garden simulation.
+# Configuration and constants for Particle Garden simulation.
 #
 # This module exports:
 # - CONFIG: Mutable runtime configuration (particle count, physics params, rendering options)
@@ -148,7 +148,7 @@ proc createConfig(): ConfigObject =
   result.timeScale = 0.5
   result.particleSize = 3
   result.trails = false
-  result.trailAlpha = 0.92
+  result.trailAlpha = 0.96
   result.glowIntensity = 1.0
   result.maxVelocity = 50.0
 

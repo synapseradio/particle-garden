@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - TYPED ARRAY BINDINGS
+# PARTICLE GARDEN - TYPED ARRAY BINDINGS
 # ==============================================================================
 #
 # Centralized bindings for JavaScript TypedArray and WebAssembly.Memory APIs.

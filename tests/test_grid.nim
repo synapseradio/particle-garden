@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - GRID CORE TESTS
+# PARTICLE GARDEN - GRID CORE TESTS
 # ==============================================================================
 #
 # Unit tests for pure grid functions in grid_core.nim

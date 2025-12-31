@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - SPATIAL GRID DIMENSIONS
+# PARTICLE GARDEN - SPATIAL GRID DIMENSIONS
 # ==============================================================================
 #
 # Spatial partitioning grid dimensions for particle simulation.

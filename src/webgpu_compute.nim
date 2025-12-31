@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - WEBGPU COMPUTE PIPELINE ORCHESTRATION (AoS Layout)
+# PARTICLE GARDEN - WEBGPU COMPUTE PIPELINE ORCHESTRATION (AoS Layout)
 # ==============================================================================
 #
 # This module implements the physics pipeline with AoS (Array of Structures):

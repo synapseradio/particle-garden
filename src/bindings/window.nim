@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - WINDOW API BINDINGS
+# PARTICLE GARDEN - WINDOW API BINDINGS
 # ==============================================================================
 #
 # Browser window API bindings for animation loops and environment detection.

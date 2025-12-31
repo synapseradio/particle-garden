@@ -1,8 +1,8 @@
 # ==============================================================================
-# EMERGENT GARDEN - WEBGL RENDERER MODULE
+# PARTICLE GARDEN - WEBGL RENDERER MODULE
 # ==============================================================================
 #
-# WebGL rendering for Goober Garden particle simulation.
+# WebGL rendering for Particle Garden particle simulation.
 #
 # This module handles all GPU-based rendering:
 # - Particle point sprites with density-based sizing

@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - WEBGPU BINDINGS
+# PARTICLE GARDEN - WEBGPU BINDINGS
 # ==============================================================================
 #
 # Idiomatic Nim bindings for the WebGPU API.

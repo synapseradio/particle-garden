@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - GRID CORE (Pure Mathematical Functions)
+# PARTICLE GARDEN - GRID CORE (Pure Mathematical Functions)
 # ==============================================================================
 #
 # Pure functions for spatial grid calculations. These have no side effects

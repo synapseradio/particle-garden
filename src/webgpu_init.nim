@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - WEBGPU DEVICE INITIALIZATION
+# PARTICLE GARDEN - WEBGPU DEVICE INITIALIZATION
 # ==============================================================================
 #
 # This module handles:

@@ -1,10 +1,20 @@
-# Emergent Garden 🦠 - nim-webui Edition
+# Particle Garden 🦠
 
 **SharedArrayBuffer-enabled particle life simulation** with zero-copy parallel physics.
 
 ## What This Is
 
-A native desktop wrapper around the [Emergent Garden](https://github.com/gyanantaran/emergent-garden) particle simulator that has a few extra goodies.
+A native desktop particle life simulation with WebGPU compute shaders.
+
+## Download
+
+Pre-built binaries available on [Releases](../../releases):
+
+| Platform | File | Install |
+|----------|------|---------|
+| **macOS** | `particle-garden-macos.zip` | Extract, drag to Applications |
+| **Windows** | `particle-garden-windows.zip` | Extract, run `particle_garden.exe` |
+| **Linux** | `particle-garden-linux.tar.gz` | Extract, `chmod +x`, run |
 
 ## Key Features
 
@@ -46,7 +56,7 @@ A native desktop wrapper around the [Emergent Garden](https://github.com/gyanant
 
 ```bash
 # Clone/download this project
-cd emergent-garden-webui
+cd particle-garden
 
 # Install dependencies
 nimble install
@@ -64,9 +74,9 @@ nimble worker && nimble wasm && nim c -d:release -d:danger --opt:speed src/main.
 
 ```bash
 # Run
-./emergent_garden
+./main
 # or on Windows:
-# emergent_garden.exe
+# main.exe
 ```
 
 This will:
@@ -79,7 +89,7 @@ This will:
 Open browser DevTools (F12) → Console. You should see:
 
 ```
-🦠 Goober Garden - SharedArrayBuffer Edition
+🦠 Particle Garden - SharedArrayBuffer Edition
    SharedArrayBuffer: ✅ Available
 ```
 
@@ -118,18 +128,17 @@ Run the included script to create a standalone `.app` bundle:
 ./package_mac.sh
 ```
 
-This will create `Goober Garden.app` which can be moved to `/Applications`.
+This will create `Particle Garden.app` which can be moved to `/Applications`.
 
 ### Windows
 
-1. Build the worker, WASM, and optimized binary:
-   ```bash
-   nimble worker
-   nimble wasm
-   nim c -d:release -d:danger --opt:speed src/main.nim
-   ```
-2. The resulting `src/emergent_garden.exe` is a standalone executable (it embeds the web assets).
-3. You can distribute this single file.
+Run the included script:
+
+```cmd
+package_win.bat
+```
+
+This creates `particle_garden.exe` which can be distributed as a single file.
 
 ## Next Steps → Native Physics (Option 2)
 

@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - ATOMICS API BINDINGS
+# PARTICLE GARDEN - ATOMICS API BINDINGS
 # ==============================================================================
 #
 # Centralized bindings for JavaScript Atomics API used for SharedArrayBuffer

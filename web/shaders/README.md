@@ -1,6 +1,6 @@
 # WebGPU Compute Shaders for Particle Life Simulation
 
-This directory contains WebGPU compute shaders for the Emergent Garden particle life simulation.
+This directory contains WebGPU compute shaders for the Particle Garden particle life simulation.
 
 ## Overview
 

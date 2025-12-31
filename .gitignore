@@ -1,11 +1,10 @@
 # Build artifacts
-emergent_garden
 main
 tests/test_all
-Goober Garden.app/
-Emergent Garden.app/
+Particle Garden.app/
 .ck/
 .DS_Store
+
 # Nim compilation caches
 nimcache/
 nimcache_wasm/
@@ -18,5 +17,4 @@ web/physics.wasm
 
 # macOS
 .DS_Store
-src/emergent_garden
 src/main

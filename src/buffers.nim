@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - UNIFIED MEMORY BUFFERS
+# PARTICLE GARDEN - UNIFIED MEMORY BUFFERS
 # ==============================================================================
 #
 # This module creates typed array views for particle data and grid structures.

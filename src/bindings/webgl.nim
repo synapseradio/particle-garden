@@ -1,5 +1,5 @@
 # ==============================================================================
-# EMERGENT GARDEN - WEBGL BINDINGS MODULE
+# PARTICLE GARDEN - WEBGL BINDINGS MODULE
 # ==============================================================================
 #
 # Centralized bindings for WebGL 1.0 rendering context and operations.
