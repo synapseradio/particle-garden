@@ -41,9 +41,7 @@
       .controls h1 {
         font-size: 1.4em;
         margin-bottom: 5px;
-        background: linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #e0e0e0;
       }
       .controls .subtitle {
         font-size: 0.75em;
@@ -81,7 +79,7 @@
         float: right;
       }
       button {
-        background: linear-gradient(135deg, #4d96ff, #6bcb77);
+        background: #4d96ff;
         border: none;
         color: white;
         padding: 10px 20px;
@@ -92,18 +90,17 @@
         margin-bottom: 8px;
       }
       button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(77, 150, 255, 0.3);
+        opacity: 0.9;
       }
       button.secondary {
         background: rgba(255, 255, 255, 0.1);
       }
       button.active {
-        background: linear-gradient(135deg, #6bcb77, #4d96ff);
+        background: #6bcb77;
       }
       .stats {
         font-size: 0.75em;
-        color: #666;
+        color: #888;
         margin-top: 15px;
         padding-top: 15px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -179,18 +176,6 @@
         •🧬•
         <button class="collapse-btn" onclick="toggleControls()">🦠</button>
       </h1>
-      <p class="subtitle">
-        <a
-          href="https://github.com/gyanantaran/emergent-garden"
-          target="_blank"
-          style="
-            color: inherit;
-            text-decoration: none;
-            border-bottom: 1px dotted #666;
-          "
-          >Original Inspiration</a
-        ><br />
-      </p>
 
       <div class="controls-content">
         <div class="control-group">
