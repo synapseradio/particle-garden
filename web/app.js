@@ -73,7 +73,7 @@ var NTI1040187503 = {size: 0, kind: 17, base: null, node: null, finalizer: null}
 var NTI1040187406 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
 var NTI1040187517 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1040187410 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
-var NTI1224737073 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
+var NTI1224737074 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1207959556 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1157627908 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI134217749 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
@@ -727,7 +727,7 @@ NTI1040187461.base = NTI33555167;
 NTI1040187506.base = NTI1040187461;
 NTI1040187517.base = NTI1040187506;
 NTI1040187410.base = NTI1040187517;
-var NNI1224737073 = {kind: 2, len: 9, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particleValueEl0", len: 0, typ: NTI1040187410, name: "particleValueEl0", sons: null}, 
+var NNI1224737074 = {kind: 2, len: 9, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particleValueEl0", len: 0, typ: NTI1040187410, name: "particleValueEl0", sons: null}, 
 {kind: 1, offset: "speciesValueEl1", len: 0, typ: NTI1040187410, name: "speciesValueEl1", sons: null}, 
 {kind: 1, offset: "radiusValueEl2", len: 0, typ: NTI1040187410, name: "radiusValueEl2", sons: null}, 
 {kind: 1, offset: "forceValueEl3", len: 0, typ: NTI1040187410, name: "forceValueEl3", sons: null}, 
@@ -736,8 +736,8 @@ var NNI1224737073 = {kind: 2, len: 9, offset: 0, typ: null, name: null, sons: [{
 {kind: 1, offset: "trailValueEl6", len: 0, typ: NTI1040187410, name: "trailValueEl6", sons: null}, 
 {kind: 1, offset: "glowValueEl7", len: 0, typ: NTI1040187410, name: "glowValueEl7", sons: null}, 
 {kind: 1, offset: "velocityValueEl8", len: 0, typ: NTI1040187410, name: "velocityValueEl8", sons: null}]};
-NTI1224737073.node = NNI1224737073;
-NTI1224737073.base = NTI33555167;
+NTI1224737074.node = NNI1224737074;
+NTI1224737074.base = NTI33555167;
 var NNI1258291209 = {kind: 2, len: 11, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particlesA", len: 0, typ: NTI33554435, name: "particlesA", sons: null}, 
 {kind: 1, offset: "particlesSorted", len: 0, typ: NTI33554435, name: "particlesSorted", sons: null}, 
 {kind: 1, offset: "sortedIndices", len: 0, typ: NTI33554435, name: "sortedIndices", sons: null}, 
@@ -1190,7 +1190,7 @@ function createConfig__config_u88() {
     result_1056964697.trails = false;
     result_1056964697.trailAlpha = 0.92;
     result_1056964697.glowIntensity = 1.0;
-    result_1056964697.maxVelocity = 10.0;
+    result_1056964697.maxVelocity = 50.0;
 
   return result_1056964697;
 
@@ -1685,26 +1685,26 @@ function setResizeCallback(callback_p0) {
 function updateMatrixRule(i_p0, j_p1, el_p2) {
     var Temporary1;
 
-    var inputEl_1224737220 = el_p2;
-    var v_1224737221 = parseFloat(inputEl_1224737220.value);
-    if (!(isNaN(v_1224737221))) {
-    matrix[addInt(mulInt(i_p0, MAX_SPECIES), j_p1)] = v_1224737221;
+    var inputEl_1224737225 = el_p2;
+    var v_1224737226 = parseFloat(inputEl_1224737225.value);
+    if (!(isNaN(v_1224737226))) {
+    matrix[addInt(mulInt(i_p0, MAX_SPECIES), j_p1)] = v_1224737226;
     if (!((onMatrixUpdate == null))) {
     onMatrixUpdate();
     }
     
-    if ((0.0 < v_1224737221)) {
+    if ((0.0 < v_1224737226)) {
     Temporary1 = 120;
     }
     else {
     Temporary1 = 0;
     }
     
-    var hue_1224737225 = Temporary1;
-    var saturation_1224737226 = chckRange(Number(BigInt(Math.trunc((Math.abs(v_1224737221) * 100.0)))), (-2147483648), 2147483647);
-    var bg_1224737227 = ([104,115,108,97,40]).concat(HEX24__systemZdollars_u14(hue_1224737225),[44],HEX24__systemZdollars_u14(saturation_1224737226),[37,44,52,48,37,44,48,46,55,41]);
-    var parent_1224737228 = inputEl_1224737220.parentElement;
-    parent_1224737228.style.background = toJSStr(bg_1224737227);
+    var hue_1224737230 = Temporary1;
+    var saturation_1224737231 = chckRange(Number(BigInt(Math.trunc((Math.abs(v_1224737226) * 100.0)))), (-2147483648), 2147483647);
+    var bg_1224737232 = ([104,115,108,97,40]).concat(HEX24__systemZdollars_u14(hue_1224737230),[44],HEX24__systemZdollars_u14(saturation_1224737231),[37,44,52,48,37,44,48,46,55,41]);
+    var parent_1224737233 = inputEl_1224737225.parentElement;
+    parent_1224737233.style.background = toJSStr(bg_1224737232);
     }
     
 
@@ -1715,115 +1715,115 @@ function updateMatrixDisplay() {
                     var Temporary10;
     var Temporary11;
 
-function HEX3Aanonymous__ui_u493(input_p0) {
+function HEX3Aanonymous__ui_u498(input_p0) {
     var Temporary1;
 
-function HEX3Aanonymous__ui_u496(e_p0) {
-    var target_1224737266 = e_p0.target;
-    var ds_1224737267 = target_1224737266.dataset;
-    var row_1224737268 = parseInt(ds_1224737267["row"], 10);
-    var col_1224737269 = parseInt(ds_1224737267["col"], 10);
-    updateMatrixRule(row_1224737268, col_1224737269, e_p0.target);
+function HEX3Aanonymous__ui_u501(e_p0) {
+    var target_1224737271 = e_p0.target;
+    var ds_1224737272 = target_1224737271.dataset;
+    var row_1224737273 = parseInt(ds_1224737272["row"], 10);
+    var col_1224737274 = parseInt(ds_1224737272["col"], 10);
+    updateMatrixRule(row_1224737273, col_1224737274, e_p0.target);
 
   
 }
 
-    var inputEl_1224737263 = input_p0;
-    Temporary1 = HEX3Aanonymous__ui_u496.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u496; Temporary1.ClE_0 = null;
-    inputEl_1224737263.addEventListener("change", Temporary1);
+    var inputEl_1224737268 = input_p0;
+    Temporary1 = HEX3Aanonymous__ui_u501.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u501; Temporary1.ClE_0 = null;
+    inputEl_1224737268.addEventListener("change", Temporary1);
 
   
 }
 
-    var el_1224737230 = document.getElementById("matrixDisplay");
-    var ns_1224737231 = CONFIG.speciesCount;
-    el_1224737230.style.gridTemplateColumns = toJSStr(([114,101,112,101,97,116,40]).concat(HEX24__systemZdollars_u14(addInt(ns_1224737231, 1)),[44,32,49,102,114,41]));
-    var html_1224737232 = [60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,62,60,47,100,105,118,62];
+    var el_1224737235 = document.getElementById("matrixDisplay");
+    var ns_1224737236 = CONFIG.speciesCount;
+    el_1224737235.style.gridTemplateColumns = toJSStr(([114,101,112,101,97,116,40]).concat(HEX24__systemZdollars_u14(addInt(ns_1224737236, 1)),[44,32,49,102,114,41]));
+    var html_1224737237 = [60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,62,60,47,100,105,118,62];
     Label1: {
-      var j_1224737237 = 0;
-      var i_1224737410 = 0;
+      var j_1224737242 = 0;
+      var i_1224737415 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1224737410 < ns_1224737231)) break Label3;
-            j_1224737237 = i_1224737410;
-            var c_1224737238 = mulInt(j_1224737237, 3);
-            var r_1224737239 = chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737238] * 255.0)))), (-2147483648), 2147483647);
-            var g_1224737240 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737238, 1)] * 255.0)))), (-2147483648), 2147483647);
-            var b_1224737241 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737238, 2)] * 255.0)))), (-2147483648), 2147483647);
-            html_1224737232.push.apply(html_1224737232, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58,114,103,98,97,40]).concat(HEX24__systemZdollars_u14(r_1224737239),[44],HEX24__systemZdollars_u14(g_1224737240),[44],HEX24__systemZdollars_u14(b_1224737241),[44,48,46,53,41,34,62,60,47,100,105,118,62]));;
-            i_1224737410 = addInt(i_1224737410, 1);
+          if (!(i_1224737415 < ns_1224737236)) break Label3;
+            j_1224737242 = i_1224737415;
+            var c_1224737243 = mulInt(j_1224737242, 3);
+            var r_1224737244 = chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737243] * 255.0)))), (-2147483648), 2147483647);
+            var g_1224737245 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737243, 1)] * 255.0)))), (-2147483648), 2147483647);
+            var b_1224737246 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737243, 2)] * 255.0)))), (-2147483648), 2147483647);
+            html_1224737237.push.apply(html_1224737237, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58,114,103,98,97,40]).concat(HEX24__systemZdollars_u14(r_1224737244),[44],HEX24__systemZdollars_u14(g_1224737245),[44],HEX24__systemZdollars_u14(b_1224737246),[44,48,46,53,41,34,62,60,47,100,105,118,62]));;
+            i_1224737415 = addInt(i_1224737415, 1);
           }
       };
     };
     Label4: {
-      var i_1224737246 = 0;
-      var i_1224737416 = 0;
+      var i_1224737251 = 0;
+      var i_1224737421 = 0;
       Label5: {
           Label6: while (true) {
-          if (!(i_1224737416 < ns_1224737231)) break Label6;
-            i_1224737246 = i_1224737416;
-            var c_1224737247 = mulInt(i_1224737246, 3);
-            var r_1224737248 = chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737247] * 255.0)))), (-2147483648), 2147483647);
-            var g_1224737249 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737247, 1)] * 255.0)))), (-2147483648), 2147483647);
-            var b_1224737250 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737247, 2)] * 255.0)))), (-2147483648), 2147483647);
-            html_1224737232.push.apply(html_1224737232, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58,114,103,98,97,40]).concat(HEX24__systemZdollars_u14(r_1224737248),[44],HEX24__systemZdollars_u14(g_1224737249),[44],HEX24__systemZdollars_u14(b_1224737250),[44,48,46,53,41,34,62,60,47,100,105,118,62]));;
+          if (!(i_1224737421 < ns_1224737236)) break Label6;
+            i_1224737251 = i_1224737421;
+            var c_1224737252 = mulInt(i_1224737251, 3);
+            var r_1224737253 = chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737252] * 255.0)))), (-2147483648), 2147483647);
+            var g_1224737254 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737252, 1)] * 255.0)))), (-2147483648), 2147483647);
+            var b_1224737255 = chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737252, 2)] * 255.0)))), (-2147483648), 2147483647);
+            html_1224737237.push.apply(html_1224737237, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58,114,103,98,97,40]).concat(HEX24__systemZdollars_u14(r_1224737253),[44],HEX24__systemZdollars_u14(g_1224737254),[44],HEX24__systemZdollars_u14(b_1224737255),[44,48,46,53,41,34,62,60,47,100,105,118,62]));;
             Label7: {
-              var j_1224737255 = 0;
-              var i_1224737414 = 0;
+              var j_1224737260 = 0;
+              var i_1224737419 = 0;
               Label8: {
                   Label9: while (true) {
-                  if (!(i_1224737414 < ns_1224737231)) break Label9;
-                    j_1224737255 = i_1224737414;
-                    var v_1224737256 = matrix[addInt(mulInt(i_1224737246, MAX_SPECIES), j_1224737255)];
-                    if ((0.0 < v_1224737256)) {
+                  if (!(i_1224737419 < ns_1224737236)) break Label9;
+                    j_1224737260 = i_1224737419;
+                    var v_1224737261 = matrix[addInt(mulInt(i_1224737251, MAX_SPECIES), j_1224737260)];
+                    if ((0.0 < v_1224737261)) {
                     Temporary10 = 120;
                     }
                     else {
                     Temporary10 = 0;
                     }
                     
-                    var hue_1224737257 = Temporary10;
-                    var saturation_1224737258 = chckRange(Number(BigInt(Math.trunc((Math.abs(v_1224737256) * 100.0)))), (-2147483648), 2147483647);
-                    var bg_1224737259 = ([104,115,108,97,40]).concat(HEX24__systemZdollars_u14(hue_1224737257),[44],HEX24__systemZdollars_u14(saturation_1224737258),[37,44,52,48,37,44,48,46,55,41]);
-                    html_1224737232.push.apply(html_1224737232, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(bg_1224737259,[34,62,60,105,110,112,117,116,32,116,121,112,101,61,34,110,117,109,98,101,114,34,32,115,116,101,112,61,34,48,46,49,34,32,118,97,108,117,101,61,34],cstrToNimstr(v_1224737256.toFixed(2)),[34,32,100,97,116,97,45,114,111,119,61,34],HEX24__systemZdollars_u14(i_1224737246),[34,32,100,97,116,97,45,99,111,108,61,34],HEX24__systemZdollars_u14(j_1224737255),[34,62,60,47,100,105,118,62]));;
-                    i_1224737414 = addInt(i_1224737414, 1);
+                    var hue_1224737262 = Temporary10;
+                    var saturation_1224737263 = chckRange(Number(BigInt(Math.trunc((Math.abs(v_1224737261) * 100.0)))), (-2147483648), 2147483647);
+                    var bg_1224737264 = ([104,115,108,97,40]).concat(HEX24__systemZdollars_u14(hue_1224737262),[44],HEX24__systemZdollars_u14(saturation_1224737263),[37,44,52,48,37,44,48,46,55,41]);
+                    html_1224737237.push.apply(html_1224737237, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(bg_1224737264,[34,62,60,105,110,112,117,116,32,116,121,112,101,61,34,110,117,109,98,101,114,34,32,115,116,101,112,61,34,48,46,49,34,32,118,97,108,117,101,61,34],cstrToNimstr(v_1224737261.toFixed(2)),[34,32,100,97,116,97,45,114,111,119,61,34],HEX24__systemZdollars_u14(i_1224737251),[34,32,100,97,116,97,45,99,111,108,61,34],HEX24__systemZdollars_u14(j_1224737260),[34,62,60,47,100,105,118,62]));;
+                    i_1224737419 = addInt(i_1224737419, 1);
                   }
               };
             };
-            i_1224737416 = addInt(i_1224737416, 1);
+            i_1224737421 = addInt(i_1224737421, 1);
           }
       };
     };
-    el_1224737230.innerHTML = toJSStr(html_1224737232);
-    var inputs_1224737260 = el_1224737230.querySelectorAll("input[type=\"number\"]");
-    Temporary11 = HEX3Aanonymous__ui_u493.bind(null); Temporary11.ClP_0 = HEX3Aanonymous__ui_u493; Temporary11.ClE_0 = null;
-    inputs_1224737260.forEach(Temporary11);
+    el_1224737235.innerHTML = toJSStr(html_1224737237);
+    var inputs_1224737265 = el_1224737235.querySelectorAll("input[type=\"number\"]");
+    Temporary11 = HEX3Aanonymous__ui_u498.bind(null); Temporary11.ClP_0 = HEX3Aanonymous__ui_u498; Temporary11.ClE_0 = null;
+    inputs_1224737265.forEach(Temporary11);
 
   
 }
 
 function randomizeMatrix() {
-    var ns_1224737318 = CONFIG.speciesCount;
+    var ns_1224737323 = CONFIG.speciesCount;
     Label1: {
-      var i_1224737323 = 0;
-      var i_1224737407 = 0;
+      var i_1224737328 = 0;
+      var i_1224737412 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1224737407 < ns_1224737318)) break Label3;
-            i_1224737323 = i_1224737407;
+          if (!(i_1224737412 < ns_1224737323)) break Label3;
+            i_1224737328 = i_1224737412;
             Label4: {
-              var j_1224737328 = 0;
-              var i_1224737405 = 0;
+              var j_1224737333 = 0;
+              var i_1224737410 = 0;
               Label5: {
                   Label6: while (true) {
-                  if (!(i_1224737405 < ns_1224737318)) break Label6;
-                    j_1224737328 = i_1224737405;
-                    matrix[addInt(mulInt(i_1224737323, MAX_SPECIES), j_1224737328)] = ((Math.random() * 2.0) - 1.0);
-                    i_1224737405 = addInt(i_1224737405, 1);
+                  if (!(i_1224737410 < ns_1224737323)) break Label6;
+                    j_1224737333 = i_1224737410;
+                    matrix[addInt(mulInt(i_1224737328, MAX_SPECIES), j_1224737333)] = ((Math.random() * 2.0) - 1.0);
+                    i_1224737410 = addInt(i_1224737410, 1);
                   }
               };
             };
-            i_1224737407 = addInt(i_1224737407, 1);
+            i_1224737412 = addInt(i_1224737412, 1);
           }
       };
     };
@@ -1837,15 +1837,15 @@ function randomizeMatrix() {
   
 }
 
-function HEX3Aanonymous__ui_u133(e_p0) {
-    var target_1224736903 = e_p0.target;
-    CONFIG.particleCount = parseInt(target_1224736903.value, 10);
+function HEX3Aanonymous__ui_u136(e_p0) {
+    var target_1224736906 = e_p0.target;
+    CONFIG.particleCount = parseInt(target_1224736906.value, 10);
     this.particleValueEl0.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.particleCount));
 
   
 }
 
-function HEX3Aanonymous__ui_u136(e_p0) {
+function HEX3Aanonymous__ui_u139(e_p0) {
     console.log([(("[ui] particleCount change, onInitParticles isNil:")), (((onInitParticles == null)))]);
     if (!((onInitParticles == null))) {
     onInitParticles();
@@ -1855,15 +1855,15 @@ function HEX3Aanonymous__ui_u136(e_p0) {
   
 }
 
-function HEX3Aanonymous__ui_u164(e_p0) {
-    var target_1224736934 = e_p0.target;
-    CONFIG.speciesCount = parseInt(target_1224736934.value, 10);
+function HEX3Aanonymous__ui_u167(e_p0) {
+    var target_1224736937 = e_p0.target;
+    CONFIG.speciesCount = parseInt(target_1224736937.value, 10);
     this.speciesValueEl1.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.speciesCount));
 
   
 }
 
-function HEX3Aanonymous__ui_u167(e_p0) {
+function HEX3Aanonymous__ui_u170(e_p0) {
     randomizeMatrix();
     if (!((onInitParticles == null))) {
     onInitParticles();
@@ -1873,9 +1873,9 @@ function HEX3Aanonymous__ui_u167(e_p0) {
   
 }
 
-function HEX3Aanonymous__ui_u174(e_p0) {
-    var target_1224736944 = e_p0.target;
-    CONFIG.interactionRadius = parseInt(target_1224736944.value, 10);
+function HEX3Aanonymous__ui_u177(e_p0) {
+    var target_1224736947 = e_p0.target;
+    CONFIG.interactionRadius = parseInt(target_1224736947.value, 10);
     this.radiusValueEl2.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.interactionRadius));
 
   
@@ -1921,49 +1921,49 @@ function HEX24__system_u3188(x_p0) {
 
 }
 
-function HEX3Aanonymous__ui_u182(e_p0) {
-    var target_1224736952 = e_p0.target;
-    CONFIG.forceStrength = parseFloat(target_1224736952.value);
+function HEX3Aanonymous__ui_u185(e_p0) {
+    var target_1224736955 = e_p0.target;
+    CONFIG.forceStrength = parseFloat(target_1224736955.value);
     this.forceValueEl3.textContent = CONFIG.forceStrength.toFixed(1);
 
   
 }
 
-function HEX3Aanonymous__ui_u190(e_p0) {
-    var target_1224736960 = e_p0.target;
-    CONFIG.friction = parseFloat(target_1224736960.value);
+function HEX3Aanonymous__ui_u193(e_p0) {
+    var target_1224736963 = e_p0.target;
+    CONFIG.friction = parseFloat(target_1224736963.value);
     this.frictionValueEl4.textContent = CONFIG.friction.toFixed(2);
 
   
 }
 
-function HEX3Aanonymous__ui_u198(e_p0) {
-    var target_1224736968 = e_p0.target;
-    CONFIG.timeScale = parseFloat(target_1224736968.value);
+function HEX3Aanonymous__ui_u201(e_p0) {
+    var target_1224736971 = e_p0.target;
+    CONFIG.timeScale = parseFloat(target_1224736971.value);
     this.timeScaleValueEl5.textContent = CONFIG.timeScale.toFixed(1);
 
   
 }
 
-function HEX3Aanonymous__ui_u206(e_p0) {
-    var target_1224736976 = e_p0.target;
-    CONFIG.trailAlpha = parseFloat(target_1224736976.value);
+function HEX3Aanonymous__ui_u209(e_p0) {
+    var target_1224736979 = e_p0.target;
+    CONFIG.trailAlpha = parseFloat(target_1224736979.value);
     this.trailValueEl6.textContent = CONFIG.trailAlpha.toFixed(2);
 
   
 }
 
-function HEX3Aanonymous__ui_u214(e_p0) {
-    var target_1224736984 = e_p0.target;
-    CONFIG.glowIntensity = parseFloat(target_1224736984.value);
+function HEX3Aanonymous__ui_u217(e_p0) {
+    var target_1224736987 = e_p0.target;
+    CONFIG.glowIntensity = parseFloat(target_1224736987.value);
     this.glowValueEl7.textContent = CONFIG.glowIntensity.toFixed(1);
 
   
 }
 
-function HEX3Aanonymous__ui_u222(e_p0) {
-    var target_1224736992 = e_p0.target;
-    CONFIG.maxVelocity = parseFloat(target_1224736992.value);
+function HEX3Aanonymous__ui_u225(e_p0) {
+    var target_1224736995 = e_p0.target;
+    CONFIG.maxVelocity = parseFloat(target_1224736995.value);
     this.velocityValueEl8.textContent = CONFIG.maxVelocity.toFixed(0);
 
   
@@ -1982,66 +1982,66 @@ function setupUI() {
     var Temporary10;
     var Temporary11;
 
-    var HEX3Aenv_1224737437 = null;
-    HEX3Aenv_1224737437 = {m_type: NTI1224737073, particleValueEl0: null, speciesValueEl1: null, radiusValueEl2: null, forceValueEl3: null, frictionValueEl4: null, timeScaleValueEl5: null, trailValueEl6: null, glowValueEl7: null, velocityValueEl8: null};
-    var particleCountEl_1224736899 = document.getElementById("particleCount");
-    HEX3Aenv_1224737437.particleValueEl0 = document.getElementById("particleValue");
-    particleCountEl_1224736899.value = toJSStr(HEX24__systemZdollars_u14(CONFIG.particleCount));
-    HEX3Aenv_1224737437.particleValueEl0.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.particleCount));
-    Temporary1 = HEX3Aanonymous__ui_u133.bind(HEX3Aenv_1224737437); Temporary1.ClP_0 = HEX3Aanonymous__ui_u133; Temporary1.ClE_0 = HEX3Aenv_1224737437;
-    particleCountEl_1224736899.addEventListener("input", Temporary1);
-    Temporary2 = HEX3Aanonymous__ui_u136.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u136; Temporary2.ClE_0 = null;
-    particleCountEl_1224736899.addEventListener("change", Temporary2);
-    var speciesCountEl_1224736930 = document.getElementById("speciesCount");
-    HEX3Aenv_1224737437.speciesValueEl1 = document.getElementById("speciesValue");
-    speciesCountEl_1224736930.value = toJSStr(HEX24__systemZdollars_u14(CONFIG.speciesCount));
-    HEX3Aenv_1224737437.speciesValueEl1.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.speciesCount));
-    Temporary3 = HEX3Aanonymous__ui_u164.bind(HEX3Aenv_1224737437); Temporary3.ClP_0 = HEX3Aanonymous__ui_u164; Temporary3.ClE_0 = HEX3Aenv_1224737437;
-    speciesCountEl_1224736930.addEventListener("input", Temporary3);
-    Temporary4 = HEX3Aanonymous__ui_u167.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u167; Temporary4.ClE_0 = null;
-    speciesCountEl_1224736930.addEventListener("change", Temporary4);
-    var radiusEl_1224736940 = document.getElementById("interactionRadius");
-    HEX3Aenv_1224737437.radiusValueEl2 = document.getElementById("radiusValue");
-    radiusEl_1224736940.value = toJSStr(HEX24__systemZdollars_u14(CONFIG.interactionRadius));
-    HEX3Aenv_1224737437.radiusValueEl2.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.interactionRadius));
-    Temporary5 = HEX3Aanonymous__ui_u174.bind(HEX3Aenv_1224737437); Temporary5.ClP_0 = HEX3Aanonymous__ui_u174; Temporary5.ClE_0 = HEX3Aenv_1224737437;
-    radiusEl_1224736940.addEventListener("input", Temporary5);
-    var forceEl_1224736945 = document.getElementById("forceStrength");
-    HEX3Aenv_1224737437.forceValueEl3 = document.getElementById("forceValue");
-    forceEl_1224736945.value = toJSStr(HEX24__system_u3188(CONFIG.forceStrength));
-    HEX3Aenv_1224737437.forceValueEl3.textContent = CONFIG.forceStrength.toFixed(1);
-    Temporary6 = HEX3Aanonymous__ui_u182.bind(HEX3Aenv_1224737437); Temporary6.ClP_0 = HEX3Aanonymous__ui_u182; Temporary6.ClE_0 = HEX3Aenv_1224737437;
-    forceEl_1224736945.addEventListener("input", Temporary6);
-    var frictionEl_1224736953 = document.getElementById("friction");
-    HEX3Aenv_1224737437.frictionValueEl4 = document.getElementById("frictionValue");
-    frictionEl_1224736953.value = toJSStr(HEX24__system_u3188(CONFIG.friction));
-    HEX3Aenv_1224737437.frictionValueEl4.textContent = CONFIG.friction.toFixed(2);
-    Temporary7 = HEX3Aanonymous__ui_u190.bind(HEX3Aenv_1224737437); Temporary7.ClP_0 = HEX3Aanonymous__ui_u190; Temporary7.ClE_0 = HEX3Aenv_1224737437;
-    frictionEl_1224736953.addEventListener("input", Temporary7);
-    var timeScaleEl_1224736961 = document.getElementById("timeScale");
-    HEX3Aenv_1224737437.timeScaleValueEl5 = document.getElementById("timeScaleValue");
-    timeScaleEl_1224736961.value = toJSStr(HEX24__system_u3188(CONFIG.timeScale));
-    HEX3Aenv_1224737437.timeScaleValueEl5.textContent = CONFIG.timeScale.toFixed(1);
-    Temporary8 = HEX3Aanonymous__ui_u198.bind(HEX3Aenv_1224737437); Temporary8.ClP_0 = HEX3Aanonymous__ui_u198; Temporary8.ClE_0 = HEX3Aenv_1224737437;
-    timeScaleEl_1224736961.addEventListener("input", Temporary8);
-    var trailEl_1224736969 = document.getElementById("trailLength");
-    HEX3Aenv_1224737437.trailValueEl6 = document.getElementById("trailValue");
-    trailEl_1224736969.value = toJSStr(HEX24__system_u3188(CONFIG.trailAlpha));
-    HEX3Aenv_1224737437.trailValueEl6.textContent = CONFIG.trailAlpha.toFixed(2);
-    Temporary9 = HEX3Aanonymous__ui_u206.bind(HEX3Aenv_1224737437); Temporary9.ClP_0 = HEX3Aanonymous__ui_u206; Temporary9.ClE_0 = HEX3Aenv_1224737437;
-    trailEl_1224736969.addEventListener("input", Temporary9);
-    var glowEl_1224736977 = document.getElementById("glowIntensity");
-    HEX3Aenv_1224737437.glowValueEl7 = document.getElementById("glowValue");
-    glowEl_1224736977.value = toJSStr(HEX24__system_u3188(CONFIG.glowIntensity));
-    HEX3Aenv_1224737437.glowValueEl7.textContent = CONFIG.glowIntensity.toFixed(1);
-    Temporary10 = HEX3Aanonymous__ui_u214.bind(HEX3Aenv_1224737437); Temporary10.ClP_0 = HEX3Aanonymous__ui_u214; Temporary10.ClE_0 = HEX3Aenv_1224737437;
-    glowEl_1224736977.addEventListener("input", Temporary10);
-    var velocityEl_1224736985 = document.getElementById("maxVelocity");
-    HEX3Aenv_1224737437.velocityValueEl8 = document.getElementById("velocityValue");
-    velocityEl_1224736985.value = toJSStr(HEX24__system_u3188(CONFIG.maxVelocity));
-    HEX3Aenv_1224737437.velocityValueEl8.textContent = CONFIG.maxVelocity.toFixed(0);
-    Temporary11 = HEX3Aanonymous__ui_u222.bind(HEX3Aenv_1224737437); Temporary11.ClP_0 = HEX3Aanonymous__ui_u222; Temporary11.ClE_0 = HEX3Aenv_1224737437;
-    velocityEl_1224736985.addEventListener("input", Temporary11);
+    var HEX3Aenv_1224737442 = null;
+    HEX3Aenv_1224737442 = {m_type: NTI1224737074, particleValueEl0: null, speciesValueEl1: null, radiusValueEl2: null, forceValueEl3: null, frictionValueEl4: null, timeScaleValueEl5: null, trailValueEl6: null, glowValueEl7: null, velocityValueEl8: null};
+    var particleCountEl_1224736902 = document.getElementById("particleCount");
+    HEX3Aenv_1224737442.particleValueEl0 = document.getElementById("particleValue");
+    particleCountEl_1224736902.value = toJSStr(HEX24__systemZdollars_u14(CONFIG.particleCount));
+    HEX3Aenv_1224737442.particleValueEl0.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.particleCount));
+    Temporary1 = HEX3Aanonymous__ui_u136.bind(HEX3Aenv_1224737442); Temporary1.ClP_0 = HEX3Aanonymous__ui_u136; Temporary1.ClE_0 = HEX3Aenv_1224737442;
+    particleCountEl_1224736902.addEventListener("input", Temporary1);
+    Temporary2 = HEX3Aanonymous__ui_u139.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u139; Temporary2.ClE_0 = null;
+    particleCountEl_1224736902.addEventListener("change", Temporary2);
+    var speciesCountEl_1224736933 = document.getElementById("speciesCount");
+    HEX3Aenv_1224737442.speciesValueEl1 = document.getElementById("speciesValue");
+    speciesCountEl_1224736933.value = toJSStr(HEX24__systemZdollars_u14(CONFIG.speciesCount));
+    HEX3Aenv_1224737442.speciesValueEl1.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.speciesCount));
+    Temporary3 = HEX3Aanonymous__ui_u167.bind(HEX3Aenv_1224737442); Temporary3.ClP_0 = HEX3Aanonymous__ui_u167; Temporary3.ClE_0 = HEX3Aenv_1224737442;
+    speciesCountEl_1224736933.addEventListener("input", Temporary3);
+    Temporary4 = HEX3Aanonymous__ui_u170.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u170; Temporary4.ClE_0 = null;
+    speciesCountEl_1224736933.addEventListener("change", Temporary4);
+    var radiusEl_1224736943 = document.getElementById("interactionRadius");
+    HEX3Aenv_1224737442.radiusValueEl2 = document.getElementById("radiusValue");
+    radiusEl_1224736943.value = toJSStr(HEX24__systemZdollars_u14(CONFIG.interactionRadius));
+    HEX3Aenv_1224737442.radiusValueEl2.textContent = toJSStr(HEX24__systemZdollars_u14(CONFIG.interactionRadius));
+    Temporary5 = HEX3Aanonymous__ui_u177.bind(HEX3Aenv_1224737442); Temporary5.ClP_0 = HEX3Aanonymous__ui_u177; Temporary5.ClE_0 = HEX3Aenv_1224737442;
+    radiusEl_1224736943.addEventListener("input", Temporary5);
+    var forceEl_1224736948 = document.getElementById("forceStrength");
+    HEX3Aenv_1224737442.forceValueEl3 = document.getElementById("forceValue");
+    forceEl_1224736948.value = toJSStr(HEX24__system_u3188(CONFIG.forceStrength));
+    HEX3Aenv_1224737442.forceValueEl3.textContent = CONFIG.forceStrength.toFixed(1);
+    Temporary6 = HEX3Aanonymous__ui_u185.bind(HEX3Aenv_1224737442); Temporary6.ClP_0 = HEX3Aanonymous__ui_u185; Temporary6.ClE_0 = HEX3Aenv_1224737442;
+    forceEl_1224736948.addEventListener("input", Temporary6);
+    var frictionEl_1224736956 = document.getElementById("friction");
+    HEX3Aenv_1224737442.frictionValueEl4 = document.getElementById("frictionValue");
+    frictionEl_1224736956.value = toJSStr(HEX24__system_u3188(CONFIG.friction));
+    HEX3Aenv_1224737442.frictionValueEl4.textContent = CONFIG.friction.toFixed(2);
+    Temporary7 = HEX3Aanonymous__ui_u193.bind(HEX3Aenv_1224737442); Temporary7.ClP_0 = HEX3Aanonymous__ui_u193; Temporary7.ClE_0 = HEX3Aenv_1224737442;
+    frictionEl_1224736956.addEventListener("input", Temporary7);
+    var timeScaleEl_1224736964 = document.getElementById("timeScale");
+    HEX3Aenv_1224737442.timeScaleValueEl5 = document.getElementById("timeScaleValue");
+    timeScaleEl_1224736964.value = toJSStr(HEX24__system_u3188(CONFIG.timeScale));
+    HEX3Aenv_1224737442.timeScaleValueEl5.textContent = CONFIG.timeScale.toFixed(1);
+    Temporary8 = HEX3Aanonymous__ui_u201.bind(HEX3Aenv_1224737442); Temporary8.ClP_0 = HEX3Aanonymous__ui_u201; Temporary8.ClE_0 = HEX3Aenv_1224737442;
+    timeScaleEl_1224736964.addEventListener("input", Temporary8);
+    var trailEl_1224736972 = document.getElementById("trailLength");
+    HEX3Aenv_1224737442.trailValueEl6 = document.getElementById("trailValue");
+    trailEl_1224736972.value = toJSStr(HEX24__system_u3188(CONFIG.trailAlpha));
+    HEX3Aenv_1224737442.trailValueEl6.textContent = CONFIG.trailAlpha.toFixed(2);
+    Temporary9 = HEX3Aanonymous__ui_u209.bind(HEX3Aenv_1224737442); Temporary9.ClP_0 = HEX3Aanonymous__ui_u209; Temporary9.ClE_0 = HEX3Aenv_1224737442;
+    trailEl_1224736972.addEventListener("input", Temporary9);
+    var glowEl_1224736980 = document.getElementById("glowIntensity");
+    HEX3Aenv_1224737442.glowValueEl7 = document.getElementById("glowValue");
+    glowEl_1224736980.value = toJSStr(HEX24__system_u3188(CONFIG.glowIntensity));
+    HEX3Aenv_1224737442.glowValueEl7.textContent = CONFIG.glowIntensity.toFixed(1);
+    Temporary10 = HEX3Aanonymous__ui_u217.bind(HEX3Aenv_1224737442); Temporary10.ClP_0 = HEX3Aanonymous__ui_u217; Temporary10.ClE_0 = HEX3Aenv_1224737442;
+    glowEl_1224736980.addEventListener("input", Temporary10);
+    var velocityEl_1224736988 = document.getElementById("maxVelocity");
+    HEX3Aenv_1224737442.velocityValueEl8 = document.getElementById("velocityValue");
+    velocityEl_1224736988.value = toJSStr(HEX24__system_u3188(CONFIG.maxVelocity));
+    HEX3Aenv_1224737442.velocityValueEl8.textContent = CONFIG.maxVelocity.toFixed(0);
+    Temporary11 = HEX3Aanonymous__ui_u225.bind(HEX3Aenv_1224737442); Temporary11.ClP_0 = HEX3Aanonymous__ui_u225; Temporary11.ClE_0 = HEX3Aenv_1224737442;
+    velocityEl_1224736988.addEventListener("input", Temporary11);
 
   
 }
@@ -2049,7 +2049,7 @@ function setupUI() {
 function setupEvents(canvas_p0) {
     var Temporary1;
 
-function HEX3Aanonymous__ui_u275() {
+function HEX3Aanonymous__ui_u278() {
     if (!((onResize == null))) {
     onResize();
     }
@@ -2059,7 +2059,7 @@ function HEX3Aanonymous__ui_u275() {
 }
     var Temporary2;
 
-function HEX3Aanonymous__ui_u279(e_p0) {
+function HEX3Aanonymous__ui_u282(e_p0) {
     if ((e_p0.button == 0)) {
     mouseDown = true;
     }
@@ -2075,7 +2075,7 @@ function HEX3Aanonymous__ui_u279(e_p0) {
 }
     var Temporary3;
 
-function HEX3Aanonymous__ui_u281(e_p0) {
+function HEX3Aanonymous__ui_u284(e_p0) {
     if ((e_p0.button == 0)) {
     mouseDown = false;
     }
@@ -2089,7 +2089,7 @@ function HEX3Aanonymous__ui_u281(e_p0) {
 }
     var Temporary4;
 
-function HEX3Aanonymous__ui_u283(e_p0) {
+function HEX3Aanonymous__ui_u286(e_p0) {
     mouseDown = false;
     mouseRightDown = false;
 
@@ -2097,81 +2097,92 @@ function HEX3Aanonymous__ui_u283(e_p0) {
 }
     var Temporary5;
 
-function HEX3Aanonymous__ui_u285(e_p0) {
+function HEX3Aanonymous__ui_u288(e_p0) {
     e_p0.preventDefault();
 
   
 }
     var Temporary6;
 
-function HEX3Aanonymous__ui_u287(e_p0) {
-    mouseX = e_p0.clientX;
-    mouseY = e_p0.clientY;
+function HEX3Aanonymous__ui_u290(e_p0) {
+    blastX = e_p0.clientX;
+    blastY = e_p0.clientY;
+    blastStrength = 1.0;
 
   
 }
     var Temporary7;
 
-function HEX3Aanonymous__ui_u289(e_p0) {
-    e_p0.preventDefault();
-    mouseDown = true;
-    var touch_1224737059 = e_p0.touches[chckIndx(0, 0, (e_p0.touches).length - 1)];
-    mouseX = touch_1224737059.clientX;
-    mouseY = touch_1224737059.clientY;
+function HEX3Aanonymous__ui_u292(e_p0) {
+    mouseX = e_p0.clientX;
+    mouseY = e_p0.clientY;
 
   
 }
     var Temporary8;
 
-function HEX3Aanonymous__ui_u340(e_p0) {
-    mouseDown = false;
+function HEX3Aanonymous__ui_u294(e_p0) {
+    e_p0.preventDefault();
+    mouseDown = true;
+    var touch_1224737064 = e_p0.touches[chckIndx(0, 0, (e_p0.touches).length - 1)];
+    mouseX = touch_1224737064.clientX;
+    mouseY = touch_1224737064.clientY;
 
   
 }
     var Temporary9;
 
-function HEX3Aanonymous__ui_u342(e_p0) {
+function HEX3Aanonymous__ui_u345(e_p0) {
+    mouseDown = false;
+
+  
+}
+    var Temporary10;
+
+function HEX3Aanonymous__ui_u347(e_p0) {
     e_p0.preventDefault();
-    var touch_1224737112 = e_p0.touches[chckIndx(0, 0, (e_p0.touches).length - 1)];
-    mouseX = touch_1224737112.clientX;
-    mouseY = touch_1224737112.clientY;
+    var touch_1224737117 = e_p0.touches[chckIndx(0, 0, (e_p0.touches).length - 1)];
+    mouseX = touch_1224737117.clientX;
+    mouseY = touch_1224737117.clientY;
 
   
 }
 
-    var canvasEl_1224737042 = canvas_p0;
-    Temporary1 = HEX3Aanonymous__ui_u275.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u275; Temporary1.ClE_0 = null;
+    var canvasEl_1224737045 = canvas_p0;
+    Temporary1 = HEX3Aanonymous__ui_u278.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u278; Temporary1.ClE_0 = null;
     window.addEventListener("resize", Temporary1);
-    Temporary2 = HEX3Aanonymous__ui_u279.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u279; Temporary2.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("mousedown", Temporary2);
-    Temporary3 = HEX3Aanonymous__ui_u281.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__ui_u281; Temporary3.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("mouseup", Temporary3);
-    Temporary4 = HEX3Aanonymous__ui_u283.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u283; Temporary4.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("mouseleave", Temporary4);
-    Temporary5 = HEX3Aanonymous__ui_u285.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__ui_u285; Temporary5.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("contextmenu", Temporary5);
-    Temporary6 = HEX3Aanonymous__ui_u287.bind(null); Temporary6.ClP_0 = HEX3Aanonymous__ui_u287; Temporary6.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("mousemove", Temporary6);
-    Temporary7 = HEX3Aanonymous__ui_u289.bind(null); Temporary7.ClP_0 = HEX3Aanonymous__ui_u289; Temporary7.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("touchstart", Temporary7);
-    Temporary8 = HEX3Aanonymous__ui_u340.bind(null); Temporary8.ClP_0 = HEX3Aanonymous__ui_u340; Temporary8.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("touchend", Temporary8);
-    Temporary9 = HEX3Aanonymous__ui_u342.bind(null); Temporary9.ClP_0 = HEX3Aanonymous__ui_u342; Temporary9.ClE_0 = null;
-    canvasEl_1224737042.addEventListener("touchmove", Temporary9);
+    Temporary2 = HEX3Aanonymous__ui_u282.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u282; Temporary2.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("mousedown", Temporary2);
+    Temporary3 = HEX3Aanonymous__ui_u284.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__ui_u284; Temporary3.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("mouseup", Temporary3);
+    Temporary4 = HEX3Aanonymous__ui_u286.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u286; Temporary4.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("mouseleave", Temporary4);
+    Temporary5 = HEX3Aanonymous__ui_u288.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__ui_u288; Temporary5.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("contextmenu", Temporary5);
+    Temporary6 = HEX3Aanonymous__ui_u290.bind(null); Temporary6.ClP_0 = HEX3Aanonymous__ui_u290; Temporary6.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("dblclick", Temporary6);
+    Temporary7 = HEX3Aanonymous__ui_u292.bind(null); Temporary7.ClP_0 = HEX3Aanonymous__ui_u292; Temporary7.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("mousemove", Temporary7);
+    Temporary8 = HEX3Aanonymous__ui_u294.bind(null); Temporary8.ClP_0 = HEX3Aanonymous__ui_u294; Temporary8.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("touchstart", Temporary8);
+    Temporary9 = HEX3Aanonymous__ui_u345.bind(null); Temporary9.ClP_0 = HEX3Aanonymous__ui_u345; Temporary9.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("touchend", Temporary9);
+    Temporary10 = HEX3Aanonymous__ui_u347.bind(null); Temporary10.ClP_0 = HEX3Aanonymous__ui_u347; Temporary10.ClE_0 = null;
+    canvasEl_1224737045.addEventListener("touchmove", Temporary10);
 
   
 }
 
 function toggleTrails() {
     CONFIG.trails = !(CONFIG.trails);
-    var trailBtn_1224737192 = document.getElementById("trailBtn");
-    (trailBtn_1224737192.classList.toggle("active", CONFIG.trails));
-    var trailSettings_1224737193 = document.getElementById("trailSettings");
+    var trailBtn_1224737197 = document.getElementById("trailBtn");
+    (trailBtn_1224737197.classList.toggle("active", CONFIG.trails));
+    var trailSettings_1224737198 = document.getElementById("trailSettings");
     if (CONFIG.trails) {
-    trailSettings_1224737193.style.display = "block";
+    trailSettings_1224737198.style.display = "block";
     }
     else {
-      trailSettings_1224737193.style.display = "none";
+      trailSettings_1224737198.style.display = "none";
     }
     
 
@@ -2179,14 +2190,14 @@ function toggleTrails() {
 }
 
 function toggleControls() {
-    var controls_1224737195 = document.getElementById("controls");
-    controls_1224737195.classList.toggle("collapsed");
-    var btn_1224737196 = controls_1224737195.querySelector(".collapse-btn");
-    if (controls_1224737195.classList.contains("collapsed")) {
-    btn_1224737196.textContent = "+";
+    var controls_1224737200 = document.getElementById("controls");
+    controls_1224737200.classList.toggle("collapsed");
+    var btn_1224737201 = controls_1224737200.querySelector(".collapse-btn");
+    if (controls_1224737200.classList.contains("collapsed")) {
+    btn_1224737201.textContent = "+";
     }
     else {
-      btn_1224737196.textContent = "-";
+      btn_1224737201.textContent = "-";
     }
     
 
@@ -2200,19 +2211,19 @@ function setMatrixUpdateCallback(callback_p0) {
 }
 
 function updateStats(fps_p0, gridTimeMs_p1, workerTimeMs_p2) {
-    var fpsEl_1224737397 = document.getElementById("fps");
-    fpsEl_1224737397.textContent = toJSStr(HEX24__systemZdollars_u14(fps_p0));
-    var gridTimeEl_1224737398 = document.getElementById("gridTime");
-    gridTimeEl_1224737398.textContent = gridTimeMs_p1.toFixed(2);
-    var workerTimeEl_1224737399 = document.getElementById("workerTime");
-    workerTimeEl_1224737399.textContent = workerTimeMs_p2.toFixed(1);
+    var fpsEl_1224737402 = document.getElementById("fps");
+    fpsEl_1224737402.textContent = toJSStr(HEX24__systemZdollars_u14(fps_p0));
+    var gridTimeEl_1224737403 = document.getElementById("gridTime");
+    gridTimeEl_1224737403.textContent = gridTimeMs_p1.toFixed(2);
+    var workerTimeEl_1224737404 = document.getElementById("workerTime");
+    workerTimeEl_1224737404.textContent = workerTimeMs_p2.toFixed(1);
 
   
 }
 
 function updateParticleStats(count_p0) {
-    var particleStatsEl_1224737402 = document.getElementById("particleStats");
-    particleStatsEl_1224737402.textContent = count_p0.toLocaleString();
+    var particleStatsEl_1224737407 = document.getElementById("particleStats");
+    particleStatsEl_1224737407.textContent = count_p0.toLocaleString();
 
   
 }
@@ -2220,6 +2231,9 @@ var mouseX = 0.0;
 var mouseY = 0.0;
 var mouseDown = false;
 var mouseRightDown = false;
+var blastX = 0.0;
+var blastY = 0.0;
+var blastStrength = 0.0;
 var onInitParticles = null;
 var onResize = null;
 var onMatrixUpdate = null;
@@ -2479,16 +2493,16 @@ function HEX3Aanonymous__webgpu95compute_u67(msg_p0) {
     var errorDetails_1291845703 = [];
     Label3: {
       var i_1291845708 = 0;
-      var colontmp__1291847057 = 0;
-      colontmp__1291847057 = errors_1291845698.length;
-      var i_1291847058 = 0;
+      var colontmp__1291847072 = 0;
+      colontmp__1291847072 = errors_1291845698.length;
+      var i_1291847073 = 0;
       Label4: {
           Label5: while (true) {
-          if (!(i_1291847058 < colontmp__1291847057)) break Label5;
-            i_1291845708 = i_1291847058;
+          if (!(i_1291847073 < colontmp__1291847072)) break Label5;
+            i_1291845708 = i_1291847073;
             var err_1291845709 = errors_1291845698[i_1291845708];
             errorDetails_1291845703.push.apply(errorDetails_1291845703, ([32,32,76,105,110,101,32]).concat(HEX24__systemZdollars_u14(err_1291845709.lineNum),[58,32],cstrToNimstr(err_1291845709.message),[10]));;
-            i_1291847058 = addInt(i_1291847058, 1);
+            i_1291847073 = addInt(i_1291847073, 1);
           }
       };
     };
@@ -2498,16 +2512,16 @@ function HEX3Aanonymous__webgpu95compute_u67(msg_p0) {
     if ((0 < warnings_1291845702.length)) {
     Label6: {
       var i_1291845715 = 0;
-      var colontmp__1291847061 = 0;
-      colontmp__1291847061 = warnings_1291845702.length;
-      var i_1291847062 = 0;
+      var colontmp__1291847076 = 0;
+      colontmp__1291847076 = warnings_1291845702.length;
+      var i_1291847077 = 0;
       Label7: {
           Label8: while (true) {
-          if (!(i_1291847062 < colontmp__1291847061)) break Label8;
-            i_1291845715 = i_1291847062;
+          if (!(i_1291847077 < colontmp__1291847076)) break Label8;
+            i_1291845715 = i_1291847077;
             var w_1291845716 = warnings_1291845702[i_1291845715];
             console.warn([((toJSStr(([83,104,97,100,101,114,32,119,97,114,110,105,110,103,32,102,111,114,32,34]).concat(cstrToNimstr(label_p1),[34,32,76,105,110,101,32],HEX24__systemZdollars_u14(w_1291845716.lineNum),[58,32],cstrToNimstr(w_1291845716.message)))))]);
-            i_1291847062 = addInt(i_1291847062, 1);
+            i_1291847077 = addInt(i_1291847077, 1);
           }
       };
     };
@@ -2613,13 +2627,13 @@ async function createBindGroupWithValidation(passName_p0, layout_p1, entries_p2,
     var entryDetails_1291845915 = [];
     Label1: {
       var i_1291845920 = 0;
-      var colontmp__1291847065 = 0;
-      colontmp__1291847065 = entries_p2.length;
-      var i_1291847066 = 0;
+      var colontmp__1291847080 = 0;
+      colontmp__1291847080 = entries_p2.length;
+      var i_1291847081 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1291847066 < colontmp__1291847065)) break Label3;
-            i_1291845920 = i_1291847066;
+          if (!(i_1291847081 < colontmp__1291847080)) break Label3;
+            i_1291845920 = i_1291847081;
             var e_1291845921 = entries_p2[i_1291845920];
             var binding_1291845922 = e_1291845921["binding"];
             var resource_1291845923 = e_1291845921["resource"];
@@ -2633,7 +2647,7 @@ async function createBindGroupWithValidation(passName_p0, layout_p1, entries_p2,
             
             var bufferLabel_1291845929 = nimCopy(null, Temporary4, NTI33554449);
             entryDetails_1291845915.push.apply(entryDetails_1291845915, ([32,32,32,32,98,105,110,100,105,110,103,32]).concat(HEX24__systemZdollars_u14(to__webgpu95compute_u298(binding_1291845922)),[58,32,98,117,102,102,101,114,61],bufferLabel_1291845929,[10]));;
-            i_1291847066 = addInt(i_1291847066, 1);
+            i_1291847081 = addInt(i_1291847081, 1);
           }
       };
     };
@@ -2746,19 +2760,19 @@ function nsuFindChar(s_p0, sub_p1, start_p2, last_p3) {
     var last_1308624553 = Temporary1;
     Label2: {
       var iHEX60gensym174_1308624567 = 0;
-      var colontmp__1291847074 = 0;
-      colontmp__1291847074 = start_p2;
-      var res_1291847075 = colontmp__1291847074;
+      var colontmp__1291847089 = 0;
+      colontmp__1291847089 = start_p2;
+      var res_1291847090 = colontmp__1291847089;
       Label3: {
           Label4: while (true) {
-          if (!(res_1291847075 <= last_1308624553)) break Label4;
-            iHEX60gensym174_1308624567 = res_1291847075;
+          if (!(res_1291847090 <= last_1308624553)) break Label4;
+            iHEX60gensym174_1308624567 = res_1291847090;
             if ((s_p0[chckIndx(iHEX60gensym174_1308624567, 0, (s_p0).length - 1)] == sub_p1)) {
             result_1308624552 = iHEX60gensym174_1308624567;
             break BeforeRet;
             }
             
-            res_1291847075 = addInt(res_1291847075, 1);
+            res_1291847090 = addInt(res_1291847090, 1);
           }
       };
     };
@@ -2832,15 +2846,15 @@ function nsuInitSkipTable(a_p0, sub_p1) {
     fill__pureZstrutils_u1623(a_p0, m_1308624470);
     Label1: {
       var i_1308624490 = 0;
-      var colontmp__1291847080 = 0;
-      colontmp__1291847080 = subInt(m_1308624470, 1);
-      var i_1291847081 = 0;
+      var colontmp__1291847095 = 0;
+      colontmp__1291847095 = subInt(m_1308624470, 1);
+      var i_1291847096 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1291847081 < colontmp__1291847080)) break Label3;
-            i_1308624490 = i_1291847081;
+          if (!(i_1291847096 < colontmp__1291847095)) break Label3;
+            i_1308624490 = i_1291847096;
             a_p0[chckIndx(sub_p1[chckIndx(i_1308624490, 0, (sub_p1).length - 1)], 0, (a_p0).length - 1)] = subInt(subInt(m_1308624470, 1), i_1308624490);
-            i_1291847081 = addInt(i_1291847081, 1);
+            i_1291847096 = addInt(i_1291847096, 1);
           }
       };
     };
@@ -2994,7 +3008,7 @@ async function initPipelines() {
     var uniformUsage_1291846501 = (GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
     uniformBuffers["gridParams"] = device.createBuffer({size: 32, usage: uniformUsage_1291846501, label: "Grid Parameters Uniform"});
     uniformBuffers["scanParams"] = device.createBuffer({size: 16, usage: uniformUsage_1291846501, label: "Scan Parameters Uniform"});
-    uniformBuffers["simParams"] = device.createBuffer({size: 192, usage: uniformUsage_1291846501, label: "Simulation Parameters Uniform (with matrix)"});
+    uniformBuffers["simParams"] = device.createBuffer({size: 208, usage: uniformUsage_1291846501, label: "Simulation Parameters Uniform (with matrix + blast)"});
     uniformBuffers["integrationParams"] = device.createBuffer({size: 32, usage: uniformUsage_1291846501, label: "Integration Parameters Uniform"});
     console.log([(("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created"))]);
     console.log([(("[PHASE: PIPELINE CREATION] Creating AoS compute pipelines..."))]);
@@ -3099,35 +3113,38 @@ async function runPhysicsFrame(params_p0) {
     var mouseY_1291846824 = to__webgpu95compute_u1137(params_p0["mouseY"]);
     var mouseDown_1291846829 = to__webgpu95compute_u298(params_p0["mouseDown"]);
     var mouseRightDown_1291846834 = to__webgpu95compute_u298(params_p0["mouseRightDown"]);
-    var parity_1291846839 = to__webgpu95compute_u298(params_p0["parity"]);
-    var matrix_1291846840 = params_p0["matrix"];
-    var numCells_1291846841 = mulInt(gridW_1291846794, gridH_1291846799);
-    var workgroupSize_1291846842 = 128;
-    var particleWorkgroups_1291846843 = Math.ceil((particleCount_1291846779 / workgroupSize_1291846842));
-    var gridParamsData_1291846844 = new Uint32Array(8);
-    gridParamsData_1291846844[0] = gridW_1291846794;
-    gridParamsData_1291846844[1] = gridH_1291846799;
-    gridParamsData_1291846844[4] = particleCount_1291846779;
-    var gridParamsFloat_1291846845 = new Float32Array(gridParamsData_1291846844.buffer);
-    gridParamsFloat_1291846845[2] = width_1291846784;
-    gridParamsFloat_1291846845[3] = height_1291846789;
-    queue.writeBuffer(uniformBuffers["gridParams"], 0, gridParamsData_1291846844);
-    var numBlocksForScan_1291846846 = Math.ceil((numCells_1291846841 / 256.0));
-    var scanParamsData_1291846847 = new Uint32Array(4);
-    scanParamsData_1291846847[0] = numCells_1291846841;
-    scanParamsData_1291846847[1] = numBlocksForScan_1291846846;
-    queue.writeBuffer(uniformBuffers["scanParams"], 0, scanParamsData_1291846847);
-    var simParamsData_1291846848 = new Float32Array(48);
-    simParamsData_1291846848[0] = dt_1291846774;
-    simParamsData_1291846848[1] = width_1291846784;
-    simParamsData_1291846848[2] = height_1291846789;
-    simParamsData_1291846848[3] = rMax_1291846804;
-    simParamsData_1291846848[4] = fMul_1291846809;
-    var simParamsUint_1291846849 = new Uint32Array(simParamsData_1291846848.buffer);
-    simParamsUint_1291846849[5] = gridW_1291846794;
-    simParamsUint_1291846849[6] = gridH_1291846799;
-    simParamsData_1291846848[7] = mouseX_1291846819;
-    simParamsData_1291846848[8] = mouseY_1291846824;
+    var blastX_1291846839 = to__webgpu95compute_u1137(params_p0["blastX"]);
+    var blastY_1291846844 = to__webgpu95compute_u1137(params_p0["blastY"]);
+    var blastStrength_1291846849 = to__webgpu95compute_u1137(params_p0["blastStrength"]);
+    var parity_1291846854 = to__webgpu95compute_u298(params_p0["parity"]);
+    var matrix_1291846855 = params_p0["matrix"];
+    var numCells_1291846856 = mulInt(gridW_1291846794, gridH_1291846799);
+    var workgroupSize_1291846857 = 128;
+    var particleWorkgroups_1291846858 = Math.ceil((particleCount_1291846779 / workgroupSize_1291846857));
+    var gridParamsData_1291846859 = new Uint32Array(8);
+    gridParamsData_1291846859[0] = gridW_1291846794;
+    gridParamsData_1291846859[1] = gridH_1291846799;
+    gridParamsData_1291846859[4] = particleCount_1291846779;
+    var gridParamsFloat_1291846860 = new Float32Array(gridParamsData_1291846859.buffer);
+    gridParamsFloat_1291846860[2] = width_1291846784;
+    gridParamsFloat_1291846860[3] = height_1291846789;
+    queue.writeBuffer(uniformBuffers["gridParams"], 0, gridParamsData_1291846859);
+    var numBlocksForScan_1291846861 = Math.ceil((numCells_1291846856 / 256.0));
+    var scanParamsData_1291846862 = new Uint32Array(4);
+    scanParamsData_1291846862[0] = numCells_1291846856;
+    scanParamsData_1291846862[1] = numBlocksForScan_1291846861;
+    queue.writeBuffer(uniformBuffers["scanParams"], 0, scanParamsData_1291846862);
+    var simParamsData_1291846863 = new Float32Array(52);
+    simParamsData_1291846863[0] = dt_1291846774;
+    simParamsData_1291846863[1] = width_1291846784;
+    simParamsData_1291846863[2] = height_1291846789;
+    simParamsData_1291846863[3] = rMax_1291846804;
+    simParamsData_1291846863[4] = fMul_1291846809;
+    var simParamsUint_1291846864 = new Uint32Array(simParamsData_1291846863.buffer);
+    simParamsUint_1291846864[5] = gridW_1291846794;
+    simParamsUint_1291846864[6] = gridH_1291846799;
+    simParamsData_1291846863[7] = mouseX_1291846819;
+    simParamsData_1291846863[8] = mouseY_1291846824;
     if (!((mouseDown_1291846829 == 0))) {
     Temporary1 = 1.0;
     }
@@ -3135,7 +3152,7 @@ async function runPhysicsFrame(params_p0) {
     Temporary1 = 0.0;
     }
     
-    simParamsData_1291846848[9] = Temporary1;
+    simParamsData_1291846863[9] = Temporary1;
     if (!((mouseRightDown_1291846834 == 0))) {
     Temporary2 = 1.0;
     }
@@ -3143,74 +3160,78 @@ async function runPhysicsFrame(params_p0) {
     Temporary2 = 0.0;
     }
     
-    simParamsData_1291846848[10] = Temporary2;
-    simParamsUint_1291846849[11] = particleCount_1291846779;
+    simParamsData_1291846863[10] = Temporary2;
+    simParamsUint_1291846864[11] = particleCount_1291846779;
+    simParamsData_1291846863[12] = blastX_1291846839;
+    simParamsData_1291846863[13] = blastY_1291846844;
+    simParamsData_1291846863[14] = blastStrength_1291846849;
+    simParamsData_1291846863[15] = 0.0;
     Label3: {
-      var i_1291846854 = 0;
-      var i_1291847085 = 0;
+      var i_1291846869 = 0;
+      var i_1291847100 = 0;
       Label4: {
           Label5: while (true) {
-          if (!(i_1291847085 < 36)) break Label5;
-            i_1291846854 = i_1291847085;
-            simParamsData_1291846848[addInt(12, i_1291846854)] = to__webgpu95compute_u1137(matrix_1291846840[i_1291846854]);
-            i_1291847085 = addInt(i_1291847085, 1);
+          if (!(i_1291847100 < 36)) break Label5;
+            i_1291846869 = i_1291847100;
+            simParamsData_1291846863[addInt(16, i_1291846869)] = to__webgpu95compute_u1137(matrix_1291846855[i_1291846869]);
+            i_1291847100 = addInt(i_1291847100, 1);
           }
       };
     };
-    queue.writeBuffer(uniformBuffers["simParams"], 0, simParamsData_1291846848);
-    var integrationParamsData_1291846859 = new Float32Array(8);
-    integrationParamsData_1291846859[0] = width_1291846784;
-    integrationParamsData_1291846859[1] = height_1291846789;
-    integrationParamsData_1291846859[2] = friction_1291846814;
-    integrationParamsData_1291846859[3] = CONFIG.maxVelocity;
-    var integrationParamsUint_1291846860 = new Uint32Array(integrationParamsData_1291846859.buffer);
-    integrationParamsUint_1291846860[4] = particleCount_1291846779;
-    queue.writeBuffer(uniformBuffers["integrationParams"], 0, integrationParamsData_1291846859);
-    if (!((parity_1291846839 == cachedBindGroupParity_1291845663[0]))) {
-    (await createBindGroups(parity_1291846839, gridW_1291846794, gridH_1291846799));
-    cachedBindGroupParity_1291845663[0] = parity_1291846839;
+    queue.writeBuffer(uniformBuffers["simParams"], 0, simParamsData_1291846863);
+    var integrationParamsData_1291846874 = new Float32Array(8);
+    integrationParamsData_1291846874[0] = width_1291846784;
+    integrationParamsData_1291846874[1] = height_1291846789;
+    integrationParamsData_1291846874[2] = friction_1291846814;
+    integrationParamsData_1291846874[3] = CONFIG.maxVelocity;
+    var integrationParamsUint_1291846875 = new Uint32Array(integrationParamsData_1291846874.buffer);
+    integrationParamsUint_1291846875[4] = particleCount_1291846779;
+    queue.writeBuffer(uniformBuffers["integrationParams"], 0, integrationParamsData_1291846874);
+    if (!((parity_1291846854 == cachedBindGroupParity_1291845663[0]))) {
+    (await createBindGroups(parity_1291846854, gridW_1291846794, gridH_1291846799));
+    cachedBindGroupParity_1291845663[0] = parity_1291846854;
     }
     
-    var commandEncoder_1291846865 = device.createCommandEncoder({label: "Physics Frame Command Encoder"});
-    var gridCountBytes_1291846866 = mulInt(numCells_1291846841, 4);
-    commandEncoder_1291846865.clearBuffer(buffers.gridCounts, 0, gridCountBytes_1291846866);
-    var gridBuildPassDesc_1291846867 = ({});
-    gridBuildPassDesc_1291846867["label"] = ("Grid Build Compute Pass");
-    var gridBuildPass_1291846876 = commandEncoder_1291846865.beginComputePass(gridBuildPassDesc_1291846867);
-    gridBuildPass_1291846876.setPipeline(pipelines["binCount"]);
-    gridBuildPass_1291846876.setBindGroup(0, bindGroups["binCount"]);
-    gridBuildPass_1291846876.dispatchWorkgroups(particleWorkgroups_1291846843);
-    var prefixBlockSize_1291846877 = 256;
-    var numBlocks_1291846878 = Math.ceil((numCells_1291846841 / prefixBlockSize_1291846877));
-    gridBuildPass_1291846876.setPipeline(pipelines["prefixLocal"]);
-    gridBuildPass_1291846876.setBindGroup(0, bindGroups["prefixLocal"]);
-    gridBuildPass_1291846876.dispatchWorkgroups(numBlocks_1291846878);
-    gridBuildPass_1291846876.setPipeline(pipelines["prefixBlocks"]);
-    gridBuildPass_1291846876.setBindGroup(0, bindGroups["prefixBlocks"]);
-    gridBuildPass_1291846876.dispatchWorkgroups(1);
-    gridBuildPass_1291846876.setPipeline(pipelines["prefixFinal"]);
-    gridBuildPass_1291846876.setBindGroup(0, bindGroups["prefixFinal"]);
-    gridBuildPass_1291846876.dispatchWorkgroups(numBlocks_1291846878);
-    gridBuildPass_1291846876.end();
-    var fillPointerBytes_1291846879 = mulInt(numCells_1291846841, 4);
-    commandEncoder_1291846865.copyBufferToBuffer(buffers.gridOffsets, 0, buffers.fillPointers, 0, fillPointerBytes_1291846879);
-    var physicsPassDesc_1291846880 = ({});
-    physicsPassDesc_1291846880["label"] = ("Physics Compute Pass (AoS)");
-    var physicsPass_1291846889 = commandEncoder_1291846865.beginComputePass(physicsPassDesc_1291846880);
-    physicsPass_1291846889.setPipeline(pipelines["binScatter"]);
-    physicsPass_1291846889.setBindGroup(0, bindGroups["binScatter"]);
-    physicsPass_1291846889.dispatchWorkgroups(particleWorkgroups_1291846843);
-    physicsPass_1291846889.setPipeline(pipelines["forces"]);
-    physicsPass_1291846889.setBindGroup(0, bindGroups["forces"]);
-    physicsPass_1291846889.dispatchWorkgroups(particleWorkgroups_1291846843);
-    physicsPass_1291846889.setPipeline(pipelines["integrate"]);
-    physicsPass_1291846889.setBindGroup(0, bindGroups["integrate"]);
-    physicsPass_1291846889.dispatchWorkgroups(particleWorkgroups_1291846843);
-    physicsPass_1291846889.end();
-    var commandBuffer_1291846890 = commandEncoder_1291846865.finish();
-    var commandBufferArray_1291846891 = ([]);
-    (commandBufferArray_1291846891.push(commandBuffer_1291846890));
-    queue.submit(commandBufferArray_1291846891);
+    var commandEncoder_1291846880 = device.createCommandEncoder({label: "Physics Frame Command Encoder"});
+    var gridCountBytes_1291846881 = mulInt(numCells_1291846856, 4);
+    commandEncoder_1291846880.clearBuffer(buffers.gridCounts, 0, gridCountBytes_1291846881);
+    var gridBuildPassDesc_1291846882 = ({});
+    gridBuildPassDesc_1291846882["label"] = ("Grid Build Compute Pass");
+    var gridBuildPass_1291846891 = commandEncoder_1291846880.beginComputePass(gridBuildPassDesc_1291846882);
+    gridBuildPass_1291846891.setPipeline(pipelines["binCount"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["binCount"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(particleWorkgroups_1291846858);
+    var prefixBlockSize_1291846892 = 256;
+    var numBlocks_1291846893 = Math.ceil((numCells_1291846856 / prefixBlockSize_1291846892));
+    gridBuildPass_1291846891.setPipeline(pipelines["prefixLocal"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["prefixLocal"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(numBlocks_1291846893);
+    gridBuildPass_1291846891.setPipeline(pipelines["prefixBlocks"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["prefixBlocks"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(1);
+    gridBuildPass_1291846891.setPipeline(pipelines["prefixFinal"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["prefixFinal"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(numBlocks_1291846893);
+    gridBuildPass_1291846891.end();
+    var fillPointerBytes_1291846894 = mulInt(numCells_1291846856, 4);
+    commandEncoder_1291846880.copyBufferToBuffer(buffers.gridOffsets, 0, buffers.fillPointers, 0, fillPointerBytes_1291846894);
+    var physicsPassDesc_1291846895 = ({});
+    physicsPassDesc_1291846895["label"] = ("Physics Compute Pass (AoS)");
+    var physicsPass_1291846904 = commandEncoder_1291846880.beginComputePass(physicsPassDesc_1291846895);
+    physicsPass_1291846904.setPipeline(pipelines["binScatter"]);
+    physicsPass_1291846904.setBindGroup(0, bindGroups["binScatter"]);
+    physicsPass_1291846904.dispatchWorkgroups(particleWorkgroups_1291846858);
+    physicsPass_1291846904.setPipeline(pipelines["forces"]);
+    physicsPass_1291846904.setBindGroup(0, bindGroups["forces"]);
+    physicsPass_1291846904.dispatchWorkgroups(particleWorkgroups_1291846858);
+    physicsPass_1291846904.setPipeline(pipelines["integrate"]);
+    physicsPass_1291846904.setBindGroup(0, bindGroups["integrate"]);
+    physicsPass_1291846904.dispatchWorkgroups(particleWorkgroups_1291846858);
+    physicsPass_1291846904.end();
+    var commandBuffer_1291846905 = commandEncoder_1291846880.finish();
+    var commandBufferArray_1291846906 = ([]);
+    (commandBufferArray_1291846906.push(commandBuffer_1291846905));
+    queue.submit(commandBufferArray_1291846906);
     result_1291846762 = undefined;
     break BeforeRet;
   };
@@ -3219,49 +3240,49 @@ async function runPhysicsFrame(params_p0) {
 
 }
 async function uploadInitialData(particleCount_p0) {
-  var result_1291846946 = null;
+  var result_1291846961 = null;
 
   BeforeRet: {
     if (((device == null) || (queue == null))) {
     console.error([(("Cannot upload initial data: WebGPU device not initialized"))]);
-    var resultObj_1291846971 = ({});
-    resultObj_1291846971["success"] = (false);
-    resultObj_1291846971["error"] = ("Device not initialized");
-    result_1291846946 = resultObj_1291846971;
+    var resultObj_1291846986 = ({});
+    resultObj_1291846986["success"] = (false);
+    resultObj_1291846986["error"] = ("Device not initialized");
+    result_1291846961 = resultObj_1291846986;
     break BeforeRet;
     }
     
 ++excHandler;
     try {
-    var particleData_1291846991 = new Float32Array(mulInt(particleCount_p0, 8));
-    var particleDataUint_1291846992 = new Uint32Array(particleData_1291846991.buffer);
+    var particleData_1291847006 = new Float32Array(mulInt(particleCount_p0, 8));
+    var particleDataUint_1291847007 = new Uint32Array(particleData_1291847006.buffer);
     Label2: {
-      var i_1291846997 = 0;
-      var i_1291847088 = 0;
+      var i_1291847012 = 0;
+      var i_1291847103 = 0;
       Label3: {
           Label4: while (true) {
-          if (!(i_1291847088 < particleCount_p0)) break Label4;
-            i_1291846997 = i_1291847088;
-            var baseIdx_1291846998 = mulInt(i_1291846997, 8);
-            particleData_1291846991[addInt(baseIdx_1291846998, 0)] = particlesA[addInt(mulInt(i_1291846997, 8), 0)];
-            particleData_1291846991[addInt(baseIdx_1291846998, 1)] = particlesA[addInt(mulInt(i_1291846997, 8), 1)];
-            particleData_1291846991[addInt(baseIdx_1291846998, 2)] = particlesA[addInt(mulInt(i_1291846997, 8), 2)];
-            particleData_1291846991[addInt(baseIdx_1291846998, 3)] = particlesA[addInt(mulInt(i_1291846997, 8), 3)];
-            particleDataUint_1291846992[addInt(baseIdx_1291846998, 4)] = particlesA[addInt(mulInt(i_1291846997, 8), 4)];
-            particleData_1291846991[addInt(baseIdx_1291846998, 5)] = particlesA[addInt(mulInt(i_1291846997, 8), 5)];
-            particleDataUint_1291846992[addInt(baseIdx_1291846998, 6)] = 0;
-            particleDataUint_1291846992[addInt(baseIdx_1291846998, 7)] = 0;
-            i_1291847088 = addInt(i_1291847088, 1);
+          if (!(i_1291847103 < particleCount_p0)) break Label4;
+            i_1291847012 = i_1291847103;
+            var baseIdx_1291847013 = mulInt(i_1291847012, 8);
+            particleData_1291847006[addInt(baseIdx_1291847013, 0)] = particlesA[addInt(mulInt(i_1291847012, 8), 0)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 1)] = particlesA[addInt(mulInt(i_1291847012, 8), 1)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 2)] = particlesA[addInt(mulInt(i_1291847012, 8), 2)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 3)] = particlesA[addInt(mulInt(i_1291847012, 8), 3)];
+            particleDataUint_1291847007[addInt(baseIdx_1291847013, 4)] = particlesA[addInt(mulInt(i_1291847012, 8), 4)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 5)] = particlesA[addInt(mulInt(i_1291847012, 8), 5)];
+            particleDataUint_1291847007[addInt(baseIdx_1291847013, 6)] = 0;
+            particleDataUint_1291847007[addInt(baseIdx_1291847013, 7)] = 0;
+            i_1291847103 = addInt(i_1291847103, 1);
           }
       };
     };
-    var bytesTotal_1291847004 = mulInt(particleCount_p0, 32);
-    queue.writeBuffer(buffers.particlesA, 0, particleData_1291846991);
+    var bytesTotal_1291847019 = mulInt(particleCount_p0, 32);
+    queue.writeBuffer(buffers.particlesA, 0, particleData_1291847006);
     queue.writeBuffer(buffers.matrix, 0, matrix.buffer, matrix.byteOffset, matrix.byteLength);
-    console.log([((toJSStr(([85,112,108,111,97,100,101,100,32]).concat(HEX24__systemZdollars_u14(particleCount_p0),[32,112,97,114,116,105,99,108,101,115,32,116,111,32,71,80,85,32,40,65,111,83,44,32],HEX24__systemZdollars_u14(bytesTotal_1291847004),[32,98,121,116,101,115,41]))))]);
-    var resultObj_1291847014 = ({});
-    resultObj_1291847014["success"] = (true);
-    result_1291846946 = resultObj_1291847014;
+    console.log([((toJSStr(([85,112,108,111,97,100,101,100,32]).concat(HEX24__systemZdollars_u14(particleCount_p0),[32,112,97,114,116,105,99,108,101,115,32,116,111,32,71,80,85,32,40,65,111,83,44,32],HEX24__systemZdollars_u14(bytesTotal_1291847019),[32,98,121,116,101,115,41]))))]);
+    var resultObj_1291847029 = ({});
+    resultObj_1291847029["success"] = (true);
+    result_1291846961 = resultObj_1291847029;
     break BeforeRet;
 --excHandler;
 } catch (EXCEPTION) {
@@ -3269,12 +3290,12 @@ async function uploadInitialData(particleCount_p0) {
  lastJSError = EXCEPTION;
  --excHandler;
     if (lastJSError && (isObj(lastJSError.m_type, NTI33555173))) {
-    var e_1291847026 = getCurrentException();
-    console.error([((toJSStr(([70,97,105,108,101,100,32,116,111,32,117,112,108,111,97,100,32,105,110,105,116,105,97,108,32,100,97,116,97,58,32]).concat(e_1291847026.message))))]);
-    var resultObj_1291847036 = ({});
-    resultObj_1291847036["success"] = (false);
-    resultObj_1291847036["error"] = (toJSStr(e_1291847026.message));
-    result_1291846946 = resultObj_1291847036;
+    var e_1291847041 = getCurrentException();
+    console.error([((toJSStr(([70,97,105,108,101,100,32,116,111,32,117,112,108,111,97,100,32,105,110,105,116,105,97,108,32,100,97,116,97,58,32]).concat(e_1291847041.message))))]);
+    var resultObj_1291847051 = ({});
+    resultObj_1291847051["success"] = (false);
+    resultObj_1291847051["error"] = (toJSStr(e_1291847041.message));
+    result_1291846961 = resultObj_1291847051;
     break BeforeRet;
     }
     else {
@@ -3285,7 +3306,7 @@ async function uploadInitialData(particleCount_p0) {
     }
   };
 
-  return result_1291846946;
+  return result_1291846961;
 
 }
 var shaderModules = ({});
@@ -3338,11 +3359,11 @@ function initParticles() {
     var H_587202616 = WORLD_H;
     Label1: {
       var i_587202621 = 0;
-      var i_587203044 = 0;
+      var i_587203068 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_587203044 < particleCount)) break Label3;
-            i_587202621 = i_587203044;
+          if (!(i_587203068 < particleCount)) break Label3;
+            i_587202621 = i_587203068;
             var base_587202622 = mulInt(i_587202621, 8);
             particlesA[addInt(base_587202622, 0)] = (Math.random() * W_587202615);
             particlesA[addInt(base_587202622, 1)] = (Math.random() * H_587202616);
@@ -3350,26 +3371,26 @@ function initParticles() {
             particlesA[addInt(base_587202622, 3)] = ((Math.random() - 0.5) * 2.0);
             particlesA[addInt(base_587202622, 4)] = modInt(i_587202621, ns_587202614);
             particlesA[addInt(base_587202622, 5)] = 0.0;
-            i_587203044 = addInt(i_587203044, 1);
+            i_587203068 = addInt(i_587203068, 1);
           }
       };
     };
     Label4: {
       var i_587202628 = 0;
-      var colontmp__587203047 = 0;
-      colontmp__587203047 = subInt(particleCount, 1);
-      var res_587203049 = colontmp__587203047;
+      var colontmp__587203071 = 0;
+      colontmp__587203071 = subInt(particleCount, 1);
+      var res_587203073 = colontmp__587203071;
       Label5: {
           Label6: while (true) {
-          if (!(1 <= res_587203049)) break Label6;
-            i_587202628 = res_587203049;
+          if (!(1 <= res_587203073)) break Label6;
+            i_587202628 = res_587203073;
             var j_587202629 = ((Math.random() * addInt(i_587202628, 1))|0);
             var iBase_587202630 = addInt(mulInt(i_587202628, 8), 4);
             var jBase_587202631 = addInt(mulInt(j_587202629, 8), 4);
             var t_587202632 = particlesA[iBase_587202630];
             particlesA[iBase_587202630] = particlesA[jBase_587202631];
             particlesA[jBase_587202631] = t_587202632;
-            res_587203049 = subInt(res_587203049, 1);
+            res_587203073 = subInt(res_587203073, 1);
           }
       };
     };
@@ -3399,30 +3420,30 @@ function toHTMLCanvasElement__bindingsZdom95extensions_u92(el_p0) {
 }
 
 function updateBindGroup__webgpu95render_u46(parity_p0) {
-    var particles_1493173972 = buffers.particlesA;
-    var bindGroupDesc_1493173973 = ({});
-    bindGroupDesc_1493173973["label"] = (toJSStr(([82,101,110,100,101,114,32,66,105,110,100,32,71,114,111,117,112,32,65,111,83,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
-    bindGroupDesc_1493173973["layout"] = (renderPipeline_1493172240[0].getBindGroupLayout(0));
-    var entries_1493173990 = ([]);
-    var e0_1493173991 = ({});
-    e0_1493173991["binding"] = (0);
-    var r0_1493174000 = ({});
-    r0_1493174000["buffer"] = (particles_1493173972);
-    e0_1493173991["resource"] = r0_1493174000;
-    (entries_1493173990.push(e0_1493173991));
-    var e1_1493174014 = ({});
-    e1_1493174014["binding"] = (1);
-    var r1_1493174023 = ({});
-    r1_1493174023["buffer"] = (renderParamsBuffer_1493172246[0]);
-    e1_1493174014["resource"] = r1_1493174023;
-    (entries_1493173990.push(e1_1493174014));
-    bindGroupDesc_1493173973["entries"] = entries_1493173990;
-    renderBindGroup_1493172244[0] = device.createBindGroup(bindGroupDesc_1493173973);
-    var glowBindGroupDesc_1493174042 = ({});
-    glowBindGroupDesc_1493174042["label"] = (toJSStr(([71,108,111,119,32,66,105,110,100,32,71,114,111,117,112,32,65,111,83,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
-    glowBindGroupDesc_1493174042["layout"] = (glowPipeline_1493172241[0].getBindGroupLayout(0));
-    glowBindGroupDesc_1493174042["entries"] = entries_1493173990;
-    glowBindGroup_1493172245[0] = device.createBindGroup(glowBindGroupDesc_1493174042);
+    var particles_1493174068 = buffers.particlesA;
+    var bindGroupDesc_1493174069 = ({});
+    bindGroupDesc_1493174069["label"] = (toJSStr(([82,101,110,100,101,114,32,66,105,110,100,32,71,114,111,117,112,32,65,111,83,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
+    bindGroupDesc_1493174069["layout"] = (renderPipeline_1493172240[0].getBindGroupLayout(0));
+    var entries_1493174086 = ([]);
+    var e0_1493174087 = ({});
+    e0_1493174087["binding"] = (0);
+    var r0_1493174096 = ({});
+    r0_1493174096["buffer"] = (particles_1493174068);
+    e0_1493174087["resource"] = r0_1493174096;
+    (entries_1493174086.push(e0_1493174087));
+    var e1_1493174110 = ({});
+    e1_1493174110["binding"] = (1);
+    var r1_1493174119 = ({});
+    r1_1493174119["buffer"] = (renderParamsBuffer_1493172246[0]);
+    e1_1493174110["resource"] = r1_1493174119;
+    (entries_1493174086.push(e1_1493174110));
+    bindGroupDesc_1493174069["entries"] = entries_1493174086;
+    renderBindGroup_1493172244[0] = device.createBindGroup(bindGroupDesc_1493174069);
+    var glowBindGroupDesc_1493174138 = ({});
+    glowBindGroupDesc_1493174138["label"] = (toJSStr(([71,108,111,119,32,66,105,110,100,32,71,114,111,117,112,32,65,111,83,32,40,112,97,114,105,116,121,32]).concat(HEX24__systemZdollars_u14(parity_p0),[41])));
+    glowBindGroupDesc_1493174138["layout"] = (glowPipeline_1493172241[0].getBindGroupLayout(0));
+    glowBindGroupDesc_1493174138["entries"] = entries_1493174086;
+    glowBindGroup_1493172245[0] = device.createBindGroup(glowBindGroupDesc_1493174138);
     activeParity_1493172265[0] = parity_p0;
 
   
@@ -3462,7 +3483,7 @@ function initWebGPURender__webgpu95render_u48() {
     gpuContext_1493172239[0].configure(configObj_1493172283);
     var shaderDesc_1493172308 = ({});
     shaderDesc_1493172308["label"] = ("Particle Render Shader");
-    shaderDesc_1493172308["code"] = ("// =============================================================================\n// PARTICLE RENDER SHADER - WebGPU Vertex Pulling with AoS Layout\n// =============================================================================\n//\n// Based on lisyarus's approach:\n// https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n//\n// Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n// No instancing needed - just draw(6 * particleCount) vertices.\n//\n// AoS BENEFIT:\n// With AoS layout, we read all particle data (pos, vel, species, density) from\n// one Particle struct instead of 4 separate buffer reads. This reduces binding\n// count from 5 to 2 and improves cache locality.\n//\n// BINDING MANIFEST:\n// +-------+---------------------------+-----------------+--------+\n// | Bind  | Shader Type               | JS Buffer       | Access |\n// +-------+---------------------------+-----------------+--------+\n// |   0   | storage array<Particle>   | particles       | read   |\n// |   1   | uniform RenderParams      | renderParams    | read   |\n// +-------+---------------------------+-----------------+--------+\n// =============================================================================\n\n// AoS Particle struct: 32 bytes, cache-aligned\nstruct Particle {\n  pos: vec2<f32>,    // offset 0, size 8\n  vel: vec2<f32>,    // offset 8, size 8\n  species: u32,      // offset 16, size 4\n  density: f32,      // offset 20, size 4\n  _pad0: u32,        // offset 24, size 4\n  _pad1: u32,        // offset 28, size 4\n}\n\nstruct RenderParams {\n  resolution: vec2f,   // Canvas width, height in pixels\n  worldSize: vec2f,    // World width, height (physics domain)\n  baseSize: f32,       // Base particle size in pixels\n  padding0: f32,\n  padding1: f32,\n  padding2: f32,\n};\n\n// Species colors (matches WebGL renderer COLORS array)\nconst COLORS = array<vec3f, 6>(\n  vec3f(1.0, 0.4, 0.4),   // Species 0: Red\n  vec3f(0.4, 1.0, 0.4),   // Species 1: Green\n  vec3f(0.4, 0.7, 1.0),   // Species 2: Blue\n  vec3f(1.0, 1.0, 0.4),   // Species 3: Yellow\n  vec3f(1.0, 0.4, 1.0),   // Species 4: Magenta\n  vec3f(0.4, 1.0, 1.0),   // Species 5: Cyan\n);\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Density-based sizing: particles shrink smoothly in crowded areas\n// Uses exponential decay: sizeMod = MIN + (MAX-MIN) * exp(-density * DECAY_RATE)\n// This avoids the hard floor that causes visual \"snapping\"\n//\n// SIZE_DECAY_RATE calibration:\n// - Controls how quickly particles shrink as local density increases\n// - Half-neighbor iteration produces ~50% of full 9-cell density values\n// - Rate of 0.07 compensates: exp(-5 * 0.07) ~ 0.70 at \"half density\"\n// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)\n// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)\nconst SIZE_DECAY_RATE: f32 = 0.07;\nconst MIN_SIZE_MULTIPLIER: f32 = 0.75;     // Size multiplier at high density (floor)\nconst MAX_SIZE_MULTIPLIER: f32 = 2.0;      // Size multiplier at zero density (ceiling)\n\n// AoS particle buffer\n@group(0) @binding(0) var<storage, read> particles: array<Particle>;\n@group(0) @binding(1) var<uniform> params: RenderParams;\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n  @location(2) density: f32,       // Local particle density for glow effect\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from AoS buffer (all data in one read!)\n  let p = particles[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let cornerOffset = OFFSETS[cornerId];\n\n  // Calculate point size based on density using smooth exponential decay\n  // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3\n  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  // Scale point size by canvas/world ratio to maintain visual size\n  let scale = params.resolution / params.worldSize;\n  let halfSize = pointSize * 0.5;\n  let worldPos = p.pos + cornerOffset * halfSize / scale;\n\n  // Transform to clip space: world coords -> normalized device coords\n  // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)\n  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;\n\n  // Z-ordering: high density (small particles) = closer to camera (lower Z)\n  // Low density (large particles) = further back (higher Z)\n  // Position-based hash prevents Z-fighting between particles with similar density\n  let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);\n  let zDepth = 1.0 - clamp(p.density * 0.1 + posHash * 0.001, 0.0, 0.99);\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range\n  output.offset = cornerOffset;\n\n  // Pass density for glow intensity calculation\n  output.density = p.density;\n\n  // Look up species color\n  let speciesIdx = min(p.species, 5u);\n  output.color = vec4f(COLORS[speciesIdx], 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let dist = length(input.offset);\n\n  // Circle with soft edge (known working)\n  if (dist > 1.0) {\n    discard;\n  }\n\n  let alpha = 1.0 - smoothstep(0.9, 1.0, dist);\n  return vec4f(input.color.rgb, alpha);\n}\n");
+    shaderDesc_1493172308["code"] = ("// =============================================================================\n// PARTICLE RENDER SHADER - WebGPU Vertex Pulling with AoS Layout\n// =============================================================================\n//\n// Based on lisyarus's approach:\n// https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n//\n// Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n// No instancing needed - just draw(6 * particleCount) vertices.\n//\n// AoS BENEFIT:\n// With AoS layout, we read all particle data (pos, vel, species, density) from\n// one Particle struct instead of 4 separate buffer reads. This reduces binding\n// count from 5 to 2 and improves cache locality.\n//\n// BINDING MANIFEST:\n// +-------+---------------------------+-----------------+--------+\n// | Bind  | Shader Type               | JS Buffer       | Access |\n// +-------+---------------------------+-----------------+--------+\n// |   0   | storage array<Particle>   | particles       | read   |\n// |   1   | uniform RenderParams      | renderParams    | read   |\n// +-------+---------------------------+-----------------+--------+\n// =============================================================================\n\n// AoS Particle struct: 32 bytes, cache-aligned\nstruct Particle {\n  pos: vec2<f32>,    // offset 0, size 8\n  vel: vec2<f32>,    // offset 8, size 8\n  species: u32,      // offset 16, size 4\n  density: f32,      // offset 20, size 4\n  _pad0: u32,        // offset 24, size 4\n  _pad1: u32,        // offset 28, size 4\n}\n\nstruct RenderParams {\n  resolution: vec2f,   // Canvas width, height in pixels\n  worldSize: vec2f,    // World width, height (physics domain)\n  baseSize: f32,       // Base particle size in pixels\n  padding0: f32,\n  padding1: f32,\n  padding2: f32,\n};\n\n// Species colors (matches WebGL renderer COLORS array)\nconst COLORS = array<vec3f, 6>(\n  vec3f(1.0, 0.4, 0.4),   // Species 0: Red\n  vec3f(0.4, 1.0, 0.4),   // Species 1: Green\n  vec3f(0.4, 0.7, 1.0),   // Species 2: Blue\n  vec3f(1.0, 1.0, 0.4),   // Species 3: Yellow\n  vec3f(1.0, 0.4, 1.0),   // Species 4: Magenta\n  vec3f(0.4, 1.0, 1.0),   // Species 5: Cyan\n);\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Density-based sizing: particles shrink smoothly in crowded areas\n// Uses exponential decay: sizeMod = MIN + (MAX-MIN) * exp(-density * DECAY_RATE)\n// This avoids the hard floor that causes visual \"snapping\"\n//\n// SIZE_DECAY_RATE calibration:\n// - Controls how quickly particles shrink as local density increases\n// - Half-neighbor iteration produces ~50% of full 9-cell density values\n// - Rate of 0.07 compensates: exp(-5 * 0.07) ~ 0.70 at \"half density\"\n// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)\n// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)\nconst SIZE_DECAY_RATE: f32 = 0.07;\nconst MIN_SIZE_MULTIPLIER: f32 = 0.625;    // Size multiplier at high density (floor)\nconst MAX_SIZE_MULTIPLIER: f32 = 1.415;    // Size multiplier at zero density (ceiling)\n\n// AoS particle buffer\n@group(0) @binding(0) var<storage, read> particles: array<Particle>;\n@group(0) @binding(1) var<uniform> params: RenderParams;\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n  @location(2) density: f32,       // Local particle density for glow effect\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from AoS buffer (all data in one read!)\n  let p = particles[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let cornerOffset = OFFSETS[cornerId];\n\n  // Calculate point size based on density using smooth exponential decay\n  // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3\n  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  // Scale point size by canvas/world ratio to maintain visual size\n  let scale = params.resolution / params.worldSize;\n  let halfSize = pointSize * 0.5;\n  let worldPos = p.pos + cornerOffset * halfSize / scale;\n\n  // Transform to clip space: world coords -> normalized device coords\n  // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)\n  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;\n\n  // Z-ordering: high density (small particles) = closer to camera (lower Z)\n  // Low density (large particles) = further back (higher Z)\n  // Position-based hash prevents Z-fighting between particles with similar density\n  let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);\n  let zDepth = 1.0 - clamp(p.density * 0.1 + posHash * 0.001, 0.0, 0.99);\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range\n  output.offset = cornerOffset;\n\n  // Pass density for glow intensity calculation\n  output.density = p.density;\n\n  // Look up species color\n  let speciesIdx = min(p.species, 5u);\n  output.color = vec4f(COLORS[speciesIdx], 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let dist = length(input.offset);\n\n  // Circle with soft edge (known working)\n  if (dist > 1.0) {\n    discard;\n  }\n\n  let alpha = 1.0 - smoothstep(0.9, 1.0, dist);\n  return vec4f(input.color.rgb, alpha);\n}\n");
     var shaderModule_1493172325 = device.createShaderModule(shaderDesc_1493172308);
     var paramsSize_1493172326 = 32;
     var paramsDesc_1493172327 = ({});
@@ -3588,7 +3609,7 @@ function initWebGPURender__webgpu95render_u48() {
     fadeParamsBuffer_1493172247[0] = device.createBuffer(fadeParamsDesc_1493172877);
     var fadeShaderDesc_1493172902 = ({});
     fadeShaderDesc_1493172902["label"] = ("Fade Overlay Shader");
-    fadeShaderDesc_1493172902["code"] = ("struct FadeParams {\n  fadeAmount: f32,  // 0.0 = no fade (keep previous), 1.0 = instant clear\n  pad0: f32,\n  pad1: f32,\n  pad2: f32,\n};\n\n@group(0) @binding(0) var prevFrame: texture_2d<f32>;\n@group(0) @binding(1) var prevSampler: sampler;\n@group(0) @binding(2) var<uniform> params: FadeParams;\n\n// Fullscreen triangle (3 vertices cover entire screen)\nconst POSITIONS = array<vec2f, 3>(\n  vec2f(-1.0, -1.0),\n  vec2f( 3.0, -1.0),\n  vec2f(-1.0,  3.0),\n);\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) uv: vec2f,\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n  output.position = vec4f(POSITIONS[id], 0.0, 1.0);\n  // Convert clip space (-1 to 1) to UV space (0 to 1)\n  output.uv = (POSITIONS[id] + 1.0) * 0.5;\n  output.uv.y = 1.0 - output.uv.y;  // Flip Y for texture coordinates\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let prev = textureSample(prevFrame, prevSampler, input.uv);\n\n  // Fade toward background color\n  // Higher fadeAmount = MORE of previous frame = LONGER trails\n  let bg = vec4f(0.04, 0.04, 0.06, 1.0);\n  return mix(bg, prev, params.fadeAmount);\n}\n");
+    fadeShaderDesc_1493172902["code"] = ("struct FadeParams {\n  fadeAmount: f32,  // 0.0 = no fade (keep previous), 1.0 = instant clear\n  pad0: f32,\n  pad1: f32,\n  pad2: f32,\n};\n\n@group(0) @binding(0) var prevFrame: texture_2d<f32>;\n@group(0) @binding(1) var prevSampler: sampler;\n@group(0) @binding(2) var<uniform> params: FadeParams;\n\n// Fullscreen triangle (3 vertices cover entire screen)\nconst POSITIONS = array<vec2f, 3>(\n  vec2f(-1.0, -1.0),\n  vec2f( 3.0, -1.0),\n  vec2f(-1.0,  3.0),\n);\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) uv: vec2f,\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n  output.position = vec4f(POSITIONS[id], 0.0, 1.0);\n  // Convert clip space (-1 to 1) to UV space (0 to 1)\n  output.uv = (POSITIONS[id] + 1.0) * 0.5;\n  output.uv.y = 1.0 - output.uv.y;  // Flip Y for texture coordinates\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let prev = textureSample(prevFrame, prevSampler, input.uv);\n\n  // Fade toward transparent (glow shows through from present pass)\n  // Higher fadeAmount = MORE of previous frame = LONGER trails\n  // RGB fades toward background tint, alpha fades toward 0\n  let bgRgb = vec3f(0.04, 0.04, 0.06);\n  let fadedRgb = mix(bgRgb, prev.rgb, params.fadeAmount);\n  let fadedAlpha = prev.a * params.fadeAmount;\n  return vec4f(fadedRgb, fadedAlpha);\n}\n");
     var fadeShaderModule_1493172919 = device.createShaderModule(fadeShaderDesc_1493172902);
     var fadeLayoutDesc_1493172920 = ({});
     fadeLayoutDesc_1493172920["label"] = ("Fade Bind Group Layout");
@@ -3688,141 +3709,158 @@ function initWebGPURender__webgpu95render_u48() {
     var blitTargets_1493173323 = ([]);
     var blitTarget0_1493173324 = ({});
     blitTarget0_1493173324["format"] = (canvasFormat_1493172262[0]);
+    var blitBlend_1493173333 = ({});
+    var blitColorBlend_1493173334 = ({});
+    blitColorBlend_1493173334["srcFactor"] = ("src-alpha");
+    blitColorBlend_1493173334["dstFactor"] = ("one-minus-src-alpha");
+    blitColorBlend_1493173334["operation"] = ("add");
+    blitBlend_1493173333["color"] = blitColorBlend_1493173334;
+    var blitAlphaBlend_1493173364 = ({});
+    blitAlphaBlend_1493173364["srcFactor"] = ("one");
+    blitAlphaBlend_1493173364["dstFactor"] = ("one-minus-src-alpha");
+    blitAlphaBlend_1493173364["operation"] = ("add");
+    blitBlend_1493173333["alpha"] = blitAlphaBlend_1493173364;
+    blitTarget0_1493173324["blend"] = blitBlend_1493173333;
     (blitTargets_1493173323.push(blitTarget0_1493173324));
     blitFragmentStage_1493173306["targets"] = blitTargets_1493173323;
     blitPipelineDesc_1493173267["fragment"] = blitFragmentStage_1493173306;
-    var blitPrimitive_1493173343 = ({});
-    blitPrimitive_1493173343["topology"] = ("triangle-list");
-    blitPrimitive_1493173343["cullMode"] = ("none");
-    blitPipelineDesc_1493173267["primitive"] = blitPrimitive_1493173343;
+    var blitPrimitive_1493173409 = ({});
+    blitPrimitive_1493173409["topology"] = ("triangle-list");
+    blitPrimitive_1493173409["cullMode"] = ("none");
+    blitPipelineDesc_1493173267["primitive"] = blitPrimitive_1493173409;
+    var blitDepthStencil_1493173431 = ({});
+    blitDepthStencil_1493173431["format"] = ("depth24plus");
+    blitDepthStencil_1493173431["depthWriteEnabled"] = (false);
+    blitDepthStencil_1493173431["depthCompare"] = ("always");
+    blitPipelineDesc_1493173267["depthStencil"] = blitDepthStencil_1493173431;
     blitPipeline_1493172243[0] = device.createRenderPipeline(blitPipelineDesc_1493173267);
-    var trailTextureDesc_1493173365 = ({});
-    var trailSize_1493173366 = ([]);
-    (trailSize_1493173366.push((canvas_1493172238[0].width)));
-    (trailSize_1493173366.push((canvas_1493172238[0].height)));
-    trailTextureDesc_1493173365["size"] = trailSize_1493173366;
-    trailTextureDesc_1493173365["format"] = (canvasFormat_1493172262[0]);
-    trailTextureDesc_1493173365["usage"] = ((GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING));
-    trailTextureDesc_1493173365["label"] = ("Trail Texture A");
-    trailTextureA_1493172250[0] = device.createTexture(trailTextureDesc_1493173365);
-    trailTextureDesc_1493173365["label"] = ("Trail Texture B");
-    trailTextureB_1493172251[0] = device.createTexture(trailTextureDesc_1493173365);
+    var trailTextureDesc_1493173461 = ({});
+    var trailSize_1493173462 = ([]);
+    (trailSize_1493173462.push((canvas_1493172238[0].width)));
+    (trailSize_1493173462.push((canvas_1493172238[0].height)));
+    trailTextureDesc_1493173461["size"] = trailSize_1493173462;
+    trailTextureDesc_1493173461["format"] = (canvasFormat_1493172262[0]);
+    trailTextureDesc_1493173461["usage"] = ((GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING));
+    trailTextureDesc_1493173461["label"] = ("Trail Texture A");
+    trailTextureA_1493172250[0] = device.createTexture(trailTextureDesc_1493173461);
+    trailTextureDesc_1493173461["label"] = ("Trail Texture B");
+    trailTextureB_1493172251[0] = device.createTexture(trailTextureDesc_1493173461);
     trailViewA_1493172252[0] = trailTextureA_1493172250[0].createView();
     trailViewB_1493172253[0] = trailTextureB_1493172251[0].createView();
-    var depthTextureDesc_1493173410 = ({});
-    var depthSize_1493173411 = ([]);
-    (depthSize_1493173411.push((canvas_1493172238[0].width)));
-    (depthSize_1493173411.push((canvas_1493172238[0].height)));
-    depthTextureDesc_1493173410["size"] = depthSize_1493173411;
-    depthTextureDesc_1493173410["format"] = ("depth24plus");
-    depthTextureDesc_1493173410["usage"] = (GPUTextureUsage.RENDER_ATTACHMENT);
-    depthTextureDesc_1493173410["label"] = ("Depth Texture");
-    depthTexture_1493172260[0] = device.createTexture(depthTextureDesc_1493173410);
+    var depthTextureDesc_1493173506 = ({});
+    var depthSize_1493173507 = ([]);
+    (depthSize_1493173507.push((canvas_1493172238[0].width)));
+    (depthSize_1493173507.push((canvas_1493172238[0].height)));
+    depthTextureDesc_1493173506["size"] = depthSize_1493173507;
+    depthTextureDesc_1493173506["format"] = ("depth24plus");
+    depthTextureDesc_1493173506["usage"] = (GPUTextureUsage.RENDER_ATTACHMENT);
+    depthTextureDesc_1493173506["label"] = ("Depth Texture");
+    depthTexture_1493172260[0] = device.createTexture(depthTextureDesc_1493173506);
     depthTextureView_1493172261[0] = depthTexture_1493172260[0].createView();
-    var initEncoderDesc_1493173447 = ({});
-    initEncoderDesc_1493173447["label"] = ("Trail Texture Init");
-    var initEncoder_1493173456 = device.createCommandEncoder(initEncoderDesc_1493173447);
-    var bgColor_1493173457 = ({});
-    bgColor_1493173457["r"] = (0.04);
-    bgColor_1493173457["g"] = (0.04);
-    bgColor_1493173457["b"] = (0.06);
-    bgColor_1493173457["a"] = (1.0);
-    var clearPassDescA_1493173490 = ({});
-    clearPassDescA_1493173490["label"] = ("Clear Trail Texture A");
-    var attachmentsA_1493173499 = ([]);
-    var attachmentA_1493173500 = ({});
-    attachmentA_1493173500["view"] = (trailViewA_1493172252[0]);
-    attachmentA_1493173500["loadOp"] = ("clear");
-    attachmentA_1493173500["clearValue"] = bgColor_1493173457;
-    attachmentA_1493173500["storeOp"] = ("store");
-    (attachmentsA_1493173499.push(attachmentA_1493173500));
-    clearPassDescA_1493173490["colorAttachments"] = attachmentsA_1493173499;
-    var clearPassA_1493173535 = initEncoder_1493173456.beginRenderPass(clearPassDescA_1493173490);
-    clearPassA_1493173535.end();
-    var clearPassDescB_1493173536 = ({});
-    clearPassDescB_1493173536["label"] = ("Clear Trail Texture B");
-    var attachmentsB_1493173545 = ([]);
-    var attachmentB_1493173546 = ({});
-    attachmentB_1493173546["view"] = (trailViewB_1493172253[0]);
-    attachmentB_1493173546["loadOp"] = ("clear");
-    attachmentB_1493173546["clearValue"] = bgColor_1493173457;
-    attachmentB_1493173546["storeOp"] = ("store");
-    (attachmentsB_1493173545.push(attachmentB_1493173546));
-    clearPassDescB_1493173536["colorAttachments"] = attachmentsB_1493173545;
-    var clearPassB_1493173581 = initEncoder_1493173456.beginRenderPass(clearPassDescB_1493173536);
-    clearPassB_1493173581.end();
-    var initCommandBuffer_1493173582 = initEncoder_1493173456.finish();
-    var initCommandArray_1493173583 = ([]);
-    (initCommandArray_1493173583.push(initCommandBuffer_1493173582));
-    queue.submit(initCommandArray_1493173583);
-    var blitBGA_1493173584 = ({});
-    blitBGA_1493173584["label"] = ("Blit Bind Group A");
-    blitBGA_1493173584["layout"] = (blitBindGroupLayout_1493172264[0]);
-    var blitEntriesA_1493173601 = ([]);
-    var blitBGAE0_1493173602 = ({});
-    blitBGAE0_1493173602["binding"] = (0);
-    blitBGAE0_1493173602["resource"] = (trailViewA_1493172252[0]);
-    (blitEntriesA_1493173601.push(blitBGAE0_1493173602));
-    var blitBGAE1_1493173619 = ({});
-    blitBGAE1_1493173619["binding"] = (1);
-    blitBGAE1_1493173619["resource"] = (linearSampler_1493172259[0]);
-    (blitEntriesA_1493173601.push(blitBGAE1_1493173619));
-    blitBGA_1493173584["entries"] = blitEntriesA_1493173601;
-    blitBindGroupA_1493172255[0] = device.createBindGroup(blitBGA_1493173584);
-    var blitBGB_1493173641 = ({});
-    blitBGB_1493173641["label"] = ("Blit Bind Group B");
-    blitBGB_1493173641["layout"] = (blitBindGroupLayout_1493172264[0]);
-    var blitEntriesB_1493173658 = ([]);
-    var blitBGBE0_1493173659 = ({});
-    blitBGBE0_1493173659["binding"] = (0);
-    blitBGBE0_1493173659["resource"] = (trailViewB_1493172253[0]);
-    (blitEntriesB_1493173658.push(blitBGBE0_1493173659));
-    var blitBGBE1_1493173676 = ({});
-    blitBGBE1_1493173676["binding"] = (1);
-    blitBGBE1_1493173676["resource"] = (linearSampler_1493172259[0]);
-    (blitEntriesB_1493173658.push(blitBGBE1_1493173676));
-    blitBGB_1493173641["entries"] = blitEntriesB_1493173658;
-    blitBindGroupB_1493172256[0] = device.createBindGroup(blitBGB_1493173641);
-    var fadeBGA_1493173698 = ({});
-    fadeBGA_1493173698["label"] = ("Fade Bind Group Read A");
-    fadeBGA_1493173698["layout"] = (fadeBindGroupLayout_1493172263[0]);
-    var fadeEntriesA_1493173715 = ([]);
-    var fadeBGAE0_1493173716 = ({});
-    fadeBGAE0_1493173716["binding"] = (0);
-    fadeBGAE0_1493173716["resource"] = (trailViewA_1493172252[0]);
-    (fadeEntriesA_1493173715.push(fadeBGAE0_1493173716));
-    var fadeBGAE1_1493173733 = ({});
-    fadeBGAE1_1493173733["binding"] = (1);
-    fadeBGAE1_1493173733["resource"] = (linearSampler_1493172259[0]);
-    (fadeEntriesA_1493173715.push(fadeBGAE1_1493173733));
-    var fadeBGAE2_1493173750 = ({});
-    fadeBGAE2_1493173750["binding"] = (2);
-    var fadeBGAR2_1493173759 = ({});
-    fadeBGAR2_1493173759["buffer"] = (fadeParamsBuffer_1493172247[0]);
-    fadeBGAE2_1493173750["resource"] = fadeBGAR2_1493173759;
-    (fadeEntriesA_1493173715.push(fadeBGAE2_1493173750));
-    fadeBGA_1493173698["entries"] = fadeEntriesA_1493173715;
-    fadeBindGroupReadA_1493172257[0] = device.createBindGroup(fadeBGA_1493173698);
-    var fadeBGB_1493173778 = ({});
-    fadeBGB_1493173778["label"] = ("Fade Bind Group Read B");
-    fadeBGB_1493173778["layout"] = (fadeBindGroupLayout_1493172263[0]);
-    var fadeEntriesB_1493173795 = ([]);
-    var fadeBGBE0_1493173796 = ({});
-    fadeBGBE0_1493173796["binding"] = (0);
-    fadeBGBE0_1493173796["resource"] = (trailViewB_1493172253[0]);
-    (fadeEntriesB_1493173795.push(fadeBGBE0_1493173796));
-    var fadeBGBE1_1493173813 = ({});
-    fadeBGBE1_1493173813["binding"] = (1);
-    fadeBGBE1_1493173813["resource"] = (linearSampler_1493172259[0]);
-    (fadeEntriesB_1493173795.push(fadeBGBE1_1493173813));
-    var fadeBGBE2_1493173830 = ({});
-    fadeBGBE2_1493173830["binding"] = (2);
-    var fadeBGBR2_1493173839 = ({});
-    fadeBGBR2_1493173839["buffer"] = (fadeParamsBuffer_1493172247[0]);
-    fadeBGBE2_1493173830["resource"] = fadeBGBR2_1493173839;
-    (fadeEntriesB_1493173795.push(fadeBGBE2_1493173830));
-    fadeBGB_1493173778["entries"] = fadeEntriesB_1493173795;
-    fadeBindGroupReadB_1493172258[0] = device.createBindGroup(fadeBGB_1493173778);
+    var initEncoderDesc_1493173543 = ({});
+    initEncoderDesc_1493173543["label"] = ("Trail Texture Init");
+    var initEncoder_1493173552 = device.createCommandEncoder(initEncoderDesc_1493173543);
+    var bgColor_1493173553 = ({});
+    bgColor_1493173553["r"] = (0.0);
+    bgColor_1493173553["g"] = (0.0);
+    bgColor_1493173553["b"] = (0.0);
+    bgColor_1493173553["a"] = (0.0);
+    var clearPassDescA_1493173586 = ({});
+    clearPassDescA_1493173586["label"] = ("Clear Trail Texture A");
+    var attachmentsA_1493173595 = ([]);
+    var attachmentA_1493173596 = ({});
+    attachmentA_1493173596["view"] = (trailViewA_1493172252[0]);
+    attachmentA_1493173596["loadOp"] = ("clear");
+    attachmentA_1493173596["clearValue"] = bgColor_1493173553;
+    attachmentA_1493173596["storeOp"] = ("store");
+    (attachmentsA_1493173595.push(attachmentA_1493173596));
+    clearPassDescA_1493173586["colorAttachments"] = attachmentsA_1493173595;
+    var clearPassA_1493173631 = initEncoder_1493173552.beginRenderPass(clearPassDescA_1493173586);
+    clearPassA_1493173631.end();
+    var clearPassDescB_1493173632 = ({});
+    clearPassDescB_1493173632["label"] = ("Clear Trail Texture B");
+    var attachmentsB_1493173641 = ([]);
+    var attachmentB_1493173642 = ({});
+    attachmentB_1493173642["view"] = (trailViewB_1493172253[0]);
+    attachmentB_1493173642["loadOp"] = ("clear");
+    attachmentB_1493173642["clearValue"] = bgColor_1493173553;
+    attachmentB_1493173642["storeOp"] = ("store");
+    (attachmentsB_1493173641.push(attachmentB_1493173642));
+    clearPassDescB_1493173632["colorAttachments"] = attachmentsB_1493173641;
+    var clearPassB_1493173677 = initEncoder_1493173552.beginRenderPass(clearPassDescB_1493173632);
+    clearPassB_1493173677.end();
+    var initCommandBuffer_1493173678 = initEncoder_1493173552.finish();
+    var initCommandArray_1493173679 = ([]);
+    (initCommandArray_1493173679.push(initCommandBuffer_1493173678));
+    queue.submit(initCommandArray_1493173679);
+    var blitBGA_1493173680 = ({});
+    blitBGA_1493173680["label"] = ("Blit Bind Group A");
+    blitBGA_1493173680["layout"] = (blitBindGroupLayout_1493172264[0]);
+    var blitEntriesA_1493173697 = ([]);
+    var blitBGAE0_1493173698 = ({});
+    blitBGAE0_1493173698["binding"] = (0);
+    blitBGAE0_1493173698["resource"] = (trailViewA_1493172252[0]);
+    (blitEntriesA_1493173697.push(blitBGAE0_1493173698));
+    var blitBGAE1_1493173715 = ({});
+    blitBGAE1_1493173715["binding"] = (1);
+    blitBGAE1_1493173715["resource"] = (linearSampler_1493172259[0]);
+    (blitEntriesA_1493173697.push(blitBGAE1_1493173715));
+    blitBGA_1493173680["entries"] = blitEntriesA_1493173697;
+    blitBindGroupA_1493172255[0] = device.createBindGroup(blitBGA_1493173680);
+    var blitBGB_1493173737 = ({});
+    blitBGB_1493173737["label"] = ("Blit Bind Group B");
+    blitBGB_1493173737["layout"] = (blitBindGroupLayout_1493172264[0]);
+    var blitEntriesB_1493173754 = ([]);
+    var blitBGBE0_1493173755 = ({});
+    blitBGBE0_1493173755["binding"] = (0);
+    blitBGBE0_1493173755["resource"] = (trailViewB_1493172253[0]);
+    (blitEntriesB_1493173754.push(blitBGBE0_1493173755));
+    var blitBGBE1_1493173772 = ({});
+    blitBGBE1_1493173772["binding"] = (1);
+    blitBGBE1_1493173772["resource"] = (linearSampler_1493172259[0]);
+    (blitEntriesB_1493173754.push(blitBGBE1_1493173772));
+    blitBGB_1493173737["entries"] = blitEntriesB_1493173754;
+    blitBindGroupB_1493172256[0] = device.createBindGroup(blitBGB_1493173737);
+    var fadeBGA_1493173794 = ({});
+    fadeBGA_1493173794["label"] = ("Fade Bind Group Read A");
+    fadeBGA_1493173794["layout"] = (fadeBindGroupLayout_1493172263[0]);
+    var fadeEntriesA_1493173811 = ([]);
+    var fadeBGAE0_1493173812 = ({});
+    fadeBGAE0_1493173812["binding"] = (0);
+    fadeBGAE0_1493173812["resource"] = (trailViewA_1493172252[0]);
+    (fadeEntriesA_1493173811.push(fadeBGAE0_1493173812));
+    var fadeBGAE1_1493173829 = ({});
+    fadeBGAE1_1493173829["binding"] = (1);
+    fadeBGAE1_1493173829["resource"] = (linearSampler_1493172259[0]);
+    (fadeEntriesA_1493173811.push(fadeBGAE1_1493173829));
+    var fadeBGAE2_1493173846 = ({});
+    fadeBGAE2_1493173846["binding"] = (2);
+    var fadeBGAR2_1493173855 = ({});
+    fadeBGAR2_1493173855["buffer"] = (fadeParamsBuffer_1493172247[0]);
+    fadeBGAE2_1493173846["resource"] = fadeBGAR2_1493173855;
+    (fadeEntriesA_1493173811.push(fadeBGAE2_1493173846));
+    fadeBGA_1493173794["entries"] = fadeEntriesA_1493173811;
+    fadeBindGroupReadA_1493172257[0] = device.createBindGroup(fadeBGA_1493173794);
+    var fadeBGB_1493173874 = ({});
+    fadeBGB_1493173874["label"] = ("Fade Bind Group Read B");
+    fadeBGB_1493173874["layout"] = (fadeBindGroupLayout_1493172263[0]);
+    var fadeEntriesB_1493173891 = ([]);
+    var fadeBGBE0_1493173892 = ({});
+    fadeBGBE0_1493173892["binding"] = (0);
+    fadeBGBE0_1493173892["resource"] = (trailViewB_1493172253[0]);
+    (fadeEntriesB_1493173891.push(fadeBGBE0_1493173892));
+    var fadeBGBE1_1493173909 = ({});
+    fadeBGBE1_1493173909["binding"] = (1);
+    fadeBGBE1_1493173909["resource"] = (linearSampler_1493172259[0]);
+    (fadeEntriesB_1493173891.push(fadeBGBE1_1493173909));
+    var fadeBGBE2_1493173926 = ({});
+    fadeBGBE2_1493173926["binding"] = (2);
+    var fadeBGBR2_1493173935 = ({});
+    fadeBGBR2_1493173935["buffer"] = (fadeParamsBuffer_1493172247[0]);
+    fadeBGBE2_1493173926["resource"] = fadeBGBR2_1493173935;
+    (fadeEntriesB_1493173891.push(fadeBGBE2_1493173926));
+    fadeBGB_1493173874["entries"] = fadeEntriesB_1493173891;
+    fadeBindGroupReadB_1493172258[0] = device.createBindGroup(fadeBGB_1493173874);
     updateBindGroup__webgpu95render_u46(0);
     isInitialized_1493172249[0] = true;
     console.log('WebGPU render pipeline initialized with glow and trails');
@@ -3834,7 +3872,7 @@ function initWebGPURender__webgpu95render_u48() {
 
 }
 
-function recreateTrailTextures__webgpu95render_u2058() {
+function recreateTrailTextures__webgpu95render_u2225() {
     if (!((trailTextureA_1493172250[0] == null))) {
     trailTextureA_1493172250[0].destroy();
     }
@@ -3847,143 +3885,143 @@ function recreateTrailTextures__webgpu95render_u2058() {
     depthTexture_1493172260[0].destroy();
     }
     
-    var trailTextureDesc_1493174292 = ({});
-    var trailSize_1493174293 = ([]);
-    (trailSize_1493174293.push((canvas_1493172238[0].width)));
-    (trailSize_1493174293.push((canvas_1493172238[0].height)));
-    trailTextureDesc_1493174292["size"] = trailSize_1493174293;
-    trailTextureDesc_1493174292["format"] = (canvasFormat_1493172262[0]);
-    trailTextureDesc_1493174292["usage"] = ((GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING));
-    trailTextureDesc_1493174292["label"] = ("Trail Texture A");
-    trailTextureA_1493172250[0] = device.createTexture(trailTextureDesc_1493174292);
-    trailTextureDesc_1493174292["label"] = ("Trail Texture B");
-    trailTextureB_1493172251[0] = device.createTexture(trailTextureDesc_1493174292);
+    var trailTextureDesc_1493174459 = ({});
+    var trailSize_1493174460 = ([]);
+    (trailSize_1493174460.push((canvas_1493172238[0].width)));
+    (trailSize_1493174460.push((canvas_1493172238[0].height)));
+    trailTextureDesc_1493174459["size"] = trailSize_1493174460;
+    trailTextureDesc_1493174459["format"] = (canvasFormat_1493172262[0]);
+    trailTextureDesc_1493174459["usage"] = ((GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING));
+    trailTextureDesc_1493174459["label"] = ("Trail Texture A");
+    trailTextureA_1493172250[0] = device.createTexture(trailTextureDesc_1493174459);
+    trailTextureDesc_1493174459["label"] = ("Trail Texture B");
+    trailTextureB_1493172251[0] = device.createTexture(trailTextureDesc_1493174459);
     trailViewA_1493172252[0] = trailTextureA_1493172250[0].createView();
     trailViewB_1493172253[0] = trailTextureB_1493172251[0].createView();
-    var depthTextureDesc_1493174337 = ({});
-    var depthSize_1493174338 = ([]);
-    (depthSize_1493174338.push((canvas_1493172238[0].width)));
-    (depthSize_1493174338.push((canvas_1493172238[0].height)));
-    depthTextureDesc_1493174337["size"] = depthSize_1493174338;
-    depthTextureDesc_1493174337["format"] = ("depth24plus");
-    depthTextureDesc_1493174337["usage"] = (GPUTextureUsage.RENDER_ATTACHMENT);
-    depthTextureDesc_1493174337["label"] = ("Depth Texture");
-    depthTexture_1493172260[0] = device.createTexture(depthTextureDesc_1493174337);
+    var depthTextureDesc_1493174504 = ({});
+    var depthSize_1493174505 = ([]);
+    (depthSize_1493174505.push((canvas_1493172238[0].width)));
+    (depthSize_1493174505.push((canvas_1493172238[0].height)));
+    depthTextureDesc_1493174504["size"] = depthSize_1493174505;
+    depthTextureDesc_1493174504["format"] = ("depth24plus");
+    depthTextureDesc_1493174504["usage"] = (GPUTextureUsage.RENDER_ATTACHMENT);
+    depthTextureDesc_1493174504["label"] = ("Depth Texture");
+    depthTexture_1493172260[0] = device.createTexture(depthTextureDesc_1493174504);
     depthTextureView_1493172261[0] = depthTexture_1493172260[0].createView();
-    var clearEncoderDesc_1493174374 = ({});
-    clearEncoderDesc_1493174374["label"] = ("Trail Texture Clear (resize)");
-    var clearEncoder_1493174383 = device.createCommandEncoder(clearEncoderDesc_1493174374);
-    var bgColorResize_1493174384 = ({});
-    bgColorResize_1493174384["r"] = (0.04);
-    bgColorResize_1493174384["g"] = (0.04);
-    bgColorResize_1493174384["b"] = (0.06);
-    bgColorResize_1493174384["a"] = (1.0);
-    var clearDescA_1493174417 = ({});
-    clearDescA_1493174417["label"] = ("Clear Trail A (resize)");
-    var clearAttachA_1493174426 = ([]);
-    var clearAttA_1493174427 = ({});
-    clearAttA_1493174427["view"] = (trailViewA_1493172252[0]);
-    clearAttA_1493174427["loadOp"] = ("clear");
-    clearAttA_1493174427["clearValue"] = bgColorResize_1493174384;
-    clearAttA_1493174427["storeOp"] = ("store");
-    (clearAttachA_1493174426.push(clearAttA_1493174427));
-    clearDescA_1493174417["colorAttachments"] = clearAttachA_1493174426;
-    var clearA_1493174462 = clearEncoder_1493174383.beginRenderPass(clearDescA_1493174417);
-    clearA_1493174462.end();
-    var clearDescB_1493174463 = ({});
-    clearDescB_1493174463["label"] = ("Clear Trail B (resize)");
-    var clearAttachB_1493174472 = ([]);
-    var clearAttB_1493174473 = ({});
-    clearAttB_1493174473["view"] = (trailViewB_1493172253[0]);
-    clearAttB_1493174473["loadOp"] = ("clear");
-    clearAttB_1493174473["clearValue"] = bgColorResize_1493174384;
-    clearAttB_1493174473["storeOp"] = ("store");
-    (clearAttachB_1493174472.push(clearAttB_1493174473));
-    clearDescB_1493174463["colorAttachments"] = clearAttachB_1493174472;
-    var clearB_1493174508 = clearEncoder_1493174383.beginRenderPass(clearDescB_1493174463);
-    clearB_1493174508.end();
-    var clearCmdBuf_1493174509 = clearEncoder_1493174383.finish();
-    var clearCmdArr_1493174510 = ([]);
-    (clearCmdArr_1493174510.push(clearCmdBuf_1493174509));
-    queue.submit(clearCmdArr_1493174510);
-    var blitBGA_1493174511 = ({});
-    blitBGA_1493174511["label"] = ("Blit Bind Group A");
-    blitBGA_1493174511["layout"] = (blitBindGroupLayout_1493172264[0]);
-    var blitEntriesA_1493174528 = ([]);
-    var blitBGAE0_1493174529 = ({});
-    blitBGAE0_1493174529["binding"] = (0);
-    blitBGAE0_1493174529["resource"] = (trailViewA_1493172252[0]);
-    (blitEntriesA_1493174528.push(blitBGAE0_1493174529));
-    var blitBGAE1_1493174546 = ({});
-    blitBGAE1_1493174546["binding"] = (1);
-    blitBGAE1_1493174546["resource"] = (linearSampler_1493172259[0]);
-    (blitEntriesA_1493174528.push(blitBGAE1_1493174546));
-    blitBGA_1493174511["entries"] = blitEntriesA_1493174528;
-    blitBindGroupA_1493172255[0] = device.createBindGroup(blitBGA_1493174511);
-    var blitBGB_1493174568 = ({});
-    blitBGB_1493174568["label"] = ("Blit Bind Group B");
-    blitBGB_1493174568["layout"] = (blitBindGroupLayout_1493172264[0]);
-    var blitEntriesB_1493174585 = ([]);
-    var blitBGBE0_1493174586 = ({});
-    blitBGBE0_1493174586["binding"] = (0);
-    blitBGBE0_1493174586["resource"] = (trailViewB_1493172253[0]);
-    (blitEntriesB_1493174585.push(blitBGBE0_1493174586));
-    var blitBGBE1_1493174603 = ({});
-    blitBGBE1_1493174603["binding"] = (1);
-    blitBGBE1_1493174603["resource"] = (linearSampler_1493172259[0]);
-    (blitEntriesB_1493174585.push(blitBGBE1_1493174603));
-    blitBGB_1493174568["entries"] = blitEntriesB_1493174585;
-    blitBindGroupB_1493172256[0] = device.createBindGroup(blitBGB_1493174568);
-    var fadeBGA_1493174625 = ({});
-    fadeBGA_1493174625["label"] = ("Fade Bind Group Read A");
-    fadeBGA_1493174625["layout"] = (fadeBindGroupLayout_1493172263[0]);
-    var fadeEntriesA_1493174642 = ([]);
-    var fadeBGAE0_1493174643 = ({});
-    fadeBGAE0_1493174643["binding"] = (0);
-    fadeBGAE0_1493174643["resource"] = (trailViewA_1493172252[0]);
-    (fadeEntriesA_1493174642.push(fadeBGAE0_1493174643));
-    var fadeBGAE1_1493174660 = ({});
-    fadeBGAE1_1493174660["binding"] = (1);
-    fadeBGAE1_1493174660["resource"] = (linearSampler_1493172259[0]);
-    (fadeEntriesA_1493174642.push(fadeBGAE1_1493174660));
-    var fadeBGAE2_1493174677 = ({});
-    fadeBGAE2_1493174677["binding"] = (2);
-    var fadeBGAR2_1493174686 = ({});
-    fadeBGAR2_1493174686["buffer"] = (fadeParamsBuffer_1493172247[0]);
-    fadeBGAE2_1493174677["resource"] = fadeBGAR2_1493174686;
-    (fadeEntriesA_1493174642.push(fadeBGAE2_1493174677));
-    fadeBGA_1493174625["entries"] = fadeEntriesA_1493174642;
-    fadeBindGroupReadA_1493172257[0] = device.createBindGroup(fadeBGA_1493174625);
-    var fadeBGB_1493174705 = ({});
-    fadeBGB_1493174705["label"] = ("Fade Bind Group Read B");
-    fadeBGB_1493174705["layout"] = (fadeBindGroupLayout_1493172263[0]);
-    var fadeEntriesB_1493174722 = ([]);
-    var fadeBGBE0_1493174723 = ({});
-    fadeBGBE0_1493174723["binding"] = (0);
-    fadeBGBE0_1493174723["resource"] = (trailViewB_1493172253[0]);
-    (fadeEntriesB_1493174722.push(fadeBGBE0_1493174723));
-    var fadeBGBE1_1493174740 = ({});
-    fadeBGBE1_1493174740["binding"] = (1);
-    fadeBGBE1_1493174740["resource"] = (linearSampler_1493172259[0]);
-    (fadeEntriesB_1493174722.push(fadeBGBE1_1493174740));
-    var fadeBGBE2_1493174757 = ({});
-    fadeBGBE2_1493174757["binding"] = (2);
-    var fadeBGBR2_1493174766 = ({});
-    fadeBGBR2_1493174766["buffer"] = (fadeParamsBuffer_1493172247[0]);
-    fadeBGBE2_1493174757["resource"] = fadeBGBR2_1493174766;
-    (fadeEntriesB_1493174722.push(fadeBGBE2_1493174757));
-    fadeBGB_1493174705["entries"] = fadeEntriesB_1493174722;
-    fadeBindGroupReadB_1493172258[0] = device.createBindGroup(fadeBGB_1493174705);
+    var clearEncoderDesc_1493174541 = ({});
+    clearEncoderDesc_1493174541["label"] = ("Trail Texture Clear (resize)");
+    var clearEncoder_1493174550 = device.createCommandEncoder(clearEncoderDesc_1493174541);
+    var bgColorResize_1493174551 = ({});
+    bgColorResize_1493174551["r"] = (0.0);
+    bgColorResize_1493174551["g"] = (0.0);
+    bgColorResize_1493174551["b"] = (0.0);
+    bgColorResize_1493174551["a"] = (0.0);
+    var clearDescA_1493174584 = ({});
+    clearDescA_1493174584["label"] = ("Clear Trail A (resize)");
+    var clearAttachA_1493174593 = ([]);
+    var clearAttA_1493174594 = ({});
+    clearAttA_1493174594["view"] = (trailViewA_1493172252[0]);
+    clearAttA_1493174594["loadOp"] = ("clear");
+    clearAttA_1493174594["clearValue"] = bgColorResize_1493174551;
+    clearAttA_1493174594["storeOp"] = ("store");
+    (clearAttachA_1493174593.push(clearAttA_1493174594));
+    clearDescA_1493174584["colorAttachments"] = clearAttachA_1493174593;
+    var clearA_1493174629 = clearEncoder_1493174550.beginRenderPass(clearDescA_1493174584);
+    clearA_1493174629.end();
+    var clearDescB_1493174630 = ({});
+    clearDescB_1493174630["label"] = ("Clear Trail B (resize)");
+    var clearAttachB_1493174639 = ([]);
+    var clearAttB_1493174640 = ({});
+    clearAttB_1493174640["view"] = (trailViewB_1493172253[0]);
+    clearAttB_1493174640["loadOp"] = ("clear");
+    clearAttB_1493174640["clearValue"] = bgColorResize_1493174551;
+    clearAttB_1493174640["storeOp"] = ("store");
+    (clearAttachB_1493174639.push(clearAttB_1493174640));
+    clearDescB_1493174630["colorAttachments"] = clearAttachB_1493174639;
+    var clearB_1493174675 = clearEncoder_1493174550.beginRenderPass(clearDescB_1493174630);
+    clearB_1493174675.end();
+    var clearCmdBuf_1493174676 = clearEncoder_1493174550.finish();
+    var clearCmdArr_1493174677 = ([]);
+    (clearCmdArr_1493174677.push(clearCmdBuf_1493174676));
+    queue.submit(clearCmdArr_1493174677);
+    var blitBGA_1493174678 = ({});
+    blitBGA_1493174678["label"] = ("Blit Bind Group A");
+    blitBGA_1493174678["layout"] = (blitBindGroupLayout_1493172264[0]);
+    var blitEntriesA_1493174695 = ([]);
+    var blitBGAE0_1493174696 = ({});
+    blitBGAE0_1493174696["binding"] = (0);
+    blitBGAE0_1493174696["resource"] = (trailViewA_1493172252[0]);
+    (blitEntriesA_1493174695.push(blitBGAE0_1493174696));
+    var blitBGAE1_1493174713 = ({});
+    blitBGAE1_1493174713["binding"] = (1);
+    blitBGAE1_1493174713["resource"] = (linearSampler_1493172259[0]);
+    (blitEntriesA_1493174695.push(blitBGAE1_1493174713));
+    blitBGA_1493174678["entries"] = blitEntriesA_1493174695;
+    blitBindGroupA_1493172255[0] = device.createBindGroup(blitBGA_1493174678);
+    var blitBGB_1493174735 = ({});
+    blitBGB_1493174735["label"] = ("Blit Bind Group B");
+    blitBGB_1493174735["layout"] = (blitBindGroupLayout_1493172264[0]);
+    var blitEntriesB_1493174752 = ([]);
+    var blitBGBE0_1493174753 = ({});
+    blitBGBE0_1493174753["binding"] = (0);
+    blitBGBE0_1493174753["resource"] = (trailViewB_1493172253[0]);
+    (blitEntriesB_1493174752.push(blitBGBE0_1493174753));
+    var blitBGBE1_1493174770 = ({});
+    blitBGBE1_1493174770["binding"] = (1);
+    blitBGBE1_1493174770["resource"] = (linearSampler_1493172259[0]);
+    (blitEntriesB_1493174752.push(blitBGBE1_1493174770));
+    blitBGB_1493174735["entries"] = blitEntriesB_1493174752;
+    blitBindGroupB_1493172256[0] = device.createBindGroup(blitBGB_1493174735);
+    var fadeBGA_1493174792 = ({});
+    fadeBGA_1493174792["label"] = ("Fade Bind Group Read A");
+    fadeBGA_1493174792["layout"] = (fadeBindGroupLayout_1493172263[0]);
+    var fadeEntriesA_1493174809 = ([]);
+    var fadeBGAE0_1493174810 = ({});
+    fadeBGAE0_1493174810["binding"] = (0);
+    fadeBGAE0_1493174810["resource"] = (trailViewA_1493172252[0]);
+    (fadeEntriesA_1493174809.push(fadeBGAE0_1493174810));
+    var fadeBGAE1_1493174827 = ({});
+    fadeBGAE1_1493174827["binding"] = (1);
+    fadeBGAE1_1493174827["resource"] = (linearSampler_1493172259[0]);
+    (fadeEntriesA_1493174809.push(fadeBGAE1_1493174827));
+    var fadeBGAE2_1493174844 = ({});
+    fadeBGAE2_1493174844["binding"] = (2);
+    var fadeBGAR2_1493174853 = ({});
+    fadeBGAR2_1493174853["buffer"] = (fadeParamsBuffer_1493172247[0]);
+    fadeBGAE2_1493174844["resource"] = fadeBGAR2_1493174853;
+    (fadeEntriesA_1493174809.push(fadeBGAE2_1493174844));
+    fadeBGA_1493174792["entries"] = fadeEntriesA_1493174809;
+    fadeBindGroupReadA_1493172257[0] = device.createBindGroup(fadeBGA_1493174792);
+    var fadeBGB_1493174872 = ({});
+    fadeBGB_1493174872["label"] = ("Fade Bind Group Read B");
+    fadeBGB_1493174872["layout"] = (fadeBindGroupLayout_1493172263[0]);
+    var fadeEntriesB_1493174889 = ([]);
+    var fadeBGBE0_1493174890 = ({});
+    fadeBGBE0_1493174890["binding"] = (0);
+    fadeBGBE0_1493174890["resource"] = (trailViewB_1493172253[0]);
+    (fadeEntriesB_1493174889.push(fadeBGBE0_1493174890));
+    var fadeBGBE1_1493174907 = ({});
+    fadeBGBE1_1493174907["binding"] = (1);
+    fadeBGBE1_1493174907["resource"] = (linearSampler_1493172259[0]);
+    (fadeEntriesB_1493174889.push(fadeBGBE1_1493174907));
+    var fadeBGBE2_1493174924 = ({});
+    fadeBGBE2_1493174924["binding"] = (2);
+    var fadeBGBR2_1493174933 = ({});
+    fadeBGBR2_1493174933["buffer"] = (fadeParamsBuffer_1493172247[0]);
+    fadeBGBE2_1493174924["resource"] = fadeBGBR2_1493174933;
+    (fadeEntriesB_1493174889.push(fadeBGBE2_1493174924));
+    fadeBGB_1493174872["entries"] = fadeEntriesB_1493174889;
+    fadeBindGroupReadB_1493172258[0] = device.createBindGroup(fadeBGB_1493174872);
     trailParity_1493172254[0] = 0;
 
   
 }
 
-function resize__webgpu95render_u2561() {
+function resize__webgpu95render_u2728() {
     canvas_1493172238[0].width = (window.innerWidth);
     canvas_1493172238[0].height = (window.innerHeight);
     if (isInitialized_1493172249[0]) {
-    recreateTrailTextures__webgpu95render_u2058();
+    recreateTrailTextures__webgpu95render_u2225();
     }
     
 
@@ -4072,9 +4110,19 @@ async function physics__app_u75(dt_p0) {
     }
     
     params_587202656["mouseRightDown"] = (Temporary2);
+    params_587202656["blastX"] = ((blastX * mouseScaleX_587202723));
+    params_587202656["blastY"] = ((blastY * mouseScaleY_587202724));
+    params_587202656["blastStrength"] = (blastStrength);
     params_587202656["parity"] = (activeParity);
     params_587202656["matrix"] = (matrix);
     (await runPhysicsFrame(params_587202656));
+    if ((0.001 < blastStrength)) {
+    blastStrength = (blastStrength * 0.85);
+    }
+    else {
+      blastStrength = 0.0;
+    }
+    
     physicsTimeMs = (performance.now() - tPhysics0_587202655);
     integrationTimeMs = 0.0;
     workerTimeMs = (performance.now() - t0_587202644);
@@ -4086,37 +4134,37 @@ async function physics__app_u75(dt_p0) {
 
 }
 
-function render__webgpu95render_u1840(particleCount_p0) {
+function render__webgpu95render_u1936(particleCount_p0) {
     var Temporary1;
     var Temporary2;
     var Temporary3;
 
-  var result_1493174066 = null;
+  var result_1493174162 = null;
 
   BeforeRet: {
-    result_1493174066 = {m_type: NTI1493172228, packTimeMs: 0.0, uploadTimeMs: 0.0};
-    result_1493174066.packTimeMs = 0.0;
-    result_1493174066.uploadTimeMs = 0.0;
+    result_1493174162 = {m_type: NTI1493172228, packTimeMs: 0.0, uploadTimeMs: 0.0};
+    result_1493174162.packTimeMs = 0.0;
+    result_1493174162.uploadTimeMs = 0.0;
     if (!(isInitialized_1493172249[0])) {
     break BeforeRet;
     }
     
-    var paramsData_1493174067 = new Float32Array(8);
-    paramsData_1493174067[0] = canvas_1493172238[0].width;
-    paramsData_1493174067[1] = canvas_1493172238[0].height;
-    paramsData_1493174067[2] = WORLD_W;
-    paramsData_1493174067[3] = WORLD_H;
-    paramsData_1493174067[4] = addInt(CONFIG.particleSize, 1);
-    paramsData_1493174067[5] = CONFIG.glowIntensity;
-    paramsData_1493174067[6] = 0.0;
-    paramsData_1493174067[7] = 0.0;
-    queue.writeBuffer(renderParamsBuffer_1493172246[0], 0, paramsData_1493174067);
-    var fadeData_1493174068 = new Float32Array(4);
-    fadeData_1493174068[0] = CONFIG.trailAlpha;
-    fadeData_1493174068[1] = 0.0;
-    fadeData_1493174068[2] = 0.0;
-    fadeData_1493174068[3] = 0.0;
-    queue.writeBuffer(fadeParamsBuffer_1493172247[0], 0, fadeData_1493174068);
+    var paramsData_1493174163 = new Float32Array(8);
+    paramsData_1493174163[0] = canvas_1493172238[0].width;
+    paramsData_1493174163[1] = canvas_1493172238[0].height;
+    paramsData_1493174163[2] = WORLD_W;
+    paramsData_1493174163[3] = WORLD_H;
+    paramsData_1493174163[4] = addInt(CONFIG.particleSize, 1);
+    paramsData_1493174163[5] = CONFIG.glowIntensity;
+    paramsData_1493174163[6] = 0.0;
+    paramsData_1493174163[7] = 0.0;
+    queue.writeBuffer(renderParamsBuffer_1493172246[0], 0, paramsData_1493174163);
+    var fadeData_1493174164 = new Float32Array(4);
+    fadeData_1493174164[0] = CONFIG.trailAlpha;
+    fadeData_1493174164[1] = 0.0;
+    fadeData_1493174164[2] = 0.0;
+    fadeData_1493174164[3] = 0.0;
+    queue.writeBuffer(fadeParamsBuffer_1493172247[0], 0, fadeData_1493174164);
     if ((trailParity_1493172254[0] == 0)) {
     Temporary1 = trailViewB_1493172253[0];
     }
@@ -4124,7 +4172,7 @@ function render__webgpu95render_u1840(particleCount_p0) {
     Temporary1 = trailViewA_1493172252[0];
     }
     
-    var writeView_1493174069 = Temporary1;
+    var writeView_1493174165 = Temporary1;
     if ((trailParity_1493172254[0] == 0)) {
     Temporary2 = fadeBindGroupReadA_1493172257[0];
     }
@@ -4132,7 +4180,7 @@ function render__webgpu95render_u1840(particleCount_p0) {
     Temporary2 = fadeBindGroupReadB_1493172258[0];
     }
     
-    var fadeReadBG_1493174070 = Temporary2;
+    var fadeReadBG_1493174166 = Temporary2;
     if ((trailParity_1493172254[0] == 0)) {
     Temporary3 = blitBindGroupB_1493172256[0];
     }
@@ -4140,121 +4188,132 @@ function render__webgpu95render_u1840(particleCount_p0) {
     Temporary3 = blitBindGroupA_1493172255[0];
     }
     
-    var blitBG_1493174071 = Temporary3;
-    var encoderDesc_1493174072 = ({});
-    encoderDesc_1493174072["label"] = ("Render Command Encoder");
-    var commandEncoder_1493174081 = device.createCommandEncoder(encoderDesc_1493174072);
-    var offscreenPassDesc_1493174082 = ({});
-    offscreenPassDesc_1493174082["label"] = ("Offscreen Render Pass");
-    var offscreenAttachments_1493174091 = ([]);
-    var offscreenAttachment_1493174092 = ({});
-    offscreenAttachment_1493174092["view"] = (writeView_1493174069);
-    offscreenAttachment_1493174092["loadOp"] = ("clear");
-    var clearColor_1493174109 = ({});
-    clearColor_1493174109["r"] = (0.04);
-    clearColor_1493174109["g"] = (0.04);
-    clearColor_1493174109["b"] = (0.06);
-    clearColor_1493174109["a"] = (1.0);
-    offscreenAttachment_1493174092["clearValue"] = clearColor_1493174109;
-    offscreenAttachment_1493174092["storeOp"] = ("store");
-    (offscreenAttachments_1493174091.push(offscreenAttachment_1493174092));
-    offscreenPassDesc_1493174082["colorAttachments"] = offscreenAttachments_1493174091;
-    var depthAttachment_1493174160 = ({});
-    depthAttachment_1493174160["view"] = (depthTextureView_1493172261[0]);
-    depthAttachment_1493174160["depthLoadOp"] = ("clear");
-    depthAttachment_1493174160["depthClearValue"] = (1.0);
-    depthAttachment_1493174160["depthStoreOp"] = ("store");
-    offscreenPassDesc_1493174082["depthStencilAttachment"] = depthAttachment_1493174160;
-    var offscreenPass_1493174198 = commandEncoder_1493174081.beginRenderPass(offscreenPassDesc_1493174082);
+    var blitBG_1493174167 = Temporary3;
+    var encoderDesc_1493174168 = ({});
+    encoderDesc_1493174168["label"] = ("Render Command Encoder");
+    var commandEncoder_1493174177 = device.createCommandEncoder(encoderDesc_1493174168);
+    var offscreenPassDesc_1493174178 = ({});
+    offscreenPassDesc_1493174178["label"] = ("Offscreen Render Pass");
+    var offscreenAttachments_1493174187 = ([]);
+    var offscreenAttachment_1493174188 = ({});
+    offscreenAttachment_1493174188["view"] = (writeView_1493174165);
+    offscreenAttachment_1493174188["loadOp"] = ("clear");
+    var clearColor_1493174205 = ({});
+    clearColor_1493174205["r"] = (0.0);
+    clearColor_1493174205["g"] = (0.0);
+    clearColor_1493174205["b"] = (0.0);
+    clearColor_1493174205["a"] = (0.0);
+    offscreenAttachment_1493174188["clearValue"] = clearColor_1493174205;
+    offscreenAttachment_1493174188["storeOp"] = ("store");
+    (offscreenAttachments_1493174187.push(offscreenAttachment_1493174188));
+    offscreenPassDesc_1493174178["colorAttachments"] = offscreenAttachments_1493174187;
+    var depthAttachment_1493174256 = ({});
+    depthAttachment_1493174256["view"] = (depthTextureView_1493172261[0]);
+    depthAttachment_1493174256["depthLoadOp"] = ("clear");
+    depthAttachment_1493174256["depthClearValue"] = (1.0);
+    depthAttachment_1493174256["depthStoreOp"] = ("store");
+    offscreenPassDesc_1493174178["depthStencilAttachment"] = depthAttachment_1493174256;
+    var offscreenPass_1493174294 = commandEncoder_1493174177.beginRenderPass(offscreenPassDesc_1493174178);
     if (CONFIG.trails) {
-    offscreenPass_1493174198.setPipeline(fadePipeline_1493172242[0]);
-    offscreenPass_1493174198.setBindGroup(0, fadeReadBG_1493174070);
-    offscreenPass_1493174198.draw(3, 1, 0, 0);
+    offscreenPass_1493174294.setPipeline(fadePipeline_1493172242[0]);
+    offscreenPass_1493174294.setBindGroup(0, fadeReadBG_1493174166);
+    offscreenPass_1493174294.draw(3, 1, 0, 0);
     }
     
-    offscreenPass_1493174198.setPipeline(glowPipeline_1493172241[0]);
-    offscreenPass_1493174198.setBindGroup(0, glowBindGroup_1493172245[0]);
-    offscreenPass_1493174198.draw(mulInt(6, particleCount_p0), 1, 0, 0);
-    offscreenPass_1493174198.setPipeline(renderPipeline_1493172240[0]);
-    offscreenPass_1493174198.setBindGroup(0, renderBindGroup_1493172244[0]);
-    offscreenPass_1493174198.draw(mulInt(6, particleCount_p0), 1, 0, 0);
-    offscreenPass_1493174198.end();
-    var currentTexture_1493174199 = gpuContext_1493172239[0].getCurrentTexture();
-    var swapChainView_1493174200 = currentTexture_1493174199.createView();
-    var presentPassDesc_1493174201 = ({});
-    presentPassDesc_1493174201["label"] = ("Present Pass");
-    var presentAttachments_1493174210 = ([]);
-    var presentAttachment_1493174211 = ({});
-    presentAttachment_1493174211["view"] = (swapChainView_1493174200);
-    presentAttachment_1493174211["loadOp"] = ("clear");
-    presentAttachment_1493174211["clearValue"] = clearColor_1493174109;
-    presentAttachment_1493174211["storeOp"] = ("store");
-    (presentAttachments_1493174210.push(presentAttachment_1493174211));
-    presentPassDesc_1493174201["colorAttachments"] = presentAttachments_1493174210;
-    var presentPass_1493174246 = commandEncoder_1493174081.beginRenderPass(presentPassDesc_1493174201);
-    presentPass_1493174246.setPipeline(blitPipeline_1493172243[0]);
-    presentPass_1493174246.setBindGroup(0, blitBG_1493174071);
-    presentPass_1493174246.draw(3, 1, 0, 0);
-    presentPass_1493174246.end();
-    var commandBuffer_1493174247 = commandEncoder_1493174081.finish();
-    var commandBufferArray_1493174248 = ([]);
-    (commandBufferArray_1493174248.push(commandBuffer_1493174247));
-    queue.submit(commandBufferArray_1493174248);
+    offscreenPass_1493174294.setPipeline(renderPipeline_1493172240[0]);
+    offscreenPass_1493174294.setBindGroup(0, renderBindGroup_1493172244[0]);
+    offscreenPass_1493174294.draw(mulInt(6, particleCount_p0), 1, 0, 0);
+    offscreenPass_1493174294.end();
+    var currentTexture_1493174295 = gpuContext_1493172239[0].getCurrentTexture();
+    var swapChainView_1493174296 = currentTexture_1493174295.createView();
+    var presentPassDesc_1493174297 = ({});
+    presentPassDesc_1493174297["label"] = ("Present Pass");
+    var presentAttachments_1493174306 = ([]);
+    var presentAttachment_1493174307 = ({});
+    presentAttachment_1493174307["view"] = (swapChainView_1493174296);
+    presentAttachment_1493174307["loadOp"] = ("clear");
+    var presentClearColor_1493174324 = ({});
+    presentClearColor_1493174324["r"] = (0.04);
+    presentClearColor_1493174324["g"] = (0.04);
+    presentClearColor_1493174324["b"] = (0.06);
+    presentClearColor_1493174324["a"] = (1.0);
+    presentAttachment_1493174307["clearValue"] = presentClearColor_1493174324;
+    presentAttachment_1493174307["storeOp"] = ("store");
+    (presentAttachments_1493174306.push(presentAttachment_1493174307));
+    presentPassDesc_1493174297["colorAttachments"] = presentAttachments_1493174306;
+    var presentDepthAttachment_1493174375 = ({});
+    presentDepthAttachment_1493174375["view"] = (depthTextureView_1493172261[0]);
+    presentDepthAttachment_1493174375["depthLoadOp"] = ("clear");
+    presentDepthAttachment_1493174375["depthClearValue"] = (1.0);
+    presentDepthAttachment_1493174375["depthStoreOp"] = ("discard");
+    presentPassDesc_1493174297["depthStencilAttachment"] = presentDepthAttachment_1493174375;
+    var presentPass_1493174413 = commandEncoder_1493174177.beginRenderPass(presentPassDesc_1493174297);
+    presentPass_1493174413.setPipeline(glowPipeline_1493172241[0]);
+    presentPass_1493174413.setBindGroup(0, glowBindGroup_1493172245[0]);
+    presentPass_1493174413.draw(mulInt(6, particleCount_p0), 1, 0, 0);
+    presentPass_1493174413.setPipeline(blitPipeline_1493172243[0]);
+    presentPass_1493174413.setBindGroup(0, blitBG_1493174167);
+    presentPass_1493174413.draw(3, 1, 0, 0);
+    presentPass_1493174413.end();
+    var commandBuffer_1493174414 = commandEncoder_1493174177.finish();
+    var commandBufferArray_1493174415 = ([]);
+    (commandBufferArray_1493174415.push(commandBuffer_1493174414));
+    queue.submit(commandBufferArray_1493174415);
     trailParity_1493172254[0] = subInt(1, trailParity_1493172254[0]);
   };
 
-  return result_1493174066;
+  return result_1493174162;
 
 }
-async function loop__app_u217(now_p0) {
+async function loop__app_u241(now_p0) {
     var Temporary1;
     var Temporary2;
 
-function HEX3Aanonymous__app_u251(t_p0) {
-    (loop__app_u217(t_p0));
+function HEX3Aanonymous__app_u275(t_p0) {
+    (loop__app_u241(t_p0));
 
   
 }
 
-  var result_587202784 = null;
+  var result_587202808 = null;
 
   BeforeRet: {
     if (!(isRunning)) {
-    result_587202784 = undefined;
+    result_587202808 = undefined;
     break BeforeRet;
     }
     
-    var frameStart_587202790 = performance.now();
-    var rawDt_587202791 = ((now_p0 - lastTime) / 1000.0);
-    if ((0.05 < rawDt_587202791)) {
+    var frameStart_587202814 = performance.now();
+    var rawDt_587202815 = ((now_p0 - lastTime) / 1000.0);
+    if ((0.05 < rawDt_587202815)) {
     Temporary1 = 0.05;
     }
     else {
-    Temporary1 = rawDt_587202791;
+    Temporary1 = rawDt_587202815;
     }
     
-    var cappedDt_587202792 = Temporary1;
-    var dt_587202793 = (cappedDt_587202792 * CONFIG.timeScale);
+    var cappedDt_587202816 = Temporary1;
+    var dt_587202817 = (cappedDt_587202816 * CONFIG.timeScale);
     lastTime = now_p0;
-    (await physics__app_u75(dt_587202793));
-    var renderTiming_587202798 = null;
+    (await physics__app_u75(dt_587202817));
+    var renderTiming_587202822 = null;
     if (useWebGPURender) {
     updateBindGroup__webgpu95render_u46(activeParity);
-    renderTiming_587202798 = (render__webgpu95render_u1840(particleCount));
+    renderTiming_587202822 = (render__webgpu95render_u1936(particleCount));
     }
     else {
-      renderTiming_587202798 = render(particleCount);
+      renderTiming_587202822 = render(particleCount);
     }
     
-    renderPackTimeMs = (renderTiming_587202798["packTimeMs"]);
-    renderUploadTimeMs = (renderTiming_587202798["uploadTimeMs"]);
-    var frameTotal_587202810 = (performance.now() - frameStart_587202790);
+    renderPackTimeMs = (renderTiming_587202822["packTimeMs"]);
+    renderUploadTimeMs = (renderTiming_587202822["uploadTimeMs"]);
+    var frameTotal_587202834 = (performance.now() - frameStart_587202814);
     gridTimeSum = (gridTimeSum + gridTimeMs);
     physicsTimeSum = (physicsTimeSum + physicsTimeMs);
     integrationTimeSum = (integrationTimeSum + integrationTimeMs);
     renderPackTimeSum = (renderPackTimeSum + renderPackTimeMs);
     renderUploadTimeSum = (renderUploadTimeSum + renderUploadTimeMs);
-    totalTimeSum = (totalTimeSum + frameTotal_587202810);
+    totalTimeSum = (totalTimeSum + frameTotal_587202834);
     profilingFrameCount = addInt(profilingFrameCount, 1);
     frameCount = addInt(frameCount, 1);
     if ((500.0 < (now_p0 - lastFpsTime))) {
@@ -4274,13 +4333,13 @@ function HEX3Aanonymous__app_u251(t_p0) {
     totalTimeSum = 0.0;
     }
     
-    Temporary2 = HEX3Aanonymous__app_u251.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__app_u251; Temporary2.ClE_0 = null;
+    Temporary2 = HEX3Aanonymous__app_u275.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__app_u275; Temporary2.ClE_0 = null;
     (window.requestAnimationFrame(Temporary2));
-    result_587202784 = undefined;
+    result_587202808 = undefined;
     break BeforeRet;
   };
 
-  return result_587202784;
+  return result_587202808;
 
 }
 async function init() {
@@ -4289,40 +4348,40 @@ async function init() {
       var Temporary3;
     var Temporary4;
 
-function HEX3Aanonymous__app_u434() {
+function HEX3Aanonymous__app_u458() {
   
 }
     var Temporary5;
 
-function HEX3Aanonymous__app_u480(t_p0) {
-    (loop__app_u217(t_p0));
+function HEX3Aanonymous__app_u504(t_p0) {
+    (loop__app_u241(t_p0));
 
   
 }
 
-  var result_587202847 = null;
+  var result_587202871 = null;
 
   BeforeRet: {
     allocateBuffers();
     console.log([(("Initializing WebGPU..."))]);
-    var webgpuResult_587202866 = (await initWebGPU());
-    if (!((webgpuResult_587202866["success"]))) {
-    console.error([(("WebGPU initialization failed:")), (webgpuResult_587202866["error"])]);
+    var webgpuResult_587202890 = (await initWebGPU());
+    if (!((webgpuResult_587202890["success"]))) {
+    console.error([(("WebGPU initialization failed:")), (webgpuResult_587202890["error"])]);
     console.error([(("This application requires WebGPU. Please use a browser with WebGPU support."))]);
-    result_587202847 = undefined;
+    result_587202871 = undefined;
     break BeforeRet;
     }
     
-    console.log([(("WebGPU device acquired:")), (webgpuResult_587202866["info"])]);
+    console.log([(("WebGPU device acquired:")), (webgpuResult_587202890["info"])]);
     console.log([(("Initializing WebGPU compute pipelines..."))]);
-    var pipelineResult_587202923 = (await initPipelines());
-    if (!((pipelineResult_587202923["success"]))) {
-    console.error([(("WebGPU pipeline initialization failed:")), (pipelineResult_587202923["error"])]);
-    result_587202847 = undefined;
+    var pipelineResult_587202947 = (await initPipelines());
+    if (!((pipelineResult_587202947["success"]))) {
+    console.error([(("WebGPU pipeline initialization failed:")), (pipelineResult_587202947["error"])]);
+    result_587202871 = undefined;
     break BeforeRet;
     }
     
-    console.log([(("WebGPU compute pipelines ready:")), (pipelineResult_587202923["info"])]);
+    console.log([(("WebGPU compute pipelines ready:")), (pipelineResult_587202947["info"])]);
     useWebGPU = true;
     console.log([(("Physics acceleration: WebGPU compute shaders"))]);
     console.log([(("Initializing WebGPU render pipeline..."))]);
@@ -4333,7 +4392,7 @@ function HEX3Aanonymous__app_u480(t_p0) {
     else {
       console.log([(("WebGPU rendering: DISABLED (will use WebGL fallback)"))]);
       if (!(initGL())) {
-      result_587202847 = undefined;
+      result_587202871 = undefined;
       break BeforeRet;
       }
       
@@ -4342,7 +4401,7 @@ function HEX3Aanonymous__app_u480(t_p0) {
     Temporary1 = initParticles.bind(null); Temporary1.ClP_0 = initParticles; Temporary1.ClE_0 = null;
     setInitParticlesCallback(Temporary1);
     if (useWebGPURender) {
-    Temporary2 = resize__webgpu95render_u2561.bind(null); Temporary2.ClP_0 = resize__webgpu95render_u2561; Temporary2.ClE_0 = null;
+    Temporary2 = resize__webgpu95render_u2728.bind(null); Temporary2.ClP_0 = resize__webgpu95render_u2728; Temporary2.ClE_0 = null;
     setResizeCallback(Temporary2);
     setupEvents(canvas_1493172238[0]);
     }
@@ -4353,15 +4412,15 @@ function HEX3Aanonymous__app_u480(t_p0) {
     }
     
     setupUI();
-    Temporary4 = HEX3Aanonymous__app_u434.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__app_u434; Temporary4.ClE_0 = null;
+    Temporary4 = HEX3Aanonymous__app_u458.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__app_u458; Temporary4.ClE_0 = null;
     setMatrixUpdateCallback(Temporary4);
     randomizeMatrix();
     initParticles();
     console.log([(("Uploading initial particle data to GPU..."))]);
-    var uploadResult_587203008 = (await uploadInitialData(particleCount));
-    if (!((uploadResult_587203008["success"]))) {
-    console.error([(("Failed to upload initial data:")), (uploadResult_587203008["error"])]);
-    result_587202847 = undefined;
+    var uploadResult_587203032 = (await uploadInitialData(particleCount));
+    if (!((uploadResult_587203032["success"]))) {
+    console.error([(("Failed to upload initial data:")), (uploadResult_587203032["error"])]);
+    result_587202871 = undefined;
     break BeforeRet;
     }
     
@@ -4370,18 +4429,18 @@ function HEX3Aanonymous__app_u480(t_p0) {
     lastTime = performance.now();
     lastFpsTime = lastTime;
     isRunning = true;
-    Temporary5 = HEX3Aanonymous__app_u480.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__app_u480; Temporary5.ClE_0 = null;
+    Temporary5 = HEX3Aanonymous__app_u504.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__app_u504; Temporary5.ClE_0 = null;
     (window.requestAnimationFrame(Temporary5));
-    result_587202847 = undefined;
+    result_587202871 = undefined;
     break BeforeRet;
   };
 
-  return result_587202847;
+  return result_587202871;
 
 }
 var Temporary3;
 
-function HEX3Aanonymous__app_u482() {
+function HEX3Aanonymous__app_u506() {
     (init());
 
   
@@ -4407,7 +4466,7 @@ var integrationTimeSum = 0.0;
 var renderPackTimeSum = 0.0;
 var renderUploadTimeSum = 0.0;
 var totalTimeSum = 0.0;
-Temporary3 = HEX3Aanonymous__app_u482.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__app_u482; Temporary3.ClE_0 = null;
+Temporary3 = HEX3Aanonymous__app_u506.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__app_u506; Temporary3.ClE_0 = null;
 document.addEventListener("DOMContentLoaded", Temporary3);
 window.toggleTrails = toggleTrails;
 window.toggleControls = toggleControls;

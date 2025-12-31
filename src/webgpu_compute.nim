@@ -399,7 +399,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     uniformBuffers["gridParams"] = device.createBufferLabeled(32, uniformUsage, "Grid Parameters Uniform")
     uniformBuffers["scanParams"] = device.createBufferLabeled(16, uniformUsage, "Scan Parameters Uniform")
-    uniformBuffers["simParams"] = device.createBufferLabeled(192, uniformUsage, "Simulation Parameters Uniform (with matrix)")
+    uniformBuffers["simParams"] = device.createBufferLabeled(208, uniformUsage, "Simulation Parameters Uniform (with matrix + blast)")
     uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
 
     consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created".toJs)
@@ -492,6 +492,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let mouseY = params["mouseY"].to(float)
   let mouseDown = params["mouseDown"].to(int)
   let mouseRightDown = params["mouseRightDown"].to(int)
+  let blastX = params["blastX"].to(float)
+  let blastY = params["blastY"].to(float)
+  let blastStrength = params["blastStrength"].to(float)
   let parity = params["parity"].to(int)
   let matrix = params["matrix"]
 
@@ -521,7 +524,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
   # Simulation parameters (used by forces)
-  let simParamsData = newFloat32Array(48)
+  # Layout: 16 scalar params + 36 matrix floats = 52 floats
+  let simParamsData = newFloat32Array(52)
   simParamsData[0] = dt
   simParamsData[1] = width
   simParamsData[2] = height
@@ -535,9 +539,13 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[9] = if mouseDown != 0: 1.0 else: 0.0
   simParamsData[10] = if mouseRightDown != 0: 1.0 else: 0.0
   simParamsUint[11] = particleCount
-  # Copy attraction matrix (36 floats starting at index 12)
+  simParamsData[12] = blastX
+  simParamsData[13] = blastY
+  simParamsData[14] = blastStrength
+  simParamsData[15] = 0.0  # padding for vec4 alignment
+  # Copy attraction matrix (36 floats starting at index 16)
   for i in 0..<36:
-    simParamsData[12 + i] = cast[JsObject](matrix[i]).to(float)
+    simParamsData[16 + i] = cast[JsObject](matrix[i]).to(float)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Integration parameters (8 values = 32 bytes)

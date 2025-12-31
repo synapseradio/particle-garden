@@ -73,8 +73,8 @@ const OFFSETS = array<vec2f, 6>(
 // - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)
 // - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
 const SIZE_DECAY_RATE: f32 = 0.07;
-const MIN_SIZE_MULTIPLIER: f32 = 0.5;      // Size multiplier at high density (floor)
-const MAX_SIZE_MULTIPLIER: f32 = 2.0;      // Size multiplier at zero density (ceiling)
+const MIN_SIZE_MULTIPLIER: f32 = 0.625;    // Size multiplier at high density (floor)
+const MAX_SIZE_MULTIPLIER: f32 = 1.415;    // Size multiplier at zero density (ceiling)
 
 // AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;

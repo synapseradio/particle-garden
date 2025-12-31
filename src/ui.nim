@@ -57,6 +57,11 @@ var mouseY* {.exportc.}: float = 0
 var mouseDown* {.exportc.}: bool = false
 var mouseRightDown* {.exportc.}: bool = false
 
+# Blast effect state (triggered by double-click)
+var blastX* {.exportc.}: float = 0
+var blastY* {.exportc.}: float = 0
+var blastStrength* {.exportc.}: float = 0  # Decays from 1.0 to 0.0
+
 # ==============================================================================
 # SECTION 4: CALLBACK REFERENCES
 # ==============================================================================
@@ -262,6 +267,13 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
   # Prevent context menu on right-click
   canvasEl.addEventListener("contextmenu", proc(e: Event) =
     preventDefault(e)
+  )
+
+  # Double-click triggers blast effect (powerful repellent)
+  canvasEl.addEventListener("dblclick", proc(e: MouseEvent) =
+    blastX = e.clientX.float
+    blastY = e.clientY.float
+    blastStrength = 1.0
   )
 
   canvasEl.addEventListener("mousemove", proc(e: MouseEvent) =

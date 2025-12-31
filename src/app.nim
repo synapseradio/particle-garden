@@ -200,10 +200,19 @@ proc physics(dt: float): Future[void] {.async.} =
   params["mouseY"] = toJs(ui.mouseY * mouseScaleY)
   params["mouseDown"] = toJs(if ui.mouseDown: 1 else: 0)
   params["mouseRightDown"] = toJs(if ui.mouseRightDown: 1 else: 0)
+  params["blastX"] = toJs(ui.blastX * mouseScaleX)
+  params["blastY"] = toJs(ui.blastY * mouseScaleY)
+  params["blastStrength"] = toJs(ui.blastStrength)
   params["parity"] = toJs(buffers.activeParity)  # Always 0 in WebGPU mode
   params["matrix"] = toJs(buffers.matrix)
 
   await webgpu_compute.runPhysicsFrame(params)
+
+  # Decay blast effect (exponential decay over ~0.3 seconds)
+  if ui.blastStrength > 0.001:
+    ui.blastStrength = ui.blastStrength * 0.85
+  else:
+    ui.blastStrength = 0.0
 
   physicsTimeMs = performanceNow() - tPhysics0
   integrationTimeMs = 0  # Integration happens on GPU

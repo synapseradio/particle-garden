@@ -213,10 +213,13 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let prev = textureSample(prevFrame, prevSampler, input.uv);
 
-  // Fade toward background color
+  // Fade toward transparent (glow shows through from present pass)
   // Higher fadeAmount = MORE of previous frame = LONGER trails
-  let bg = vec4f(0.04, 0.04, 0.06, 1.0);
-  return mix(bg, prev, params.fadeAmount);
+  // RGB fades toward background tint, alpha fades toward 0
+  let bgRgb = vec3f(0.04, 0.04, 0.06);
+  let fadedRgb = mix(bgRgb, prev.rgb, params.fadeAmount);
+  let fadedAlpha = prev.a * params.fadeAmount;
+  return vec4f(fadedRgb, fadedAlpha);
 }
 """
 
@@ -610,6 +613,21 @@ proc initWebGPURender*(): bool =
   let blitTargets = newJsArray()
   let blitTarget0 = newJsObject()
   blitTarget0["format"] = canvasFormat.toJs
+
+  # Alpha blending so trail composites over glow
+  let blitBlend = newJsObject()
+  let blitColorBlend = newJsObject()
+  blitColorBlend["srcFactor"] = "src-alpha".cstring.toJs
+  blitColorBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  blitColorBlend["operation"] = "add".cstring.toJs
+  blitBlend["color"] = blitColorBlend
+  let blitAlphaBlend = newJsObject()
+  blitAlphaBlend["srcFactor"] = "one".cstring.toJs
+  blitAlphaBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  blitAlphaBlend["operation"] = "add".cstring.toJs
+  blitBlend["alpha"] = blitAlphaBlend
+  blitTarget0["blend"] = blitBlend
+
   discard blitTargets.push(blitTarget0)
   blitFragmentStage["targets"] = blitTargets
   blitPipelineDesc["fragment"] = blitFragmentStage
@@ -618,6 +636,13 @@ proc initWebGPURender*(): bool =
   blitPrimitive["topology"] = "triangle-list".cstring.toJs
   blitPrimitive["cullMode"] = "none".cstring.toJs
   blitPipelineDesc["primitive"] = blitPrimitive
+
+  # Depth-stencil config for compatibility with present pass (which has depth for glow)
+  let blitDepthStencil = newJsObject()
+  blitDepthStencil["format"] = "depth24plus".cstring.toJs
+  blitDepthStencil["depthWriteEnabled"] = false.toJs
+  blitDepthStencil["depthCompare"] = "always".cstring.toJs
+  blitPipelineDesc["depthStencil"] = blitDepthStencil
 
   blitPipeline = webgpu_init.device.createRenderPipeline(blitPipelineDesc)
 
@@ -662,11 +687,12 @@ proc initWebGPURender*(): bool =
   initEncoderDesc["label"] = "Trail Texture Init".cstring.toJs
   let initEncoder = webgpu_init.device.createCommandEncoder(initEncoderDesc)
 
+  # Transparent clear for trail textures (glow shows through from present pass)
   let bgColor = newJsObject()
-  bgColor["r"] = 0.04.toJs
-  bgColor["g"] = 0.04.toJs
-  bgColor["b"] = 0.06.toJs
-  bgColor["a"] = 1.0.toJs
+  bgColor["r"] = 0.0.toJs
+  bgColor["g"] = 0.0.toJs
+  bgColor["b"] = 0.0.toJs
+  bgColor["a"] = 0.0.toJs
 
   # Clear texture A
   let clearPassDescA = newJsObject()
@@ -892,11 +918,12 @@ proc render*(particleCount: int): RenderTiming =
   let offscreenAttachment = newJsObject()
   offscreenAttachment["view"] = writeView.toJs
   offscreenAttachment["loadOp"] = "clear".cstring.toJs
+  # Transparent clear - glow shows through from present pass
   let clearColor = newJsObject()
-  clearColor["r"] = 0.04.toJs
-  clearColor["g"] = 0.04.toJs
-  clearColor["b"] = 0.06.toJs
-  clearColor["a"] = 1.0.toJs
+  clearColor["r"] = 0.0.toJs
+  clearColor["g"] = 0.0.toJs
+  clearColor["b"] = 0.0.toJs
+  clearColor["a"] = 0.0.toJs
   offscreenAttachment["clearValue"] = clearColor
   offscreenAttachment["storeOp"] = "store".cstring.toJs
   discard offscreenAttachments.push(offscreenAttachment)
@@ -918,12 +945,8 @@ proc render*(particleCount: int): RenderTiming =
     offscreenPass.setBindGroup(0, fadeReadBG)
     offscreenPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
-  # Step 2: Draw glow (additive blending, larger radius)
-  offscreenPass.setPipeline(glowPipeline)
-  offscreenPass.setBindGroup(0, glowBindGroup)
-  offscreenPass.draw(6 * particleCount, 1, 0, 0)
-
-  # Step 3: Draw particles (alpha blending, crisp circles)
+  # Step 2: Draw particles (alpha blending, crisp circles)
+  # NOTE: Glow is drawn in present pass (not here) to avoid accumulating in trails
   offscreenPass.setPipeline(renderPipeline)
   offscreenPass.setBindGroup(0, renderBindGroup)
   offscreenPass.draw(6 * particleCount, 1, 0, 0)
@@ -944,15 +967,39 @@ proc render*(particleCount: int): RenderTiming =
   let presentAttachment = newJsObject()
   presentAttachment["view"] = swapChainView.toJs
   presentAttachment["loadOp"] = "clear".cstring.toJs
-  presentAttachment["clearValue"] = clearColor
+  # Clear to actual background color (opaque) - glow draws on this, then trail alpha-blends on top
+  let presentClearColor = newJsObject()
+  presentClearColor["r"] = 0.04.toJs
+  presentClearColor["g"] = 0.04.toJs
+  presentClearColor["b"] = 0.06.toJs
+  presentClearColor["a"] = 1.0.toJs
+  presentAttachment["clearValue"] = presentClearColor
   presentAttachment["storeOp"] = "store".cstring.toJs
   discard presentAttachments.push(presentAttachment)
   presentPassDesc["colorAttachments"] = presentAttachments
 
+  # Depth attachment required for glow pipeline (which has depth stencil config)
+  let presentDepthAttachment = newJsObject()
+  presentDepthAttachment["view"] = depthTextureView.toJs
+  presentDepthAttachment["depthLoadOp"] = "clear".cstring.toJs
+  presentDepthAttachment["depthClearValue"] = 1.0.toJs
+  presentDepthAttachment["depthStoreOp"] = "discard".cstring.toJs  # Don't need depth after this
+  presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
+
   let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
+
+  # Step 1: Draw glow FIRST (additive blending on background)
+  # Glow renders beneath particles because trail alpha-blends on top
+  presentPass.setPipeline(glowPipeline)
+  presentPass.setBindGroup(0, glowBindGroup)
+  presentPass.draw(6 * particleCount, 1, 0, 0)
+
+  # Step 2: Alpha-blit trail texture on top of glow
+  # Trail has transparent background where no particles, so glow shows through
   presentPass.setPipeline(blitPipeline)
   presentPass.setBindGroup(0, blitBG)
   presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+
   presentPass.endPass()
 
   # Submit
@@ -1004,16 +1051,16 @@ proc recreateTrailTextures() =
   depthTexture = webgpu_init.device.createTexture(depthTextureDesc)
   depthTextureView = depthTexture.createView()
 
-  # Clear new textures to background color (same as initWebGPURender)
+  # Clear new textures to transparent (same as initWebGPURender)
   let clearEncoderDesc = newJsObject()
   clearEncoderDesc["label"] = "Trail Texture Clear (resize)".cstring.toJs
   let clearEncoder = webgpu_init.device.createCommandEncoder(clearEncoderDesc)
 
   let bgColorResize = newJsObject()
-  bgColorResize["r"] = 0.04.toJs
-  bgColorResize["g"] = 0.04.toJs
-  bgColorResize["b"] = 0.06.toJs
-  bgColorResize["a"] = 1.0.toJs
+  bgColorResize["r"] = 0.0.toJs
+  bgColorResize["g"] = 0.0.toJs
+  bgColorResize["b"] = 0.0.toJs
+  bgColorResize["a"] = 0.0.toJs
 
   # Clear texture A
   let clearDescA = newJsObject()

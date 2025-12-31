@@ -76,6 +76,10 @@ struct SimParams {
   mouseLeftDown: f32,
   mouseRightDown: f32,
   particleCount: u32,
+  blastX: f32,
+  blastY: f32,
+  blastStrength: f32,
+  _pad: f32,
   attractionMatrix: array<vec4<f32>, 9>,
 };
 
@@ -354,6 +358,28 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
       forceOnThisX += mouseOffsetX * mouseForce * mouseSign;
       forceOnThisY += mouseOffsetY * mouseForce * mouseSign;
+    }
+  }
+
+  // Blast effect (double-click repellent explosion)
+  if (params.blastStrength > 0.01) {
+    var blastOffsetX = thisParticle.pos.x - params.blastX;
+    var blastOffsetY = thisParticle.pos.y - params.blastY;
+
+    // Toroidal wrapping for blast distance
+    if (blastOffsetX > halfWorldWidth) { blastOffsetX -= params.worldWidth; }
+    else if (blastOffsetX < -halfWorldWidth) { blastOffsetX += params.worldWidth; }
+    if (blastOffsetY > halfWorldHeight) { blastOffsetY -= params.worldHeight; }
+    else if (blastOffsetY < -halfWorldHeight) { blastOffsetY += params.worldHeight; }
+
+    let blastDistSq = blastOffsetX * blastOffsetX + blastOffsetY * blastOffsetY;
+    let blastRangeSq = 40000.0;  // 200² - blast influence radius squared
+    if (blastDistSq > 0.0 && blastDistSq < blastRangeSq) {
+      let blastDist = sqrt(blastDistSq);
+      // Powerful repulsion that falls off with distance, scaled by decaying strength
+      let blastForce = params.blastStrength * 500.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);
+      forceOnThisX += blastOffsetX * blastForce;
+      forceOnThisY += blastOffsetY * blastForce;
     }
   }
 

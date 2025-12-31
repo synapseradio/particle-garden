@@ -150,7 +150,7 @@ proc createConfig(): ConfigObject =
   result.trails = false
   result.trailAlpha = 0.92
   result.glowIntensity = 1.0
-  result.maxVelocity = 10.0
+  result.maxVelocity = 50.0
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 
