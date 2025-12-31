@@ -50,7 +50,7 @@ The simulation uses a **five-pass GPU compute pipeline**:
 │           │ cellOffsets[] (scratch)                                             │
 │           ▼                                                                 │
 │  ┌─────────────────────────────────────────────────────┐                    │
-│  │ PASS 3: bin-scatter (3 shaders)                     │                    │
+│  │ PASS 3: bin-scatter.wgsl                            │                    │
 │  │ Scatter particles into sorted order by grid cell    │                    │
 │  └────────┬────────────────────────────────────────────┘                    │
 │           │ particlesSorted[] (scratch, sorted by grid cell for GPU cache)      │
@@ -65,7 +65,7 @@ The simulation uses a **five-pass GPU compute pipeline**:
 │           │ velocityDeltaFixed[] (scratch, integers → floats in pass 5)       │
 │           ▼                                                                 │
 │  ┌─────────────────────────────────────────────────────┐                    │
-│  │ PASS 5: integrate (3 shaders)                       │                    │
+│  │ PASS 5: integrate.wgsl                              │                    │
 │  │ Apply velocity deltas, friction, toroidal wrap      │                    │
 │  └────────┬────────────────────────────────────────────┘                    │
 │           │                                                                 │
@@ -188,11 +188,11 @@ Before running force computation:
 
 1. **Pass 1** — `bin-count.wgsl` populates `cellCounts[]`
 2. **Pass 2** — `prefix-sum*.wgsl` computes `cellOffsets[]` via parallel scan
-3. **Pass 3** — `bin-scatter*.wgsl` copies particles into `particlesSorted[]`
+3. **Pass 3** — `bin-scatter.wgsl` copies particles into `particlesSorted[]`
 
 ### After Force Computation
 
-**Pass 5** — See `integrate-velocities.wgsl` and `integrate-positions.wgsl`
+**Pass 5** — See `integrate.wgsl`
 
 Key operations:
 - Convert fixed-point deltas (i32) back to floats (scale factor 65536)
