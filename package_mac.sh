@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="Goober Garden"
-EXECUTABLE="emergent_garden"
+APP_NAME="Particle Garden"
+EXECUTABLE="particle_garden"
 BUNDLE_DIR="${APP_NAME}.app"
 CONTENTS_DIR="${BUNDLE_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
@@ -10,15 +10,14 @@ RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
 echo "📦 Packaging ${APP_NAME}..."
 
-# Build worker first
-echo "🔨 Building worker..."
-nimble worker
+# Full release build (includes worker, wasm, native app)
+echo "🔨 Building..."
+nimble release
 
-# Build optimized binary
-echo "🔨 Building binary..."
-nim c -d:release -d:danger --opt:speed --out:${EXECUTABLE} src/emergent_garden.nim
+# Rename binary for bundle
+mv main "${EXECUTABLE}"
 
-# Create structure
+# Create bundle structure
 rm -rf "${BUNDLE_DIR}"
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
@@ -37,15 +36,13 @@ cat >"${CONTENTS_DIR}/Info.plist" <<EOF
     <key>CFBundleDisplayName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.goobergarden.app</string>
+    <string>com.particlegarden.app</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>${EXECUTABLE}</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
     <key>NSHighResolutionCapable</key>
@@ -53,6 +50,9 @@ cat >"${CONTENTS_DIR}/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
+
+# Clean up
+rm -f "${EXECUTABLE}"
 
 echo "✅ Created ${BUNDLE_DIR}"
 echo "   Run with: open \"${BUNDLE_DIR}\""
