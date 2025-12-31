@@ -1,22 +1,36 @@
-/**
- * Particle Render Shader - WebGPU Vertex Pulling
- *
- * Based on lisyarus's approach: https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html
- *
- * Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.
- * No instancing needed - just draw(6 * particleCount) vertices.
- *
- * BINDING MANIFEST:
- * ┌─────────┬──────────────────────────┬─────────────────┬────────┐
- * │ Binding │ Shader Type              │ Buffer          │ Access │
- * ├─────────┼──────────────────────────┼─────────────────┼────────┤
- * │ 0       │ storage array<f32>       │ px (positions)  │ read   │
- * │ 1       │ storage array<f32>       │ py (positions)  │ read   │
- * │ 2       │ storage array<u32>       │ species         │ read   │
- * │ 3       │ storage array<f32>       │ density         │ read   │
- * │ 4       │ uniform RenderParams     │ renderParams    │ read   │
- * └─────────┴──────────────────────────┴─────────────────┴────────┘
- */
+// =============================================================================
+// PARTICLE RENDER SHADER - WebGPU Vertex Pulling with AoS Layout
+// =============================================================================
+//
+// Based on lisyarus's approach:
+// https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html
+//
+// Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.
+// No instancing needed - just draw(6 * particleCount) vertices.
+//
+// AoS BENEFIT:
+// With AoS layout, we read all particle data (pos, vel, species, density) from
+// one Particle struct instead of 4 separate buffer reads. This reduces binding
+// count from 5 to 2 and improves cache locality.
+//
+// BINDING MANIFEST:
+// +-------+---------------------------+-----------------+--------+
+// | Bind  | Shader Type               | JS Buffer       | Access |
+// +-------+---------------------------+-----------------+--------+
+// |   0   | storage array<Particle>   | particles       | read   |
+// |   1   | uniform RenderParams      | renderParams    | read   |
+// +-------+---------------------------+-----------------+--------+
+// =============================================================================
+
+// AoS Particle struct: 32 bytes, cache-aligned
+struct Particle {
+  pos: vec2<f32>,    // offset 0, size 8
+  vel: vec2<f32>,    // offset 8, size 8
+  species: u32,      // offset 16, size 4
+  density: f32,      // offset 20, size 4
+  _pad0: u32,        // offset 24, size 4
+  _pad1: u32,        // offset 28, size 4
+}
 
 struct RenderParams {
   resolution: vec2f,   // Canvas width, height in pixels
@@ -38,7 +52,7 @@ const COLORS = array<vec3f, 6>(
 );
 
 // Quad corner offsets (2 triangles = 6 vertices)
-// Unit quad: corners at distance sqrt(2) ≈ 1.41 from center
+// Unit quad: corners at distance sqrt(2) from center
 const OFFSETS = array<vec2f, 6>(
   vec2f(-1.0, -1.0),  // 0: bottom-left
   vec2f( 1.0, -1.0),  // 1: bottom-right
@@ -54,20 +68,17 @@ const OFFSETS = array<vec2f, 6>(
 //
 // SIZE_DECAY_RATE calibration:
 // - Controls how quickly particles shrink as local density increases
+// - Half-neighbor iteration produces ~50% of full 9-cell density values
+// - Rate of 0.07 compensates: exp(-5 * 0.07) ~ 0.70 at "half density"
 // - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)
-// - At density=10: exp(-10 * 0.15) ≈ 0.22, giving 1.3 + 1.7*0.22 = 1.67x
-// - As density→∞: sizeMod → MIN_SIZE_MULTIPLIER (1.3x base size)
-// - Higher decay rate = more aggressive shrinking in crowded areas
-const SIZE_DECAY_RATE: f32 = 0.15;
-const MIN_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at high density (floor)
-const MAX_SIZE_MULTIPLIER: f32 = 3.0;      // Size multiplier at zero density (ceiling)
+// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
+const SIZE_DECAY_RATE: f32 = 0.07;
+const MIN_SIZE_MULTIPLIER: f32 = 0.5;      // Size multiplier at high density (floor)
+const MAX_SIZE_MULTIPLIER: f32 = 2.0;      // Size multiplier at zero density (ceiling)
 
-// Particle data buffers (shared with compute shaders)
-@group(0) @binding(0) var<storage, read> px: array<f32>;
-@group(0) @binding(1) var<storage, read> py: array<f32>;
-@group(0) @binding(2) var<storage, read> species: array<u32>;
-@group(0) @binding(3) var<storage, read> density: array<f32>;
-@group(0) @binding(4) var<uniform> params: RenderParams;
+// AoS particle buffer
+@group(0) @binding(0) var<storage, read> particles: array<Particle>;
+@group(0) @binding(1) var<uniform> params: RenderParams;
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -84,18 +95,15 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let particleId = id / 6u;
   let cornerId = id % 6u;
 
-  // Read particle data from storage buffers
-  let particleX = px[particleId];
-  let particleY = py[particleId];
-  let particleSpecies = species[particleId];
-  let particleDensity = density[particleId];
+  // Read particle data from AoS buffer (all data in one read!)
+  let p = particles[particleId];
 
   // Get quad corner offset (unit quad, -1 to 1)
-  let offset = OFFSETS[cornerId];
+  let cornerOffset = OFFSETS[cornerId];
 
   // Calculate point size based on density using smooth exponential decay
-  // At density=0: sizeMod = 3.0, as density→∞: sizeMod → 1.3
-  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-particleDensity * SIZE_DECAY_RATE);
+  // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3
+  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);
   let pointSize = params.baseSize * sizeMod;
 
   // Scale offset by half point size to get world position
@@ -103,7 +111,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Scale point size by canvas/world ratio to maintain visual size
   let scale = params.resolution / params.worldSize;
   let halfSize = pointSize * 0.5;
-  let worldPos = vec2f(particleX, particleY) + offset * halfSize / scale;
+  let worldPos = p.pos + cornerOffset * halfSize / scale;
 
   // Transform to clip space: world coords -> normalized device coords
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
@@ -111,18 +119,20 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // Z-ordering: high density (small particles) = closer to camera (lower Z)
   // Low density (large particles) = further back (higher Z)
-  let zDepth = 1.0 - clamp(particleDensity * 0.1, 0.0, 0.99);
+  // Position-based hash prevents Z-fighting between particles with similar density
+  let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);
+  let zDepth = 1.0 - clamp(p.density * 0.1 + posHash * 0.001, 0.0, 0.99);
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
   // Pass offset for circle calculation in fragment shader
   // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range
-  output.offset = offset;
+  output.offset = cornerOffset;
 
   // Pass density for glow intensity calculation
-  output.density = particleDensity;
+  output.density = p.density;
 
   // Look up species color
-  let speciesIdx = min(particleSpecies, 5u);
+  let speciesIdx = min(p.species, 5u);
   output.color = vec4f(COLORS[speciesIdx], 1.0);
 
   return output;
@@ -137,6 +147,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     discard;
   }
 
-  let alpha = 1.0 - smoothstep(0.7, 1.0, dist);
+  let alpha = 1.0 - smoothstep(0.9, 1.0, dist);
   return vec4f(input.color.rgb, alpha);
 }

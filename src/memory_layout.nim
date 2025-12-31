@@ -5,48 +5,72 @@
 # This module defines the memory layout for ArrayBuffer-backed typed arrays.
 # It is the ONLY place where memory offsets are computed.
 #
-# ARCHITECTURE: WebGPU-only physics.
-# The layout defines CPU-side buffer structure for:
-#   - Initial particle data generation
-#   - Upload to GPU buffers
-#   - WebGL fallback rendering (reading positions for display)
+# ARCHITECTURE: WebGPU-only physics with AoS (Array of Structures) layout.
+#
+# AoS PARTICLE STRUCT (32 bytes, cache-aligned):
+# ┌─────────┬──────────┬───────┬─────────────────────────────────────────────┐
+# │ Offset  │ Field    │ Size  │ Description                                 │
+# ├─────────┼──────────┼───────┼─────────────────────────────────────────────┤
+# │ 0       │ pos.x    │ 4     │ X position (f32)                            │
+# │ 4       │ pos.y    │ 4     │ Y position (f32)                            │
+# │ 8       │ vel.x    │ 4     │ X velocity (f32)                            │
+# │ 12      │ vel.y    │ 4     │ Y velocity (f32)                            │
+# │ 16      │ species  │ 4     │ Species ID (u32)                            │
+# │ 20      │ density  │ 4     │ Local density (f32)                         │
+# │ 24      │ _pad0    │ 4     │ Padding for 32-byte alignment               │
+# │ 28      │ _pad1    │ 4     │ Padding for 32-byte alignment               │
+# └─────────┴──────────┴───────┴─────────────────────────────────────────────┘
+#
+# WHY 32 BYTES:
+# - Two particles fit in one 64-byte CPU cache line
+# - Four particles fit in one 128-byte GPU cache line
+# - Powers-of-two alignment avoids straddling cache line boundaries
+# - All fields naturally aligned (f32/u32 at 4-byte boundaries)
+#
+# BUFFER ORGANIZATION:
+# - particlesA: Primary particle buffer (N * 32 bytes)
+# - particlesSorted: Spatially-sorted copy for cache-friendly force computation
+# - velocityDeltaFixed: Interleaved i32 pairs for atomic Newton's 3rd law
+# - Grid buffers: cellCounts, cellOffsets for spatial hashing
+# - Index mappings: sortedIndices, reverseIndices
 #
 # CROSS-COMPILATION:
 #   This module compiles for `nim js` (browser).
 #   No jsffi, no browser APIs, no DOM - pure Nim with compile-time constants.
-#
-# IMPORTED BY:
-#   - config.nim (JS compilation)
-#   - buffers.nim (JS compilation)
-#   - grid_core.nim (JS compilation)
-#   - tests/* (native compilation)
-#
-# INVARIANTS:
-#   - All offsets are 4-byte aligned for typed array compatibility
-#   - Buffer A and B have identical layouts at different offsets
-#   - Total size fits within WASM_MEMORY_PAGES * 64KB
 #
 # ==============================================================================
 
 # ==============================================================================
 # SECTION 1: MAXIMUM LIMITS
 # ==============================================================================
-#
-# These constants determine buffer allocation sizes.
-# Changing them affects memory layout - all consumers must be recompiled.
 
 const
   MAX_PARTICLES* = 64000  ## Maximum supported particle count
   MAX_SPECIES* = 6        ## Maximum species for attraction matrix (6x6 = 36 floats)
   MAX_GRID* = 256         ## Maximum grid cells per dimension (256x256 = 65536 cells)
-  MAX_WORKERS* = 16       ## Maximum Web Workers for parallel physics
 
 # ==============================================================================
-# SECTION 2: WASM MEMORY CONFIGURATION
+# SECTION 2: AoS PARTICLE STRUCTURE
 # ==============================================================================
 #
-# WebAssembly linear memory is measured in 64KB pages.
-# We allocate enough for all particle data + grid + sync buffers.
+# The Particle struct is 32 bytes, matching the WGSL struct layout exactly.
+# This enables direct memcpy between CPU and GPU buffers.
+
+const
+  PARTICLE_STRIDE* = 32  ## Bytes per particle (cache-aligned)
+
+  # Field offsets within Particle struct (in bytes)
+  PARTICLE_POS_X_OFFSET* = 0
+  PARTICLE_POS_Y_OFFSET* = 4
+  PARTICLE_VEL_X_OFFSET* = 8
+  PARTICLE_VEL_Y_OFFSET* = 12
+  PARTICLE_SPECIES_OFFSET* = 16
+  PARTICLE_DENSITY_OFFSET* = 20
+  # Offsets 24-31 are padding
+
+# ==============================================================================
+# SECTION 3: WASM MEMORY CONFIGURATION
+# ==============================================================================
 
 const
   WASM_MEMORY_PAGES* = 2048      ## 128MB initial (2048 * 64KB)
@@ -54,213 +78,169 @@ const
   WASM_DATA_OFFSET* = 1024 * 1024  ## 1MB - skip WASM stack/heap
 
 # ==============================================================================
-# SECTION 3: SIZE CALCULATIONS
+# SECTION 4: SIZE CALCULATIONS
 # ==============================================================================
-#
-# Intermediate size values used for offset computation.
 
 const
-  FLOAT_SIZE = MAX_PARTICLES * 4  # Float32 = 4 bytes per particle
-  UINT8_SIZE = MAX_PARTICLES      # Uint8 = 1 byte per particle
-  GRID_CELLS = MAX_GRID * MAX_GRID  # Total grid cells
+  PARTICLES_BUFFER_SIZE = MAX_PARTICLES * PARTICLE_STRIDE  # 64K * 32 = 2MB per buffer
+  GRID_CELLS = MAX_GRID * MAX_GRID  # 256 * 256 = 65536 cells
 
 # ==============================================================================
-# SECTION 4: ALIGNMENT HELPER
+# SECTION 5: ALIGNMENT HELPER
 # ==============================================================================
 
 func align4(x: int): int {.inline.} =
   ## Align to 4-byte boundary for typed array compatibility.
-  ## Int32Array and Float32Array require 4-byte aligned offsets.
   (x + 3) and (not 3)
 
 # ==============================================================================
-# SECTION 5: MEMORY OFFSET TYPES
+# SECTION 6: MEMORY OFFSET TYPES
 # ==============================================================================
 
 type
   MemoryOffsets* = object
     ## All memory offsets as byte addresses from start of WASM memory.
-    ## These are used to create typed array views in JS and pointer casts in WASM.
 
-    # Buffer set A (source when parity=0)
-    pxA*: int       ## Float32Array: particle X positions
-    pyA*: int       ## Float32Array: particle Y positions
-    vxA*: int       ## Float32Array: particle X velocities
-    vyA*: int       ## Float32Array: particle Y velocities
-    denA*: int      ## Float32Array: particle densities
-    speciesA*: int  ## Uint8Array: particle species (0..MAX_SPECIES-1)
+    # AoS particle buffers (32 bytes per particle)
+    particlesA*: int      ## Primary particle buffer (N * 32 bytes)
+    particlesSorted*: int ## Spatially-sorted particles for cache-friendly forces
 
-    # Buffer set B (source when parity=1)
-    pxB*: int
-    pyB*: int
-    vxB*: int
-    vyB*: int
-    denB*: int
-    speciesB*: int
+    # Index mappings for scatter/gather
+    sortedIndices*: int   ## Uint32Array: sorted_idx -> original_idx
+    reverseIndices*: int  ## Uint32Array: original_idx -> sorted_idx
 
-    # Velocity deltas (written by physics, applied by integration)
-    vxDelta*: int   ## Float32Array: X velocity deltas (legacy, kept for compatibility)
-    vyDelta*: int   ## Float32Array: Y velocity deltas (legacy, kept for compatibility)
-
-    # Fixed-point interleaved velocity deltas for atomic accumulation
+    # Fixed-point velocity deltas for atomic accumulation (Newton's 3rd law)
     # Layout: [deltaVx_0, deltaVy_0, deltaVx_1, deltaVy_1, ...]
     # Scale: 65536 (16-bit fractional precision)
     velocityDeltaFixed*: int  ## Int32Array: interleaved [vdx, vdy] pairs
 
     # Spatial grid (for O(n*k) neighbor lookup)
-    gridCounts*: int   ## Uint16Array: particles per cell
+    gridCounts*: int   ## Uint32Array: particles per cell (atomic counters)
     gridOffsets*: int  ## Uint32Array: prefix sum offsets
 
     # Shared state
     matrix*: int    ## Float32Array[36]: 6x6 attraction matrix
-    sync*: int      ## Int32Array[256]: worker synchronization buffer
+    sync*: int      ## Int32Array[256]: synchronization buffer
 
     # Total size (for validation)
     totalSize*: int
 
+    # Legacy SoA offsets (for backward compatibility during transition)
+    # These point into particlesA at the appropriate field offsets
+    pxA*: int       ## Legacy: particle X positions
+    pyA*: int       ## Legacy: particle Y positions
+    vxA*: int       ## Legacy: particle X velocities
+    vyA*: int       ## Legacy: particle Y velocities
+    denA*: int      ## Legacy: particle densities
+    speciesA*: int  ## Legacy: particle species
+
 # ==============================================================================
-# SECTION 6: COMPILE-TIME OFFSET COMPUTATION
+# SECTION 7: COMPILE-TIME OFFSET COMPUTATION
 # ==============================================================================
-#
-# All offsets are computed at compile time.
-# The layout matches the JS MEMORY_LAYOUT object exactly.
 
 func computeMemoryOffsets(): MemoryOffsets =
   ## Compute all memory offsets at compile time.
-  ## This function is evaluated by the compiler, not at runtime.
 
   var offset = WASM_DATA_OFFSET
 
-  # Buffer A (source during even frames / parity=0)
-  let pxA = offset
-  offset += FLOAT_SIZE
-  let pyA = offset
-  offset += FLOAT_SIZE
-  let vxA = offset
-  offset += FLOAT_SIZE
-  let vyA = offset
-  offset += FLOAT_SIZE
-  let denA = offset
-  offset += FLOAT_SIZE
-  let speciesA = offset
-  offset += UINT8_SIZE
+  # Primary particle buffer (AoS layout)
+  let particlesA = offset
+  offset += PARTICLES_BUFFER_SIZE
 
-  # Buffer B (source during odd frames / parity=1) - align after uint8
-  offset = align4(offset)
-  let pxB = offset
-  offset += FLOAT_SIZE
-  let pyB = offset
-  offset += FLOAT_SIZE
-  let vxB = offset
-  offset += FLOAT_SIZE
-  let vyB = offset
-  offset += FLOAT_SIZE
-  let denB = offset
-  offset += FLOAT_SIZE
-  let speciesB = offset
-  offset += UINT8_SIZE
+  # Sorted particle buffer (for cache-friendly force computation)
+  let particlesSorted = offset
+  offset += PARTICLES_BUFFER_SIZE
 
-  # Velocity deltas (workers write here) - align after uint8
-  offset = align4(offset)
-  let vxDelta = offset
-  offset += FLOAT_SIZE
-  let vyDelta = offset
-  offset += FLOAT_SIZE
+  # Index mappings
+  let sortedIndices = offset
+  offset += MAX_PARTICLES * 4  # u32 per particle
+  let reverseIndices = offset
+  offset += MAX_PARTICLES * 4  # u32 per particle
 
-  # Fixed-point interleaved velocity deltas for atomic accumulation
-  # Layout: [deltaVx_0, deltaVy_0, deltaVx_1, deltaVy_1, ...]
-  # Size: 2 * MAX_PARTICLES * sizeof(int32) = 2 * MAX_PARTICLES * 4 bytes
+  # Fixed-point velocity deltas for atomic accumulation
   let velocityDeltaFixed = offset
-  offset += MAX_PARTICLES * 2 * 4  # 2 int32s per particle
+  offset += MAX_PARTICLES * 2 * 4  # 2 i32s per particle
 
   # Spatial grid
   let gridCounts = offset
-  offset += GRID_CELLS * 2  # Uint16Array = 2 bytes per cell
-  offset = align4(offset)
+  offset += GRID_CELLS * 4  # u32 per cell (for atomics)
   let gridOffsets = offset
-  offset += GRID_CELLS * 4  # Uint32Array = 4 bytes per cell
+  offset += GRID_CELLS * 4  # u32 per cell
 
   # Attraction matrix (6x6 = 36 floats)
   let matrix = offset
   offset += 36 * 4
 
-  # Sync buffer for Atomics (must be 4-byte aligned for Int32Array)
+  # Sync buffer
   offset = align4(offset)
   let sync = offset
-  offset += 256 * 4  # 256 int32s for worker synchronization
+  offset += 256 * 4
 
   let totalSize = offset
 
+  # Legacy SoA offsets point into particlesA
+  # These are for backward compatibility - they're not actually separate arrays
+  # but rather conceptual pointers to where the data would be in SoA layout
+  # Note: These are NOT valid for direct array access in AoS mode!
+  # They're kept only for config.nim export compatibility
+  let pxA = particlesA + PARTICLE_POS_X_OFFSET
+  let pyA = particlesA + PARTICLE_POS_Y_OFFSET
+  let vxA = particlesA + PARTICLE_VEL_X_OFFSET
+  let vyA = particlesA + PARTICLE_VEL_Y_OFFSET
+  let denA = particlesA + PARTICLE_DENSITY_OFFSET
+  let speciesA = particlesA + PARTICLE_SPECIES_OFFSET
+
   result = MemoryOffsets(
-    pxA: pxA, pyA: pyA, vxA: vxA, vyA: vyA, denA: denA, speciesA: speciesA,
-    pxB: pxB, pyB: pyB, vxB: vxB, vyB: vyB, denB: denB, speciesB: speciesB,
-    vxDelta: vxDelta, vyDelta: vyDelta,
+    particlesA: particlesA,
+    particlesSorted: particlesSorted,
+    sortedIndices: sortedIndices,
+    reverseIndices: reverseIndices,
     velocityDeltaFixed: velocityDeltaFixed,
-    gridCounts: gridCounts, gridOffsets: gridOffsets,
-    matrix: matrix, sync: sync,
-    totalSize: totalSize
+    gridCounts: gridCounts,
+    gridOffsets: gridOffsets,
+    matrix: matrix,
+    sync: sync,
+    totalSize: totalSize,
+    # Legacy
+    pxA: pxA, pyA: pyA, vxA: vxA, vyA: vyA, denA: denA, speciesA: speciesA
   )
 
 # ==============================================================================
-# SECTION 7: EXPORTED CONSTANTS
+# SECTION 8: EXPORTED CONSTANTS
 # ==============================================================================
-#
-# OFFSETS is the single source of truth for all memory layout information.
-# Both JS and WASM code should reference these values.
 
 const OFFSETS* = computeMemoryOffsets()
 
-# ==============================================================================
-# SECTION 8: INDIVIDUAL OFFSET EXPORTS (for WASM convenience)
-# ==============================================================================
-#
-# WASM code uses raw pointer arithmetic and benefits from named constants.
-# These are aliases into OFFSETS for cleaner WASM code.
-
+# Individual exports for convenience
 const
-  PX_A_OFFSET* = OFFSETS.pxA
-  PY_A_OFFSET* = OFFSETS.pyA
-  VX_A_OFFSET* = OFFSETS.vxA
-  VY_A_OFFSET* = OFFSETS.vyA
-  DEN_A_OFFSET* = OFFSETS.denA
-  SPECIES_A_OFFSET* = OFFSETS.speciesA
-
-  PX_B_OFFSET* = OFFSETS.pxB
-  PY_B_OFFSET* = OFFSETS.pyB
-  VX_B_OFFSET* = OFFSETS.vxB
-  VY_B_OFFSET* = OFFSETS.vyB
-  DEN_B_OFFSET* = OFFSETS.denB
-  SPECIES_B_OFFSET* = OFFSETS.speciesB
-
-  VX_DELTA_OFFSET* = OFFSETS.vxDelta
-  VY_DELTA_OFFSET* = OFFSETS.vyDelta
+  PARTICLES_A_OFFSET* = OFFSETS.particlesA
+  PARTICLES_SORTED_OFFSET* = OFFSETS.particlesSorted
+  SORTED_INDICES_OFFSET* = OFFSETS.sortedIndices
+  REVERSE_INDICES_OFFSET* = OFFSETS.reverseIndices
   VELOCITY_DELTA_FIXED_OFFSET* = OFFSETS.velocityDeltaFixed
-
   GRID_COUNTS_OFFSET* = OFFSETS.gridCounts
   GRID_OFFSETS_OFFSET* = OFFSETS.gridOffsets
-
   MATRIX_OFFSET* = OFFSETS.matrix
   SYNC_OFFSET* = OFFSETS.sync
 
 # ==============================================================================
-# SECTION 9: VALIDATION HELPERS
+# SECTION 9: VALIDATION
 # ==============================================================================
-#
-# These compile-time checks ensure the memory layout is valid.
 
 static:
   # Verify alignment
-  assert OFFSETS.pxB mod 4 == 0, "Buffer B must be 4-byte aligned"
-  assert OFFSETS.vxDelta mod 4 == 0, "vxDelta must be 4-byte aligned"
+  assert OFFSETS.particlesA mod 4 == 0, "particlesA must be 4-byte aligned"
+  assert OFFSETS.particlesSorted mod 4 == 0, "particlesSorted must be 4-byte aligned"
   assert OFFSETS.velocityDeltaFixed mod 4 == 0, "velocityDeltaFixed must be 4-byte aligned"
   assert OFFSETS.gridOffsets mod 4 == 0, "gridOffsets must be 4-byte aligned"
   assert OFFSETS.sync mod 4 == 0, "sync buffer must be 4-byte aligned"
 
-  # Verify no overlap between buffer sets (species arrays are MAX_PARTICLES bytes each)
-  # Use >= because align4 may place next region exactly at end of previous
-  assert OFFSETS.pxB >= OFFSETS.speciesA + MAX_PARTICLES, "Buffer B must not overlap Buffer A"
-  assert OFFSETS.vxDelta >= OFFSETS.speciesB + MAX_PARTICLES, "vxDelta must not overlap Buffer B"
-  assert OFFSETS.velocityDeltaFixed >= OFFSETS.vyDelta + MAX_PARTICLES * 4, "velocityDeltaFixed must not overlap vyDelta"
+  # Verify no overlap
+  assert OFFSETS.particlesSorted >= OFFSETS.particlesA + PARTICLES_BUFFER_SIZE
+  assert OFFSETS.sortedIndices >= OFFSETS.particlesSorted + PARTICLES_BUFFER_SIZE
 
-  # Verify total size fits in allocated memory
-  assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated WASM memory"
+  # Verify particle stride
+  assert PARTICLE_STRIDE == 32, "Particle stride must be 32 bytes for cache alignment"
+
+  # Verify total size fits
+  assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated memory"

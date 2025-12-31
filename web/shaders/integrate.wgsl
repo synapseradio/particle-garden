@@ -1,25 +1,58 @@
 // =============================================================================
-// VELOCITY INTEGRATION AND POSITION UPDATE SHADER (Pass 5)
+// INTEGRATE: Apply Velocity/Density Deltas and Update Positions (Pass 5 - AoS)
 // =============================================================================
 //
-// Applies velocity deltas computed by the forces pass and updates positions.
-// Mirrors physics_wasm.nim physics() for exact algorithm parity.
+// WHY THIS EXISTS:
+// Final integration step - applies all changes computed by the forces pass:
+// - Velocity deltas (from inter-particle forces and mouse interaction)
+// - Density deltas (symmetric accumulation from half-neighbor pairs)
+// - Position updates (velocity integration with toroidal wrapping)
 //
-// Algorithm:
-// 1. Read velocity and position from active buffer (in-place update)
-// 2. Read velocity delta from forces output (fixed-point interleaved i32)
-// 3. Convert fixed-point to float and apply delta with friction
-// 4. Apply velocity capping (logarithmic soft cap)
-// 5. Update position: newPos = oldPos + newVel
-// 6. Apply toroidal wrapping
-// 7. Write back to same buffer (in-place)
+// WHY DENSITY IS HERE (not in forces):
+// Forces pass uses half-neighbor iteration - each pair processed once.
+// Both particles in a pair receive density via atomics (fixed-point i32).
+// This shader converts the accumulated fixed-point values back to float,
+// applies temporal smoothing, and writes the final density to particle.
 //
-// NOTE: This shader does IN-PLACE updates on the active buffer.
-// The caller determines which buffer set (A or B) is active by binding
-// the appropriate buffers. No parity branching needed in shader.
+// TEMPORAL SMOOTHING:
+// Raw density can flicker frame-to-frame as particles move in/out of range.
+// We use exponential moving average: 70% previous + 30% new.
+// Think of it like your eyes adjusting to light - smooth transitions.
 //
-// Thread mapping: One particle per thread (@workgroup_size(128, 1, 1))
+// ALGORITHM:
+// 1. Read particle from ORIGINAL buffer (in-place update)
+// 2. Read velocity delta (fixed-point i32 pair) → convert to float
+// 3. Read density delta (fixed-point i32) → convert to float
+// 4. Apply velocity delta with friction
+// 5. Apply velocity capping (logarithmic soft cap)
+// 6. Apply density temporal smoothing
+// 7. Update position: newPos = oldPos + newVel
+// 8. Apply toroidal wrapping
+// 9. Write updated particle back (in-place)
+//
+// BINDING MANIFEST:
+// +-------+---------------------------+-------------------+--------+
+// | Bind  | Shader Type               | JS Buffer         | Access |
+// +-------+---------------------------+-------------------+--------+
+// |   0   | uniform IntegrationParams | integrationParams | read   |
+// |   1   | storage array<Particle>   | particles         | r/w    |
+// |   2   | storage array<i32>        | velocityDelta     | read   |
+// |   3   | storage array<i32>        | densityDelta      | read   |
+// +-------+---------------------------+-------------------+--------+
+// TOTAL: 3 storage buffers (well under 8-buffer limit)
+//
+// THREAD MAPPING: One particle per thread (original index space)
 // =============================================================================
+
+// AoS Particle struct: 32 bytes, cache-aligned
+struct Particle {
+  pos: vec2<f32>,    // offset 0, size 8
+  vel: vec2<f32>,    // offset 8, size 8
+  species: u32,      // offset 16, size 4
+  density: f32,      // offset 20, size 4
+  _pad0: u32,        // offset 24, size 4
+  _pad1: u32,        // offset 28, size 4
+}
 
 struct IntegrationParams {
   worldWidth: f32,       // World width (offset 0)
@@ -33,20 +66,13 @@ struct IntegrationParams {
 };
 
 @group(0) @binding(0) var<uniform> params: IntegrationParams;
-
-// Active particle buffers (in-place read/write)
-@group(0) @binding(1) var<storage, read_write> positionX: array<f32>;
-@group(0) @binding(2) var<storage, read_write> positionY: array<f32>;
-@group(0) @binding(3) var<storage, read_write> velocityX: array<f32>;
-@group(0) @binding(4) var<storage, read_write> velocityY: array<f32>;
-
-// Velocity delta from forces pass (interleaved fixed-point i32)
-// Layout: [deltaVx_0, deltaVy_0, deltaVx_1, deltaVy_1, ...]
-// Scale factor must match forces.wgsl FIXED_POINT_SCALE
-@group(0) @binding(5) var<storage, read> velocityDeltaFixed: array<i32>;
+@group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
+@group(0) @binding(2) var<storage, read> velocityDeltaFixed: array<i32>;
+@group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
 
 const FIXED_POINT_SCALE: f32 = 65536.0;
 const INV_FIXED_POINT_SCALE: f32 = 0.0000152587890625;  // 1.0 / 65536.0
+const DENSITY_SMOOTH_FACTOR: f32 = 0.7;  // 70% old + 30% new for temporal smoothing
 
 @compute @workgroup_size(128, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -56,11 +82,8 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
     return;
   }
 
-  // Read current state
-  let oldVelX = velocityX[particleIdx];
-  let oldVelY = velocityY[particleIdx];
-  let oldPosX = positionX[particleIdx];
-  let oldPosY = positionY[particleIdx];
+  // Read current particle state (AoS: all data in one read)
+  var p = particles[particleIdx];
 
   // Read velocity delta from fixed-point interleaved buffer
   let deltaVxFixed = velocityDeltaFixed[particleIdx * 2u];
@@ -68,10 +91,19 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let deltaVx = f32(deltaVxFixed) * INV_FIXED_POINT_SCALE;
   let deltaVy = f32(deltaVyFixed) * INV_FIXED_POINT_SCALE;
 
+  // Read density delta from fixed-point buffer (symmetric accumulation from forces)
+  // Both particles in each pair received contributions via atomics
+  let deltaDensityFixed = densityDeltaFixed[particleIdx];
+  let deltaDensity = f32(deltaDensityFixed) * INV_FIXED_POINT_SCALE;
+
+  // Apply density temporal smoothing
+  // Prevents flickering as particles move in/out of interaction radius
+  let smoothedDensity = p.density * DENSITY_SMOOTH_FACTOR + deltaDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
+  p.density = smoothedDensity;
+
   // Apply velocity delta and friction
-  // Matches physics_wasm.nim: vxActive[i] = (vxActive[i] + vxDelta[i]) * friction
-  var newVelX = (oldVelX + deltaVx) * params.friction;
-  var newVelY = (oldVelY + deltaVy) * params.friction;
+  var newVelX = (p.vel.x + deltaVx) * params.friction;
+  var newVelY = (p.vel.y + deltaVy) * params.friction;
 
   // Logarithmic velocity capping to reduce jank in high-activity areas
   // Soft cap: velocities above threshold are compressed logarithmically
@@ -88,13 +120,15 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
     newVelY *= scale;
   }
 
+  // Update velocity
+  p.vel.x = newVelX;
+  p.vel.y = newVelY;
+
   // Update position
-  // Matches physics_wasm.nim: let x = pxActive[i] + vxActive[i]
-  var newPosX = oldPosX + newVelX;
-  var newPosY = oldPosY + newVelY;
+  var newPosX = p.pos.x + newVelX;
+  var newPosY = p.pos.y + newVelY;
 
   // Toroidal wrap
-  // Matches physics_wasm.nim toroidal wrapping
   if (newPosX < 0.0) {
     newPosX += params.worldWidth;
   } else if (newPosX >= params.worldWidth) {
@@ -107,9 +141,10 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
     newPosY -= params.worldHeight;
   }
 
-  // Write back (in-place)
-  velocityX[particleIdx] = newVelX;
-  velocityY[particleIdx] = newVelY;
-  positionX[particleIdx] = newPosX;
-  positionY[particleIdx] = newPosY;
+  // Update position
+  p.pos.x = newPosX;
+  p.pos.y = newPosY;
+
+  // Write back updated particle (AoS: all data in one write)
+  particles[particleIdx] = p;
 }

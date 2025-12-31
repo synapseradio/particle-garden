@@ -210,22 +210,20 @@ proc render*(particleCount: int): RenderTiming {.exportc.} =
   # Phase 1: Pack vertex data (CPU-side)
   let tPack0 = performanceNow()
 
-  # Select active buffer based on current parity
-  let pxActive = if activeParity == 1: pxB else: pxA
-  let pyActive = if activeParity == 1: pyB else: pyA
-  let sActive = if activeParity == 1: speciesB else: speciesA
-  let denActive = if activeParity == 1: denB else: denA
-
+  # Read from AoS particle buffer
+  # Struct layout: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5), pad(6-7)
   # Pack interleaved vertex data: position (2), color (3), density (1) = 6 floats per particle
   for i in 0 ..< n:
     let i6 = i * 6
-    let c = sActive[i] * 3
-    renderData[i6] = pxActive[i]
-    renderData[i6 + 1] = pyActive[i]
+    let pBase = i * FLOATS_PER_PARTICLE  # 8 floats per particle in AoS
+    let speciesVal = int(particlesA[pBase + FIELD_SPECIES])
+    let c = speciesVal * 3
+    renderData[i6] = particlesA[pBase + FIELD_POS_X]
+    renderData[i6 + 1] = particlesA[pBase + FIELD_POS_Y]
     renderData[i6 + 2] = COLORS[c]
     renderData[i6 + 3] = COLORS[c + 1]
     renderData[i6 + 4] = COLORS[c + 2]
-    renderData[i6 + 5] = denActive[i]
+    renderData[i6 + 5] = particlesA[pBase + FIELD_DENSITY]
 
   let packTimeMs = performanceNow() - tPack0
 

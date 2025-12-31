@@ -3,48 +3,65 @@
 // =============================================================================
 //
 // WHY THIS EXISTS (Cache Optimization):
-// This shader reads particle data from SORTED buffers (pxSorted, pySorted, etc.)
-// instead of using indirect indexing (px[sortedIndices[j]]). The physical scatter
-// passes (bin-scatter-positions, bin-scatter-velocities) copy particle data into
-// spatially-sorted order, enabling SEQUENTIAL memory access patterns here.
+// This shader reads particle data from SORTED AoS buffer (particlesSorted[])
+// instead of using indirect indexing. The physical scatter pass copies entire
+// particle structs into spatially-sorted order, enabling SEQUENTIAL memory
+// access patterns here.
 //
-// CACHE BEHAVIOR:
-// - OLD: pxA[sortedIndices[j]] = random access = L3 cache misses
-// - NEW: pxSorted[j] = sequential access = L1 cache hits
-//
-// This change alone can yield 2-3x speedup in the forces computation.
+// AoS CACHE BEHAVIOR:
+// - Each Particle is 32 bytes (2 particles per 64-byte cache line)
+// - Reading particlesSorted[j] loads pos, vel, species, density in one fetch
+// - No separate buffer reads needed - all particle data is colocated
 //
 // ALGORITHM:
 // Computes inter-particle forces AND local density using half-neighbor iteration.
 // Each pair (i,j) is computed ONCE, with force applied to both particles via atomics.
 //
-// HALF-NEIGHBOR PATTERN:
+// HALF-NEIGHBOR PATTERN (the key optimization):
+// Think of it like shaking hands at a party: each person only needs to shake
+// hands with people they haven't met yet. If Alice shakes Bob's hand, Bob doesn't
+// need to shake Alice's hand separately - that would duplicate the interaction.
+//
+// For particle i, we ONLY check:
 // +---+---+---+
-// |   |   |   |  Skip top row (handled by particles above)
+// |   |   |   |  Top row: SKIP (those particles will check us when it's their turn)
 // +---+---+---+
-// |   | i | Y |  Same cell: j>i only. Right: all.
+// |   | i | Y |  Same cell: only j>i (avoid i checking i). Right: all particles.
 // +---+---+---+
-// | Y | Y | Y |  Bottom row: all three cells.
+// | Y | Y | Y |  Bottom row: all three cells (they haven't checked us yet).
 // +---+---+---+
 //
+// This gives us 5 cells instead of 9, cutting work nearly in half.
+// Each pair (i,j) is computed EXACTLY ONCE, with forces applied to both via atomics.
+//
 // BINDING MANIFEST:
-// +-------+---------------------------+------------------+--------+
-// | Bind  | Shader Type               | JS Buffer        | Access |
-// +-------+---------------------------+------------------+--------+
-// |   0   | uniform SimParams         | simParams        | read   |
-// |   1   | storage array<f32>        | pxSorted         | read   |
-// |   2   | storage array<f32>        | pySorted         | read   |
-// |   3   | storage array<u32>        | speciesSorted    | read   |
-// |   4   | storage array<u32>        | sortedIndices    | read   |
-// |   5   | storage array<u32>        | cellOffsets      | read   |
-// |   6   | storage array<u32>        | cellCounts       | read   |
-// |   7   | storage array<f32>        | densityOutput    | r/w    |
-// |   8   | storage atomic<i32>       | velocityDelta    | r/w    |
-// +-------+---------------------------+------------------+--------+
-// TOTAL: 8 storage buffers (at WebGPU per-stage limit)
+// +-------+---------------------------+------------------------+--------+
+// | Bind  | Shader Type               | JS Buffer              | Access |
+// +-------+---------------------------+------------------------+--------+
+// |   0   | uniform SimParams         | simParams              | read   |
+// |   1   | storage array<Particle>   | particlesSorted        | read   |
+// |   2   | storage array<u32>        | sortedToOriginal       | read   |
+// |   3   | storage array<u32>        | cellStartOffsets       | read   |
+// |   4   | storage array<u32>        | cellParticleCounts     | read   |
+// |   5   | storage atomic<i32>       | velocityDeltaFixed     | r/w    |
+// |   6   | storage atomic<i32>       | densityDeltaFixed      | r/w    |
+// +-------+---------------------------+------------------------+--------+
+// TOTAL: 6 storage buffers (under 8-buffer limit)
 //
 // THREAD MAPPING: One particle per thread (sorted index space)
 // =============================================================================
+
+// Array of Structs (AoS) layout: 32 bytes, cache-aligned
+// All data for one particle lives together in memory.
+// Reading one particle brings all its fields into cache at once.
+struct Particle {
+  pos: vec2<f32>,
+  vel: vec2<f32>,
+  species: u32,
+  density: f32,
+  _pad0: u32,
+  _pad1: u32,
+}
 
 struct SimParams {
   dt: f32,
@@ -64,25 +81,27 @@ struct SimParams {
 
 @group(0) @binding(0) var<uniform> params: SimParams;
 
-// SORTED buffers - sequential access for cache efficiency
-@group(0) @binding(1) var<storage, read> pxSorted: array<f32>;
-@group(0) @binding(2) var<storage, read> pySorted: array<f32>;
-@group(0) @binding(3) var<storage, read> speciesSorted: array<u32>;
+// SORTED buffer: particles reordered by spatial grid position for sequential memory access
+@group(0) @binding(1) var<storage, read> particlesSorted: array<Particle>;
 
-// Index mapping: sortedIdx -> originalIdx (for writing velocity deltas)
-@group(0) @binding(4) var<storage, read> sortedToOriginal: array<u32>;
-@group(0) @binding(5) var<storage, read> cellStartOffsets: array<u32>;
-@group(0) @binding(6) var<storage, read> cellParticleCounts: array<u32>;
+// Index mapping: sortedIdx → originalIdx (needed to write results back to original buffers)
+@group(0) @binding(2) var<storage, read> sortedToOriginal: array<u32>;
+@group(0) @binding(3) var<storage, read> cellStartOffsets: array<u32>;
+@group(0) @binding(4) var<storage, read> cellParticleCounts: array<u32>;
 
-@group(0) @binding(7) var<storage, read_write> densityOutput: array<f32>;
-@group(0) @binding(8) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
+// WHY FIXED-POINT? GPUs don't support atomic operations on floats (yet).
+// We can't just write "atomicAdd(&someFloat, 0.5)" - hardware doesn't support it.
+// Solution: scale floats by 65536, convert to integers, use atomic integer ops,
+// then scale back down when reading. Like counting money in cents instead of dollars.
+@group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
+@group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
 const MAX_SPECIES: u32 = 6u;
-const MIN_DISTANCE_SQ: f32 = 4.0;
-const REPULSION_ZONE_INV: f32 = 3.333333333;     // 1.0 / 0.3
-const ATTRACTION_FALLOFF_INV: f32 = 1.428571429; // 1.0 / 0.7
-const MOUSE_RANGE_SQ: f32 = 90000.0;
-const FIXED_POINT_SCALE: f32 = 65536.0;
+const MIN_DISTANCE_SQ: f32 = 4.0;  // Prevents division-by-zero when particles overlap
+const REPULSION_ZONE_INV: f32 = 3.333333333;     // 1.0 / 0.3 (inner 30% of radius)
+const ATTRACTION_FALLOFF_INV: f32 = 1.428571429; // 1.0 / 0.7 (outer 70% of radius)
+const MOUSE_RANGE_SQ: f32 = 90000.0;  // 300² - mouse influence radius squared
+const FIXED_POINT_SCALE: f32 = 65536.0;  // Float-to-int conversion factor (2^16)
 
 @compute @workgroup_size(128, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -92,13 +111,10 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     return;
   }
 
-  // Load this particle's state from SORTED buffers (sequential read)
-  let thisX = pxSorted[thisSortedIdx];
-  let thisY = pySorted[thisSortedIdx];
-  let thisSpecies = speciesSorted[thisSortedIdx];
+  let thisParticle = particlesSorted[thisSortedIdx];
   let thisOriginalIdx = sortedToOriginal[thisSortedIdx];
 
-  // Precompute constants
+  // Precompute constants (avoid recomputing in inner loops)
   let radiusSq = params.interactionRadius * params.interactionRadius;
   let invRadius = 1.0 / params.interactionRadius;
   let halfWorldWidth = params.worldWidth * 0.5;
@@ -109,38 +125,59 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let gridWidth = i32(params.gridCellsX);
   let gridHeight = i32(params.gridCellsY);
 
-  // Accumulators for this particle (register, not memory)
+  // Accumulators for THIS particle (held in GPU registers, not global memory)
   var forceOnThisX = 0.0;
   var forceOnThisY = 0.0;
   var densityAccum = 0.0;
 
+  // ATOMIC INITIALIZATION: Reset delta buffers for this particle.
+  // This replaces clearBuffer() to avoid race conditions between buffer clearing
+  // and atomic writes. Each thread owns its particle's slot, so this is safe.
+  // See: W3C WGSL spec on memory model - no inter-workgroup ordering guarantees.
+  atomicStore(&velocityDeltaFixed[thisOriginalIdx * 2u], 0);
+  atomicStore(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], 0);
+  atomicStore(&densityDeltaFixed[thisOriginalIdx], 0);
+
   // Find this particle's grid cell
-  var cellX = i32(thisX * invCellWidth);
-  var cellY = i32(thisY * invCellHeight);
+  var cellX = i32(thisParticle.pos.x * invCellWidth);
+  var cellY = i32(thisParticle.pos.y * invCellHeight);
   cellX = clamp(cellX, 0, gridWidth - 1);
   cellY = clamp(cellY, 0, gridHeight - 1);
 
   // Half-neighbor iteration: 5 cells instead of 9
+  // Why these specific 5? Imagine scanning left-to-right, top-to-bottom.
+  // Cells 0,1,2 (top row) have already been processed by earlier threads.
+  // We only need: own cell (0,0), right (1,0), and bottom-left to bottom-right (-1,1), (0,1), (1,1).
   for (var neighborIdx: i32 = 0; neighborIdx < 5; neighborIdx++) {
     var offsetX: i32;
     var offsetY: i32;
 
-    // Unrolled offset lookup
-    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }
-    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }
-    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }
-    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }
-    else { offsetX = 1; offsetY = 1; }
+    // Map index to cell offset (unrolled for GPU performance)
+    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }   // Same cell
+    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }   // Right
+    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }  // Bottom-left
+    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }   // Bottom
+    else { offsetX = 1; offsetY = 1; }                          // Bottom-right
 
     var neighborCellX = cellX + offsetX;
     var neighborCellY = cellY + offsetY;
     var toroidalOffsetX = 0.0;
     var toroidalOffsetY = 0.0;
 
+    // TOROIDAL WRAPPING (Pac-Man physics):
+    // World wraps at edges - particles exiting right re-enter from left.
+    // The GRID cells wrap (for neighbor search), but we also need to adjust
+    // the POSITION we use for distance calculations.
+    //
+    // Example: Particle at x=5 near left edge, neighbor cell wraps to right edge.
+    // Grid cell wraps: -1 → gridWidth-1 (correct cell index)
+    // Position offset: subtract worldWidth so distance calc treats neighbor
+    // as if it's "just to the left" instead of "way over on the right."
+
     // Toroidal X wrap
     if (neighborCellX < 0) {
-      neighborCellX += gridWidth;
-      toroidalOffsetX = -params.worldWidth;
+      neighborCellX += gridWidth;          // Wrap cell index
+      toroidalOffsetX = -params.worldWidth; // Adjust position for distance calc
     } else if (neighborCellX >= gridWidth) {
       neighborCellX -= gridWidth;
       toroidalOffsetX = params.worldWidth;
@@ -173,52 +210,77 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let isSameCell = (neighborIdx == 0);
     let cellEnd = cellStart + particlesInCell;
 
-    // Iterate through particles in this cell - SEQUENTIAL access now!
+    // Iterate through particles in this cell
+    // Because particles are SORTED by spatial position, this is sequential memory access.
+    // The GPU loads cache lines sequentially - very efficient!
     for (var otherSortedIdx: i32 = cellStart; otherSortedIdx < cellEnd; otherSortedIdx++) {
-      // For same cell, only process pairs where other > this (avoid double-counting)
+      // For same cell, only process pairs where other > this (half-neighbor optimization)
       if (isSameCell && u32(otherSortedIdx) <= thisSortedIdx) {
         continue;
       }
 
-      // Skip self
       if (u32(otherSortedIdx) == thisSortedIdx) {
         continue;
       }
 
-      // Load other particle's state from SORTED buffers (sequential read = L1 cache hit!)
-      let otherX = pxSorted[otherSortedIdx];
-      let otherY = pySorted[otherSortedIdx];
-      let otherSpecies = speciesSorted[otherSortedIdx];
+      // Load neighbor particle (AoS: all fields arrive in one memory fetch)
+      let otherParticle = particlesSorted[otherSortedIdx];
       let otherOriginalIdx = sortedToOriginal[otherSortedIdx];
 
-      // Compute separation vector
-      let separationX = (otherX + toroidalOffsetX) - thisX;
-      let separationY = (otherY + toroidalOffsetY) - thisY;
+      // Compute separation vector (accounting for toroidal wrapping)
+      let separationX = (otherParticle.pos.x + toroidalOffsetX) - thisParticle.pos.x;
+      let separationY = (otherParticle.pos.y + toroidalOffsetY) - thisParticle.pos.y;
       let distanceSq = separationX * separationX + separationY * separationY;
 
       if (distanceSq > 0.0 && distanceSq < radiusSq) {
         let clampedDistSq = max(distanceSq, MIN_DISTANCE_SQ);
         let distance = sqrt(clampedDistSq);
         let invDistance = 1.0 / distance;
-        let normalizedDist = distance * invRadius;
+        let normalizedDist = distance * invRadius;  // 0.0 = touching, 1.0 = at radius edge
 
         // Get attraction coefficients for both directions
-        let matrixIdxThisToOther = thisSpecies * MAX_SPECIES + otherSpecies;
-        let matrixIdxOtherToThis = otherSpecies * MAX_SPECIES + thisSpecies;
+        // Matrix is asymmetric: Red may attract Blue, while Blue repels Red
+        let matrixIdxThisToOther = thisParticle.species * MAX_SPECIES + otherParticle.species;
+        let matrixIdxOtherToThis = otherParticle.species * MAX_SPECIES + thisParticle.species;
         let attractionThisToOther = params.attractionMatrix[matrixIdxThisToOther / 4u][matrixIdxThisToOther % 4u];
         let attractionOtherToThis = params.attractionMatrix[matrixIdxOtherToThis / 4u][matrixIdxOtherToThis % 4u];
+
+        // FORCE CALCULATION (the physics):
+        // We use a piecewise function with two zones:
+        //
+        // 1. REPULSION ZONE (normalizedDist < 0.3):
+        //    Linear ramp from -1.0 (at distance 0) to 0.0 (at 30% of radius).
+        //    Think of it as particles having a "personal space bubble."
+        //    Formula: (dist/0.3) - 1.0
+        //    At dist=0:   force = -1.0 (maximum repulsion)
+        //    At dist=0.3: force = 0.0  (repulsion ends)
+        //
+        // 2. ATTRACTION ZONE (normalizedDist >= 0.3):
+        //    Triangular peak centered at 65% of radius.
+        //    Force starts at 0 (at 30%), peaks at 65%, returns to 0 at 100%.
+        //    Scaled by the attraction coefficient from the species matrix.
+        //    Formula: attraction * (1.0 - |2*dist - 1.3| / 0.7)
+        //    At dist=0.3: force = 0.0
+        //    At dist=0.65: force = attraction (maximum)
+        //    At dist=1.0: force = 0.0
+        //
+        // Finally, divide by distance (invDistance) to convert force magnitude
+        // into proper acceleration (like gravity: F ∝ 1/r² becomes a ∝ 1/r).
 
         // Force on THIS particle
         var forceMagnitudeOnThis: f32;
         if (normalizedDist < 0.3) {
+          // Repulsion zone: linear from -1.0 to 0.0
           forceMagnitudeOnThis = normalizedDist * REPULSION_ZONE_INV - 1.0;
         } else {
-          let t = 2.0 * normalizedDist - 1.3;
+          // Attraction zone: triangular peak at 0.65
+          let t = 2.0 * normalizedDist - 1.3;  // Shifts peak to 0.65
           forceMagnitudeOnThis = attractionThisToOther * (1.0 - abs(t) * ATTRACTION_FALLOFF_INV);
         }
         forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
 
-        // Force on OTHER particle (Newton's 3rd law)
+        // Force on OTHER particle (Newton's 3rd law: equal and opposite)
+        // Note: Uses OTHER's attraction coefficient (asymmetric interactions)
         var forceMagnitudeOnOther: f32;
         if (normalizedDist < 0.3) {
           forceMagnitudeOnOther = normalizedDist * REPULSION_ZONE_INV - 1.0;
@@ -228,32 +290,54 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         }
         forceMagnitudeOnOther *= params.forceMultiplier * invDistance;
 
-        // Accumulate force on THIS in register (no atomic needed)
+        // Accumulate force on THIS in register (no atomic needed - we own this thread)
         forceOnThisX += separationX * forceMagnitudeOnThis;
         forceOnThisY += separationY * forceMagnitudeOnThis;
 
         // Apply force to OTHER particle via global atomic
-        // Write to ORIGINAL index since velocityDelta is in original order
-        let forceOnOtherX = -separationX * forceMagnitudeOnOther;
+        // WHY ATOMICS? Multiple threads might find the same OTHER particle.
+        // Example: Particle 7 is a neighbor of particles 3, 5, and 12.
+        // Threads for 3, 5, and 12 all try to update particle 7 simultaneously.
+        // Without atomics, updates would race and overwrite each other (data loss).
+        // atomicAdd ensures all three contributions are correctly summed.
+        //
+        // WHY FIXED-POINT? GPU atomics only work on integers, not floats.
+        // Scale by 65536, convert to int, atomic add, then scale back later.
+        let forceOnOtherX = -separationX * forceMagnitudeOnOther;  // Newton's 3rd: opposite direction
         let forceOnOtherY = -separationY * forceMagnitudeOnOther;
         let deltaVxOtherFixed = i32(forceOnOtherX * params.dt * FIXED_POINT_SCALE);
         let deltaVyOtherFixed = i32(forceOnOtherY * params.dt * FIXED_POINT_SCALE);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], deltaVxOtherFixed);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], deltaVyOtherFixed);
 
-        // Density: same-species neighbors
-        if (otherSpecies == thisSpecies) {
-          densityAccum += 1.0 - normalizedDist;
+        // SYMMETRIC DENSITY ACCUMULATION:
+        // Density measures "crowding" - how many same-species neighbors are nearby.
+        // Used for visual effects (particle size based on population pressure).
+        //
+        // CRITICAL: Half-neighbor iteration means each pair is processed ONCE.
+        // Both particles must receive the density contribution from this pair.
+        // Same atomic pattern as velocity - write to OTHER immediately,
+        // accumulate THIS in register and write once at the end.
+        //
+        // Weighted by proximity: (1.0 - normalizedDist) means touching=1.0, at edge=0.0
+        if (otherParticle.species == thisParticle.species) {
+          let densityContribution = 1.0 - normalizedDist;
+          densityAccum += densityContribution;  // THIS particle (register)
+
+          // OTHER particle gets same contribution via atomic (like velocity)
+          let densityFixed = i32(densityContribution * FIXED_POINT_SCALE);
+          atomicAdd(&densityDeltaFixed[otherOriginalIdx], densityFixed);
         }
       }
     }
   }
 
-  // Mouse attraction (this particle only)
+  // Mouse interaction (left attracts, right repels)
   if (params.mouseLeftDown > 0.5 || params.mouseRightDown > 0.5) {
-    var mouseOffsetX = params.mouseX - thisX;
-    var mouseOffsetY = params.mouseY - thisY;
+    var mouseOffsetX = params.mouseX - thisParticle.pos.x;
+    var mouseOffsetY = params.mouseY - thisParticle.pos.y;
 
+    // Toroidal wrapping for mouse distance (use shortest path around edges)
     if (mouseOffsetX > halfWorldWidth) { mouseOffsetX -= params.worldWidth; }
     else if (mouseOffsetX < -halfWorldWidth) { mouseOffsetX += params.worldWidth; }
     if (mouseOffsetY > halfWorldHeight) { mouseOffsetY -= params.worldHeight; }
@@ -274,16 +358,16 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   }
 
   // Apply accumulated force to THIS particle via single atomic
-  // Write to ORIGINAL index since velocityDelta is in original order
+  // Why atomic for THIS? Other threads might have added forces to us while we
+  // were processing (half-neighbor symmetry works both ways).
   let deltaVxThisFixed = i32(forceOnThisX * params.dt * FIXED_POINT_SCALE);
   let deltaVyThisFixed = i32(forceOnThisY * params.dt * FIXED_POINT_SCALE);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], deltaVxThisFixed);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], deltaVyThisFixed);
 
-  // Temporal density smoothing: exponential moving average
-  // Write to ORIGINAL index since density buffer is in original order
-  let prevDensity = densityOutput[thisOriginalIdx];
-  const DENSITY_SMOOTH_FACTOR = 0.7;
-  let smoothedDensity = prevDensity * DENSITY_SMOOTH_FACTOR + densityAccum * (1.0 - DENSITY_SMOOTH_FACTOR);
-  densityOutput[thisOriginalIdx] = smoothedDensity;
+  // Apply accumulated density for THIS particle via atomic
+  // Same pattern as velocity: accumulated in register, written once at end.
+  // Temporal smoothing happens in integrate pass (needs previous density value).
+  let densityThisFixed = i32(densityAccum * FIXED_POINT_SCALE);
+  atomicAdd(&densityDeltaFixed[thisOriginalIdx], densityThisFixed);
 }

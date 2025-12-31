@@ -91,8 +91,18 @@ var activeParity*: int = 0
 
 const RENDER_SHADER = staticRead("../web/shaders/render.wgsl")
 
-# Glow shader - larger particles with Gaussian falloff
+# Glow shader - larger particles with Gaussian falloff (AoS layout)
 const GLOW_SHADER = """
+// AoS Particle struct: 32 bytes, cache-aligned
+struct Particle {
+  pos: vec2<f32>,    // offset 0, size 8
+  vel: vec2<f32>,    // offset 8, size 8
+  species: u32,      // offset 16, size 4
+  density: f32,      // offset 20, size 4
+  _pad0: u32,        // offset 24, size 4
+  _pad1: u32,        // offset 28, size 4
+}
+
 struct RenderParams {
   resolution: vec2f,   // Canvas size
   worldSize: vec2f,    // World size (physics domain)
@@ -111,11 +121,9 @@ const OFFSETS = array<vec2f, 6>(
   vec2f( 1.0,  1.0),
 );
 
-@group(0) @binding(0) var<storage, read> px: array<f32>;
-@group(0) @binding(1) var<storage, read> py: array<f32>;
-@group(0) @binding(2) var<storage, read> species: array<u32>;
-@group(0) @binding(3) var<storage, read> density: array<f32>;
-@group(0) @binding(4) var<uniform> params: RenderParams;
+// AoS particle buffer
+@group(0) @binding(0) var<storage, read> particles: array<Particle>;
+@group(0) @binding(1) var<uniform> params: RenderParams;
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -129,25 +137,24 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let particleId = id / 6u;
   let cornerId = id % 6u;
 
-  let particleX = px[particleId];
-  let particleY = py[particleId];
-  let particleDensity = density[particleId];
+  // Read particle data from AoS buffer
+  let p = particles[particleId];
   let offset = OFFSETS[cornerId];
 
   // Glow radius scaled by canvas/world ratio
   let scale = params.resolution / params.worldSize;
   let glowRadius = 12.0;
-  let worldPos = vec2f(particleX, particleY) + offset * glowRadius / scale;
+  let worldPos = p.pos + offset * glowRadius / scale;
 
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
   // Z-ordering: high density (small particles) = closer to camera (lower Z)
   // Low density (large particles) = further back (higher Z)
   // Using 1-saturate(density/10) so dense particles are in front
-  let zDepth = 1.0 - clamp(particleDensity * 0.1, 0.0, 0.99);
+  let zDepth = 1.0 - clamp(p.density * 0.1, 0.0, 0.99);
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
   output.offset = offset;
-  output.densityVal = particleDensity;
+  output.densityVal = p.density;
 
   return output;
 }
@@ -296,13 +303,13 @@ proc initWebGPURender*(): bool =
   paramsDesc["label"] = "Render Params Buffer".cstring.toJs
   renderParamsBuffer = webgpu_init.device.createBuffer(paramsDesc)
 
-  # Create bind group layout
+  # Create bind group layout (AoS: 2 bindings - particles + renderParams)
   let layoutDesc = newJsObject()
-  layoutDesc["label"] = "Render Bind Group Layout".cstring.toJs
+  layoutDesc["label"] = "Render Bind Group Layout (AoS)".cstring.toJs
 
   let entries = newJsArray()
 
-  # Binding 0: px (storage buffer, read-only)
+  # Binding 0: particles (AoS storage buffer, read-only)
   let entry0 = newJsObject()
   entry0["binding"] = 0.toJs
   entry0["visibility"] = gpuShaderStageVertex.toJs
@@ -311,41 +318,14 @@ proc initWebGPURender*(): bool =
   entry0["buffer"] = buffer0
   discard entries.push(entry0)
 
-  # Binding 1: py (storage buffer, read-only)
+  # Binding 1: render params (uniform buffer) - needs vertex AND fragment for glow intensity
   let entry1 = newJsObject()
   entry1["binding"] = 1.toJs
-  entry1["visibility"] = gpuShaderStageVertex.toJs
+  entry1["visibility"] = bitwiseOr(gpuShaderStageVertex, gpuShaderStageFragment).toJs
   let buffer1 = newJsObject()
-  buffer1["type"] = "read-only-storage".cstring.toJs
+  buffer1["type"] = "uniform".cstring.toJs
   entry1["buffer"] = buffer1
   discard entries.push(entry1)
-
-  # Binding 2: species (storage buffer, read-only)
-  let entry2 = newJsObject()
-  entry2["binding"] = 2.toJs
-  entry2["visibility"] = gpuShaderStageVertex.toJs
-  let buffer2 = newJsObject()
-  buffer2["type"] = "read-only-storage".cstring.toJs
-  entry2["buffer"] = buffer2
-  discard entries.push(entry2)
-
-  # Binding 3: density (storage buffer, read-only)
-  let entry3 = newJsObject()
-  entry3["binding"] = 3.toJs
-  entry3["visibility"] = gpuShaderStageVertex.toJs
-  let buffer3 = newJsObject()
-  buffer3["type"] = "read-only-storage".cstring.toJs
-  entry3["buffer"] = buffer3
-  discard entries.push(entry3)
-
-  # Binding 4: render params (uniform buffer) - needs vertex AND fragment for glow intensity
-  let entry4 = newJsObject()
-  entry4["binding"] = 4.toJs
-  entry4["visibility"] = bitwiseOr(gpuShaderStageVertex, gpuShaderStageFragment).toJs
-  let buffer4 = newJsObject()
-  buffer4["type"] = "uniform".cstring.toJs
-  entry4["buffer"] = buffer4
-  discard entries.push(entry4)
 
   layoutDesc["entries"] = entries
   bindGroupLayout = webgpu_init.device.createBindGroupLayout(layoutDesc)
@@ -810,67 +790,42 @@ proc initWebGPURender*(): bool =
   return true
 
 proc updateBindGroup*(parity: int) =
-  ## Update bind group to use the correct buffer set (A or B) based on parity.
+  ## Update bind group to use the correct buffer set based on parity.
+  ## With AoS layout, uses particlesA buffer (parity always 0 for WebGPU path).
 
-  let px = if parity == 0: webgpu_init.buffers.pxA else: webgpu_init.buffers.pxB
-  let py = if parity == 0: webgpu_init.buffers.pyA else: webgpu_init.buffers.pyB
-  let species = if parity == 0: webgpu_init.buffers.speciesA else: webgpu_init.buffers.speciesB
-  let density = if parity == 0: webgpu_init.buffers.denA else: webgpu_init.buffers.denB
+  # AoS: single particles buffer (parity 0 = particlesA)
+  let particles = webgpu_init.buffers.particlesA
 
   let bindGroupDesc = newJsObject()
-  bindGroupDesc["label"] = ("Render Bind Group (parity " & $parity & ")").cstring.toJs
+  bindGroupDesc["label"] = ("Render Bind Group AoS (parity " & $parity & ")").cstring.toJs
 
   # Get the bind group layout from the pipeline
   bindGroupDesc["layout"] = renderPipeline.getBindGroupLayout(0).toJs
 
   let entries = newJsArray()
 
-  # Entry 0: px
+  # Entry 0: particles (AoS buffer)
   let e0 = newJsObject()
   e0["binding"] = 0.toJs
   let r0 = newJsObject()
-  r0["buffer"] = px.toJs
+  r0["buffer"] = particles.toJs
   e0["resource"] = r0
   discard entries.push(e0)
 
-  # Entry 1: py
+  # Entry 1: render params
   let e1 = newJsObject()
   e1["binding"] = 1.toJs
   let r1 = newJsObject()
-  r1["buffer"] = py.toJs
+  r1["buffer"] = renderParamsBuffer.toJs
   e1["resource"] = r1
   discard entries.push(e1)
-
-  # Entry 2: species
-  let e2 = newJsObject()
-  e2["binding"] = 2.toJs
-  let r2 = newJsObject()
-  r2["buffer"] = species.toJs
-  e2["resource"] = r2
-  discard entries.push(e2)
-
-  # Entry 3: density
-  let e3 = newJsObject()
-  e3["binding"] = 3.toJs
-  let r3 = newJsObject()
-  r3["buffer"] = density.toJs
-  e3["resource"] = r3
-  discard entries.push(e3)
-
-  # Entry 4: render params
-  let e4 = newJsObject()
-  e4["binding"] = 4.toJs
-  let r4 = newJsObject()
-  r4["buffer"] = renderParamsBuffer.toJs
-  e4["resource"] = r4
-  discard entries.push(e4)
 
   bindGroupDesc["entries"] = entries
   renderBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
 
   # Create glow bind group (same layout and buffers)
   let glowBindGroupDesc = newJsObject()
-  glowBindGroupDesc["label"] = ("Glow Bind Group (parity " & $parity & ")").cstring.toJs
+  glowBindGroupDesc["label"] = ("Glow Bind Group AoS (parity " & $parity & ")").cstring.toJs
   glowBindGroupDesc["layout"] = glowPipeline.getBindGroupLayout(0).toJs
   glowBindGroupDesc["entries"] = entries  # Reuse same entries
   glowBindGroup = webgpu_init.device.createBindGroup(glowBindGroupDesc)

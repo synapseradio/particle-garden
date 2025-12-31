@@ -1,26 +1,47 @@
-/**
- * Pass 1: Count particles per cell using atomic increments.
- *
- * Each thread processes one particle:
- * 1. Read particle position from source buffers (SoA layout)
- * 2. Compute cell index (cx, cy) from position and grid dimensions
- * 3. Clamp to grid bounds
- * 4. Atomically increment cellCounts[cy * gridW + cx]
- *
- * This shader must be dispatched with workgroup size matching particle count
- * (rounded up to multiple of 64 for typical GPU workgroup size).
- *
- * Memory layout (Struct-of-Arrays):
- * - px: Float32Array with [x0, x1, x2, ...]
- * - py: Float32Array with [y0, y1, y2, ...]
- * - cellCounts: Uint32Array with [count0, count1, ...] for each grid cell
- */
+// =============================================================================
+// BIN-COUNT: Count particles per cell using atomic increments (Pass 1)
+// =============================================================================
+//
+// WHY THIS EXISTS:
+// First pass of spatial hashing - counts how many particles fall into each grid
+// cell. These counts feed into prefix sum to compute cell offsets for scattering.
+//
+// ALGORITHM:
+// 1. Each thread processes one particle
+// 2. Read particle position from AoS buffer
+// 3. Compute cell index from position and grid dimensions
+// 4. Clamp to grid bounds (handles edge cases)
+// 5. Atomically increment cellCounts[cellIdx]
+//
+// BINDING MANIFEST:
+// +-------+---------------------------+-----------------+--------+
+// | Bind  | Shader Type               | JS Buffer       | Access |
+// +-------+---------------------------+-----------------+--------+
+// |   0   | uniform GridParams        | gridParams      | read   |
+// |   1   | storage array<Particle>   | particles       | read   |
+// |   2   | storage array<atomic<u32>>| cellCounts      | r/w    |
+// +-------+---------------------------+-----------------+--------+
+//
+// THREAD MAPPING: One thread per particle (global_invocation_id.x = particleIdx)
+// =============================================================================
+
+// AoS Particle struct: 32 bytes, cache-aligned
+// Two particles fit in one 64-byte CPU cache line
+// Four particles fit in one 128-byte GPU cache line
+struct Particle {
+  pos: vec2<f32>,    // offset 0, size 8
+  vel: vec2<f32>,    // offset 8, size 8
+  species: u32,      // offset 16, size 4
+  density: f32,      // offset 20, size 4
+  _pad0: u32,        // offset 24, size 4 (alignment padding)
+  _pad1: u32,        // offset 28, size 4 (alignment padding)
+}
 
 struct GridParams {
   gridW: u32,           // Grid width in cells
   gridH: u32,           // Grid height in cells
-  canvasWidth: f32,     // Canvas width in pixels
-  canvasHeight: f32,    // Canvas height in pixels
+  canvasWidth: f32,     // World width in pixels
+  canvasHeight: f32,    // World height in pixels
   particleCount: u32,   // Number of active particles
   padding0: u32,        // Align to 16 bytes
   padding1: u32,
@@ -28,9 +49,8 @@ struct GridParams {
 };
 
 @group(0) @binding(0) var<uniform> params: GridParams;
-@group(0) @binding(1) var<storage, read> px: array<f32>;
-@group(0) @binding(2) var<storage, read> py: array<f32>;
-@group(0) @binding(3) var<storage, read_write> cellCounts: array<atomic<u32>>;
+@group(0) @binding(1) var<storage, read> particles: array<Particle>;
+@group(0) @binding(2) var<storage, read_write> cellCounts: array<atomic<u32>>;
 
 @compute @workgroup_size(128)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -41,18 +61,17 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     return;
   }
 
-  // Read particle position (SoA layout)
-  let posX = px[particleIdx];
-  let posY = py[particleIdx];
+  // Read particle position from AoS buffer
+  let p = particles[particleIdx];
 
   // Compute cell coordinates using floating-point grid transform
   let invCellW = f32(params.gridW) / params.canvasWidth;
   let invCellH = f32(params.gridH) / params.canvasHeight;
 
-  var cx = u32(posX * invCellW);
-  var cy = u32(posY * invCellH);
+  var cx = u32(p.pos.x * invCellW);
+  var cy = u32(p.pos.y * invCellH);
 
-  // Clamp to grid bounds (matches grid.js behavior for out-of-bounds particles)
+  // Clamp to grid bounds (handles out-of-bounds particles gracefully)
   if (cx >= params.gridW) {
     cx = params.gridW - 1u;
   }

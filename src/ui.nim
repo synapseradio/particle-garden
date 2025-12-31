@@ -100,10 +100,14 @@ proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.}
 proc setupUI*() {.exportc.} =
   ## Bind slider inputs to CONFIG values.
   ## Updates display values in real-time, triggers callbacks on change.
+  ## Syncs slider values to CONFIG defaults on initialization.
 
   # Particle count slider
   let particleCountEl = cast[HTMLInputElement](getElementById("particleCount"))
   let particleValueEl = getElementById("particleValue")
+  # Sync slider to CONFIG value on init
+  particleCountEl.value = cstring($CONFIG.particleCount)
+  particleValueEl.textContent = cstring($CONFIG.particleCount)
   particleCountEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.particleCount = parseIntJS(target.value, 10)
@@ -118,6 +122,9 @@ proc setupUI*() {.exportc.} =
   # Species count slider
   let speciesCountEl = cast[HTMLInputElement](getElementById("speciesCount"))
   let speciesValueEl = getElementById("speciesValue")
+  # Sync slider to CONFIG value on init
+  speciesCountEl.value = cstring($CONFIG.speciesCount)
+  speciesValueEl.textContent = cstring($CONFIG.speciesCount)
   speciesCountEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.speciesCount = parseIntJS(target.value, 10)
@@ -132,6 +139,9 @@ proc setupUI*() {.exportc.} =
   # Interaction radius slider
   let radiusEl = cast[HTMLInputElement](getElementById("interactionRadius"))
   let radiusValueEl = getElementById("radiusValue")
+  # Sync slider to CONFIG value on init
+  radiusEl.value = cstring($CONFIG.interactionRadius)
+  radiusValueEl.textContent = cstring($CONFIG.interactionRadius)
   radiusEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.interactionRadius = parseIntJS(target.value, 10)
@@ -141,6 +151,9 @@ proc setupUI*() {.exportc.} =
   # Force strength slider
   let forceEl = cast[HTMLInputElement](getElementById("forceStrength"))
   let forceValueEl = getElementById("forceValue")
+  # Sync slider to CONFIG value on init
+  forceEl.value = cstring($CONFIG.forceStrength)
+  forceValueEl.textContent = toFixed(CONFIG.forceStrength, 1)
   forceEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.forceStrength = parseFloatJS(target.value)
@@ -150,6 +163,9 @@ proc setupUI*() {.exportc.} =
   # Friction slider
   let frictionEl = cast[HTMLInputElement](getElementById("friction"))
   let frictionValueEl = getElementById("frictionValue")
+  # Sync slider to CONFIG value on init
+  frictionEl.value = cstring($CONFIG.friction)
+  frictionValueEl.textContent = toFixed(CONFIG.friction, 2)
   frictionEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.friction = parseFloatJS(target.value)
@@ -159,6 +175,9 @@ proc setupUI*() {.exportc.} =
   # Time scale slider
   let timeScaleEl = cast[HTMLInputElement](getElementById("timeScale"))
   let timeScaleValueEl = getElementById("timeScaleValue")
+  # Sync slider to CONFIG value on init
+  timeScaleEl.value = cstring($CONFIG.timeScale)
+  timeScaleValueEl.textContent = toFixed(CONFIG.timeScale, 1)
   timeScaleEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.timeScale = parseFloatJS(target.value)
@@ -168,6 +187,9 @@ proc setupUI*() {.exportc.} =
   # Trail length slider
   let trailEl = cast[HTMLInputElement](getElementById("trailLength"))
   let trailValueEl = getElementById("trailValue")
+  # Sync slider to CONFIG value on init
+  trailEl.value = cstring($CONFIG.trailAlpha)
+  trailValueEl.textContent = toFixed(CONFIG.trailAlpha, 2)
   trailEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.trailAlpha = parseFloatJS(target.value)
@@ -177,6 +199,9 @@ proc setupUI*() {.exportc.} =
   # Glow intensity slider
   let glowEl = cast[HTMLInputElement](getElementById("glowIntensity"))
   let glowValueEl = getElementById("glowValue")
+  # Sync slider to CONFIG value on init
+  glowEl.value = cstring($CONFIG.glowIntensity)
+  glowValueEl.textContent = toFixed(CONFIG.glowIntensity, 1)
   glowEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.glowIntensity = parseFloatJS(target.value)
@@ -186,6 +211,9 @@ proc setupUI*() {.exportc.} =
   # Max velocity slider
   let velocityEl = cast[HTMLInputElement](getElementById("maxVelocity"))
   let velocityValueEl = getElementById("velocityValue")
+  # Sync slider to CONFIG value on init
+  velocityEl.value = cstring($CONFIG.maxVelocity)
+  velocityValueEl.textContent = toFixed(CONFIG.maxVelocity, 0)
   velocityEl.addEventListener("input", proc(e: Event) =
     let target = cast[HTMLInputElement](e.target)
     CONFIG.maxVelocity = parseFloatJS(target.value)

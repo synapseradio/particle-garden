@@ -38,18 +38,16 @@ const MimeTypes = {
 const StaticFiles = {
   "/index.html": staticRead("../web/index.html"),
   "/app.js": staticRead("../web/app.js"),
+  # AoS compute pipeline shaders
   "/shaders/bin-count.wgsl": staticRead("../web/shaders/bin-count.wgsl"),
   "/shaders/prefix-sum.wgsl": staticRead("../web/shaders/prefix-sum.wgsl"),
   "/shaders/prefix-sum-local.wgsl": staticRead("../web/shaders/prefix-sum-local.wgsl"),
   "/shaders/prefix-sum-blocks.wgsl": staticRead("../web/shaders/prefix-sum-blocks.wgsl"),
   "/shaders/prefix-sum-final.wgsl": staticRead("../web/shaders/prefix-sum-final.wgsl"),
-  "/shaders/bin-scatter-positions.wgsl": staticRead("../web/shaders/bin-scatter-positions.wgsl"),
-  "/shaders/bin-scatter-velocities.wgsl": staticRead("../web/shaders/bin-scatter-velocities.wgsl"),
+  "/shaders/bin-scatter.wgsl": staticRead("../web/shaders/bin-scatter.wgsl"),  # Merged AoS
   "/shaders/cell-stats.wgsl": staticRead("../web/shaders/cell-stats.wgsl"),
   "/shaders/forces.wgsl": staticRead("../web/shaders/forces.wgsl"),
-  "/shaders/density.wgsl": staticRead("../web/shaders/density.wgsl"),
-  "/shaders/integrate-velocities.wgsl": staticRead("../web/shaders/integrate-velocities.wgsl"),
-  "/shaders/integrate-positions.wgsl": staticRead("../web/shaders/integrate-positions.wgsl"),
+  "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),  # Merged AoS
   "/shaders/render.wgsl": staticRead("../web/shaders/render.wgsl"),
 }.toTable
 

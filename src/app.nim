@@ -124,20 +124,26 @@ proc initParticles*() {.exportc.} =
   let W = config.WORLD_W
   let H = config.WORLD_H
 
-  # Initialize buffer A as starting point
+  # Initialize particlesA buffer using AoS layout
+  # Struct: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5), pad(6-7)
   for i in 0 ..< particleCount:
-    buffers.pxA[i] = jsRandom() * W
-    buffers.pyA[i] = jsRandom() * H
-    buffers.vxA[i] = (jsRandom() - 0.5) * 2.0
-    buffers.vyA[i] = (jsRandom() - 0.5) * 2.0
-    buffers.speciesA[i] = i mod ns
+    let base = i * buffers.FLOATS_PER_PARTICLE  # 8 floats per particle
+    buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * W
+    buffers.particlesA[base + buffers.FIELD_POS_Y] = jsRandom() * H
+    buffers.particlesA[base + buffers.FIELD_VEL_X] = (jsRandom() - 0.5) * 2.0
+    buffers.particlesA[base + buffers.FIELD_VEL_Y] = (jsRandom() - 0.5) * 2.0
+    buffers.particlesA[base + buffers.FIELD_SPECIES] = float32(i mod ns)
+    buffers.particlesA[base + buffers.FIELD_DENSITY] = 0.0
 
   # Fisher-Yates shuffle for even species distribution
+  # Swap species values within AoS layout
   for i in countdown(particleCount - 1, 1):
     let j = bitwiseOr(jsRandom() * float(i + 1), 0)
-    let t = buffers.speciesA[i]
-    buffers.speciesA[i] = buffers.speciesA[j]
-    buffers.speciesA[j] = t
+    let iBase = i * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
+    let jBase = j * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
+    let t = buffers.particlesA[iBase]
+    buffers.particlesA[iBase] = buffers.particlesA[jBase]
+    buffers.particlesA[jBase] = t
 
   ui.updateParticleStats(particleCount)
 
