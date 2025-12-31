@@ -13,16 +13,8 @@ requires "webui#head"
 
 # Compiler flags for style and warning enforcement
 const styleFlags = "--styleCheck:error --styleCheck:usages"
-const warningFlags = """--warningAsError:Deprecated \
-  --warningAsError:BareExcept \
-  --warningAsError:CStringConv \
-  --warningAsError:EnumConv \
-  --warningAsError:HoleEnumConv \
-  --warningAsError:SmallLshouldNotBeUsed \
-  --warningAsError:ProveInit \
-  --warningAsError:UnusedImport \
-  --warningAsError:Effect \
-  --hint:XDeclaredButNotUsed:on"""
+# Single line required - multiline strings with backslash break on Windows CI
+const warningFlags = "--warningAsError:Deprecated --warningAsError:BareExcept --warningAsError:CStringConv --warningAsError:EnumConv --warningAsError:HoleEnumConv --warningAsError:SmallLshouldNotBeUsed --warningAsError:ProveInit --warningAsError:UnusedImport --warningAsError:Effect --hint:XDeclaredButNotUsed:on"
 
 # Combined quality flags for all builds
 const qualityFlags = styleFlags & " " & warningFlags
