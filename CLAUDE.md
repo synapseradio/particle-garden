@@ -26,6 +26,50 @@ For release builds:
 nimble release
 ```
 
+## Releasing
+
+GitHub Actions builds and publishes releases for macOS, Windows, and Linux.
+
+**To release:**
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow (`.github/workflows/release.yml`) triggers on tags matching `v*`. It:
+1. Builds `nimble release` on all three platforms
+2. Packages platform-specific artifacts (macOS .app bundle, Windows .exe, Linux binary)
+3. Creates a GitHub Release with auto-generated notes
+
+**Test releases:** Use `workflow_dispatch` in GitHub Actions UI to create draft releases without pushing tags.
+
+### Versioning
+
+Version in `particle_garden.nimble` must match the git tag (without `v` prefix).
+
+**Semantic versioning (MAJOR.MINOR.PATCH):**
+- **MAJOR** — Breaking changes (user-visible behavior change, config format change, removed features)
+- **MINOR** — New features, significant improvements (new UI controls, new physics modes)
+- **PATCH** — Bug fixes, docs, refactoring (no user-visible change in functionality)
+
+**When versions diverge**, examine commits since the last tag to determine bump:
+```bash
+git log $(git describe --tags --abbrev=0)..HEAD --oneline
+```
+If any commit is breaking → major. If any adds features → minor. Otherwise → patch.
+
+**Release workflow:**
+```bash
+# 1. Determine new version from commit history
+# 2. Update nimble
+sed -i '' 's/version.*=.*/version       = "X.Y.Z"/' particle_garden.nimble
+
+# 3. Commit, tag, push
+git add particle_garden.nimble && git commit -m "chore: bump version to X.Y.Z"
+git tag vX.Y.Z
+git push && git push origin vX.Y.Z
+```
+
 ## Architecture
 
 Native desktop wrapper for a particle life simulation with WebGPU compute physics.
