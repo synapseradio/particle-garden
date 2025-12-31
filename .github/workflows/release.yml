@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0-test)'
+        required: true
+        default: 'v0.0.1-test'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: particle-garden-macos.zip
+          - os: windows-latest
+            artifact: particle-garden-windows.zip
+          - os: ubuntu-latest
+            artifact: particle-garden-linux.tar.gz
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.x'
+
+      - name: Install dependencies
+        run: nimble install -y
+
+      - name: Build release
+        run: nimble release
+
+      # macOS: Create .app bundle
+      - name: Package macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_NAME="Particle Garden"
+          EXECUTABLE="particle_garden"
+          BUNDLE_DIR="${APP_NAME}.app"
+
+          mv main "${EXECUTABLE}"
+          mkdir -p "${BUNDLE_DIR}/Contents/MacOS"
+          mkdir -p "${BUNDLE_DIR}/Contents/Resources"
+          cp "${EXECUTABLE}" "${BUNDLE_DIR}/Contents/MacOS/"
+
+          cat >"${BUNDLE_DIR}/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key>
+              <string>${APP_NAME}</string>
+              <key>CFBundleDisplayName</key>
+              <string>${APP_NAME}</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.particlegarden.app</string>
+              <key>CFBundleVersion</key>
+              <string>${{ github.event.inputs.version || github.ref_name }}</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleExecutable</key>
+              <string>${EXECUTABLE}</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.13</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          zip -r "${{ matrix.artifact }}" "${BUNDLE_DIR}"
+
+      # Windows: Rename and zip
+      - name: Package Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Rename-Item -Path "main.exe" -NewName "particle_garden.exe"
+          Compress-Archive -Path "particle_garden.exe" -DestinationPath "${{ matrix.artifact }}"
+
+      # Linux: Create tarball
+      - name: Package Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mv main particle_garden
+          chmod +x particle_garden
+          tar -czvf "${{ matrix.artifact }}" particle_garden
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
