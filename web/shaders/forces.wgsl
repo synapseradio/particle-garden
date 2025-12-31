@@ -350,7 +350,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let mouseDistSq = mouseOffsetX * mouseOffsetX + mouseOffsetY * mouseOffsetY;
     if (mouseDistSq > 0.0 && mouseDistSq < MOUSE_RANGE_SQ) {
       let mouseDist = sqrt(mouseDistSq);
-      let mouseForce = 50.0 * (1.0 - mouseDist / 300.0) / mouseDist;
+      let mouseForce = 300.0 * (1.0 - mouseDist / 300.0) / mouseDist;
 
       var mouseSign = 0.0;
       if (params.mouseLeftDown > 0.5) { mouseSign += 1.0; }
@@ -376,8 +376,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let blastRangeSq = 40000.0;  // 200² - blast influence radius squared
     if (blastDistSq > 0.0 && blastDistSq < blastRangeSq) {
       let blastDist = sqrt(blastDistSq);
-      // Powerful repulsion that falls off with distance, scaled by decaying strength
-      let blastForce = params.blastStrength * 500.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);
+      // Powerful repulsion that breaks any formation
+      let blastForce = params.blastStrength * 3000.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);
       forceOnThisX += blastOffsetX * blastForce;
       forceOnThisY += blastOffsetY * blastForce;
     }
