@@ -32,9 +32,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Nim
-        uses: jiro4989/setup-nim-action@v2
+        uses: iffy/install-nim@v5
         with:
-          nim-version: '2.2.x'
+          version: binary:stable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
         run: nimble install -y
