@@ -9,7 +9,9 @@ binDir        = "."
 
 # Dependencies
 requires "nim >= 2.0.0 & < 3.0.0"
-requires "webui#head"
+# Pin to webui 2.4.2 tag (commit hash for reproducibility)
+# Tag 2.4.2 = commit 552a3e3 (upstream version string says 2.4.0.0)
+requires "webui#552a3e3"
 
 # Compiler flags for style and warning enforcement
 const styleFlags = "--styleCheck:error --styleCheck:usages"

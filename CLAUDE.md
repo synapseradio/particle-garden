@@ -70,6 +70,23 @@ git tag vX.Y.Z
 git push && git push origin vX.Y.Z
 ```
 
+## Dependency Discipline
+
+**Non-negotiable**:
+- All dependencies use exact version pins or commit hashes
+- `nimble.lock` must be committed and updated deliberately
+- Floating references (`#head`, `>=`, `*`) are forbidden
+
+**Red flags**:
+- Any reference to `head`, `main`, `master`, `latest`
+- Missing lock files
+- Lock files not in version control
+- "Works on my machine" as confidence
+
+**Verification**: Can this build be reproduced on a fresh machine in six months?
+
+**Why this matters**: On 2026-01-01, old releases were breaking the same way as new builds. Root cause: `requires "webui#head"` was pulling unreleased code from upstream's main branch. The foundation shifted beneath us while we were looking elsewhere.
+
 ## Architecture
 
 Native desktop wrapper for a particle life simulation with WebGPU compute physics.

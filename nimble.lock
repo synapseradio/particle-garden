@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "packages": {
+    "nim": {
+      "version": "2.2.6",
+      "vcsRevision": "ab00c56904e3126ad826bb520d243513a139436a",
+      "url": "https://github.com/nim-lang/Nim.git",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "2c9e77a691294dad7472a539f9b78ef0088a1a87"
+      }
+    },
+    "webui": {
+      "version": "2.4.0.0",
+      "vcsRevision": "552a3e3fde6e3930bd8178affb42c4a5a0cec813",
+      "url": "https://github.com/webui-dev/nim-webui",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "32e5ab0cced4ecb168ba1e36b6655c0dd7beae50"
+      }
+    }
+  },
+  "tasks": {}
+}
