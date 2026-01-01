@@ -71,17 +71,4 @@ proc computeGridDimensions*(canvasWidth: int, canvasHeight: int): GridDimensions
   result.gridH = gridH
   result.cellSize = cellSize
 
-# ==============================================================================
-# SECTION 4: LEGACY BUILDGRID REMOVED
-# ==============================================================================
-#
-# The buildGrid() proc that performed CPU-side grid construction and particle
-# sorting has been removed. In WebGPU mode, grid building happens entirely
-# on the GPU via compute shaders:
-#   - bin-count.wgsl: Count particles per cell
-#   - prefix-sum*.wgsl: Compute cell offsets
-#   - bin-scatter.wgsl: Build sorted index mapping
-#
-# Only computeGridDimensions() remains to calculate grid parameters.
-# ==============================================================================
 

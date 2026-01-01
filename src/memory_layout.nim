@@ -69,13 +69,13 @@ const
   # Offsets 24-31 are padding
 
 # ==============================================================================
-# SECTION 3: WASM MEMORY CONFIGURATION
+# SECTION 3: SHARED BUFFER CONFIGURATION
 # ==============================================================================
 
 const
   WASM_MEMORY_PAGES* = 2048      ## 128MB initial (2048 * 64KB)
   WASM_MEMORY_PAGES_MAX* = 8192  ## 512MB maximum
-  WASM_DATA_OFFSET* = 1024 * 1024  ## 1MB - skip WASM stack/heap
+  WASM_DATA_OFFSET* = 1024 * 1024  ## 1MB reserved for initial allocation offset
 
 # ==============================================================================
 # SECTION 4: SIZE CALCULATIONS
@@ -125,15 +125,6 @@ type
     # Total size (for validation)
     totalSize*: int
 
-    # Legacy SoA offsets (for backward compatibility during transition)
-    # These point into particlesA at the appropriate field offsets
-    pxA*: int       ## Legacy: particle X positions
-    pyA*: int       ## Legacy: particle Y positions
-    vxA*: int       ## Legacy: particle X velocities
-    vyA*: int       ## Legacy: particle Y velocities
-    denA*: int      ## Legacy: particle densities
-    speciesA*: int  ## Legacy: particle species
-
 # ==============================================================================
 # SECTION 7: COMPILE-TIME OFFSET COMPUTATION
 # ==============================================================================
@@ -178,18 +169,6 @@ func computeMemoryOffsets(): MemoryOffsets =
 
   let totalSize = offset
 
-  # Legacy SoA offsets point into particlesA
-  # These are for backward compatibility - they're not actually separate arrays
-  # but rather conceptual pointers to where the data would be in SoA layout
-  # Note: These are NOT valid for direct array access in AoS mode!
-  # They're kept only for config.nim export compatibility
-  let pxA = particlesA + PARTICLE_POS_X_OFFSET
-  let pyA = particlesA + PARTICLE_POS_Y_OFFSET
-  let vxA = particlesA + PARTICLE_VEL_X_OFFSET
-  let vyA = particlesA + PARTICLE_VEL_Y_OFFSET
-  let denA = particlesA + PARTICLE_DENSITY_OFFSET
-  let speciesA = particlesA + PARTICLE_SPECIES_OFFSET
-
   result = MemoryOffsets(
     particlesA: particlesA,
     particlesSorted: particlesSorted,
@@ -200,9 +179,7 @@ func computeMemoryOffsets(): MemoryOffsets =
     gridOffsets: gridOffsets,
     matrix: matrix,
     sync: sync,
-    totalSize: totalSize,
-    # Legacy
-    pxA: pxA, pyA: pyA, vxA: vxA, vyA: vyA, denA: denA, speciesA: speciesA
+    totalSize: totalSize
   )
 
 # ==============================================================================

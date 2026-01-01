@@ -88,7 +88,7 @@ var lastTime {.exportc.}: float = 0
 var frameCount {.exportc.}: int = 0
 var fps {.exportc.}: int = 0
 var lastFpsTime {.exportc.}: float = 0
-var workerTimeMs {.exportc.}: float = 0
+var computeTimeMs {.exportc.}: float = 0
 
 # Performance profiling - per-frame measurements
 var gridTimeMs {.exportc.}: float = 0
@@ -153,7 +153,6 @@ proc initParticles*() {.exportc.} =
 
 proc resetParticles*() {.exportc.} =
   ## Reset particles to initial random state.
-  buffers.activeParity = 0  # Reset to buffer A
   initParticles()  # This now handles GPU upload internally
 
 # ==============================================================================
@@ -203,7 +202,6 @@ proc physics(dt: float): Future[void] {.async.} =
   params["blastX"] = toJs(ui.blastX * mouseScaleX)
   params["blastY"] = toJs(ui.blastY * mouseScaleY)
   params["blastStrength"] = toJs(ui.blastStrength)
-  params["parity"] = toJs(buffers.activeParity)  # Always 0 in WebGPU mode
   params["matrix"] = toJs(buffers.matrix)
 
   await webgpu_compute.runPhysicsFrame(params)
@@ -217,7 +215,7 @@ proc physics(dt: float): Future[void] {.async.} =
   physicsTimeMs = performanceNow() - tPhysics0
   integrationTimeMs = 0  # Integration happens on GPU
 
-  workerTimeMs = performanceNow() - t0
+  computeTimeMs = performanceNow() - t0
 
 # ==============================================================================
 # MAIN LOOP
@@ -245,11 +243,10 @@ proc loop(now: float): Future[void] {.async.} =
   var renderTiming: JsObject
   if useWebGPURender:
     # WebGPU render path - data stays on GPU, no readback needed
-    # Update bind group to use correct buffer set based on parity
-    webgpu_render.updateBindGroup(buffers.activeParity)
+    webgpu_render.updateBindGroup()
     renderTiming = webgpu_render.render(particleCount).toJs
   else:
-    # WebGL render path - requires CPU data (from readback or WASM workers)
+    # WebGL render path - requires CPU data
     renderTiming = renderer.render(particleCount)
   renderPackTimeMs = renderTiming["packTimeMs"].to(float)
   renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
@@ -271,7 +268,7 @@ proc loop(now: float): Future[void] {.async.} =
     fps = bitwiseOr(float(frameCount * 1000) / (now - lastFpsTime), 0)
     frameCount = 0
     lastFpsTime = now
-    ui.updateStats(fps, 0, workerTimeMs)
+    ui.updateStats(fps, 0, computeTimeMs)
 
   # Reset profiling accumulators every 60 frames
   if profilingFrameCount >= 60:

@@ -109,10 +109,6 @@ All physics runs on WebGPU compute shaders (no CPU physics path):
 
 Particles stay on GPU from initialization through rendering. No CPU readback.
 
-### Parity Invariant
-
-`activeParity` (0 or 1) points to the buffer containing valid particle state. WebGPU path does in-place updates — parity stays constant (typically 0).
-
 ## Language Policy
 
 **All source code must be written in Nim.** No hand-written JavaScript.

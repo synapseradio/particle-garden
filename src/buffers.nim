@@ -34,7 +34,7 @@ import config
 import memory_layout
 
 # ==============================================================================
-# SECTION 1: UNIFIED WASM MEMORY
+# SECTION 1: SHARED MEMORY
 # ==============================================================================
 
 var wasmMemory* {.exportc.}: WebAssemblyMemory
@@ -90,19 +90,13 @@ var fillOffsets* {.exportc.}: Uint32Array
 var renderData* {.exportc.}: Float32Array
 
 # ==============================================================================
-# SECTION 8: BUFFER TRACKING
-# ==============================================================================
-
-var activeParity* {.exportc.}: int = 0  # Always 0 in WebGPU-only mode
-
-# ==============================================================================
-# SECTION 9: BUFFER ALLOCATION
+# SECTION 8: BUFFER ALLOCATION
 # ==============================================================================
 
 proc allocateBuffers*() {.exportc.} =
-  ## Create the unified WebAssembly.Memory and all typed array views.
+  ## Create the shared memory buffer and all typed array views.
 
-  # Create unified WASM memory with SharedArrayBuffer backing
+  # Create shared memory with SharedArrayBuffer backing
   wasmMemory = newWebAssemblyMemory(memory_layout.WASM_MEMORY_PAGES, memory_layout.WASM_MEMORY_PAGES_MAX, true)
   sharedBuffer = wasmMemory.buffer
 
@@ -151,7 +145,7 @@ proc allocateBuffers*() {.exportc.} =
   renderData = newFloat32Array(memory_layout.MAX_PARTICLES * 6)
 
 # ==============================================================================
-# SECTION 10: AoS ACCESSOR HELPERS
+# SECTION 9: AoS ACCESSOR HELPERS
 # ==============================================================================
 #
 # These helpers provide convenient access to particle fields within the AoS buffer.
@@ -171,11 +165,3 @@ const
   FIELD_DENSITY* = 5
   # Fields 6-7 are padding
 
-# ==============================================================================
-# SECTION 11: PARITY MANAGEMENT
-# ==============================================================================
-
-proc setActiveParity*(parity: int) {.exportc.} =
-  ## Set the active parity. In WebGPU-only mode, this is always 0.
-  assert parity in {0, 1}, "Parity must be 0 or 1, got: " & $parity
-  activeParity = parity

@@ -107,7 +107,7 @@ let WORLD_W* {.exportc.}: float = 3840.0
 let WORLD_H* {.exportc.}: float = 2160.0
 
 # ==============================================================================
-# SECTION 4: WASM MEMORY CONFIGURATION (re-exported from memory_layout)
+# SECTION 4: SHARED BUFFER CONFIGURATION (re-exported from memory_layout)
 # ==============================================================================
 
 let WASM_MEMORY_PAGES* {.exportc.}: int = memory_layout.WASM_MEMORY_PAGES

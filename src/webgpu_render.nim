@@ -11,12 +11,6 @@
 # - Vertex shader pulls data from storage buffers via instance_index
 # - Fragment shader creates circular point sprites with soft edges
 #
-# PARITY NOTE:
-# The updateBindGroup(parity) proc accepts a parity parameter for historical
-# reasons (legacy double-buffering support). In the current WebGPU-only
-# architecture, parity is always 0 - physics does in-place updates on a
-# single buffer set. The parity parameter is retained for API compatibility.
-#
 # ==============================================================================
 
 from std/jsffi import JsObject, toJs, `[]`, `[]=`
@@ -82,8 +76,6 @@ var canvasFormat: cstring
 var fadeBindGroupLayout: GPUBindGroupLayout
 var blitBindGroupLayout: GPUBindGroupLayout
 
-# Current parity for which buffer set to read from
-var activeParity*: int = 0
 
 # ==============================================================================
 # SECTION 3: SHADER SOURCE
@@ -259,7 +251,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 # ==============================================================================
 
 # Forward declaration
-proc updateBindGroup*(parity: int)
+proc updateBindGroup*()
 
 proc initWebGPURender*(): bool =
   ## Initialize WebGPU render pipeline.
@@ -808,22 +800,20 @@ proc initWebGPURender*(): bool =
   fadeBGB["entries"] = fadeEntriesB
   fadeBindGroupReadB = webgpu_init.device.createBindGroup(fadeBGB)
 
-  # Create initial bind group with buffer set A
-  updateBindGroup(0)
+  # Create initial bind group
+  updateBindGroup()
 
   isInitialized = true
   {.emit: "console.log('WebGPU render pipeline initialized with glow and trails');".}
   return true
 
-proc updateBindGroup*(parity: int) =
-  ## Update bind group to use the correct buffer set based on parity.
-  ## With AoS layout, uses particlesA buffer (parity always 0 for WebGPU path).
+proc updateBindGroup*() =
+  ## Update bind group to use particlesA buffer.
 
-  # AoS: single particles buffer (parity 0 = particlesA)
   let particles = webgpu_init.buffers.particlesA
 
   let bindGroupDesc = newJsObject()
-  bindGroupDesc["label"] = ("Render Bind Group AoS (parity " & $parity & ")").cstring.toJs
+  bindGroupDesc["label"] = "Render Bind Group AoS".cstring.toJs
 
   # Get the bind group layout from the pipeline
   bindGroupDesc["layout"] = renderPipeline.getBindGroupLayout(0).toJs
@@ -851,12 +841,10 @@ proc updateBindGroup*(parity: int) =
 
   # Create glow bind group (same layout and buffers)
   let glowBindGroupDesc = newJsObject()
-  glowBindGroupDesc["label"] = ("Glow Bind Group AoS (parity " & $parity & ")").cstring.toJs
+  glowBindGroupDesc["label"] = "Glow Bind Group AoS".cstring.toJs
   glowBindGroupDesc["layout"] = glowPipeline.getBindGroupLayout(0).toJs
   glowBindGroupDesc["entries"] = entries  # Reuse same entries
   glowBindGroup = webgpu_init.device.createBindGroup(glowBindGroupDesc)
-
-  activeParity = parity
 
 # ==============================================================================
 # SECTION 5: RENDER LOOP

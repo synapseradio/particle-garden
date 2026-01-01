@@ -33,8 +33,6 @@ const MimeTypes = {
 
 # Static file registry: path -> content
 # Files are embedded at compile time via staticRead
-# NOTE: WASM artifacts (worker.js, physics.js, physics.wasm) have been removed.
-# Physics now runs entirely on WebGPU compute shaders.
 const StaticFiles = {
   "/index.html": staticRead("../web/index.html"),
   "/app.js": staticRead("../web/app.js"),

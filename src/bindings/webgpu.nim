@@ -655,7 +655,6 @@ type
     mouseX* {.importjs: "mouseX".}: float
     mouseY* {.importjs: "mouseY".}: float
     mouseDown* {.importjs: "mouseDown".}: int
-    parity* {.importjs: "parity".}: int
     matrix* {.importjs: "matrix".}: JsObject
 
 # Alias GPUBuffer to JsObject for flexibility in existing code

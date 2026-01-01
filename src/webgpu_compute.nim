@@ -80,7 +80,8 @@ var pipelines* {.exportc.}: JsObject = createJsObject()
 var bindGroupLayouts* {.exportc.}: JsObject = createJsObject()
 var uniformBuffers* {.exportc.}: JsObject = createJsObject()
 var bindGroups* {.exportc.}: JsObject = createJsObject()
-var cachedBindGroupParity: int = -1
+var cachedBindGroupGridW: int = -1
+var cachedBindGroupGridH: int = -1
 var isPipelineReady* {.exportc.}: bool = false
 
 # ==============================================================================
@@ -175,7 +176,7 @@ proc createBindGroupEntry(binding: int, buffer: JsObject): JsObject =
 
 proc push*(arr: JsObject, item: JsObject): int {.importjs: "#.push(#)", discardable.}
 
-proc createBindGroups*(parity: int, gridW: int, gridH: int): Future[void] {.async, exportc.} =
+proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} =
   ## Create bind groups for all passes (AoS layout).
 
   # Pass 1: Bin Count (AoS: particles buffer)
@@ -495,7 +496,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let blastX = params["blastX"].to(float)
   let blastY = params["blastY"].to(float)
   let blastStrength = params["blastStrength"].to(float)
-  let parity = params["parity"].to(int)
   let matrix = params["matrix"]
 
   let numCells = gridW * gridH
@@ -559,11 +559,12 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # =========================================================================
-  # PHASE: BIND GROUP CREATION (cached)
+  # PHASE: BIND GROUP CREATION (cached by grid dimensions)
   # =========================================================================
-  if parity != cachedBindGroupParity:
-    await createBindGroups(parity, gridW, gridH)
-    cachedBindGroupParity = parity
+  if gridW != cachedBindGroupGridW or gridH != cachedBindGroupGridH:
+    await createBindGroups(gridW, gridH)
+    cachedBindGroupGridW = gridW
+    cachedBindGroupGridH = gridH
 
   # =========================================================================
   # PHASE: COMMAND ENCODING
