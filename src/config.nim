@@ -150,7 +150,7 @@ proc createConfig(): ConfigObject =
   result.particleSize = 3
   result.trails = false
   result.trailAlpha = 0.96
-  result.glowIntensity = 1.15  # +15% base glow for velocity headroom
+  result.glowIntensity = 0.8  # Subtle glow, reduced 30% from 1.15
   result.velocityGlowScale = 1.0  # Full velocity-to-glow influence
   result.maxVelocity = 50.0
 

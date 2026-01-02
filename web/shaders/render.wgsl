@@ -113,11 +113,10 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
-  // Z-ordering: LARGER particles go BEHIND (higher Z), smaller in front (lower Z)
-  // Position-based hash prevents Z-fighting between particles with similar depth
+  // Z-ordering: Position-based hash for stable layering
+  // Using position hash alone avoids Z-fighting when particles cluster tightly
   let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);
-  let sizeZ = sizeMod * 0.5;  // sizeMod ~0.625-1.5 → sizeZ ~0.31-0.75
-  let zDepth = clamp(sizeZ + posHash * 0.001, 0.01, 0.99);
+  let zDepth = 0.1 + posHash * 0.8;  // Spread across 0.1-0.9 range
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
   // Pass offset for circle calculation in fragment shader

@@ -102,8 +102,8 @@ struct SimParams {
 
 const MAX_SPECIES: u32 = 6u;
 const MIN_DISTANCE_SQ: f32 = 4.0;  // Prevents division-by-zero when particles overlap
-const REPULSION_ZONE_INV: f32 = 3.333333333;     // 1.0 / 0.3 (inner 30% of radius)
-const ATTRACTION_FALLOFF_INV: f32 = 1.428571429; // 1.0 / 0.7 (outer 70% of radius)
+const REPULSION_ZONE_INV: f32 = 2.0;             // 1.0 / 0.5 (inner 50% of radius)
+const ATTRACTION_FALLOFF_INV: f32 = 2.0;         // 1.0 / 0.5 (outer 50% of radius)
 const MOUSE_RANGE_SQ: f32 = 90000.0;  // 300² - mouse influence radius squared
 const FIXED_POINT_SCALE: f32 = 65536.0;  // Float-to-int conversion factor (2^16)
 
@@ -252,33 +252,33 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // FORCE CALCULATION (the physics):
         // We use a piecewise function with two zones:
         //
-        // 1. REPULSION ZONE (normalizedDist < 0.3):
-        //    Linear ramp from -1.0 (at distance 0) to 0.0 (at 30% of radius).
+        // 1. REPULSION ZONE (normalizedDist < 0.5):
+        //    Linear ramp from -1.0 (at distance 0) to 0.0 (at 50% of radius).
         //    Think of it as particles having a "personal space bubble."
-        //    Formula: (dist/0.3) - 1.0
+        //    Formula: (dist/0.5) - 1.0
         //    At dist=0:   force = -1.0 (maximum repulsion)
-        //    At dist=0.3: force = 0.0  (repulsion ends)
+        //    At dist=0.5: force = 0.0  (repulsion ends)
         //
-        // 2. ATTRACTION ZONE (normalizedDist >= 0.3):
-        //    Triangular peak centered at 65% of radius.
-        //    Force starts at 0 (at 30%), peaks at 65%, returns to 0 at 100%.
+        // 2. ATTRACTION ZONE (normalizedDist >= 0.5):
+        //    Triangular peak centered at 75% of radius.
+        //    Force starts at 0 (at 50%), peaks at 75%, returns to 0 at 100%.
         //    Scaled by the attraction coefficient from the species matrix.
-        //    Formula: attraction * (1.0 - |2*dist - 1.3| / 0.7)
-        //    At dist=0.3: force = 0.0
-        //    At dist=0.65: force = attraction (maximum)
-        //    At dist=1.0: force = 0.0
+        //    Formula: attraction * (1.0 - |2*dist - 1.5| / 0.5)
+        //    At dist=0.5:  force = 0.0
+        //    At dist=0.75: force = attraction (maximum)
+        //    At dist=1.0:  force = 0.0
         //
         // Finally, divide by distance (invDistance) to convert force magnitude
         // into proper acceleration (like gravity: F ∝ 1/r² becomes a ∝ 1/r).
 
         // Force on THIS particle
         var forceMagnitudeOnThis: f32;
-        if (normalizedDist < 0.3) {
+        if (normalizedDist < 0.5) {
           // Repulsion zone: linear from -1.0 to 0.0
           forceMagnitudeOnThis = normalizedDist * REPULSION_ZONE_INV - 1.0;
         } else {
-          // Attraction zone: triangular peak at 0.65
-          let t = 2.0 * normalizedDist - 1.3;  // Shifts peak to 0.65
+          // Attraction zone: triangular peak at 0.75
+          let t = 2.0 * normalizedDist - 1.5;  // Shifts peak to 0.75
           forceMagnitudeOnThis = attractionThisToOther * (1.0 - abs(t) * ATTRACTION_FALLOFF_INV);
         }
         forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
@@ -286,10 +286,10 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // Force on OTHER particle (Newton's 3rd law: equal and opposite)
         // Note: Uses OTHER's attraction coefficient (asymmetric interactions)
         var forceMagnitudeOnOther: f32;
-        if (normalizedDist < 0.3) {
+        if (normalizedDist < 0.5) {
           forceMagnitudeOnOther = normalizedDist * REPULSION_ZONE_INV - 1.0;
         } else {
-          let t = 2.0 * normalizedDist - 1.3;
+          let t = 2.0 * normalizedDist - 1.5;
           forceMagnitudeOnOther = attractionOtherToThis * (1.0 - abs(t) * ATTRACTION_FALLOFF_INV);
         }
         forceMagnitudeOnOther *= params.forceMultiplier * invDistance;
