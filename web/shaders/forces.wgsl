@@ -83,6 +83,10 @@ struct SimParams {
   attractionMatrix: array<vec4<f32>, 9>,
   repulsionEnd: f32,      // Where repulsion zone ends (0-1)
   attractionPeak: f32,    // Where attraction peaks (0-1)
+  forceModel: u32,        // 0=polynomial, 1=exponential
+  expAlpha: f32,          // Exponential repulsion steepness
+  expBeta: f32,           // Exponential attraction range
+  _pad2: f32,             // Padding for 16-byte alignment
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -106,6 +110,25 @@ const MAX_SPECIES: u32 = 6u;
 const MIN_DISTANCE_SQ: f32 = 4.0;  // Prevents division-by-zero when particles overlap
 const MOUSE_RANGE_SQ: f32 = 90000.0;  // 300² - mouse influence radius squared
 const FIXED_POINT_SCALE: f32 = 65536.0;  // Float-to-int conversion factor (2^16)
+
+// =============================================================================
+// EXPONENTIAL FORCE MODEL
+// =============================================================================
+// Alternative to polynomial model using exponential decay functions.
+// Produces smoother force curves with longer-range interactions.
+//
+// Force = -exp(-alpha * r) + attraction * exp(-beta * r) * 2.0
+//
+// - Repulsion term: exp(-alpha * r) - strong at r=0, decays with alpha
+// - Attraction term: exp(-beta * r) - broader with smaller beta
+// - The 2.0 factor balances repulsion/attraction magnitudes
+//
+// Typical values: alpha=6.0 (steep repulsion), beta=3.0 (broad attraction)
+fn exponentialForce(r: f32, attraction: f32, alpha: f32, beta: f32) -> f32 {
+  let repulsion = exp(-alpha * r);
+  let attract = exp(-beta * r);
+  return -repulsion + attraction * attract * 2.0;
+}
 
 @compute @workgroup_size(128, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -250,61 +273,68 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let attractionOtherToThis = params.attractionMatrix[matrixIdxOtherToThis / 4u][matrixIdxOtherToThis % 4u];
 
         // FORCE CALCULATION (the physics):
-        // We use smooth polynomial functions for C¹ continuity (no derivative jumps).
-        // This eliminates velocity jitter at zone boundaries.
+        // Two models available, selected by params.forceModel:
         //
-        // Zone boundaries are configurable via params.repulsionEnd and params.attractionPeak.
+        // MODEL 0: POLYNOMIAL (smooth C¹-continuous curves)
+        //   - Repulsion zone: smooth cubic in [0, repulsionEnd]
+        //   - Attraction zone: smooth bump in [repulsionEnd, 1] peaking at attractionPeak
+        //   - Zone boundaries configurable via params
         //
-        // 1. REPULSION ZONE (normalizedDist < repulsionEnd):
-        //    Smooth cubic normalized to zone width.
-        //    Properties: f(0) = -1, f(repulsionEnd) = 0, f'(repulsionEnd) = 0
-        //
-        // 2. ATTRACTION ZONE (normalizedDist >= repulsionEnd):
-        //    Smooth bump normalized to zone width, peaking at attractionPeak.
-        //    Scaled by the attraction coefficient from the species matrix.
+        // MODEL 1: EXPONENTIAL (decay functions)
+        //   - Uses exp(-alpha*r) for repulsion, exp(-beta*r) for attraction
+        //   - Smoother decay across full range, no hard zone boundaries
+        //   - Alpha/beta control steepness of repulsion/attraction falloff
         //
         // Finally, divide by distance (invDistance) to convert force magnitude
         // into proper acceleration (like gravity: F ∝ 1/r² becomes a ∝ 1/r).
 
-        let repEnd = params.repulsionEnd;
-        let attPeak = params.attractionPeak;
-
-        // Force on THIS particle
         var forceMagnitudeOnThis: f32;
-        if (normalizedDist < repEnd) {
-          // Repulsion zone: smooth cubic normalized to [0, repEnd]
-          let t = normalizedDist / repEnd;  // Normalize to [0, 1]
-          let t2 = t * t;
-          forceMagnitudeOnThis = -1.0 + 3.0 * t2 - 2.0 * t2 * t;  // Hermite: f(0)=-1, f(1)=0, f'(1)=0
-        } else {
-          // Attraction zone: smooth bump in [repEnd, 1] peaking at attPeak
-          let zoneWidth = 1.0 - repEnd;
-          let peakPos = (attPeak - repEnd) / zoneWidth;  // Normalized peak position in [0, 1]
-          let t = (normalizedDist - repEnd) / zoneWidth;  // Normalize to [0, 1]
-          // Bump function: peaks at peakPos, zero at 0 and 1
-          let leftDist = t / peakPos;
-          let rightDist = (1.0 - t) / (1.0 - peakPos);
-          let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
-          forceMagnitudeOnThis = attractionThisToOther * bump * 4.0;  // Scale to match old peak magnitude
-        }
-        forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
-
-        // Force on OTHER particle (Newton's 3rd law: equal and opposite)
-        // Note: Uses OTHER's attraction coefficient (asymmetric interactions)
         var forceMagnitudeOnOther: f32;
-        if (normalizedDist < repEnd) {
-          let t = normalizedDist / repEnd;
-          let t2 = t * t;
-          forceMagnitudeOnOther = -1.0 + 3.0 * t2 - 2.0 * t2 * t;
+
+        if (params.forceModel == 1u) {
+          // EXPONENTIAL MODEL
+          forceMagnitudeOnThis = exponentialForce(normalizedDist, attractionThisToOther, params.expAlpha, params.expBeta);
+          forceMagnitudeOnOther = exponentialForce(normalizedDist, attractionOtherToThis, params.expAlpha, params.expBeta);
         } else {
-          let zoneWidth = 1.0 - repEnd;
-          let peakPos = (attPeak - repEnd) / zoneWidth;
-          let t = (normalizedDist - repEnd) / zoneWidth;
-          let leftDist = t / peakPos;
-          let rightDist = (1.0 - t) / (1.0 - peakPos);
-          let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
-          forceMagnitudeOnOther = attractionOtherToThis * bump * 4.0;
+          // POLYNOMIAL MODEL (default)
+          let repEnd = params.repulsionEnd;
+          let attPeak = params.attractionPeak;
+
+          // Force on THIS particle
+          if (normalizedDist < repEnd) {
+            // Repulsion zone: smooth cubic normalized to [0, repEnd]
+            let t = normalizedDist / repEnd;  // Normalize to [0, 1]
+            let t2 = t * t;
+            forceMagnitudeOnThis = -1.0 + 3.0 * t2 - 2.0 * t2 * t;  // Hermite: f(0)=-1, f(1)=0, f'(1)=0
+          } else {
+            // Attraction zone: smooth bump in [repEnd, 1] peaking at attPeak
+            let zoneWidth = 1.0 - repEnd;
+            let peakPos = (attPeak - repEnd) / zoneWidth;  // Normalized peak position in [0, 1]
+            let t = (normalizedDist - repEnd) / zoneWidth;  // Normalize to [0, 1]
+            // Bump function: peaks at peakPos, zero at 0 and 1
+            let leftDist = t / peakPos;
+            let rightDist = (1.0 - t) / (1.0 - peakPos);
+            let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
+            forceMagnitudeOnThis = attractionThisToOther * bump * 4.0;  // Scale to match old peak magnitude
+          }
+
+          // Force on OTHER particle (Newton's 3rd law: uses OTHER's attraction coefficient)
+          if (normalizedDist < repEnd) {
+            let t = normalizedDist / repEnd;
+            let t2 = t * t;
+            forceMagnitudeOnOther = -1.0 + 3.0 * t2 - 2.0 * t2 * t;
+          } else {
+            let zoneWidth = 1.0 - repEnd;
+            let peakPos = (attPeak - repEnd) / zoneWidth;
+            let t = (normalizedDist - repEnd) / zoneWidth;
+            let leftDist = t / peakPos;
+            let rightDist = (1.0 - t) / (1.0 - peakPos);
+            let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
+            forceMagnitudeOnOther = attractionOtherToThis * bump * 4.0;
+          }
         }
+
+        forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
         forceMagnitudeOnOther *= params.forceMultiplier * invDistance;
 
         // Accumulate force on THIS in register (no atomic needed - we own this thread)

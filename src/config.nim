@@ -41,6 +41,9 @@ type
     maxVelocity* {.exportc.}: float
     repulsionEnd* {.exportc.}: float      # Where repulsion zone ends (0-1, default 0.5)
     attractionPeak* {.exportc.}: float    # Where attraction peaks (0-1, default 0.75)
+    forceModel* {.exportc.}: int          # 0=polynomial, 1=exponential
+    expRepulsionAlpha* {.exportc.}: float # Exponential repulsion steepness (default 6.0)
+    expAttractionBeta* {.exportc.}: float # Exponential attraction range (default 3.0)
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -157,6 +160,9 @@ proc createConfig(): ConfigObject =
   result.maxVelocity = 50.0
   result.repulsionEnd = 0.5      # Inner 50% is repulsion zone
   result.attractionPeak = 0.75   # Attraction peaks at 75% of radius
+  result.forceModel = 0          # Default: polynomial (smooth curves)
+  result.expRepulsionAlpha = 6.0 # Exponential repulsion steepness
+  result.expAttractionBeta = 3.0 # Exponential attraction range
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 

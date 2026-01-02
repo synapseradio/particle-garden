@@ -115,7 +115,7 @@ NTI33555167.node = NNI33555167;
 NTI33555177.base = NTI33555167;
 NTI754974826.base = NTI33555177;
 NTI1073741830.base = NTI754974826;
-var NNI1073741829 = {kind: 2, len: 14, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particleCount", len: 0, typ: NTI33554435, name: "particleCount", sons: null}, 
+var NNI1073741829 = {kind: 2, len: 17, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particleCount", len: 0, typ: NTI33554435, name: "particleCount", sons: null}, 
 {kind: 1, offset: "speciesCount", len: 0, typ: NTI33554435, name: "speciesCount", sons: null}, 
 {kind: 1, offset: "interactionRadius", len: 0, typ: NTI33554435, name: "interactionRadius", sons: null}, 
 {kind: 1, offset: "forceStrength", len: 0, typ: NTI33554445, name: "forceStrength", sons: null}, 
@@ -128,7 +128,10 @@ var NNI1073741829 = {kind: 2, len: 14, offset: 0, typ: null, name: null, sons: [
 {kind: 1, offset: "velocityGlowScale", len: 0, typ: NTI33554445, name: "velocityGlowScale", sons: null}, 
 {kind: 1, offset: "maxVelocity", len: 0, typ: NTI33554445, name: "maxVelocity", sons: null}, 
 {kind: 1, offset: "repulsionEnd", len: 0, typ: NTI33554445, name: "repulsionEnd", sons: null}, 
-{kind: 1, offset: "attractionPeak", len: 0, typ: NTI33554445, name: "attractionPeak", sons: null}]};
+{kind: 1, offset: "attractionPeak", len: 0, typ: NTI33554445, name: "attractionPeak", sons: null}, 
+{kind: 1, offset: "forceModel", len: 0, typ: NTI33554435, name: "forceModel", sons: null}, 
+{kind: 1, offset: "expRepulsionAlpha", len: 0, typ: NTI33554445, name: "expRepulsionAlpha", sons: null}, 
+{kind: 1, offset: "expAttractionBeta", len: 0, typ: NTI33554445, name: "expAttractionBeta", sons: null}]};
 NTI1073741829.node = NNI1073741829;
 NTI1073741829.base = NTI754974826;
 var NNI134217743 = {kind: 2, len: 0, offset: 0, typ: null, name: null, sons: []};
@@ -1149,45 +1152,48 @@ function modInt(a_p0, b_p1) {
 }
 var objectID_822083762 = [0];
 
-function createMemoryLayout__config_u47() {
-  var result_1073741872 = null;
+function createMemoryLayout__config_u50() {
+  var result_1073741875 = null;
 
-    result_1073741872 = {m_type: NTI1073741830, particlesA: 0, particlesSorted: 0, sortedIndices: 0, reverseIndices: 0, velocityDeltaFixed: 0, gridCounts: 0, gridOffsets: 0, matrix: 0, sync: 0, totalSize: 0};
-    result_1073741872.particlesA = 1048576;
-    result_1073741872.particlesSorted = 3096576;
-    result_1073741872.sortedIndices = 5144576;
-    result_1073741872.reverseIndices = 5400576;
-    result_1073741872.velocityDeltaFixed = 5656576;
-    result_1073741872.gridCounts = 6168576;
-    result_1073741872.gridOffsets = 6430720;
-    result_1073741872.matrix = 6692864;
-    result_1073741872.sync = 6693008;
-    result_1073741872.totalSize = 6694032;
+    result_1073741875 = {m_type: NTI1073741830, particlesA: 0, particlesSorted: 0, sortedIndices: 0, reverseIndices: 0, velocityDeltaFixed: 0, gridCounts: 0, gridOffsets: 0, matrix: 0, sync: 0, totalSize: 0};
+    result_1073741875.particlesA = 1048576;
+    result_1073741875.particlesSorted = 3096576;
+    result_1073741875.sortedIndices = 5144576;
+    result_1073741875.reverseIndices = 5400576;
+    result_1073741875.velocityDeltaFixed = 5656576;
+    result_1073741875.gridCounts = 6168576;
+    result_1073741875.gridOffsets = 6430720;
+    result_1073741875.matrix = 6692864;
+    result_1073741875.sync = 6693008;
+    result_1073741875.totalSize = 6694032;
 
-  return result_1073741872;
+  return result_1073741875;
 
 }
 
-function createConfig__config_u91() {
-  var result_1073741916 = null;
+function createConfig__config_u94() {
+  var result_1073741919 = null;
 
-    result_1073741916 = {m_type: NTI1073741829, particleCount: 0, speciesCount: 0, interactionRadius: 0, forceStrength: 0.0, friction: 0.0, timeScale: 0.0, particleSize: 0, trails: false, trailAlpha: 0.0, glowIntensity: 0.0, velocityGlowScale: 0.0, maxVelocity: 0.0, repulsionEnd: 0.0, attractionPeak: 0.0};
-    result_1073741916.particleCount = 16000;
-    result_1073741916.speciesCount = 4;
-    result_1073741916.interactionRadius = 50;
-    result_1073741916.forceStrength = 1.0;
-    result_1073741916.friction = 0.05;
-    result_1073741916.timeScale = 0.5;
-    result_1073741916.particleSize = 3;
-    result_1073741916.trails = false;
-    result_1073741916.trailAlpha = 0.96;
-    result_1073741916.glowIntensity = 0.8;
-    result_1073741916.velocityGlowScale = 1.0;
-    result_1073741916.maxVelocity = 50.0;
-    result_1073741916.repulsionEnd = 0.5;
-    result_1073741916.attractionPeak = 0.75;
+    result_1073741919 = {m_type: NTI1073741829, particleCount: 0, speciesCount: 0, interactionRadius: 0, forceStrength: 0.0, friction: 0.0, timeScale: 0.0, particleSize: 0, trails: false, trailAlpha: 0.0, glowIntensity: 0.0, velocityGlowScale: 0.0, maxVelocity: 0.0, repulsionEnd: 0.0, attractionPeak: 0.0, forceModel: 0, expRepulsionAlpha: 0.0, expAttractionBeta: 0.0};
+    result_1073741919.particleCount = 16000;
+    result_1073741919.speciesCount = 4;
+    result_1073741919.interactionRadius = 50;
+    result_1073741919.forceStrength = 1.0;
+    result_1073741919.friction = 0.05;
+    result_1073741919.timeScale = 0.5;
+    result_1073741919.particleSize = 3;
+    result_1073741919.trails = false;
+    result_1073741919.trailAlpha = 0.96;
+    result_1073741919.glowIntensity = 0.8;
+    result_1073741919.velocityGlowScale = 1.0;
+    result_1073741919.maxVelocity = 50.0;
+    result_1073741919.repulsionEnd = 0.5;
+    result_1073741919.attractionPeak = 0.75;
+    result_1073741919.forceModel = 0;
+    result_1073741919.expRepulsionAlpha = 6.0;
+    result_1073741919.expAttractionBeta = 3.0;
 
-  return result_1073741916;
+  return result_1073741919;
 
 }
 var MAX_PARTICLES = 64000;
@@ -1205,8 +1211,8 @@ var WORLD_H = 2160.0;
 var WASM_MEMORY_PAGES = 2048;
 var WASM_MEMORY_PAGES_MAX = 8192;
 var WASM_DATA_OFFSET = 1048576;
-var MEMORY_LAYOUT = createMemoryLayout__config_u47();
-var CONFIG = createConfig__config_u91();
+var MEMORY_LAYOUT = createMemoryLayout__config_u50();
+var CONFIG = createConfig__config_u94();
 var COLORS = new Float32Array([1.0, 0.4, 0.4, 0.4, 1.0, 0.4, 0.4, 0.7, 1.0, 1.0, 1.0, 0.4, 1.0, 0.4, 1.0, 0.4, 1.0, 1.0]);
 
 function allocateBuffers() {
@@ -2474,16 +2480,16 @@ function HEX3Aanonymous__webgpu95compute_u68(msg_p0) {
     var errorDetails_1291845704 = [];
     Label3: {
       var i_1291845709 = 0;
-      var colontmp__1291847067 = 0;
-      colontmp__1291847067 = errors_1291845699.length;
-      var i_1291847068 = 0;
+      var colontmp__1291847072 = 0;
+      colontmp__1291847072 = errors_1291845699.length;
+      var i_1291847073 = 0;
       Label4: {
           Label5: while (true) {
-          if (!(i_1291847068 < colontmp__1291847067)) break Label5;
-            i_1291845709 = i_1291847068;
+          if (!(i_1291847073 < colontmp__1291847072)) break Label5;
+            i_1291845709 = i_1291847073;
             var err_1291845710 = errors_1291845699[i_1291845709];
             errorDetails_1291845704.push.apply(errorDetails_1291845704, ([32,32,76,105,110,101,32]).concat(HEX24__systemZdollars_u14(err_1291845710.lineNum),[58,32],cstrToNimstr(err_1291845710.message),[10]));;
-            i_1291847068 = addInt(i_1291847068, 1);
+            i_1291847073 = addInt(i_1291847073, 1);
           }
       };
     };
@@ -2493,16 +2499,16 @@ function HEX3Aanonymous__webgpu95compute_u68(msg_p0) {
     if ((0 < warnings_1291845703.length)) {
     Label6: {
       var i_1291845716 = 0;
-      var colontmp__1291847071 = 0;
-      colontmp__1291847071 = warnings_1291845703.length;
-      var i_1291847072 = 0;
+      var colontmp__1291847076 = 0;
+      colontmp__1291847076 = warnings_1291845703.length;
+      var i_1291847077 = 0;
       Label7: {
           Label8: while (true) {
-          if (!(i_1291847072 < colontmp__1291847071)) break Label8;
-            i_1291845716 = i_1291847072;
+          if (!(i_1291847077 < colontmp__1291847076)) break Label8;
+            i_1291845716 = i_1291847077;
             var w_1291845717 = warnings_1291845703[i_1291845716];
             console.warn([((toJSStr(([83,104,97,100,101,114,32,119,97,114,110,105,110,103,32,102,111,114,32,34]).concat(cstrToNimstr(label_p1),[34,32,76,105,110,101,32],HEX24__systemZdollars_u14(w_1291845717.lineNum),[58,32],cstrToNimstr(w_1291845717.message)))))]);
-            i_1291847072 = addInt(i_1291847072, 1);
+            i_1291847077 = addInt(i_1291847077, 1);
           }
       };
     };
@@ -2608,13 +2614,13 @@ async function createBindGroupWithValidation(passName_p0, layout_p1, entries_p2,
     var entryDetails_1291845916 = [];
     Label1: {
       var i_1291845921 = 0;
-      var colontmp__1291847075 = 0;
-      colontmp__1291847075 = entries_p2.length;
-      var i_1291847076 = 0;
+      var colontmp__1291847080 = 0;
+      colontmp__1291847080 = entries_p2.length;
+      var i_1291847081 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1291847076 < colontmp__1291847075)) break Label3;
-            i_1291845921 = i_1291847076;
+          if (!(i_1291847081 < colontmp__1291847080)) break Label3;
+            i_1291845921 = i_1291847081;
             var e_1291845922 = entries_p2[i_1291845921];
             var binding_1291845923 = e_1291845922["binding"];
             var resource_1291845924 = e_1291845922["resource"];
@@ -2628,7 +2634,7 @@ async function createBindGroupWithValidation(passName_p0, layout_p1, entries_p2,
             
             var bufferLabel_1291845930 = nimCopy(null, Temporary4, NTI33554449);
             entryDetails_1291845916.push.apply(entryDetails_1291845916, ([32,32,32,32,98,105,110,100,105,110,103,32]).concat(HEX24__systemZdollars_u14(to__webgpu95compute_u299(binding_1291845923)),[58,32,98,117,102,102,101,114,61],bufferLabel_1291845930,[10]));;
-            i_1291847076 = addInt(i_1291847076, 1);
+            i_1291847081 = addInt(i_1291847081, 1);
           }
       };
     };
@@ -2759,19 +2765,19 @@ function nsuFindChar(s_p0, sub_p1, start_p2, last_p3) {
     var last_1308624553 = Temporary1;
     Label2: {
       var iHEX60gensym174_1308624567 = 0;
-      var colontmp__1291847084 = 0;
-      colontmp__1291847084 = start_p2;
-      var res_1291847085 = colontmp__1291847084;
+      var colontmp__1291847089 = 0;
+      colontmp__1291847089 = start_p2;
+      var res_1291847090 = colontmp__1291847089;
       Label3: {
           Label4: while (true) {
-          if (!(res_1291847085 <= last_1308624553)) break Label4;
-            iHEX60gensym174_1308624567 = res_1291847085;
+          if (!(res_1291847090 <= last_1308624553)) break Label4;
+            iHEX60gensym174_1308624567 = res_1291847090;
             if ((s_p0[chckIndx(iHEX60gensym174_1308624567, 0, (s_p0).length - 1)] == sub_p1)) {
             result_1308624552 = iHEX60gensym174_1308624567;
             break BeforeRet;
             }
             
-            res_1291847085 = addInt(res_1291847085, 1);
+            res_1291847090 = addInt(res_1291847090, 1);
           }
       };
     };
@@ -2845,15 +2851,15 @@ function nsuInitSkipTable(a_p0, sub_p1) {
     fill__pureZstrutils_u1623(a_p0, m_1308624470);
     Label1: {
       var i_1308624490 = 0;
-      var colontmp__1291847090 = 0;
-      colontmp__1291847090 = subInt(m_1308624470, 1);
-      var i_1291847091 = 0;
+      var colontmp__1291847095 = 0;
+      colontmp__1291847095 = subInt(m_1308624470, 1);
+      var i_1291847096 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1291847091 < colontmp__1291847090)) break Label3;
-            i_1308624490 = i_1291847091;
+          if (!(i_1291847096 < colontmp__1291847095)) break Label3;
+            i_1308624490 = i_1291847096;
             a_p0[chckIndx(sub_p1[chckIndx(i_1308624490, 0, (sub_p1).length - 1)], 0, (a_p0).length - 1)] = subInt(subInt(m_1308624470, 1), i_1308624490);
-            i_1291847091 = addInt(i_1291847091, 1);
+            i_1291847096 = addInt(i_1291847096, 1);
           }
       };
     };
@@ -3007,7 +3013,7 @@ async function initPipelines() {
     var uniformUsage_1291846501 = (GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
     uniformBuffers["gridParams"] = device.createBuffer({size: 32, usage: uniformUsage_1291846501, label: "Grid Parameters Uniform"});
     uniformBuffers["scanParams"] = device.createBuffer({size: 16, usage: uniformUsage_1291846501, label: "Scan Parameters Uniform"});
-    uniformBuffers["simParams"] = device.createBuffer({size: 224, usage: uniformUsage_1291846501, label: "Simulation Parameters Uniform (with matrix + zones)"});
+    uniformBuffers["simParams"] = device.createBuffer({size: 240, usage: uniformUsage_1291846501, label: "Simulation Parameters Uniform (with matrix + force model)"});
     uniformBuffers["integrationParams"] = device.createBuffer({size: 32, usage: uniformUsage_1291846501, label: "Integration Parameters Uniform"});
     console.log([(("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created"))]);
     console.log([(("[PHASE: PIPELINE CREATION] Creating AoS compute pipelines..."))]);
@@ -3132,7 +3138,7 @@ async function runPhysicsFrame(params_p0) {
     scanParamsData_1291846857[0] = numCells_1291846851;
     scanParamsData_1291846857[1] = numBlocksForScan_1291846856;
     queue.writeBuffer(uniformBuffers["scanParams"], 0, scanParamsData_1291846857);
-    var simParamsData_1291846858 = new Float32Array(56);
+    var simParamsData_1291846858 = new Float32Array(60);
     simParamsData_1291846858[0] = dt_1291846774;
     simParamsData_1291846858[1] = width_1291846784;
     simParamsData_1291846858[2] = height_1291846789;
@@ -3166,73 +3172,77 @@ async function runPhysicsFrame(params_p0) {
     simParamsData_1291846858[15] = 0.0;
     Label3: {
       var i_1291846864 = 0;
-      var i_1291847095 = 0;
+      var i_1291847100 = 0;
       Label4: {
           Label5: while (true) {
-          if (!(i_1291847095 < 36)) break Label5;
-            i_1291846864 = i_1291847095;
+          if (!(i_1291847100 < 36)) break Label5;
+            i_1291846864 = i_1291847100;
             simParamsData_1291846858[addInt(16, i_1291846864)] = to__webgpu95compute_u1137(matrix_1291846850[i_1291846864]);
-            i_1291847095 = addInt(i_1291847095, 1);
+            i_1291847100 = addInt(i_1291847100, 1);
           }
       };
     };
     simParamsData_1291846858[52] = CONFIG.repulsionEnd;
     simParamsData_1291846858[53] = CONFIG.attractionPeak;
+    simParamsUint_1291846859[54] = Number(BigInt.asUintN(32, BigInt(CONFIG.forceModel)));
+    simParamsData_1291846858[55] = CONFIG.expRepulsionAlpha;
+    simParamsData_1291846858[56] = CONFIG.expAttractionBeta;
+    simParamsData_1291846858[57] = 0.0;
     queue.writeBuffer(uniformBuffers["simParams"], 0, simParamsData_1291846858);
-    var integrationParamsData_1291846869 = new Float32Array(8);
-    integrationParamsData_1291846869[0] = width_1291846784;
-    integrationParamsData_1291846869[1] = height_1291846789;
-    integrationParamsData_1291846869[2] = friction_1291846814;
-    integrationParamsData_1291846869[3] = CONFIG.maxVelocity;
-    var integrationParamsUint_1291846870 = new Uint32Array(integrationParamsData_1291846869.buffer);
-    integrationParamsUint_1291846870[4] = particleCount_1291846779;
-    queue.writeBuffer(uniformBuffers["integrationParams"], 0, integrationParamsData_1291846869);
+    var integrationParamsData_1291846874 = new Float32Array(8);
+    integrationParamsData_1291846874[0] = width_1291846784;
+    integrationParamsData_1291846874[1] = height_1291846789;
+    integrationParamsData_1291846874[2] = friction_1291846814;
+    integrationParamsData_1291846874[3] = CONFIG.maxVelocity;
+    var integrationParamsUint_1291846875 = new Uint32Array(integrationParamsData_1291846874.buffer);
+    integrationParamsUint_1291846875[4] = particleCount_1291846779;
+    queue.writeBuffer(uniformBuffers["integrationParams"], 0, integrationParamsData_1291846874);
     if ((!((gridW_1291846794 == cachedBindGroupGridW_1291845663[0])) || !((gridH_1291846799 == cachedBindGroupGridH_1291845664[0])))) {
     (await createBindGroups(gridW_1291846794, gridH_1291846799));
     cachedBindGroupGridW_1291845663[0] = gridW_1291846794;
     cachedBindGroupGridH_1291845664[0] = gridH_1291846799;
     }
     
-    var commandEncoder_1291846875 = device.createCommandEncoder({label: "Physics Frame Command Encoder"});
-    var gridCountBytes_1291846876 = mulInt(numCells_1291846851, 4);
-    commandEncoder_1291846875.clearBuffer(buffers.gridCounts, 0, gridCountBytes_1291846876);
-    var gridBuildPassDesc_1291846877 = ({});
-    gridBuildPassDesc_1291846877["label"] = ("Grid Build Compute Pass");
-    var gridBuildPass_1291846886 = commandEncoder_1291846875.beginComputePass(gridBuildPassDesc_1291846877);
-    gridBuildPass_1291846886.setPipeline(pipelines["binCount"]);
-    gridBuildPass_1291846886.setBindGroup(0, bindGroups["binCount"]);
-    gridBuildPass_1291846886.dispatchWorkgroups(particleWorkgroups_1291846853);
-    var prefixBlockSize_1291846887 = 256;
-    var numBlocks_1291846888 = Math.ceil((numCells_1291846851 / prefixBlockSize_1291846887));
-    gridBuildPass_1291846886.setPipeline(pipelines["prefixLocal"]);
-    gridBuildPass_1291846886.setBindGroup(0, bindGroups["prefixLocal"]);
-    gridBuildPass_1291846886.dispatchWorkgroups(numBlocks_1291846888);
-    gridBuildPass_1291846886.setPipeline(pipelines["prefixBlocks"]);
-    gridBuildPass_1291846886.setBindGroup(0, bindGroups["prefixBlocks"]);
-    gridBuildPass_1291846886.dispatchWorkgroups(1);
-    gridBuildPass_1291846886.setPipeline(pipelines["prefixFinal"]);
-    gridBuildPass_1291846886.setBindGroup(0, bindGroups["prefixFinal"]);
-    gridBuildPass_1291846886.dispatchWorkgroups(numBlocks_1291846888);
-    gridBuildPass_1291846886.end();
-    var fillPointerBytes_1291846889 = mulInt(numCells_1291846851, 4);
-    commandEncoder_1291846875.copyBufferToBuffer(buffers.gridOffsets, 0, buffers.fillPointers, 0, fillPointerBytes_1291846889);
-    var physicsPassDesc_1291846890 = ({});
-    physicsPassDesc_1291846890["label"] = ("Physics Compute Pass (AoS)");
-    var physicsPass_1291846899 = commandEncoder_1291846875.beginComputePass(physicsPassDesc_1291846890);
-    physicsPass_1291846899.setPipeline(pipelines["binScatter"]);
-    physicsPass_1291846899.setBindGroup(0, bindGroups["binScatter"]);
-    physicsPass_1291846899.dispatchWorkgroups(particleWorkgroups_1291846853);
-    physicsPass_1291846899.setPipeline(pipelines["forces"]);
-    physicsPass_1291846899.setBindGroup(0, bindGroups["forces"]);
-    physicsPass_1291846899.dispatchWorkgroups(particleWorkgroups_1291846853);
-    physicsPass_1291846899.setPipeline(pipelines["integrate"]);
-    physicsPass_1291846899.setBindGroup(0, bindGroups["integrate"]);
-    physicsPass_1291846899.dispatchWorkgroups(particleWorkgroups_1291846853);
-    physicsPass_1291846899.end();
-    var commandBuffer_1291846900 = commandEncoder_1291846875.finish();
-    var commandBufferArray_1291846901 = ([]);
-    (commandBufferArray_1291846901.push(commandBuffer_1291846900));
-    queue.submit(commandBufferArray_1291846901);
+    var commandEncoder_1291846880 = device.createCommandEncoder({label: "Physics Frame Command Encoder"});
+    var gridCountBytes_1291846881 = mulInt(numCells_1291846851, 4);
+    commandEncoder_1291846880.clearBuffer(buffers.gridCounts, 0, gridCountBytes_1291846881);
+    var gridBuildPassDesc_1291846882 = ({});
+    gridBuildPassDesc_1291846882["label"] = ("Grid Build Compute Pass");
+    var gridBuildPass_1291846891 = commandEncoder_1291846880.beginComputePass(gridBuildPassDesc_1291846882);
+    gridBuildPass_1291846891.setPipeline(pipelines["binCount"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["binCount"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(particleWorkgroups_1291846853);
+    var prefixBlockSize_1291846892 = 256;
+    var numBlocks_1291846893 = Math.ceil((numCells_1291846851 / prefixBlockSize_1291846892));
+    gridBuildPass_1291846891.setPipeline(pipelines["prefixLocal"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["prefixLocal"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(numBlocks_1291846893);
+    gridBuildPass_1291846891.setPipeline(pipelines["prefixBlocks"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["prefixBlocks"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(1);
+    gridBuildPass_1291846891.setPipeline(pipelines["prefixFinal"]);
+    gridBuildPass_1291846891.setBindGroup(0, bindGroups["prefixFinal"]);
+    gridBuildPass_1291846891.dispatchWorkgroups(numBlocks_1291846893);
+    gridBuildPass_1291846891.end();
+    var fillPointerBytes_1291846894 = mulInt(numCells_1291846851, 4);
+    commandEncoder_1291846880.copyBufferToBuffer(buffers.gridOffsets, 0, buffers.fillPointers, 0, fillPointerBytes_1291846894);
+    var physicsPassDesc_1291846895 = ({});
+    physicsPassDesc_1291846895["label"] = ("Physics Compute Pass (AoS)");
+    var physicsPass_1291846904 = commandEncoder_1291846880.beginComputePass(physicsPassDesc_1291846895);
+    physicsPass_1291846904.setPipeline(pipelines["binScatter"]);
+    physicsPass_1291846904.setBindGroup(0, bindGroups["binScatter"]);
+    physicsPass_1291846904.dispatchWorkgroups(particleWorkgroups_1291846853);
+    physicsPass_1291846904.setPipeline(pipelines["forces"]);
+    physicsPass_1291846904.setBindGroup(0, bindGroups["forces"]);
+    physicsPass_1291846904.dispatchWorkgroups(particleWorkgroups_1291846853);
+    physicsPass_1291846904.setPipeline(pipelines["integrate"]);
+    physicsPass_1291846904.setBindGroup(0, bindGroups["integrate"]);
+    physicsPass_1291846904.dispatchWorkgroups(particleWorkgroups_1291846853);
+    physicsPass_1291846904.end();
+    var commandBuffer_1291846905 = commandEncoder_1291846880.finish();
+    var commandBufferArray_1291846906 = ([]);
+    (commandBufferArray_1291846906.push(commandBuffer_1291846905));
+    queue.submit(commandBufferArray_1291846906);
     result_1291846762 = undefined;
     break BeforeRet;
   };
@@ -3241,49 +3251,49 @@ async function runPhysicsFrame(params_p0) {
 
 }
 async function uploadInitialData(particleCount_p0) {
-  var result_1291846956 = null;
+  var result_1291846961 = null;
 
   BeforeRet: {
     if (((device == null) || (queue == null))) {
     console.error([(("Cannot upload initial data: WebGPU device not initialized"))]);
-    var resultObj_1291846981 = ({});
-    resultObj_1291846981["success"] = (false);
-    resultObj_1291846981["error"] = ("Device not initialized");
-    result_1291846956 = resultObj_1291846981;
+    var resultObj_1291846986 = ({});
+    resultObj_1291846986["success"] = (false);
+    resultObj_1291846986["error"] = ("Device not initialized");
+    result_1291846961 = resultObj_1291846986;
     break BeforeRet;
     }
     
 ++excHandler;
     try {
-    var particleData_1291847001 = new Float32Array(mulInt(particleCount_p0, 8));
-    var particleDataUint_1291847002 = new Uint32Array(particleData_1291847001.buffer);
+    var particleData_1291847006 = new Float32Array(mulInt(particleCount_p0, 8));
+    var particleDataUint_1291847007 = new Uint32Array(particleData_1291847006.buffer);
     Label2: {
-      var i_1291847007 = 0;
-      var i_1291847098 = 0;
+      var i_1291847012 = 0;
+      var i_1291847103 = 0;
       Label3: {
           Label4: while (true) {
-          if (!(i_1291847098 < particleCount_p0)) break Label4;
-            i_1291847007 = i_1291847098;
-            var baseIdx_1291847008 = mulInt(i_1291847007, 8);
-            particleData_1291847001[addInt(baseIdx_1291847008, 0)] = particlesA[addInt(mulInt(i_1291847007, 8), 0)];
-            particleData_1291847001[addInt(baseIdx_1291847008, 1)] = particlesA[addInt(mulInt(i_1291847007, 8), 1)];
-            particleData_1291847001[addInt(baseIdx_1291847008, 2)] = particlesA[addInt(mulInt(i_1291847007, 8), 2)];
-            particleData_1291847001[addInt(baseIdx_1291847008, 3)] = particlesA[addInt(mulInt(i_1291847007, 8), 3)];
-            particleDataUint_1291847002[addInt(baseIdx_1291847008, 4)] = particlesA[addInt(mulInt(i_1291847007, 8), 4)];
-            particleData_1291847001[addInt(baseIdx_1291847008, 5)] = particlesA[addInt(mulInt(i_1291847007, 8), 5)];
-            particleDataUint_1291847002[addInt(baseIdx_1291847008, 6)] = 0;
-            particleDataUint_1291847002[addInt(baseIdx_1291847008, 7)] = 0;
-            i_1291847098 = addInt(i_1291847098, 1);
+          if (!(i_1291847103 < particleCount_p0)) break Label4;
+            i_1291847012 = i_1291847103;
+            var baseIdx_1291847013 = mulInt(i_1291847012, 8);
+            particleData_1291847006[addInt(baseIdx_1291847013, 0)] = particlesA[addInt(mulInt(i_1291847012, 8), 0)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 1)] = particlesA[addInt(mulInt(i_1291847012, 8), 1)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 2)] = particlesA[addInt(mulInt(i_1291847012, 8), 2)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 3)] = particlesA[addInt(mulInt(i_1291847012, 8), 3)];
+            particleDataUint_1291847007[addInt(baseIdx_1291847013, 4)] = particlesA[addInt(mulInt(i_1291847012, 8), 4)];
+            particleData_1291847006[addInt(baseIdx_1291847013, 5)] = particlesA[addInt(mulInt(i_1291847012, 8), 5)];
+            particleDataUint_1291847007[addInt(baseIdx_1291847013, 6)] = 0;
+            particleDataUint_1291847007[addInt(baseIdx_1291847013, 7)] = 0;
+            i_1291847103 = addInt(i_1291847103, 1);
           }
       };
     };
-    var bytesTotal_1291847014 = mulInt(particleCount_p0, 32);
-    queue.writeBuffer(buffers.particlesA, 0, particleData_1291847001);
+    var bytesTotal_1291847019 = mulInt(particleCount_p0, 32);
+    queue.writeBuffer(buffers.particlesA, 0, particleData_1291847006);
     queue.writeBuffer(buffers.matrix, 0, matrix.buffer, matrix.byteOffset, matrix.byteLength);
-    console.log([((toJSStr(([85,112,108,111,97,100,101,100,32]).concat(HEX24__systemZdollars_u14(particleCount_p0),[32,112,97,114,116,105,99,108,101,115,32,116,111,32,71,80,85,32,40,65,111,83,44,32],HEX24__systemZdollars_u14(bytesTotal_1291847014),[32,98,121,116,101,115,41]))))]);
-    var resultObj_1291847024 = ({});
-    resultObj_1291847024["success"] = (true);
-    result_1291846956 = resultObj_1291847024;
+    console.log([((toJSStr(([85,112,108,111,97,100,101,100,32]).concat(HEX24__systemZdollars_u14(particleCount_p0),[32,112,97,114,116,105,99,108,101,115,32,116,111,32,71,80,85,32,40,65,111,83,44,32],HEX24__systemZdollars_u14(bytesTotal_1291847019),[32,98,121,116,101,115,41]))))]);
+    var resultObj_1291847029 = ({});
+    resultObj_1291847029["success"] = (true);
+    result_1291846961 = resultObj_1291847029;
     break BeforeRet;
 --excHandler;
 } catch (EXCEPTION) {
@@ -3291,12 +3301,12 @@ async function uploadInitialData(particleCount_p0) {
  lastJSError = EXCEPTION;
  --excHandler;
     if (lastJSError && (isObj(lastJSError.m_type, NTI33555173))) {
-    var e_1291847036 = getCurrentException();
-    console.error([((toJSStr(([70,97,105,108,101,100,32,116,111,32,117,112,108,111,97,100,32,105,110,105,116,105,97,108,32,100,97,116,97,58,32]).concat(e_1291847036.message))))]);
-    var resultObj_1291847046 = ({});
-    resultObj_1291847046["success"] = (false);
-    resultObj_1291847046["error"] = (toJSStr(e_1291847036.message));
-    result_1291846956 = resultObj_1291847046;
+    var e_1291847041 = getCurrentException();
+    console.error([((toJSStr(([70,97,105,108,101,100,32,116,111,32,117,112,108,111,97,100,32,105,110,105,116,105,97,108,32,100,97,116,97,58,32]).concat(e_1291847041.message))))]);
+    var resultObj_1291847051 = ({});
+    resultObj_1291847051["success"] = (false);
+    resultObj_1291847051["error"] = (toJSStr(e_1291847041.message));
+    result_1291846961 = resultObj_1291847051;
     break BeforeRet;
     }
     else {
@@ -3307,7 +3317,7 @@ async function uploadInitialData(particleCount_p0) {
     }
   };
 
-  return result_1291846956;
+  return result_1291846961;
 
 }
 var shaderModules = ({});

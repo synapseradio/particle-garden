@@ -400,7 +400,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     uniformBuffers["gridParams"] = device.createBufferLabeled(32, uniformUsage, "Grid Parameters Uniform")
     uniformBuffers["scanParams"] = device.createBufferLabeled(16, uniformUsage, "Scan Parameters Uniform")
-    uniformBuffers["simParams"] = device.createBufferLabeled(224, uniformUsage, "Simulation Parameters Uniform (with matrix + zones)")
+    uniformBuffers["simParams"] = device.createBufferLabeled(240, uniformUsage, "Simulation Parameters Uniform (with matrix + force model)")
     uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
 
     consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created".toJs)
@@ -524,8 +524,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
   # Simulation parameters (used by forces)
-  # Layout: 16 scalar params + 36 matrix floats + 2 zone params + 2 padding = 56 floats (224 bytes)
-  let simParamsData = newFloat32Array(56)
+  # Layout: 16 scalar params + 36 matrix floats + 2 zone params + 4 force model params = 60 floats (240 bytes)
+  let simParamsData = newFloat32Array(60)
   simParamsData[0] = dt
   simParamsData[1] = width
   simParamsData[2] = height
@@ -549,6 +549,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Zone boundary params (at indices 52-53, after matrix)
   simParamsData[52] = float32(config.CONFIG.repulsionEnd)
   simParamsData[53] = float32(config.CONFIG.attractionPeak)
+  # Force model params (at indices 54-57)
+  simParamsUint[54] = uint32(config.CONFIG.forceModel)  # 0=polynomial, 1=exponential
+  simParamsData[55] = float32(config.CONFIG.expRepulsionAlpha)
+  simParamsData[56] = float32(config.CONFIG.expAttractionBeta)
+  simParamsData[57] = 0.0  # padding for 16-byte alignment
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Integration parameters (8 values = 32 bytes)
