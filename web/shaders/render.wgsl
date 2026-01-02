@@ -63,8 +63,13 @@ const OFFSETS = array<vec2f, 6>(
 // - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)
 // - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
 const SIZE_DECAY_RATE: f32 = 0.07;
-const MIN_SIZE_MULTIPLIER: f32 = 0.625;    // Size multiplier at high density (floor)
-const MAX_SIZE_MULTIPLIER: f32 = 1.0625;   // Size multiplier at zero density (ceiling)
+const MIN_SIZE_MULTIPLIER: f32 = 0.7;      // Size multiplier at high density (floor)
+const MAX_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at zero density (ceiling)
+
+// Density-based brightness: lonely particles are dimmer
+const BRIGHTNESS_GROWTH_RATE: f32 = 0.07;  // Mirrors SIZE_DECAY_RATE
+const MIN_BRIGHTNESS: f32 = 0.44;          // Lonely particles at 44% brightness
+const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full brightness
 
 // AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
@@ -108,14 +113,11 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
-  // Z-ordering: FAST particles go BEHIND (higher Z), SLOW in front (lower Z)
+  // Z-ordering: LARGER particles go BEHIND (higher Z), smaller in front (lower Z)
   // Position-based hash prevents Z-fighting between particles with similar depth
-  let speed = length(p.vel);
-  let velocityNorm = clamp(speed / params.maxVelocity, 0.0, 1.0);
   let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);
-  let velZ = velocityNorm * 0.8;  // Fast = 0.8, slow = 0
-  let densityZ = clamp(p.density * 0.1, 0.0, 0.19);
-  let zDepth = clamp(velZ + densityZ + posHash * 0.001, 0.01, 0.99);
+  let sizeZ = sizeMod * 0.5;  // sizeMod ~0.625-1.5 → sizeZ ~0.31-0.75
+  let zDepth = clamp(sizeZ + posHash * 0.001, 0.01, 0.99);
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
   // Pass offset for circle calculation in fragment shader
@@ -145,5 +147,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     discard;
   }
 
-  return vec4f(input.color.rgb, alpha);
+  // Density-based brightness: lonely (low density) particles are dimmer
+  let brightnessMod = MIN_BRIGHTNESS + (MAX_BRIGHTNESS - MIN_BRIGHTNESS) * (1.0 - exp(-input.density * BRIGHTNESS_GROWTH_RATE));
+
+  return vec4f(input.color.rgb * brightnessMod, alpha);
 }
