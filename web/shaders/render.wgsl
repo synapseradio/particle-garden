@@ -64,7 +64,7 @@ const OFFSETS = array<vec2f, 6>(
 // - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
 const SIZE_DECAY_RATE: f32 = 0.07;
 const MIN_SIZE_MULTIPLIER: f32 = 0.625;    // Size multiplier at high density (floor)
-const MAX_SIZE_MULTIPLIER: f32 = 1.5;      // Size multiplier at zero density (ceiling)
+const MAX_SIZE_MULTIPLIER: f32 = 1.0625;   // Size multiplier at zero density (ceiling)
 
 // AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
@@ -136,11 +136,14 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let dist = length(input.offset);
 
-  // Circle with soft edge (known working)
-  if (dist > 1.0) {
+  // Screen-space anti-aliased circle
+  // fwidth() gives pixel-aware edge softness - adapts to particle screen size
+  let edge = fwidth(dist);
+  let alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+
+  if (alpha <= 0.0) {
     discard;
   }
 
-  let alpha = 1.0 - smoothstep(0.9, 1.0, dist);
   return vec4f(input.color.rgb, alpha);
 }
