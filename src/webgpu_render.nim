@@ -197,8 +197,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let densityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
 
   // Velocity factor: logarithmic compression with low-end bias
+  //
+  // QUADRATIC COUPLING — velocity contribution grows as glow²:
+  //
+  //   glow=1     glow=2       glow=3          velocity contribution
+  //    ┌─┐       ┌───┐       ┌─────┐          is the AREA of the
+  //    └─┘       │   │       │     │          square, not just
+  //     1        └───┘       │     │          the side length.
+  //                4         └─────┘
+  //                             9
+  //
+  //   Turning up glow makes velocity differences more visible.
+  //
   let logVel = log(1.0 + input.velocityNorm * VELOCITY_LOG_SCALE) / log(1.0 + VELOCITY_LOG_SCALE);
-  let velocityFactor = 1.0 + logVel * params.velocityGlowScale;
+  let velocityFactor = 1.0 + logVel * params.velocityGlowScale * params.glowIntensity;
 
   // Combined glow with Gaussian falloff
   let alpha = exp(-GLOW_FALLOFF * l * l) * params.glowIntensity * densityFactor * velocityFactor / GLOW_DIVISOR;
