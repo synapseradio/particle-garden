@@ -115,7 +115,7 @@ NTI33555167.node = NNI33555167;
 NTI33555177.base = NTI33555167;
 NTI754974826.base = NTI33555177;
 NTI1073741830.base = NTI754974826;
-var NNI1073741829 = {kind: 2, len: 12, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particleCount", len: 0, typ: NTI33554435, name: "particleCount", sons: null}, 
+var NNI1073741829 = {kind: 2, len: 14, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "particleCount", len: 0, typ: NTI33554435, name: "particleCount", sons: null}, 
 {kind: 1, offset: "speciesCount", len: 0, typ: NTI33554435, name: "speciesCount", sons: null}, 
 {kind: 1, offset: "interactionRadius", len: 0, typ: NTI33554435, name: "interactionRadius", sons: null}, 
 {kind: 1, offset: "forceStrength", len: 0, typ: NTI33554445, name: "forceStrength", sons: null}, 
@@ -126,7 +126,9 @@ var NNI1073741829 = {kind: 2, len: 12, offset: 0, typ: null, name: null, sons: [
 {kind: 1, offset: "trailAlpha", len: 0, typ: NTI33554445, name: "trailAlpha", sons: null}, 
 {kind: 1, offset: "glowIntensity", len: 0, typ: NTI33554445, name: "glowIntensity", sons: null}, 
 {kind: 1, offset: "velocityGlowScale", len: 0, typ: NTI33554445, name: "velocityGlowScale", sons: null}, 
-{kind: 1, offset: "maxVelocity", len: 0, typ: NTI33554445, name: "maxVelocity", sons: null}]};
+{kind: 1, offset: "maxVelocity", len: 0, typ: NTI33554445, name: "maxVelocity", sons: null}, 
+{kind: 1, offset: "repulsionEnd", len: 0, typ: NTI33554445, name: "repulsionEnd", sons: null}, 
+{kind: 1, offset: "attractionPeak", len: 0, typ: NTI33554445, name: "attractionPeak", sons: null}]};
 NTI1073741829.node = NNI1073741829;
 NTI1073741829.base = NTI754974826;
 var NNI134217743 = {kind: 2, len: 0, offset: 0, typ: null, name: null, sons: []};
@@ -1147,43 +1149,45 @@ function modInt(a_p0, b_p1) {
 }
 var objectID_822083762 = [0];
 
-function createMemoryLayout__config_u45() {
-  var result_1073741870 = null;
+function createMemoryLayout__config_u47() {
+  var result_1073741872 = null;
 
-    result_1073741870 = {m_type: NTI1073741830, particlesA: 0, particlesSorted: 0, sortedIndices: 0, reverseIndices: 0, velocityDeltaFixed: 0, gridCounts: 0, gridOffsets: 0, matrix: 0, sync: 0, totalSize: 0};
-    result_1073741870.particlesA = 1048576;
-    result_1073741870.particlesSorted = 3096576;
-    result_1073741870.sortedIndices = 5144576;
-    result_1073741870.reverseIndices = 5400576;
-    result_1073741870.velocityDeltaFixed = 5656576;
-    result_1073741870.gridCounts = 6168576;
-    result_1073741870.gridOffsets = 6430720;
-    result_1073741870.matrix = 6692864;
-    result_1073741870.sync = 6693008;
-    result_1073741870.totalSize = 6694032;
+    result_1073741872 = {m_type: NTI1073741830, particlesA: 0, particlesSorted: 0, sortedIndices: 0, reverseIndices: 0, velocityDeltaFixed: 0, gridCounts: 0, gridOffsets: 0, matrix: 0, sync: 0, totalSize: 0};
+    result_1073741872.particlesA = 1048576;
+    result_1073741872.particlesSorted = 3096576;
+    result_1073741872.sortedIndices = 5144576;
+    result_1073741872.reverseIndices = 5400576;
+    result_1073741872.velocityDeltaFixed = 5656576;
+    result_1073741872.gridCounts = 6168576;
+    result_1073741872.gridOffsets = 6430720;
+    result_1073741872.matrix = 6692864;
+    result_1073741872.sync = 6693008;
+    result_1073741872.totalSize = 6694032;
 
-  return result_1073741870;
+  return result_1073741872;
 
 }
 
-function createConfig__config_u89() {
-  var result_1073741914 = null;
+function createConfig__config_u91() {
+  var result_1073741916 = null;
 
-    result_1073741914 = {m_type: NTI1073741829, particleCount: 0, speciesCount: 0, interactionRadius: 0, forceStrength: 0.0, friction: 0.0, timeScale: 0.0, particleSize: 0, trails: false, trailAlpha: 0.0, glowIntensity: 0.0, velocityGlowScale: 0.0, maxVelocity: 0.0};
-    result_1073741914.particleCount = 16000;
-    result_1073741914.speciesCount = 4;
-    result_1073741914.interactionRadius = 50;
-    result_1073741914.forceStrength = 1.0;
-    result_1073741914.friction = 0.05;
-    result_1073741914.timeScale = 0.5;
-    result_1073741914.particleSize = 3;
-    result_1073741914.trails = false;
-    result_1073741914.trailAlpha = 0.96;
-    result_1073741914.glowIntensity = 0.8;
-    result_1073741914.velocityGlowScale = 1.0;
-    result_1073741914.maxVelocity = 50.0;
+    result_1073741916 = {m_type: NTI1073741829, particleCount: 0, speciesCount: 0, interactionRadius: 0, forceStrength: 0.0, friction: 0.0, timeScale: 0.0, particleSize: 0, trails: false, trailAlpha: 0.0, glowIntensity: 0.0, velocityGlowScale: 0.0, maxVelocity: 0.0, repulsionEnd: 0.0, attractionPeak: 0.0};
+    result_1073741916.particleCount = 16000;
+    result_1073741916.speciesCount = 4;
+    result_1073741916.interactionRadius = 50;
+    result_1073741916.forceStrength = 1.0;
+    result_1073741916.friction = 0.05;
+    result_1073741916.timeScale = 0.5;
+    result_1073741916.particleSize = 3;
+    result_1073741916.trails = false;
+    result_1073741916.trailAlpha = 0.96;
+    result_1073741916.glowIntensity = 0.8;
+    result_1073741916.velocityGlowScale = 1.0;
+    result_1073741916.maxVelocity = 50.0;
+    result_1073741916.repulsionEnd = 0.5;
+    result_1073741916.attractionPeak = 0.75;
 
-  return result_1073741914;
+  return result_1073741916;
 
 }
 var MAX_PARTICLES = 64000;
@@ -1201,8 +1205,8 @@ var WORLD_H = 2160.0;
 var WASM_MEMORY_PAGES = 2048;
 var WASM_MEMORY_PAGES_MAX = 8192;
 var WASM_DATA_OFFSET = 1048576;
-var MEMORY_LAYOUT = createMemoryLayout__config_u45();
-var CONFIG = createConfig__config_u89();
+var MEMORY_LAYOUT = createMemoryLayout__config_u47();
+var CONFIG = createConfig__config_u91();
 var COLORS = new Float32Array([1.0, 0.4, 0.4, 0.4, 1.0, 0.4, 0.4, 0.7, 1.0, 1.0, 1.0, 0.4, 1.0, 0.4, 1.0, 0.4, 1.0, 1.0]);
 
 function allocateBuffers() {
@@ -3003,7 +3007,7 @@ async function initPipelines() {
     var uniformUsage_1291846501 = (GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
     uniformBuffers["gridParams"] = device.createBuffer({size: 32, usage: uniformUsage_1291846501, label: "Grid Parameters Uniform"});
     uniformBuffers["scanParams"] = device.createBuffer({size: 16, usage: uniformUsage_1291846501, label: "Scan Parameters Uniform"});
-    uniformBuffers["simParams"] = device.createBuffer({size: 208, usage: uniformUsage_1291846501, label: "Simulation Parameters Uniform (with matrix + blast)"});
+    uniformBuffers["simParams"] = device.createBuffer({size: 224, usage: uniformUsage_1291846501, label: "Simulation Parameters Uniform (with matrix + zones)"});
     uniformBuffers["integrationParams"] = device.createBuffer({size: 32, usage: uniformUsage_1291846501, label: "Integration Parameters Uniform"});
     console.log([(("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created"))]);
     console.log([(("[PHASE: PIPELINE CREATION] Creating AoS compute pipelines..."))]);
@@ -3128,7 +3132,7 @@ async function runPhysicsFrame(params_p0) {
     scanParamsData_1291846857[0] = numCells_1291846851;
     scanParamsData_1291846857[1] = numBlocksForScan_1291846856;
     queue.writeBuffer(uniformBuffers["scanParams"], 0, scanParamsData_1291846857);
-    var simParamsData_1291846858 = new Float32Array(52);
+    var simParamsData_1291846858 = new Float32Array(56);
     simParamsData_1291846858[0] = dt_1291846774;
     simParamsData_1291846858[1] = width_1291846784;
     simParamsData_1291846858[2] = height_1291846789;
@@ -3172,6 +3176,8 @@ async function runPhysicsFrame(params_p0) {
           }
       };
     };
+    simParamsData_1291846858[52] = CONFIG.repulsionEnd;
+    simParamsData_1291846858[53] = CONFIG.attractionPeak;
     queue.writeBuffer(uniformBuffers["simParams"], 0, simParamsData_1291846858);
     var integrationParamsData_1291846869 = new Float32Array(8);
     integrationParamsData_1291846869[0] = width_1291846784;

@@ -81,6 +81,8 @@ struct SimParams {
   blastStrength: f32,
   _pad: f32,
   attractionMatrix: array<vec4<f32>, 9>,
+  repulsionEnd: f32,      // Where repulsion zone ends (0-1)
+  attractionPeak: f32,    // Where attraction peaks (0-1)
 };
 
 @group(0) @binding(0) var<uniform> params: SimParams;
@@ -251,47 +253,57 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // We use smooth polynomial functions for C¹ continuity (no derivative jumps).
         // This eliminates velocity jitter at zone boundaries.
         //
-        // 1. REPULSION ZONE (normalizedDist < 0.5):
-        //    Smooth cubic: f(r) = -1 + 6r² - 8r³
-        //    Properties: f(0) = -1, f(0.5) = 0, f'(0.5) = 0
-        //    Think of it as particles having a "personal space bubble."
+        // Zone boundaries are configurable via params.repulsionEnd and params.attractionPeak.
         //
-        // 2. ATTRACTION ZONE (normalizedDist >= 0.5):
-        //    Smooth bump: f(r) = 16(r-0.5)²(1-r)²
-        //    Properties: f(0.5) = 0, f(1) = 0, peak at 0.75
+        // 1. REPULSION ZONE (normalizedDist < repulsionEnd):
+        //    Smooth cubic normalized to zone width.
+        //    Properties: f(0) = -1, f(repulsionEnd) = 0, f'(repulsionEnd) = 0
+        //
+        // 2. ATTRACTION ZONE (normalizedDist >= repulsionEnd):
+        //    Smooth bump normalized to zone width, peaking at attractionPeak.
         //    Scaled by the attraction coefficient from the species matrix.
         //
         // Finally, divide by distance (invDistance) to convert force magnitude
         // into proper acceleration (like gravity: F ∝ 1/r² becomes a ∝ 1/r).
 
+        let repEnd = params.repulsionEnd;
+        let attPeak = params.attractionPeak;
+
         // Force on THIS particle
         var forceMagnitudeOnThis: f32;
-        if (normalizedDist < 0.5) {
-          // Repulsion zone: smooth cubic f(r) = -1 + 6r² - 8r³
-          let r = normalizedDist;
-          let r2 = r * r;
-          forceMagnitudeOnThis = -1.0 + 6.0 * r2 - 8.0 * r2 * r;
+        if (normalizedDist < repEnd) {
+          // Repulsion zone: smooth cubic normalized to [0, repEnd]
+          let t = normalizedDist / repEnd;  // Normalize to [0, 1]
+          let t2 = t * t;
+          forceMagnitudeOnThis = -1.0 + 3.0 * t2 - 2.0 * t2 * t;  // Hermite: f(0)=-1, f(1)=0, f'(1)=0
         } else {
-          // Attraction zone: smooth bump f(r) = 16(r-0.5)²(1-r)²
-          let r = normalizedDist - 0.5;
-          let oneMinusR = 0.5 - r;  // (1.0 - normalizedDist) simplified
-          let bump = 16.0 * r * r * oneMinusR * oneMinusR;
-          forceMagnitudeOnThis = attractionThisToOther * bump;
+          // Attraction zone: smooth bump in [repEnd, 1] peaking at attPeak
+          let zoneWidth = 1.0 - repEnd;
+          let peakPos = (attPeak - repEnd) / zoneWidth;  // Normalized peak position in [0, 1]
+          let t = (normalizedDist - repEnd) / zoneWidth;  // Normalize to [0, 1]
+          // Bump function: peaks at peakPos, zero at 0 and 1
+          let leftDist = t / peakPos;
+          let rightDist = (1.0 - t) / (1.0 - peakPos);
+          let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
+          forceMagnitudeOnThis = attractionThisToOther * bump * 4.0;  // Scale to match old peak magnitude
         }
         forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
 
         // Force on OTHER particle (Newton's 3rd law: equal and opposite)
         // Note: Uses OTHER's attraction coefficient (asymmetric interactions)
         var forceMagnitudeOnOther: f32;
-        if (normalizedDist < 0.5) {
-          let r = normalizedDist;
-          let r2 = r * r;
-          forceMagnitudeOnOther = -1.0 + 6.0 * r2 - 8.0 * r2 * r;
+        if (normalizedDist < repEnd) {
+          let t = normalizedDist / repEnd;
+          let t2 = t * t;
+          forceMagnitudeOnOther = -1.0 + 3.0 * t2 - 2.0 * t2 * t;
         } else {
-          let r = normalizedDist - 0.5;
-          let oneMinusR = 0.5 - r;
-          let bump = 16.0 * r * r * oneMinusR * oneMinusR;
-          forceMagnitudeOnOther = attractionOtherToThis * bump;
+          let zoneWidth = 1.0 - repEnd;
+          let peakPos = (attPeak - repEnd) / zoneWidth;
+          let t = (normalizedDist - repEnd) / zoneWidth;
+          let leftDist = t / peakPos;
+          let rightDist = (1.0 - t) / (1.0 - peakPos);
+          let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
+          forceMagnitudeOnOther = attractionOtherToThis * bump * 4.0;
         }
         forceMagnitudeOnOther *= params.forceMultiplier * invDistance;
 

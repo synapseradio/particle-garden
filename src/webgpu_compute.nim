@@ -400,7 +400,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     uniformBuffers["gridParams"] = device.createBufferLabeled(32, uniformUsage, "Grid Parameters Uniform")
     uniformBuffers["scanParams"] = device.createBufferLabeled(16, uniformUsage, "Scan Parameters Uniform")
-    uniformBuffers["simParams"] = device.createBufferLabeled(208, uniformUsage, "Simulation Parameters Uniform (with matrix + blast)")
+    uniformBuffers["simParams"] = device.createBufferLabeled(224, uniformUsage, "Simulation Parameters Uniform (with matrix + zones)")
     uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
 
     consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created".toJs)
@@ -524,8 +524,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
   # Simulation parameters (used by forces)
-  # Layout: 16 scalar params + 36 matrix floats = 52 floats
-  let simParamsData = newFloat32Array(52)
+  # Layout: 16 scalar params + 36 matrix floats + 2 zone params + 2 padding = 56 floats (224 bytes)
+  let simParamsData = newFloat32Array(56)
   simParamsData[0] = dt
   simParamsData[1] = width
   simParamsData[2] = height
@@ -546,6 +546,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Copy attraction matrix (36 floats starting at index 16)
   for i in 0..<36:
     simParamsData[16 + i] = cast[JsObject](matrix[i]).to(float)
+  # Zone boundary params (at indices 52-53, after matrix)
+  simParamsData[52] = float32(config.CONFIG.repulsionEnd)
+  simParamsData[53] = float32(config.CONFIG.attractionPeak)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Integration parameters (8 values = 32 bytes)

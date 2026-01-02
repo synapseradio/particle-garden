@@ -39,6 +39,8 @@ type
     glowIntensity* {.exportc.}: float
     velocityGlowScale* {.exportc.}: float
     maxVelocity* {.exportc.}: float
+    repulsionEnd* {.exportc.}: float      # Where repulsion zone ends (0-1, default 0.5)
+    attractionPeak* {.exportc.}: float    # Where attraction peaks (0-1, default 0.75)
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -153,6 +155,8 @@ proc createConfig(): ConfigObject =
   result.glowIntensity = 0.8  # Subtle glow, reduced 30% from 1.15
   result.velocityGlowScale = 1.0  # Full velocity-to-glow influence
   result.maxVelocity = 50.0
+  result.repulsionEnd = 0.5      # Inner 50% is repulsion zone
+  result.attractionPeak = 0.75   # Attraction peaks at 75% of radius
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 
