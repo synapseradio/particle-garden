@@ -37,6 +37,7 @@ type
     trails* {.exportc.}: bool
     trailAlpha* {.exportc.}: float
     glowIntensity* {.exportc.}: float
+    velocityGlowScale* {.exportc.}: float
     maxVelocity* {.exportc.}: float
 
   MemoryLayoutObject* = ref object of JsObject
@@ -149,7 +150,8 @@ proc createConfig(): ConfigObject =
   result.particleSize = 3
   result.trails = false
   result.trailAlpha = 0.96
-  result.glowIntensity = 1.0
+  result.glowIntensity = 1.15  # +15% base glow for velocity headroom
+  result.velocityGlowScale = 1.0  # Full velocity-to-glow influence
   result.maxVelocity = 50.0
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()

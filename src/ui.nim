@@ -213,6 +213,18 @@ proc setupUI*() {.exportc.} =
     glowValueEl.textContent = toFixed(CONFIG.glowIntensity, 1)
   )
 
+  # Velocity glow scale slider
+  let velGlowEl = cast[HTMLInputElement](getElementById("velocityGlowScale"))
+  let velGlowValueEl = getElementById("velocityGlowValue")
+  # Sync slider to CONFIG value on init
+  velGlowEl.value = cstring($CONFIG.velocityGlowScale)
+  velGlowValueEl.textContent = toFixed(CONFIG.velocityGlowScale, 1)
+  velGlowEl.addEventListener("input", proc(e: Event) =
+    let target = cast[HTMLInputElement](e.target)
+    CONFIG.velocityGlowScale = parseFloatJS(target.value)
+    velGlowValueEl.textContent = toFixed(CONFIG.velocityGlowScale, 1)
+  )
+
   # Max velocity slider
   let velocityEl = cast[HTMLInputElement](getElementById("maxVelocity"))
   let velocityValueEl = getElementById("velocityValue")

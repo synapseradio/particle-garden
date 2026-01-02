@@ -96,12 +96,12 @@ struct Particle {
 }
 
 struct RenderParams {
-  resolution: vec2f,   // Canvas size
-  worldSize: vec2f,    // World size (physics domain)
+  resolution: vec2f,       // Canvas size
+  worldSize: vec2f,        // World size (physics domain)
   baseSize: f32,
-  glowIntensity: f32,
-  padding0: f32,
-  padding1: f32,
+  glowIntensity: f32,      // Base glow multiplier
+  velocityGlowScale: f32,  // 0=off, 1=full velocity influence
+  maxVelocity: f32,        // For velocity normalization
 };
 
 const OFFSETS = array<vec2f, 6>(
@@ -121,7 +121,38 @@ struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) offset: vec2f,
   @location(1) densityVal: f32,
+  @location(2) velocityNorm: f32,  // Normalized velocity magnitude [0,1]
 };
+
+// ==========================================================================
+// GLOW TUNING CONSTANTS
+// ==========================================================================
+//
+// All compile-time constants — zero runtime cost (inlined by compiler).
+// Grouped by perceptual function for easy tuning.
+//
+// ==========================================================================
+
+// VELOCITY → GLOW MAPPING
+// Lower LOG_SCALE = more perceptual room for slow velocities
+const VELOCITY_LOG_SCALE: f32 = 5.0;
+
+// DENSITY → GLOW MAPPING
+// How local particle density affects glow intensity
+const DENSITY_SCALE: f32 = 0.15;   // Multiplier on raw density
+const DENSITY_MIN: f32 = 0.1;      // Floor (isolated particles still glow)
+const DENSITY_MAX: f32 = 1.0;      // Ceiling
+
+// GAUSSIAN FALLOFF
+// Shape of the glow halo around each particle
+const GLOW_FALLOFF: f32 = 6.0;     // Higher = tighter halo
+const GLOW_DIVISOR: f32 = 24.0;    // Overall intensity scaling
+
+// COLOR WARMTH
+// Fast particles shift toward orange-white
+const WARMTH_MAX: f32 = 0.4;       // Max warmth at full velocity (0-1)
+const WARMTH_GREEN: f32 = 0.3;     // Green channel reduction
+const WARMTH_BLUE: f32 = 0.6;      // Blue channel reduction (more = more orange)
 
 @vertex
 fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
@@ -140,10 +171,17 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
-  // Z-ordering: high density (small particles) = closer to camera (lower Z)
-  // Low density (large particles) = further back (higher Z)
-  // Using 1-saturate(density/10) so dense particles are in front
-  let zDepth = 1.0 - clamp(p.density * 0.1, 0.0, 0.99);
+  // Compute normalized velocity magnitude for glow and z-ordering
+  let speed = length(p.vel);
+  let velocityNorm = clamp(speed / params.maxVelocity, 0.0, 1.0);
+  output.velocityNorm = velocityNorm;
+
+  // Z-ordering: FAST particles go BEHIND (higher Z), SLOW in front (lower Z)
+  // Position hash prevents z-fighting between similar particles
+  let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);
+  let velZ = velocityNorm * 0.8;  // Fast = 0.8, slow = 0
+  let densityZ = clamp(p.density * 0.1, 0.0, 0.19);
+  let zDepth = clamp(velZ + densityZ + posHash * 0.001, 0.01, 0.99);
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
   output.offset = offset;
   output.densityVal = p.density;
@@ -155,14 +193,22 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let l = length(input.offset);
 
-  // Glow intensity modulated by density:
-  // High density (small particles) = more glow
-  // Low density (large particles) = less glow
-  let densityFactor = clamp(input.densityVal * 0.15, 0.1, 1.0);
-  let alpha = exp(-6.0 * l * l) * params.glowIntensity * densityFactor / 24.0;
+  // Density factor: high density = more glow
+  let densityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
 
-  // White glow with premultiplied alpha for additive blending
-  return vec4f(alpha, alpha, alpha, alpha);
+  // Velocity factor: logarithmic compression with low-end bias
+  let logVel = log(1.0 + input.velocityNorm * VELOCITY_LOG_SCALE) / log(1.0 + VELOCITY_LOG_SCALE);
+  let velocityFactor = 1.0 + logVel * params.velocityGlowScale;
+
+  // Combined glow with Gaussian falloff
+  let alpha = exp(-GLOW_FALLOFF * l * l) * params.glowIntensity * densityFactor * velocityFactor / GLOW_DIVISOR;
+
+  // Color shift: fast particles glow warm (orange-white)
+  let warmth = logVel * params.velocityGlowScale * WARMTH_MAX;
+  let r = alpha;
+  let g = alpha * (1.0 - warmth * WARMTH_GREEN);
+  let b = alpha * (1.0 - warmth * WARMTH_BLUE);
+  return vec4f(r, g, b, alpha);
 }
 """
 
@@ -865,7 +911,7 @@ proc render*(particleCount: int): RenderTiming =
   if not isInitialized:
     return result
 
-  # Update render params uniform (resolution, worldSize, baseSize, glowIntensity, padding)
+  # Update render params uniform (resolution, worldSize, baseSize, glowIntensity, velocityGlowScale, maxVelocity)
   let paramsData = newFloat32Array(8)
   paramsData[0] = float32(canvas.width)   # resolution.x
   paramsData[1] = float32(canvas.height)  # resolution.y
@@ -873,8 +919,8 @@ proc render*(particleCount: int): RenderTiming =
   paramsData[3] = float32(config.WORLD_H) # worldSize.y
   paramsData[4] = float32(config.CONFIG.particleSize + 1)  # baseSize
   paramsData[5] = float32(config.CONFIG.glowIntensity)     # glowIntensity
-  paramsData[6] = 0.0  # padding0
-  paramsData[7] = 0.0  # padding1
+  paramsData[6] = float32(config.CONFIG.velocityGlowScale) # velocityGlowScale
+  paramsData[7] = float32(config.CONFIG.maxVelocity)       # maxVelocity
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
   # Update fade params (fadeAmount = how much to fade toward background)

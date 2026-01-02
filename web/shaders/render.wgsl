@@ -33,12 +33,12 @@ struct Particle {
 }
 
 struct RenderParams {
-  resolution: vec2f,   // Canvas width, height in pixels
-  worldSize: vec2f,    // World width, height (physics domain)
-  baseSize: f32,       // Base particle size in pixels
-  padding0: f32,
-  padding1: f32,
-  padding2: f32,
+  resolution: vec2f,       // Canvas width, height in pixels
+  worldSize: vec2f,        // World width, height (physics domain)
+  baseSize: f32,           // Base particle size in pixels
+  glowIntensity: f32,      // Base glow multiplier (unused in main shader)
+  velocityGlowScale: f32,  // 0=off, 1=full velocity influence (unused in main shader)
+  maxVelocity: f32,        // For velocity normalization
 };
 
 // Species colors (matches WebGL renderer COLORS array)
@@ -117,11 +117,14 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
-  // Z-ordering: high density (small particles) = closer to camera (lower Z)
-  // Low density (large particles) = further back (higher Z)
-  // Position-based hash prevents Z-fighting between particles with similar density
+  // Z-ordering: FAST particles go BEHIND (higher Z), SLOW in front (lower Z)
+  // Position-based hash prevents Z-fighting between particles with similar depth
+  let speed = length(p.vel);
+  let velocityNorm = clamp(speed / params.maxVelocity, 0.0, 1.0);
   let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);
-  let zDepth = 1.0 - clamp(p.density * 0.1 + posHash * 0.001, 0.0, 0.99);
+  let velZ = velocityNorm * 0.8;  // Fast = 0.8, slow = 0
+  let densityZ = clamp(p.density * 0.1, 0.0, 0.19);
+  let zDepth = clamp(velZ + densityZ + posHash * 0.001, 0.01, 0.99);
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
   // Pass offset for circle calculation in fragment shader
