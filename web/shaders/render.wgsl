@@ -41,16 +41,6 @@ struct RenderParams {
   maxVelocity: f32,        // For velocity normalization
 };
 
-// Species colors (matches WebGL renderer COLORS array)
-const COLORS = array<vec3f, 6>(
-  vec3f(1.0, 0.4, 0.4),   // Species 0: Red
-  vec3f(0.4, 1.0, 0.4),   // Species 1: Green
-  vec3f(0.4, 0.7, 1.0),   // Species 2: Blue
-  vec3f(1.0, 1.0, 0.4),   // Species 3: Yellow
-  vec3f(1.0, 0.4, 1.0),   // Species 4: Magenta
-  vec3f(0.4, 1.0, 1.0),   // Species 5: Cyan
-);
-
 // Quad corner offsets (2 triangles = 6 vertices)
 // Unit quad: corners at distance sqrt(2) from center
 const OFFSETS = array<vec2f, 6>(
@@ -74,11 +64,12 @@ const OFFSETS = array<vec2f, 6>(
 // - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
 const SIZE_DECAY_RATE: f32 = 0.07;
 const MIN_SIZE_MULTIPLIER: f32 = 0.625;    // Size multiplier at high density (floor)
-const MAX_SIZE_MULTIPLIER: f32 = 1.25;     // Size multiplier at zero density (ceiling)
+const MAX_SIZE_MULTIPLIER: f32 = 1.5;      // Size multiplier at zero density (ceiling)
 
 // AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
+@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors from config.nim
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -134,9 +125,9 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Pass density for glow intensity calculation
   output.density = p.density;
 
-  // Look up species color
+  // Look up species color from uniform buffer
   let speciesIdx = min(p.species, 5u);
-  output.color = vec4f(COLORS[speciesIdx], 1.0);
+  output.color = vec4f(colors[speciesIdx].rgb, 1.0);
 
   return output;
 }

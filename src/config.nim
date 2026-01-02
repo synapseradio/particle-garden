@@ -161,10 +161,10 @@ var CONFIG* {.exportc.}: ConfigObject = createConfig()
 # ==============================================================================
 
 var COLORS* {.exportc.}: Float32Array = newFloat32Array(@[
-  1.0, 0.42, 0.42,  # Red
-  1.0, 0.85, 0.24,  # Yellow
-  0.42, 0.8, 0.47,  # Green
-  0.3, 0.59, 1.0,   # Blue
-  0.73, 0.42, 1.0,  # Purple
-  1.0, 0.55, 0.3    # Orange
+  1.0, 0.4, 0.4,    # Species 0: Red
+  0.4, 1.0, 0.4,    # Species 1: Green
+  0.4, 0.7, 1.0,    # Species 2: Blue
+  1.0, 1.0, 0.4,    # Species 3: Yellow
+  1.0, 0.4, 1.0,    # Species 4: Magenta
+  0.4, 1.0, 1.0     # Species 5: Cyan
 ])

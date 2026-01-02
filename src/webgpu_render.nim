@@ -45,6 +45,7 @@ var blitPipeline: GPURenderPipeline
 var renderBindGroup: GPUBindGroup
 var glowBindGroup: GPUBindGroup
 var renderParamsBuffer: GPUBuffer
+var colorBuffer: GPUBuffer
 var fadeParamsBuffer: GPUBuffer
 var bindGroupLayout: GPUBindGroupLayout  # Store original layout for bind group creation
 var isInitialized: bool = false
@@ -116,6 +117,7 @@ const OFFSETS = array<vec2f, 6>(
 // AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
+@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Unused by glow, required for shared layout
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -168,17 +170,21 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let p = particles[particleId];
   let offset = OFFSETS[cornerId];
 
-  // Glow radius scaled by canvas/world ratio
-  let scale = params.resolution / params.worldSize;
-  let glowRadius = 12.0;
-  let worldPos = p.pos + offset * glowRadius / scale;
-
-  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
-
-  // Compute normalized velocity magnitude for glow and z-ordering
+  // Compute normalized velocity BEFORE using it for radius
   let speed = length(p.vel);
   let velocityNorm = clamp(speed / params.maxVelocity, 0.0, 1.0);
   output.velocityNorm = velocityNorm;
+
+  // Glow radius coupled to velocity and sweep
+  // At sweep=0 or velocity=0: radius = 12.0
+  // At sweep=1 and max velocity: radius = 24.0 (doubles)
+  let scale = params.resolution / params.worldSize;
+  let baseRadius = 12.0;
+  let velocityBoost = velocityNorm * params.velocityGlowScale;
+  let glowRadius = baseRadius * (1.0 + velocityBoost);
+  let worldPos = p.pos + offset * glowRadius / scale;
+
+  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
   // Z-ordering: FAST particles go BEHIND (higher Z), SLOW in front (lower Z)
   // Position hash prevents z-fighting between similar particles
@@ -360,7 +366,15 @@ proc initWebGPURender*(): bool =
   paramsDesc["label"] = "Render Params Buffer".cstring.toJs
   renderParamsBuffer = webgpu_init.device.createBuffer(paramsDesc)
 
-  # Create bind group layout (AoS: 2 bindings - particles + renderParams)
+  # Create species color uniform buffer (6 vec4f for 16-byte alignment)
+  let colorBufferSize = 6 * 4 * 4  # 6 species × 4 floats × 4 bytes = 96 bytes
+  let colorDesc = newJsObject()
+  colorDesc["size"] = colorBufferSize.toJs
+  colorDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  colorDesc["label"] = "Species Colors Buffer".cstring.toJs
+  colorBuffer = webgpu_init.device.createBuffer(colorDesc)
+
+  # Create bind group layout (AoS: 3 bindings - particles + renderParams + colors)
   let layoutDesc = newJsObject()
   layoutDesc["label"] = "Render Bind Group Layout (AoS)".cstring.toJs
 
@@ -383,6 +397,15 @@ proc initWebGPURender*(): bool =
   buffer1["type"] = "uniform".cstring.toJs
   entry1["buffer"] = buffer1
   discard entries.push(entry1)
+
+  # Binding 2: species colors (uniform buffer) - vertex only
+  let entry2 = newJsObject()
+  entry2["binding"] = 2.toJs
+  entry2["visibility"] = gpuShaderStageVertex.toJs
+  let buffer2 = newJsObject()
+  buffer2["type"] = "uniform".cstring.toJs
+  entry2["buffer"] = buffer2
+  discard entries.push(entry2)
 
   layoutDesc["entries"] = entries
   bindGroupLayout = webgpu_init.device.createBindGroupLayout(layoutDesc)
@@ -898,6 +921,14 @@ proc updateBindGroup*() =
   e1["resource"] = r1
   discard entries.push(e1)
 
+  # Entry 2: species colors
+  let e2 = newJsObject()
+  e2["binding"] = 2.toJs
+  let r2 = newJsObject()
+  r2["buffer"] = colorBuffer.toJs
+  e2["resource"] = r2
+  discard entries.push(e2)
+
   bindGroupDesc["entries"] = entries
   renderBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
 
@@ -938,6 +969,15 @@ proc render*(particleCount: int): RenderTiming =
   paramsData[6] = float32(config.CONFIG.velocityGlowScale) # velocityGlowScale
   paramsData[7] = float32(config.CONFIG.maxVelocity)       # maxVelocity
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
+
+  # Update species colors uniform (pack RGB as vec4f for 16-byte alignment)
+  let colorData = newFloat32Array(24)  # 6 colors × 4 floats
+  for i in 0 ..< 6:
+    colorData[i * 4 + 0] = config.COLORS[i * 3 + 0]
+    colorData[i * 4 + 1] = config.COLORS[i * 3 + 1]
+    colorData[i * 4 + 2] = config.COLORS[i * 3 + 2]
+    colorData[i * 4 + 3] = 1.0  # padding/alpha
+  webgpu_init.queue.writeBuffer(colorBuffer, 0, colorData)
 
   # Update fade params (fadeAmount = how much to fade toward background)
   let fadeData = newFloat32Array(4)
