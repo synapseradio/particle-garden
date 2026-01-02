@@ -100,7 +100,7 @@ struct RenderParams {
   worldSize: vec2f,        // World size (physics domain)
   baseSize: f32,
   glowIntensity: f32,      // Base glow multiplier
-  velocityGlowScale: f32,  // 0=off, 1=full velocity influence
+  velocityGlowScale: f32,  // "Sweep" — how much velocity influences glow
   maxVelocity: f32,        // For velocity normalization
 };
 
@@ -128,31 +128,35 @@ struct VertexOutput {
 // GLOW TUNING CONSTANTS
 // ==========================================================================
 //
-// All compile-time constants — zero runtime cost (inlined by compiler).
-// Grouped by perceptual function for easy tuning.
+// Particles exist on two axes: community (density) and motion (velocity).
+//
+//                     slow ←── VELOCITY ──→ fast
+//                       │
+//          sparse       │   DARK          DIM WHITE
+//             ↑         │   lonely        lone wanderer
+//    DENSITY  │         │
+//             ↓         │   WARM          BRIGHT WHITE
+//          dense        │   settled       community in motion
 //
 // ==========================================================================
 
 // VELOCITY → GLOW MAPPING
-// Lower LOG_SCALE = more perceptual room for slow velocities
-const VELOCITY_LOG_SCALE: f32 = 5.0;
+const VELOCITY_LOG_SCALE: f32 = 5.0;  // Lower = more room for slow velocities
+const VELOCITY_BASE: f32 = 0.5;       // Floor for stationary particles (< 1 = dimmer)
 
 // DENSITY → GLOW MAPPING
-// How local particle density affects glow intensity
-const DENSITY_SCALE: f32 = 0.15;   // Multiplier on raw density
-const DENSITY_MIN: f32 = 0.1;      // Floor (isolated particles still glow)
-const DENSITY_MAX: f32 = 1.0;      // Ceiling
+const DENSITY_SCALE: f32 = 0.15;
+const DENSITY_MIN: f32 = 0.05;        // Sparse particles dim but visible
+const DENSITY_MAX: f32 = 1.0;
 
 // GAUSSIAN FALLOFF
-// Shape of the glow halo around each particle
-const GLOW_FALLOFF: f32 = 6.0;     // Higher = tighter halo
-const GLOW_DIVISOR: f32 = 24.0;    // Overall intensity scaling
+const GLOW_FALLOFF: f32 = 6.0;        // Higher = tighter halo
+const GLOW_DIVISOR: f32 = 24.0;       // Overall intensity scaling
 
-// COLOR WARMTH
-// Fast particles shift toward orange-white
-const WARMTH_MAX: f32 = 0.4;       // Max warmth at full velocity (0-1)
-const WARMTH_GREEN: f32 = 0.3;     // Green channel reduction
-const WARMTH_BLUE: f32 = 0.6;      // Blue channel reduction (more = more orange)
+// COLOR WARMTH (dense → warm orange, sparse → neutral)
+const WARMTH_MAX: f32 = 0.4;
+const WARMTH_GREEN: f32 = 0.3;
+const WARMTH_BLUE: f32 = 0.6;
 
 @vertex
 fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
@@ -196,7 +200,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   // Density factor: high density = more glow
   let densityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
 
-  // Velocity factor: logarithmic compression with low-end bias
+  // Velocity factor: stationary = dim (VELOCITY_BASE), moving = bright
   //
   // QUADRATIC COUPLING — velocity contribution grows as glow²:
   //
@@ -210,13 +214,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   //   Turning up glow makes velocity differences more visible.
   //
   let logVel = log(1.0 + input.velocityNorm * VELOCITY_LOG_SCALE) / log(1.0 + VELOCITY_LOG_SCALE);
-  let velocityFactor = 1.0 + logVel * params.velocityGlowScale * params.glowIntensity;
+  let velocityFactor = VELOCITY_BASE + logVel * (1.0 - VELOCITY_BASE + params.velocityGlowScale * params.glowIntensity);
 
   // Combined glow with Gaussian falloff
   let alpha = exp(-GLOW_FALLOFF * l * l) * params.glowIntensity * densityFactor * velocityFactor / GLOW_DIVISOR;
 
-  // Color shift: fast particles glow warm (orange-white)
-  let warmth = logVel * params.velocityGlowScale * WARMTH_MAX;
+  // Color shift: dense particles glow warm, fast particles glow white
+  let warmth = densityFactor * WARMTH_MAX;
   let r = alpha;
   let g = alpha * (1.0 - warmth * WARMTH_GREEN);
   let b = alpha * (1.0 - warmth * WARMTH_BLUE);
@@ -1035,7 +1039,10 @@ proc render*(particleCount: int): RenderTiming =
   let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
 
   # Step 1: Draw glow FIRST (additive blending on background)
-  # Glow renders beneath particles because trail alpha-blends on top
+  # GUARANTEE: Glow is ALWAYS behind particles because:
+  #   - Glow draws here with depthCompare="less" (but depth just cleared to 1.0)
+  #   - Trail blit uses depthCompare="always" — ignores depth entirely
+  #   - So particles in trail texture always alpha-blend on top of glow
   presentPass.setPipeline(glowPipeline)
   presentPass.setBindGroup(0, glowBindGroup)
   presentPass.draw(6 * particleCount, 1, 0, 0)
