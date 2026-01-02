@@ -40,6 +40,7 @@ proc typeofJs(obj: JsObject): cstring {.importjs: "(typeof #)".}
 import webgpu_init
 import buffers as cpuBuffers
 import config
+import gpu_types
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -507,63 +508,65 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # =========================================================================
 
   # Grid parameters (used by bin-count and bin-scatter)
-  let gridParamsData = newUint32Array(8)
-  gridParamsData[0] = gridW
-  gridParamsData[1] = gridH
-  gridParamsData[4] = particleCount
+  # Layout matches GridParamsLayout in gpu_types.nim
+  let gridParamsData = newUint32Array(GRID_PARAMS_U32_COUNT)
+  gridParamsData[GRID_W] = gridW
+  gridParamsData[GRID_H] = gridH
+  gridParamsData[GRID_PARTICLE_COUNT] = particleCount
   let gridParamsFloat = newFloat32Array(gridParamsData.buffer)
-  gridParamsFloat[2] = width
-  gridParamsFloat[3] = height
+  gridParamsFloat[GRID_CANVAS_WIDTH] = width
+  gridParamsFloat[GRID_CANVAS_HEIGHT] = height
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["gridParams"]), 0, gridParamsData)
 
   # Scan parameters (used by prefix-sum)
   let numBlocksForScan = jsCeil(numCells.float / 256.0)
-  let scanParamsData = newUint32Array(4)
-  scanParamsData[0] = numCells
-  scanParamsData[1] = numBlocksForScan
+  let scanParamsData = newUint32Array(SCAN_PARAMS_U32_COUNT)
+  scanParamsData[SCAN_NUM_CELLS] = numCells
+  scanParamsData[SCAN_NUM_BLOCKS] = numBlocksForScan
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
   # Simulation parameters (used by forces)
-  # Layout: 16 scalar params + 36 matrix floats + 2 zone params + 4 force model params = 60 floats (240 bytes)
-  let simParamsData = newFloat32Array(60)
-  simParamsData[0] = dt
-  simParamsData[1] = width
-  simParamsData[2] = height
-  simParamsData[3] = rMax
-  simParamsData[4] = fMul
+  # Layout matches SimParamsLayout in gpu_types.nim
+  let simParamsData = newFloat32Array(SIM_PARAMS_F32_COUNT)
+  simParamsData[SIM_DT] = dt
+  simParamsData[SIM_WORLD_WIDTH] = width
+  simParamsData[SIM_WORLD_HEIGHT] = height
+  simParamsData[SIM_INTERACTION_RADIUS] = rMax
+  simParamsData[SIM_FORCE_MULTIPLIER] = fMul
   let simParamsUint = newUint32Array(simParamsData.buffer)
-  simParamsUint[5] = gridW
-  simParamsUint[6] = gridH
-  simParamsData[7] = mouseX
-  simParamsData[8] = mouseY
-  simParamsData[9] = if mouseDown != 0: 1.0 else: 0.0
-  simParamsData[10] = if mouseRightDown != 0: 1.0 else: 0.0
-  simParamsUint[11] = particleCount
-  simParamsData[12] = blastX
-  simParamsData[13] = blastY
-  simParamsData[14] = blastStrength
-  simParamsData[15] = 0.0  # padding for vec4 alignment
-  # Copy attraction matrix (36 floats starting at index 16)
+  simParamsUint[SIM_GRID_CELLS_X] = gridW
+  simParamsUint[SIM_GRID_CELLS_Y] = gridH
+  simParamsData[SIM_MOUSE_X] = mouseX
+  simParamsData[SIM_MOUSE_Y] = mouseY
+  simParamsData[SIM_MOUSE_LEFT_DOWN] = if mouseDown != 0: 1.0 else: 0.0
+  simParamsData[SIM_MOUSE_RIGHT_DOWN] = if mouseRightDown != 0: 1.0 else: 0.0
+  simParamsUint[SIM_PARTICLE_COUNT] = particleCount
+  simParamsData[SIM_BLAST_X] = blastX
+  simParamsData[SIM_BLAST_Y] = blastY
+  simParamsData[SIM_BLAST_STRENGTH] = blastStrength
+  simParamsData[SIM_PAD] = 0.0  # padding for vec4 alignment
+  # Copy attraction matrix (36 floats starting at SIM_MATRIX_START)
   for i in 0..<36:
-    simParamsData[16 + i] = cast[JsObject](matrix[i]).to(float)
-  # Zone boundary params (at indices 52-53, after matrix)
-  simParamsData[52] = float32(config.CONFIG.repulsionEnd)
-  simParamsData[53] = float32(config.CONFIG.attractionPeak)
-  # Force model params (at indices 54-57)
-  simParamsUint[54] = uint32(config.CONFIG.forceModel)  # 0=polynomial, 1=exponential
-  simParamsData[55] = float32(config.CONFIG.expRepulsionAlpha)
-  simParamsData[56] = float32(config.CONFIG.expAttractionBeta)
-  simParamsData[57] = 0.0  # padding for 16-byte alignment
+    simParamsData[SIM_MATRIX_START + i] = cast[JsObject](matrix[i]).to(float)
+  # Zone boundary params
+  simParamsData[SIM_REPULSION_END] = float32(config.CONFIG.repulsionEnd)
+  simParamsData[SIM_ATTRACTION_PEAK] = float32(config.CONFIG.attractionPeak)
+  # Force model params
+  simParamsUint[SIM_FORCE_MODEL] = uint32(config.CONFIG.forceModel)  # 0=polynomial, 1=exponential
+  simParamsData[SIM_EXP_ALPHA] = float32(config.CONFIG.expRepulsionAlpha)
+  simParamsData[SIM_EXP_BETA] = float32(config.CONFIG.expAttractionBeta)
+  simParamsData[SIM_PAD2] = 0.0  # padding for 16-byte alignment
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
-  # Integration parameters (8 values = 32 bytes)
-  let integrationParamsData = newFloat32Array(8)
-  integrationParamsData[0] = width
-  integrationParamsData[1] = height
-  integrationParamsData[2] = friction
-  integrationParamsData[3] = float32(config.CONFIG.maxVelocity)
+  # Integration parameters
+  # Layout matches IntegrationParams indices in gpu_types.nim
+  let integrationParamsData = newFloat32Array(INTEG_PARAMS_F32_COUNT)
+  integrationParamsData[INTEG_WORLD_WIDTH] = width
+  integrationParamsData[INTEG_WORLD_HEIGHT] = height
+  integrationParamsData[INTEG_FRICTION] = friction
+  integrationParamsData[INTEG_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
   let integrationParamsUint = newUint32Array(integrationParamsData.buffer)
-  integrationParamsUint[4] = particleCount
+  integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # =========================================================================

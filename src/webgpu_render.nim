@@ -22,6 +22,7 @@ import bindings/dom_extensions
 import bindings/window
 import config
 import webgpu_init
+import gpu_types
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -958,16 +959,17 @@ proc render*(particleCount: int): RenderTiming =
   if not isInitialized:
     return result
 
-  # Update render params uniform (resolution, worldSize, baseSize, glowIntensity, velocityGlowScale, maxVelocity)
-  let paramsData = newFloat32Array(8)
-  paramsData[0] = float32(canvas.width)   # resolution.x
-  paramsData[1] = float32(canvas.height)  # resolution.y
-  paramsData[2] = float32(config.WORLD_W) # worldSize.x
-  paramsData[3] = float32(config.WORLD_H) # worldSize.y
-  paramsData[4] = float32(config.CONFIG.particleSize + 1)  # baseSize
-  paramsData[5] = float32(config.CONFIG.glowIntensity)     # glowIntensity
-  paramsData[6] = float32(config.CONFIG.velocityGlowScale) # velocityGlowScale
-  paramsData[7] = float32(config.CONFIG.maxVelocity)       # maxVelocity
+  # Update render params uniform
+  # Layout matches RenderParams indices in gpu_types.nim
+  let paramsData = newFloat32Array(RENDER_PARAMS_F32_COUNT)
+  paramsData[RENDER_RESOLUTION_X] = float32(canvas.width)
+  paramsData[RENDER_RESOLUTION_Y] = float32(canvas.height)
+  paramsData[RENDER_WORLD_SIZE_X] = float32(config.WORLD_W)
+  paramsData[RENDER_WORLD_SIZE_Y] = float32(config.WORLD_H)
+  paramsData[RENDER_BASE_SIZE] = float32(config.CONFIG.particleSize + 1)
+  paramsData[RENDER_GLOW_INTENSITY] = float32(config.CONFIG.glowIntensity)
+  paramsData[RENDER_VELOCITY_GLOW_SCALE] = float32(config.CONFIG.velocityGlowScale)
+  paramsData[RENDER_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
   # Update species colors uniform (pack RGB as vec4f for 16-byte alignment)
@@ -979,12 +981,13 @@ proc render*(particleCount: int): RenderTiming =
     colorData[i * 4 + 3] = 1.0  # padding/alpha
   webgpu_init.queue.writeBuffer(colorBuffer, 0, colorData)
 
-  # Update fade params (fadeAmount = how much to fade toward background)
-  let fadeData = newFloat32Array(4)
-  fadeData[0] = float32(config.CONFIG.trailAlpha)  # fadeAmount (0 = no fade, 1 = instant clear)
-  fadeData[1] = 0.0  # padding
-  fadeData[2] = 0.0
-  fadeData[3] = 0.0
+  # Update fade params
+  # Layout matches FadeParams indices in gpu_types.nim
+  let fadeData = newFloat32Array(FADE_PARAMS_F32_COUNT)
+  fadeData[FADE_AMOUNT] = float32(config.CONFIG.trailAlpha)  # 0 = no fade, 1 = instant clear
+  fadeData[FADE_PAD1] = 0.0
+  fadeData[FADE_PAD2] = 0.0
+  fadeData[FADE_PAD3] = 0.0
   webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
   # Select pre-created resources based on trail parity (ZERO allocations)

@@ -110,6 +110,8 @@ proc setupUI*() {.exportc.} =
   # Particle count slider
   let particleCountEl = cast[HTMLInputElement](getElementById("particleCount"))
   let particleValueEl = getElementById("particleValue")
+  # Set max to MAX_PARTICLES from memory_layout
+  particleCountEl.max = cstring($MAX_PARTICLES)
   # Sync slider to CONFIG value on init
   particleCountEl.value = cstring($CONFIG.particleCount)
   particleValueEl.textContent = cstring($CONFIG.particleCount)

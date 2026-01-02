@@ -34,7 +34,12 @@ const nativeReleaseFlags = "-d:release --opt:speed " & qualityFlags
 task app, "Build the web app":
   exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
 
+task shaders, "Bundle WGSL shaders (resolve imports, substitute config)":
+  exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
+
 task all, "Build everything: app and native":
+  echo "Bundling shaders..."
+  exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
   echo "Building app..."
   exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
   echo "Building native app..."
@@ -46,6 +51,8 @@ task test, "Run tests":
 
 task release, "Build optimized release":
   echo "Building release..."
+  echo "Bundling shaders..."
+  exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
   echo "Building app..."
   exec "nim js " & jsReleaseFlags & " --out:web/app.js src/app.nim"
   echo "Building native app..."

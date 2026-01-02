@@ -18,8 +18,9 @@ nimble all
 ```
 
 For reference, `nimble all` runs:
-- `nimble app` — Compile `src/app.nim` → `web/app.js` (browser frontend)
-- `nim c` — Compile `src/main.nim` → `./main` (native HTTP server)
+1. `nimble shaders` — Bundle WGSL shaders (resolve imports, substitute config)
+2. `nimble app` — Compile `src/app.nim` → `web/app.js` (browser frontend)
+3. `nim c` — Compile `src/main.nim` → `./main` (native HTTP server)
 
 For release builds:
 ```bash
@@ -135,6 +136,42 @@ Particles stay on GPU from initialization through rendering. No CPU readback.
 
 When modifying frontend behavior, edit the `.nim` source file, not generated `.js`.
 
+## Shader Architecture
+
+WGSL shaders use a module system with build-time preprocessing:
+
+```
+web/shaders/
+├── modules/           # Shared WGSL modules (imported by src/)
+│   ├── particle.wgsl      # Particle struct (32 bytes)
+│   ├── grid_params.wgsl   # GridParams uniform struct
+│   ├── cell_index.wgsl    # Cell computation function
+│   ├── fixed_point.wgsl   # Fixed-point constants
+│   └── scan_params.wgsl   # ScanParams for prefix-sum
+├── src/               # Source shaders with //! import directives
+│   ├── forces.wgsl        # //! import particle, fixed_point
+│   ├── bin-count.wgsl     # //! import particle, grid_params, cell_index
+│   └── ...
+└── *.wgsl             # Generated output (DO NOT EDIT)
+```
+
+**Build flow:**
+1. `tools/wgsl_bundle.nim` reads `web/shaders/src/*.wgsl`
+2. Resolves `//! import` directives from `modules/`
+3. Substitutes `{{PLACEHOLDER}}` values from `src/shader_config.nim`
+4. Writes bundled output to `web/shaders/*.wgsl`
+
+**Adding a new shader:**
+1. Create `web/shaders/src/my-shader.wgsl`
+2. Add `//! import particle` (or other modules) at top
+3. Run `nimble shaders` to bundle
+4. Register in `StaticFiles` in `main.nim`
+
+**Modifying shared structs:**
+- Edit `web/shaders/modules/particle.wgsl` (WGSL side)
+- Update `src/gpu_types.nim` (Nim side) to match
+- Compile-time validation catches mismatches
+
 ---
 
 ## Source Code Reference
@@ -162,6 +199,17 @@ When modifying frontend behavior, edit the `.nim` source file, not generated `.j
 | **config.nim** | Runtime CONFIG object (particle count, physics params), re-exports memory layout constants |
 | **memory_layout.nim** | Single source of truth for AoS Particle struct (32 bytes), buffer offsets, limits |
 | **buffers.nim** | Creates typed array views (Float32Array, Uint32Array) on SharedArrayBuffer |
+| **shader_config.nim** | Workgroup sizes, tuning constants for shader placeholders |
+| **gpu_types.nim** | Type-safe GPU struct layouts with compile-time validation, named buffer indices |
+
+#### Shader System (`tools/`, `web/shaders/`)
+
+| Path | Purpose |
+|------|---------|
+| **tools/wgsl_bundle.nim** | Shader preprocessor: resolves `//! import`, substitutes `{{PLACEHOLDER}}` |
+| **web/shaders/modules/** | 5 shared WGSL modules (particle, grid_params, cell_index, fixed_point, scan_params) |
+| **web/shaders/src/** | 10 source shaders with import directives |
+| **web/shaders/*.wgsl** | Generated bundled shaders (DO NOT EDIT) |
 
 #### WebGPU Pipeline
 

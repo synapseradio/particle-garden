@@ -45,7 +45,7 @@
 # ==============================================================================
 
 const
-  MAX_PARTICLES* = 64000  ## Maximum supported particle count
+  MAX_PARTICLES* = 100000  ## Maximum supported particle count
   MAX_SPECIES* = 6        ## Maximum species for attraction matrix (6x6 = 36 floats)
   MAX_GRID* = 256         ## Maximum grid cells per dimension (256x256 = 65536 cells)
 
