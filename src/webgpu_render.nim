@@ -178,10 +178,10 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // Glow radius coupled to velocity and sweep
   // At sweep=0 or velocity=0: radius = 12.0
-  // At sweep=1 and max velocity: radius = 24.0 (doubles)
+  // At sweep=1 and max velocity: radius = 18.0 (50% boost)
   let scale = params.resolution / params.worldSize;
   let baseRadius = 12.0;
-  let velocityBoost = velocityNorm * params.velocityGlowScale;
+  let velocityBoost = velocityNorm * params.velocityGlowScale * 0.5;
   let glowRadius = baseRadius * (1.0 + velocityBoost);
   let worldPos = p.pos + offset * glowRadius / scale;
 
