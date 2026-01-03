@@ -27,7 +27,7 @@ type
 # SECTION 2: CONSTRUCTORS
 # ==============================================================================
 
-proc initSimulationState*(): SimulationState =
+func initSimulationState*(): SimulationState =
   ## Create default simulation state.
   SimulationState(
     particleCount: 16000,
@@ -39,7 +39,7 @@ proc initSimulationState*(): SimulationState =
     maxVelocity: 50.0
   )
 
-proc initSimulationState*(
+func initSimulationState*(
   particleCount, speciesCount, interactionRadius: int;
   forceStrength, friction, timeScale, maxVelocity: float
 ): SimulationState =
@@ -58,30 +58,30 @@ proc initSimulationState*(
 # SECTION 3: IMMUTABLE UPDATES
 # ==============================================================================
 
-proc withParticleCount*(state: SimulationState; count: int): SimulationState =
+func withParticleCount*(state: SimulationState; count: int): SimulationState =
   result = state
   result.particleCount = count
 
-proc withSpeciesCount*(state: SimulationState; count: int): SimulationState =
+func withSpeciesCount*(state: SimulationState; count: int): SimulationState =
   result = state
   result.speciesCount = count
 
-proc withInteractionRadius*(state: SimulationState; radius: int): SimulationState =
+func withInteractionRadius*(state: SimulationState; radius: int): SimulationState =
   result = state
   result.interactionRadius = radius
 
-proc withForceStrength*(state: SimulationState; strength: float): SimulationState =
+func withForceStrength*(state: SimulationState; strength: float): SimulationState =
   result = state
   result.forceStrength = strength
 
-proc withFriction*(state: SimulationState; friction: float): SimulationState =
+func withFriction*(state: SimulationState; friction: float): SimulationState =
   result = state
   result.friction = friction
 
-proc withTimeScale*(state: SimulationState; scale: float): SimulationState =
+func withTimeScale*(state: SimulationState; scale: float): SimulationState =
   result = state
   result.timeScale = scale
 
-proc withMaxVelocity*(state: SimulationState; velocity: float): SimulationState =
+func withMaxVelocity*(state: SimulationState; velocity: float): SimulationState =
   result = state
   result.maxVelocity = velocity

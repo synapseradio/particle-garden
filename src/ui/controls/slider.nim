@@ -28,18 +28,18 @@ type
     of svkFloat:
       floatVal*: float
 
-proc intValue*(v: int): SliderValue =
+func intValue*(v: int): SliderValue =
   SliderValue(kind: svkInt, intVal: v)
 
-proc floatValue*(v: float): SliderValue =
+func floatValue*(v: float): SliderValue =
   SliderValue(kind: svkFloat, floatVal: v)
 
-proc toFloat*(v: SliderValue): float =
+func toFloat*(v: SliderValue): float =
   case v.kind
   of svkInt: float(v.intVal)
   of svkFloat: v.floatVal
 
-proc toInt*(v: SliderValue): int =
+func toInt*(v: SliderValue): int =
   case v.kind
   of svkInt: v.intVal
   of svkFloat: int(v.floatVal)
@@ -59,7 +59,7 @@ type
     minValue*: float       ## Minimum allowed value
     maxValue*: float       ## Maximum allowed value
 
-proc initSliderConfig*(
+func initSliderConfig*(
   inputId, displayId: string;
   valueKind: SliderValueKind;
   precision: int = 0;
@@ -79,7 +79,7 @@ proc initSliderConfig*(
 # SECTION 3: VALUE PARSING (pure functions)
 # ==============================================================================
 
-proc parseSliderValue*(s: string, kind: SliderValueKind): SliderValue =
+func parseSliderValue*(s: string, kind: SliderValueKind): SliderValue =
   ## Parse a string to a slider value. Returns 0 on parse error.
   case kind
   of svkInt:
@@ -93,7 +93,7 @@ proc parseSliderValue*(s: string, kind: SliderValueKind): SliderValue =
     except ValueError:
       result = floatValue(0.0)
 
-proc clampValue*(v: SliderValue, config: SliderConfig): SliderValue =
+func clampValue*(v: SliderValue, config: SliderConfig): SliderValue =
   ## Clamp value to config min/max range.
   let f = v.toFloat()
   let clamped = max(config.minValue, min(config.maxValue, f))
@@ -105,7 +105,7 @@ proc clampValue*(v: SliderValue, config: SliderConfig): SliderValue =
 # SECTION 4: VALUE FORMATTING (pure functions)
 # ==============================================================================
 
-proc formatValue*(v: SliderValue, precision: int): string =
+func formatValue*(v: SliderValue, precision: int): string =
   ## Format a value for display.
   case v.kind
   of svkInt:
@@ -116,7 +116,7 @@ proc formatValue*(v: SliderValue, precision: int): string =
     else:
       formatFloat(v.floatVal, ffDecimal, precision)
 
-proc formatSliderValue*(v: SliderValue, config: SliderConfig): string =
+func formatSliderValue*(v: SliderValue, config: SliderConfig): string =
   ## Format value according to config.
   formatValue(v, config.precision)
 
@@ -229,9 +229,14 @@ when defined(js):
       inputEl.value = cstring($s.getFloat())
       displayEl.textContent = toFixed(s.getFloat(), s.config.precision)
 
-    # Set max attribute if specified
-    if s.config.maxValue > 0:
+    # Set min/max attributes based on slider type
+    case s.config.valueKind
+    of svkInt:
+      inputEl.min = cstring($int(s.config.minValue))
       inputEl.max = cstring($int(s.config.maxValue))
+    of svkFloat:
+      inputEl.min = cstring($s.config.minValue)
+      inputEl.max = cstring($s.config.maxValue)
 
     # DOM → Observable: update on input
     inputEl.addEventListener("input", proc(e: Event) =

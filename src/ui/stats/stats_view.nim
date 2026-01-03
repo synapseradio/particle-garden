@@ -21,7 +21,7 @@ type
     workerTimeMs*: float
     particleCount*: int
 
-proc initStatsState*(): StatsState =
+func initStatsState*(): StatsState =
   StatsState(
     fps: 0,
     gridTimeMs: 0.0,
@@ -33,20 +33,20 @@ proc initStatsState*(): StatsState =
 # SECTION 2: IMMUTABLE UPDATES
 # ==============================================================================
 
-proc withFps*(state: StatsState; fps: int): StatsState =
+func withFps*(state: StatsState; fps: int): StatsState =
   result = state
   result.fps = fps
 
-proc withTiming*(state: StatsState; gridTimeMs, workerTimeMs: float): StatsState =
+func withTiming*(state: StatsState; gridTimeMs, workerTimeMs: float): StatsState =
   result = state
   result.gridTimeMs = gridTimeMs
   result.workerTimeMs = workerTimeMs
 
-proc withParticleCount*(state: StatsState; count: int): StatsState =
+func withParticleCount*(state: StatsState; count: int): StatsState =
   result = state
   result.particleCount = count
 
-proc withStats*(state: StatsState; fps: int; gridTimeMs, workerTimeMs: float): StatsState =
+func withStats*(state: StatsState; fps: int; gridTimeMs, workerTimeMs: float): StatsState =
   result = state
   result.fps = fps
   result.gridTimeMs = gridTimeMs
@@ -56,19 +56,19 @@ proc withStats*(state: StatsState; fps: int; gridTimeMs, workerTimeMs: float): S
 # SECTION 3: FORMATTING
 # ==============================================================================
 
-proc formatFps*(fps: int): string =
+func formatFps*(fps: int): string =
   ## Format FPS for display.
   $fps
 
-proc formatGridTime*(ms: float): string =
+func formatGridTime*(ms: float): string =
   ## Format grid time (2 decimal places).
   formatFloat(ms, ffDecimal, 2)
 
-proc formatWorkerTime*(ms: float): string =
+func formatWorkerTime*(ms: float): string =
   ## Format worker time (1 decimal place).
   formatFloat(ms, ffDecimal, 1)
 
-proc formatParticleCount*(count: int): string =
+func formatParticleCount*(count: int): string =
   ## Format particle count with locale separators.
   ## Note: Actual locale formatting requires JS runtime.
   $count

@@ -25,7 +25,7 @@ type
 # SECTION 2: CONSTRUCTORS
 # ==============================================================================
 
-proc initRenderState*(): RenderState =
+func initRenderState*(): RenderState =
   ## Create default render state.
   RenderState(
     particleSize: 3,
@@ -35,7 +35,7 @@ proc initRenderState*(): RenderState =
     velocityGlowScale: 1.0
   )
 
-proc initRenderState*(
+func initRenderState*(
   particleSize: int;
   trails: bool;
   trailAlpha, glowIntensity, velocityGlowScale: float
@@ -53,23 +53,23 @@ proc initRenderState*(
 # SECTION 3: IMMUTABLE UPDATES
 # ==============================================================================
 
-proc withParticleSize*(state: RenderState; size: int): RenderState =
+func withParticleSize*(state: RenderState; size: int): RenderState =
   result = state
   result.particleSize = size
 
-proc withTrails*(state: RenderState; enabled: bool): RenderState =
+func withTrails*(state: RenderState; enabled: bool): RenderState =
   result = state
   result.trails = enabled
 
-proc withTrailAlpha*(state: RenderState; alpha: float): RenderState =
+func withTrailAlpha*(state: RenderState; alpha: float): RenderState =
   result = state
   result.trailAlpha = alpha
 
-proc withGlowIntensity*(state: RenderState; intensity: float): RenderState =
+func withGlowIntensity*(state: RenderState; intensity: float): RenderState =
   result = state
   result.glowIntensity = intensity
 
-proc withVelocityGlowScale*(state: RenderState; scale: float): RenderState =
+func withVelocityGlowScale*(state: RenderState; scale: float): RenderState =
   result = state
   result.velocityGlowScale = scale
 
@@ -77,8 +77,8 @@ proc withVelocityGlowScale*(state: RenderState; scale: float): RenderState =
 # SECTION 4: QUERIES
 # ==============================================================================
 
-proc hasTrails*(state: RenderState): bool =
+func hasTrails*(state: RenderState): bool =
   state.trails
 
-proc hasGlow*(state: RenderState): bool =
+func hasGlow*(state: RenderState): bool =
   state.glowIntensity > 0.0

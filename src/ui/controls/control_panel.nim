@@ -17,7 +17,7 @@ type
     collapsed*: bool
     trailsEnabled*: bool
 
-proc initPanelState*(): PanelState =
+func initPanelState*(): PanelState =
   PanelState(
     collapsed: false,
     trailsEnabled: false
@@ -27,19 +27,19 @@ proc initPanelState*(): PanelState =
 # SECTION 2: IMMUTABLE UPDATES
 # ==============================================================================
 
-proc withCollapsed*(state: PanelState; collapsed: bool): PanelState =
+func withCollapsed*(state: PanelState; collapsed: bool): PanelState =
   result = state
   result.collapsed = collapsed
 
-proc withTrailsEnabled*(state: PanelState; enabled: bool): PanelState =
+func withTrailsEnabled*(state: PanelState; enabled: bool): PanelState =
   result = state
   result.trailsEnabled = enabled
 
-proc toggleCollapsed*(state: PanelState): PanelState =
+func toggleCollapsed*(state: PanelState): PanelState =
   result = state
   result.collapsed = not state.collapsed
 
-proc toggleTrails*(state: PanelState): PanelState =
+func toggleTrails*(state: PanelState): PanelState =
   result = state
   result.trailsEnabled = not state.trailsEnabled
 
@@ -47,12 +47,12 @@ proc toggleTrails*(state: PanelState): PanelState =
 # SECTION 3: QUERIES
 # ==============================================================================
 
-proc isCollapsed*(state: PanelState): bool =
+func isCollapsed*(state: PanelState): bool =
   state.collapsed
 
-proc hasTrails*(state: PanelState): bool =
+func hasTrails*(state: PanelState): bool =
   state.trailsEnabled
 
-proc collapseButtonText*(state: PanelState): string =
+func collapseButtonText*(state: PanelState): string =
   ## Return the text for collapse button.
   if state.collapsed: "+" else: "-"

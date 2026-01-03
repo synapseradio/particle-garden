@@ -3,7 +3,7 @@
 // =============================================================================
 // Source: web/shaders/src/render.wgsl
 // Bundled modules: particle
-// Generated: 2026-01-02T22:43:56+01:00
+// Generated: 2026-01-03T11:50:35+01:00
 // =============================================================================
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,10 +159,13 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
-  // Z-ordering: Position-based hash for stable layering
-  // Using position hash alone avoids Z-fighting when particles cluster tightly
-  let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);
-  let zDepth = 0.1 + posHash * 0.8;  // Spread across 0.1-0.9 range
+  // Z-ordering: Species-based layers with stable particle hash
+  // Each species occupies its own depth band (0.1-0.9 divided into 6 bands)
+  // Within a band, particle ID hash provides stable ordering (no flickering)
+  let speciesBandSize = 0.8 / 6.0;  // ~0.133 per species
+  let speciesBase = 0.1 + f32(p.species) * speciesBandSize;
+  let particleHash = fract(f32(particleId) * 0.6180339887);  // Golden ratio hash
+  let zDepth = speciesBase + particleHash * speciesBandSize * 0.9;  // Stay within band
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
   // Pass offset for circle calculation in fragment shader

@@ -20,14 +20,14 @@ var NTI1224736784 = {size: 0, kind: 18, base: null, node: null, finalizer: null}
 var NTI1224736781 = {size: 0, kind: 24, base: null, node: null, finalizer: null};
 var NTI1224736780 = {size: 0, kind: 18, base: null, node: null, finalizer: null};
 var NTI1224736779 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
-var NTI1224737393 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
+var NTI1224737435 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1308622851 = {size: 0, kind: 14, base: null, node: null, finalizer: null};
 var NTI1308622852 = {size: 0, kind: 18, base: null, node: null, finalizer: null};
 var NTI134217745 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1258291239 = {size: 0, kind: 24, base: null, node: null, finalizer: null};
 var NTI1258291228 = {size: 0,kind: 25,base: null,node: null,finalizer: null};
 var NTI1258291227 = {size: 0, kind: 24, base: null, node: null, finalizer: null};
-var NTI1224737370 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
+var NTI1224737412 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1056964742 = {size: 0, kind: 24, base: null, node: null, finalizer: null};
 var NTI1056964737 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1056964628 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
@@ -108,7 +108,7 @@ var NTI1342177340 = {size: 0, kind: 18, base: null, node: null, finalizer: null}
 var NTI1342177339 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
 var NTI1342177333 = {size: 0, kind: 18, base: null, node: null, finalizer: null};
 var NTI1342177332 = {size: 0, kind: 22, base: null, node: null, finalizer: null};
-var NTI1224737349 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
+var NTI1224737391 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI134217750 = {size: 0, kind: 17, base: null, node: null, finalizer: null};
 var NTI1258291216 = {size: 0,kind: 25,base: null,node: null,finalizer: null};
 var NTI1342177347 = {size: 0,kind: 25,base: null,node: null,finalizer: null};
@@ -879,14 +879,14 @@ var NNI1056964740 = {kind: 2, len: 37, offset: 0, typ: null, name: null, sons: [
 NTI1056964740.node = NNI1056964740;
 NTI1056964740.base = NTI1056964733;
 NTI1056964631.base = NTI1056964740;
-var NNI1224737349 = {kind: 2, len: 3, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "s0", len: 0, typ: NTI1342177332, name: "s0", sons: null}, 
+var NNI1224737391 = {kind: 2, len: 3, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "s0", len: 0, typ: NTI1342177332, name: "s0", sons: null}, 
 {kind: 1, offset: "displayEl1", len: 0, typ: NTI1056964626, name: "displayEl1", sons: null}, 
 {kind: 1, offset: "inputEl2", len: 0, typ: NTI1056964631, name: "inputEl2", sons: null}]};
-NTI1224737349.node = NNI1224737349;
-NTI1224737349.base = NTI33555167;
-var NNI1224737370 = {kind: 1, offset: "obsRef0", len: 0, typ: NTI1342177339, name: "obsRef0", sons: null};
-NTI1224737370.node = NNI1224737370;
-NTI1224737370.base = NTI33555167;
+NTI1224737391.node = NNI1224737391;
+NTI1224737391.base = NTI33555167;
+var NNI1224737412 = {kind: 1, offset: "obsRef0", len: 0, typ: NTI1342177339, name: "obsRef0", sons: null};
+NTI1224737412.node = NNI1224737412;
+NTI1224737412.base = NTI33555167;
 NTI1258291227.base = NTI1258291228;
 NTI1258291239.base = NTI1258291228;
 var NNI134217745 = {kind: 2, len: 0, offset: 0, typ: null, name: null, sons: []};
@@ -912,9 +912,9 @@ var NNI1224736780 = {kind: 2, len: 5, offset: 0, typ: null, name: null, sons: [{
 {kind: 1, offset: "notifying", len: 0, typ: NTI33554466, name: "notifying", sons: null}]};
 NTI1224736780.node = NNI1224736780;
 NTI1224736779.base = NTI1224736780;
-var NNI1224737393 = {kind: 1, offset: "obsRef0", len: 0, typ: NTI1224736779, name: "obsRef0", sons: null};
-NTI1224737393.node = NNI1224737393;
-NTI1224737393.base = NTI33555167;
+var NNI1224737435 = {kind: 1, offset: "obsRef0", len: 0, typ: NTI1224736779, name: "obsRef0", sons: null};
+NTI1224737435.node = NNI1224737435;
+NTI1224737435.base = NTI33555167;
 var NNI1325400067 = {kind: 2, len: 2, offset: 0, typ: null, name: null, sons: [{kind: 1, offset: "clientX", len: 0, typ: NTI33554445, name: "clientX", sons: null}, 
 {kind: 1, offset: "clientY", len: 0, typ: NTI33554445, name: "clientY", sons: null}]};
 NTI1325400067.node = NNI1325400067;
@@ -1932,13 +1932,13 @@ function addChars__stdZprivateZdigitsutils_u202(result_p0, result_p0_Idx, x_p1, 
          else {result_p0[result_p0_Idx].length = Temporary1; };
     Label2: {
       var iHEX60gensym4_318767326 = 0;
-      var i_1224737899 = 0;
+      var i_1224737981 = 0;
       Label3: {
           Label4: while (true) {
-          if (!(i_1224737899 < n_p3)) break Label4;
-            iHEX60gensym4_318767326 = i_1224737899;
+          if (!(i_1224737981 < n_p3)) break Label4;
+            iHEX60gensym4_318767326 = i_1224737981;
             result_p0[result_p0_Idx][chckIndx(addInt(old_318767312, iHEX60gensym4_318767326), 0, (result_p0[result_p0_Idx]).length - 1)] = x_p1.charCodeAt(chckIndx(addInt(start_p2, iHEX60gensym4_318767326), 0, (x_p1).length - 1));
-            i_1224737899 = addInt(i_1224737899, 1);
+            i_1224737981 = addInt(i_1224737981, 1);
           }
       };
     };
@@ -2107,18 +2107,18 @@ function clampMatrixValue__uiZstateZmatrix95state_u37(v_p0) {
 }
 
 function updateMatrixRule(i_p0, j_p1, el_p2) {
-    var inputEl_1224737704 = el_p2;
-    var v_1224737705 = parseFloat(inputEl_1224737704.value);
-    if (!(isNaN(v_1224737705))) {
-    var clamped_1224737706 = clampMatrixValue__uiZstateZmatrix95state_u37(v_1224737705);
-    matrix[matrixIndex__uiZstateZmatrix95state_u4(i_p0, j_p1)] = clamped_1224737706;
+    var inputEl_1224737786 = el_p2;
+    var v_1224737787 = parseFloat(inputEl_1224737786.value);
+    if (!(isNaN(v_1224737787))) {
+    var clamped_1224737788 = clampMatrixValue__uiZstateZmatrix95state_u37(v_1224737787);
+    matrix[matrixIndex__uiZstateZmatrix95state_u4(i_p0, j_p1)] = clamped_1224737788;
     if (!((onMatrixUpdate == null))) {
     onMatrixUpdate();
     }
     
-    var color_1224737710 = cellColorFromValue__uiZstateZmatrix95state_u59(clamped_1224737706);
-    var parent_1224737711 = inputEl_1224737704.parentElement;
-    parent_1224737711.style.background = toJSStr(toHslaString__uiZstateZmatrix95state_u86(color_1224737710));
+    var color_1224737792 = cellColorFromValue__uiZstateZmatrix95state_u59(clamped_1224737788);
+    var parent_1224737793 = inputEl_1224737786.parentElement;
+    parent_1224737793.style.background = toJSStr(toHslaString__uiZstateZmatrix95state_u86(color_1224737792));
     }
     
 
@@ -2128,102 +2128,102 @@ function updateMatrixRule(i_p0, j_p1, el_p2) {
 function updateMatrixDisplay() {
     var Temporary10;
 
-function HEX3Aanonymous__ui_u970(input_p0) {
+function HEX3Aanonymous__ui_u1052(input_p0) {
     var Temporary1;
 
-function HEX3Aanonymous__ui_u973(e_p0) {
-    var target_1224737743 = e_p0.target;
-    var ds_1224737744 = target_1224737743.dataset;
-    var row_1224737745 = parseInt(ds_1224737744["row"], 10);
-    var col_1224737746 = parseInt(ds_1224737744["col"], 10);
-    updateMatrixRule(row_1224737745, col_1224737746, e_p0.target);
+function HEX3Aanonymous__ui_u1055(e_p0) {
+    var target_1224737825 = e_p0.target;
+    var ds_1224737826 = target_1224737825.dataset;
+    var row_1224737827 = parseInt(ds_1224737826["row"], 10);
+    var col_1224737828 = parseInt(ds_1224737826["col"], 10);
+    updateMatrixRule(row_1224737827, col_1224737828, e_p0.target);
 
   
 }
 
-    var inputEl_1224737740 = input_p0;
-    Temporary1 = HEX3Aanonymous__ui_u973.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u973; Temporary1.ClE_0 = null;
-    inputEl_1224737740.addEventListener("change", Temporary1);
+    var inputEl_1224737822 = input_p0;
+    Temporary1 = HEX3Aanonymous__ui_u1055.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u1055; Temporary1.ClE_0 = null;
+    inputEl_1224737822.addEventListener("change", Temporary1);
 
   
 }
 
-    var el_1224737713 = document.getElementById("matrixDisplay");
-    var ns_1224737714 = CONFIG.speciesCount;
-    el_1224737713.style.gridTemplateColumns = toJSStr(([114,101,112,101,97,116,40]).concat(HEX24__systemZdollars_u14(addInt(ns_1224737714, 1)),[44,32,49,102,114,41]));
-    var html_1224737715 = [60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,62,60,47,100,105,118,62];
+    var el_1224737795 = document.getElementById("matrixDisplay");
+    var ns_1224737796 = CONFIG.speciesCount;
+    el_1224737795.style.gridTemplateColumns = toJSStr(([114,101,112,101,97,116,40]).concat(HEX24__systemZdollars_u14(addInt(ns_1224737796, 1)),[44,32,49,102,114,41]));
+    var html_1224737797 = [60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,62,60,47,100,105,118,62];
     Label1: {
-      var j_1224737720 = 0;
-      var i_1224737887 = 0;
+      var j_1224737802 = 0;
+      var i_1224737969 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1224737887 < ns_1224737714)) break Label3;
-            j_1224737720 = i_1224737887;
-            var c_1224737721 = mulInt(j_1224737720, 3);
-            var speciesColor_1224737722 = {r: chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737721] * 255.0)))), (-2147483648), 2147483647), g: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737721, 1)] * 255.0)))), (-2147483648), 2147483647), b: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737721, 2)] * 255.0)))), (-2147483648), 2147483647), alpha: 0.5};
-            html_1224737715.push.apply(html_1224737715, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(toRgbaString__uiZstateZmatrix95state_u125(speciesColor_1224737722),[34,62,60,47,100,105,118,62]));;
-            i_1224737887 = addInt(i_1224737887, 1);
+          if (!(i_1224737969 < ns_1224737796)) break Label3;
+            j_1224737802 = i_1224737969;
+            var c_1224737803 = mulInt(j_1224737802, 3);
+            var speciesColor_1224737804 = {r: chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737803] * 255.0)))), (-2147483648), 2147483647), g: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737803, 1)] * 255.0)))), (-2147483648), 2147483647), b: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737803, 2)] * 255.0)))), (-2147483648), 2147483647), alpha: 0.5};
+            html_1224737797.push.apply(html_1224737797, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(toRgbaString__uiZstateZmatrix95state_u125(speciesColor_1224737804),[34,62,60,47,100,105,118,62]));;
+            i_1224737969 = addInt(i_1224737969, 1);
           }
       };
     };
     Label4: {
-      var i_1224737727 = 0;
-      var i_1224737893 = 0;
+      var i_1224737809 = 0;
+      var i_1224737975 = 0;
       Label5: {
           Label6: while (true) {
-          if (!(i_1224737893 < ns_1224737714)) break Label6;
-            i_1224737727 = i_1224737893;
-            var c_1224737728 = mulInt(i_1224737727, 3);
-            var speciesColor_1224737729 = {r: chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737728] * 255.0)))), (-2147483648), 2147483647), g: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737728, 1)] * 255.0)))), (-2147483648), 2147483647), b: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737728, 2)] * 255.0)))), (-2147483648), 2147483647), alpha: 0.5};
-            html_1224737715.push.apply(html_1224737715, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(toRgbaString__uiZstateZmatrix95state_u125(speciesColor_1224737729),[34,62,60,47,100,105,118,62]));;
+          if (!(i_1224737975 < ns_1224737796)) break Label6;
+            i_1224737809 = i_1224737975;
+            var c_1224737810 = mulInt(i_1224737809, 3);
+            var speciesColor_1224737811 = {r: chckRange(Number(BigInt(Math.trunc((COLORS[c_1224737810] * 255.0)))), (-2147483648), 2147483647), g: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737810, 1)] * 255.0)))), (-2147483648), 2147483647), b: chckRange(Number(BigInt(Math.trunc((COLORS[addInt(c_1224737810, 2)] * 255.0)))), (-2147483648), 2147483647), alpha: 0.5};
+            html_1224737797.push.apply(html_1224737797, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,32,109,97,116,114,105,120,45,104,101,97,100,101,114,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(toRgbaString__uiZstateZmatrix95state_u125(speciesColor_1224737811),[34,62,60,47,100,105,118,62]));;
             Label7: {
-              var j_1224737734 = 0;
-              var i_1224737891 = 0;
+              var j_1224737816 = 0;
+              var i_1224737973 = 0;
               Label8: {
                   Label9: while (true) {
-                  if (!(i_1224737891 < ns_1224737714)) break Label9;
-                    j_1224737734 = i_1224737891;
-                    var v_1224737735 = matrix[matrixIndex__uiZstateZmatrix95state_u4(i_1224737727, j_1224737734)];
-                    var color_1224737736 = cellColorFromValue__uiZstateZmatrix95state_u59(v_1224737735);
-                    html_1224737715.push.apply(html_1224737715, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(toHslaString__uiZstateZmatrix95state_u86(color_1224737736),[34,62,60,105,110,112,117,116,32,116,121,112,101,61,34,110,117,109,98,101,114,34,32,115,116,101,112,61,34,48,46,49,34,32,118,97,108,117,101,61,34],cstrToNimstr(v_1224737735.toFixed(2)),[34,32,100,97,116,97,45,114,111,119,61,34],HEX24__systemZdollars_u14(i_1224737727),[34,32,100,97,116,97,45,99,111,108,61,34],HEX24__systemZdollars_u14(j_1224737734),[34,62,60,47,100,105,118,62]));;
-                    i_1224737891 = addInt(i_1224737891, 1);
+                  if (!(i_1224737973 < ns_1224737796)) break Label9;
+                    j_1224737816 = i_1224737973;
+                    var v_1224737817 = matrix[matrixIndex__uiZstateZmatrix95state_u4(i_1224737809, j_1224737816)];
+                    var color_1224737818 = cellColorFromValue__uiZstateZmatrix95state_u59(v_1224737817);
+                    html_1224737797.push.apply(html_1224737797, ([60,100,105,118,32,99,108,97,115,115,61,34,109,97,116,114,105,120,45,99,101,108,108,34,32,115,116,121,108,101,61,34,98,97,99,107,103,114,111,117,110,100,58]).concat(toHslaString__uiZstateZmatrix95state_u86(color_1224737818),[34,62,60,105,110,112,117,116,32,116,121,112,101,61,34,110,117,109,98,101,114,34,32,115,116,101,112,61,34,48,46,49,34,32,118,97,108,117,101,61,34],cstrToNimstr(v_1224737817.toFixed(2)),[34,32,100,97,116,97,45,114,111,119,61,34],HEX24__systemZdollars_u14(i_1224737809),[34,32,100,97,116,97,45,99,111,108,61,34],HEX24__systemZdollars_u14(j_1224737816),[34,62,60,47,100,105,118,62]));;
+                    i_1224737973 = addInt(i_1224737973, 1);
                   }
               };
             };
-            i_1224737893 = addInt(i_1224737893, 1);
+            i_1224737975 = addInt(i_1224737975, 1);
           }
       };
     };
-    el_1224737713.innerHTML = toJSStr(html_1224737715);
-    var inputs_1224737737 = el_1224737713.querySelectorAll("input[type=\"number\"]");
-    Temporary10 = HEX3Aanonymous__ui_u970.bind(null); Temporary10.ClP_0 = HEX3Aanonymous__ui_u970; Temporary10.ClE_0 = null;
-    inputs_1224737737.forEach(Temporary10);
+    el_1224737795.innerHTML = toJSStr(html_1224737797);
+    var inputs_1224737819 = el_1224737795.querySelectorAll("input[type=\"number\"]");
+    Temporary10 = HEX3Aanonymous__ui_u1052.bind(null); Temporary10.ClP_0 = HEX3Aanonymous__ui_u1052; Temporary10.ClE_0 = null;
+    inputs_1224737819.forEach(Temporary10);
 
   
 }
 
 function randomizeMatrix() {
-    var ns_1224737795 = CONFIG.speciesCount;
+    var ns_1224737877 = CONFIG.speciesCount;
     Label1: {
-      var i_1224737800 = 0;
-      var i_1224737884 = 0;
+      var i_1224737882 = 0;
+      var i_1224737966 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1224737884 < ns_1224737795)) break Label3;
-            i_1224737800 = i_1224737884;
+          if (!(i_1224737966 < ns_1224737877)) break Label3;
+            i_1224737882 = i_1224737966;
             Label4: {
-              var j_1224737805 = 0;
-              var i_1224737882 = 0;
+              var j_1224737887 = 0;
+              var i_1224737964 = 0;
               Label5: {
                   Label6: while (true) {
-                  if (!(i_1224737882 < ns_1224737795)) break Label6;
-                    j_1224737805 = i_1224737882;
-                    matrix[matrixIndex__uiZstateZmatrix95state_u4(i_1224737800, j_1224737805)] = ((Math.random() * 2.0) - 1.0);
-                    i_1224737882 = addInt(i_1224737882, 1);
+                  if (!(i_1224737964 < ns_1224737877)) break Label6;
+                    j_1224737887 = i_1224737964;
+                    matrix[matrixIndex__uiZstateZmatrix95state_u4(i_1224737882, j_1224737887)] = ((Math.random() * 2.0) - 1.0);
+                    i_1224737964 = addInt(i_1224737964, 1);
                   }
               };
             };
-            i_1224737884 = addInt(i_1224737884, 1);
+            i_1224737966 = addInt(i_1224737966, 1);
           }
       };
     };
@@ -2283,18 +2283,18 @@ function newIntSlider__uiZcontrolsZslider_u220(inputId_p0, displayId_p1, initial
 
 }
 
-function subscribe__uiZcontrolsZslider_u432(obs_p0, fn_p1) {
-  var result_1342177716 = 0;
+function subscribe__uiZcontrolsZslider_u438(obs_p0, fn_p1) {
+  var result_1342177722 = 0;
 
-    var id_1342177717 = obs_p0.nextId;
+    var id_1342177723 = obs_p0.nextId;
     obs_p0.nextId = addInt(obs_p0.nextId, 1);
-    var sub_1342177723 = {id: id_1342177717, fn: fn_p1, cleanup: null};
-    sub_1342177723.cleanup = fn_p1(obs_p0.value);
-    var Temporary1 = nimCopy(null, sub_1342177723, NTI1342177344);
+    var sub_1342177729 = {id: id_1342177723, fn: fn_p1, cleanup: null};
+    sub_1342177729.cleanup = fn_p1(obs_p0.value);
+    var Temporary1 = nimCopy(null, sub_1342177729, NTI1342177344);
     obs_p0.subscriptions.push(Temporary1);;
-    result_1342177716 = id_1342177717;
+    result_1342177722 = id_1342177723;
 
-  return result_1342177716;
+  return result_1342177722;
 
 }
 
@@ -2421,15 +2421,15 @@ function flushPending__uiZcoreZobservable_u32() {
     pendingNotifications_1258291228[0] = nimCopy(null, [], NTI1258291239);
     Label1: {
       var notify_1258291260 = null;
-      var i_1224737981 = 0;
-      var L_1224737982 = (toFlush_1258291233).length;
+      var i_1224738063 = 0;
+      var L_1224738064 = (toFlush_1258291233).length;
       Label2: {
           Label3: while (true) {
-          if (!(i_1224737981 < L_1224737982)) break Label3;
-            notify_1258291260 = toFlush_1258291233[chckIndx(i_1224737981, 0, (toFlush_1258291233).length - 1)];
+          if (!(i_1224738063 < L_1224738064)) break Label3;
+            notify_1258291260 = toFlush_1258291233[chckIndx(i_1224738063, 0, (toFlush_1258291233).length - 1)];
             notify_1258291260();
-            i_1224737981 += 1;
-            if (!(((toFlush_1258291233).length == L_1224737982))) {
+            i_1224738063 += 1;
+            if (!(((toFlush_1258291233).length == L_1224738064))) {
             failedAssertImpl__stdZassertions_u84(makeNimstrLit("iterators.nim(254, 11) `len(a) == L` the length of the seq changed while iterating over it"));
             }
             
@@ -2465,13 +2465,13 @@ function doNotify__uiZcontrolsZslider_u311(obs_p0) {
     try {
     Label2: {
       var i_1342177602 = 0;
-      var colontmp__1224737985 = 0;
-      colontmp__1224737985 = (obs_p0.subscriptions).length;
-      var i_1224737986 = 0;
+      var colontmp__1224738067 = 0;
+      colontmp__1224738067 = (obs_p0.subscriptions).length;
+      var i_1224738068 = 0;
       Label3: {
           Label4: while (true) {
-          if (!(i_1224737986 < colontmp__1224737985)) break Label4;
-            i_1342177602 = i_1224737986;
+          if (!(i_1224738068 < colontmp__1224738067)) break Label4;
+            i_1342177602 = i_1224738068;
             if (!((obs_p0.subscriptions[chckIndx(i_1342177602, 0, (obs_p0.subscriptions).length - 1)].cleanup == null))) {
             obs_p0.subscriptions[chckIndx(i_1342177602, 0, (obs_p0.subscriptions).length - 1)].cleanup();
             obs_p0.subscriptions[chckIndx(i_1342177602, 0, (obs_p0.subscriptions).length - 1)].cleanup = null;
@@ -2479,7 +2479,7 @@ function doNotify__uiZcontrolsZslider_u311(obs_p0) {
             
             var newCleanup_1342177606 = obs_p0.subscriptions[chckIndx(i_1342177602, 0, (obs_p0.subscriptions).length - 1)].fn(obs_p0.value);
             obs_p0.subscriptions[chckIndx(i_1342177602, 0, (obs_p0.subscriptions).length - 1)].cleanup = newCleanup_1342177606;
-            i_1224737986 = addInt(i_1224737986, 1);
+            i_1224738068 = addInt(i_1224738068, 1);
           }
       };
     };
@@ -2500,13 +2500,13 @@ function HEX3Aanonymous__uiZcontrolsZslider_u301() {
 function set__uiZcontrolsZslider_u296(obs_p0, newValue_p1) {
     var Temporary1;
 
-    var HEX3Aenv_1224737946 = null;
-    HEX3Aenv_1224737946 = {m_type: NTI1224737370, obsRef0: null};
+    var HEX3Aenv_1224738028 = null;
+    HEX3Aenv_1224738028 = {m_type: NTI1224737412, obsRef0: null};
     obs_p0.value = nimCopy(obs_p0.value, newValue_p1, NTI1342177284);
     if (!(obs_p0.pendingNotify)) {
     obs_p0.pendingNotify = true;
-    HEX3Aenv_1224737946.obsRef0 = obs_p0;
-    Temporary1 = HEX3Aanonymous__uiZcontrolsZslider_u301.bind(HEX3Aenv_1224737946); Temporary1.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u301; Temporary1.ClE_0 = HEX3Aenv_1224737946;
+    HEX3Aenv_1224738028.obsRef0 = obs_p0;
+    Temporary1 = HEX3Aanonymous__uiZcontrolsZslider_u301.bind(HEX3Aenv_1224738028); Temporary1.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u301; Temporary1.ClE_0 = HEX3Aenv_1224738028;
     scheduleNotification__uiZcoreZobservable_u111(Temporary1);
     }
     
@@ -2523,16 +2523,16 @@ function floatValue__uiZcontrolsZslider_u58(v_p0) {
 
 }
 
-function HEX3Aanonymous__uiZcontrolsZslider_u378(e_p0) {
-    var target_1342177660 = e_p0.target;
+function HEX3Aanonymous__uiZcontrolsZslider_u384(e_p0) {
+    var target_1342177666 = e_p0.target;
     switch (this.s0.config.valueKind) {
     case 0:
-      var v_1342177661 = parseInt(target_1342177660.value, 10);
-      set__uiZcontrolsZslider_u296(this.s0.value, intValue__uiZcontrolsZslider_u13(v_1342177661));
+      var v_1342177667 = parseInt(target_1342177666.value, 10);
+      set__uiZcontrolsZslider_u296(this.s0.value, intValue__uiZcontrolsZslider_u13(v_1342177667));
       break;
     case 1:
-      var v_1342177675 = parseFloat(target_1342177660.value);
-      set__uiZcontrolsZslider_u296(this.s0.value, floatValue__uiZcontrolsZslider_u58(v_1342177675));
+      var v_1342177681 = parseFloat(target_1342177666.value);
+      set__uiZcontrolsZslider_u296(this.s0.value, floatValue__uiZcontrolsZslider_u58(v_1342177681));
       break;
     }
     switch (this.s0.config.valueKind) {
@@ -2547,7 +2547,7 @@ function HEX3Aanonymous__uiZcontrolsZslider_u378(e_p0) {
   
 }
 
-function HEX3Aanonymous__uiZcontrolsZslider_u409(e_p0) {
+function HEX3Aanonymous__uiZcontrolsZslider_u415(e_p0) {
     if (!((this.s0.onChange == null))) {
     this.s0.onChange();
     }
@@ -2556,13 +2556,13 @@ function HEX3Aanonymous__uiZcontrolsZslider_u409(e_p0) {
   
 }
 
-function HEX3Aanonymous__uiZcontrolsZslider_u425(v_p0) {
+function HEX3Aanonymous__uiZcontrolsZslider_u431(v_p0) {
       var Temporary1;
       var Temporary2;
       var Temporary3;
       var Temporary4;
 
-  var result_1342177708 = null;
+  var result_1342177714 = null;
 
     switch (v_p0.kind) {
     case 0:
@@ -2582,9 +2582,9 @@ function HEX3Aanonymous__uiZcontrolsZslider_u425(v_p0) {
       this.displayEl1.textContent = Temporary4.floatVal.toFixed(this.s0.config.precision);
       break;
     }
-    result_1342177708 = null;
+    result_1342177714 = null;
 
-  return result_1342177708;
+  return result_1342177714;
 
 }
 
@@ -2594,35 +2594,41 @@ function bindToDOM__uiZcontrolsZslider_u365(s_p0) {
     var Temporary3;
 
   BeforeRet: {
-    var HEX3Aenv_1224737908 = null;
-    HEX3Aenv_1224737908 = {m_type: NTI1224737349, s0: null, displayEl1: null, inputEl2: null};
-    HEX3Aenv_1224737908.s0 = s_p0;
-    HEX3Aenv_1224737908.inputEl2 = document.getElementById(toJSStr(HEX3Aenv_1224737908.s0.config.inputId));
-    HEX3Aenv_1224737908.displayEl1 = document.getElementById(toJSStr(HEX3Aenv_1224737908.s0.config.displayId));
-    if (((HEX3Aenv_1224737908.inputEl2 == null) || (HEX3Aenv_1224737908.displayEl1 == null))) {
+    var HEX3Aenv_1224737990 = null;
+    HEX3Aenv_1224737990 = {m_type: NTI1224737391, s0: null, displayEl1: null, inputEl2: null};
+    HEX3Aenv_1224737990.s0 = s_p0;
+    HEX3Aenv_1224737990.inputEl2 = document.getElementById(toJSStr(HEX3Aenv_1224737990.s0.config.inputId));
+    HEX3Aenv_1224737990.displayEl1 = document.getElementById(toJSStr(HEX3Aenv_1224737990.s0.config.displayId));
+    if (((HEX3Aenv_1224737990.inputEl2 == null) || (HEX3Aenv_1224737990.displayEl1 == null))) {
     break BeforeRet;
     }
     
-    switch (HEX3Aenv_1224737908.s0.config.valueKind) {
+    switch (HEX3Aenv_1224737990.s0.config.valueKind) {
     case 0:
-      HEX3Aenv_1224737908.inputEl2.value = toJSStr(HEX24__systemZdollars_u14(getInt__uiZcontrolsZslider_u253(HEX3Aenv_1224737908.s0)));
-      HEX3Aenv_1224737908.displayEl1.textContent = toJSStr(HEX24__systemZdollars_u14(getInt__uiZcontrolsZslider_u253(HEX3Aenv_1224737908.s0)));
+      HEX3Aenv_1224737990.inputEl2.value = toJSStr(HEX24__systemZdollars_u14(getInt__uiZcontrolsZslider_u253(HEX3Aenv_1224737990.s0)));
+      HEX3Aenv_1224737990.displayEl1.textContent = toJSStr(HEX24__systemZdollars_u14(getInt__uiZcontrolsZslider_u253(HEX3Aenv_1224737990.s0)));
       break;
     case 1:
-      HEX3Aenv_1224737908.inputEl2.value = toJSStr(HEX24__system_u3188(getFloat__uiZcontrolsZslider_u268(HEX3Aenv_1224737908.s0)));
-      HEX3Aenv_1224737908.displayEl1.textContent = getFloat__uiZcontrolsZslider_u268(HEX3Aenv_1224737908.s0).toFixed(HEX3Aenv_1224737908.s0.config.precision);
+      HEX3Aenv_1224737990.inputEl2.value = toJSStr(HEX24__system_u3188(getFloat__uiZcontrolsZslider_u268(HEX3Aenv_1224737990.s0)));
+      HEX3Aenv_1224737990.displayEl1.textContent = getFloat__uiZcontrolsZslider_u268(HEX3Aenv_1224737990.s0).toFixed(HEX3Aenv_1224737990.s0.config.precision);
       break;
     }
-    if ((0.0 < HEX3Aenv_1224737908.s0.config.maxValue)) {
-    HEX3Aenv_1224737908.inputEl2.max = toJSStr(HEX24__systemZdollars_u14(chckRange(Number(BigInt(Math.trunc(HEX3Aenv_1224737908.s0.config.maxValue))), (-2147483648), 2147483647)));
+    switch (HEX3Aenv_1224737990.s0.config.valueKind) {
+    case 0:
+      HEX3Aenv_1224737990.inputEl2.min = toJSStr(HEX24__systemZdollars_u14(chckRange(Number(BigInt(Math.trunc(HEX3Aenv_1224737990.s0.config.minValue))), (-2147483648), 2147483647)));
+      HEX3Aenv_1224737990.inputEl2.max = toJSStr(HEX24__systemZdollars_u14(chckRange(Number(BigInt(Math.trunc(HEX3Aenv_1224737990.s0.config.maxValue))), (-2147483648), 2147483647)));
+      break;
+    case 1:
+      HEX3Aenv_1224737990.inputEl2.min = toJSStr(HEX24__system_u3188(HEX3Aenv_1224737990.s0.config.minValue));
+      HEX3Aenv_1224737990.inputEl2.max = toJSStr(HEX24__system_u3188(HEX3Aenv_1224737990.s0.config.maxValue));
+      break;
     }
-    
-    Temporary1 = HEX3Aanonymous__uiZcontrolsZslider_u378.bind(HEX3Aenv_1224737908); Temporary1.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u378; Temporary1.ClE_0 = HEX3Aenv_1224737908;
-    HEX3Aenv_1224737908.inputEl2.addEventListener("input", Temporary1, false);
-    Temporary2 = HEX3Aanonymous__uiZcontrolsZslider_u409.bind(HEX3Aenv_1224737908); Temporary2.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u409; Temporary2.ClE_0 = HEX3Aenv_1224737908;
-    HEX3Aenv_1224737908.inputEl2.addEventListener("change", Temporary2, false);
-    Temporary3 = HEX3Aanonymous__uiZcontrolsZslider_u425.bind(HEX3Aenv_1224737908); Temporary3.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u425; Temporary3.ClE_0 = HEX3Aenv_1224737908;
-    (subscribe__uiZcontrolsZslider_u432(HEX3Aenv_1224737908.s0.value, Temporary3));
+    Temporary1 = HEX3Aanonymous__uiZcontrolsZslider_u384.bind(HEX3Aenv_1224737990); Temporary1.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u384; Temporary1.ClE_0 = HEX3Aenv_1224737990;
+    HEX3Aenv_1224737990.inputEl2.addEventListener("input", Temporary1, false);
+    Temporary2 = HEX3Aanonymous__uiZcontrolsZslider_u415.bind(HEX3Aenv_1224737990); Temporary2.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u415; Temporary2.ClE_0 = HEX3Aenv_1224737990;
+    HEX3Aenv_1224737990.inputEl2.addEventListener("change", Temporary2, false);
+    Temporary3 = HEX3Aanonymous__uiZcontrolsZslider_u431.bind(HEX3Aenv_1224737990); Temporary3.ClP_0 = HEX3Aanonymous__uiZcontrolsZslider_u431; Temporary3.ClE_0 = HEX3Aenv_1224737990;
+    (subscribe__uiZcontrolsZslider_u438(HEX3Aenv_1224737990.s0.value, Temporary3));
   };
 
   
@@ -2771,51 +2777,111 @@ function HEX3Aanonymous__ui_u526(v_p0) {
   return result_1224737297;
 
 }
+    var Temporary13;
+
+function HEX3Aanonymous__ui_u544(v_p0) {
+  var result_1224737315 = null;
+
+    CONFIG.repulsionEnd = toFloat__uiZcontrolsZslider_u61(v_p0);
+    result_1224737315 = null;
+
+  return result_1224737315;
+
+}
+    var Temporary14;
+
+function HEX3Aanonymous__ui_u562(v_p0) {
+  var result_1224737333 = null;
+
+    CONFIG.attractionPeak = toFloat__uiZcontrolsZslider_u61(v_p0);
+    result_1224737333 = null;
+
+  return result_1224737333;
+
+}
+    var Temporary15;
+
+function HEX3Aanonymous__ui_u580(v_p0) {
+  var result_1224737351 = null;
+
+    CONFIG.expRepulsionAlpha = toFloat__uiZcontrolsZslider_u61(v_p0);
+    result_1224737351 = null;
+
+  return result_1224737351;
+
+}
+    var Temporary16;
+
+function HEX3Aanonymous__ui_u598(v_p0) {
+  var result_1224737369 = null;
+
+    CONFIG.expAttractionBeta = toFloat__uiZcontrolsZslider_u61(v_p0);
+    result_1224737369 = null;
+
+  return result_1224737369;
+
+}
 
     var particleCountSlider_1224737093 = newIntSlider__uiZcontrolsZslider_u220([112,97,114,116,105,99,108,101,67,111,117,110,116], [112,97,114,116,105,99,108,101,86,97,108,117,101], CONFIG.particleCount, 100, MAX_PARTICLES);
     Temporary1 = HEX3Aanonymous__ui_u335.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u335; Temporary1.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(particleCountSlider_1224737093.value, Temporary1));
+    (subscribe__uiZcontrolsZslider_u438(particleCountSlider_1224737093.value, Temporary1));
     Temporary2 = HEX3Aanonymous__ui_u343.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u343; Temporary2.ClE_0 = null;
     particleCountSlider_1224737093.onChange = Temporary2;
     bindToDOM__uiZcontrolsZslider_u365(particleCountSlider_1224737093);
     var speciesCountSlider_1224737136 = newIntSlider__uiZcontrolsZslider_u220([115,112,101,99,105,101,115,67,111,117,110,116], [115,112,101,99,105,101,115,86,97,108,117,101], CONFIG.speciesCount, 1, MAX_SPECIES);
     Temporary3 = HEX3Aanonymous__ui_u378.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__ui_u378; Temporary3.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(speciesCountSlider_1224737136.value, Temporary3));
+    (subscribe__uiZcontrolsZslider_u438(speciesCountSlider_1224737136.value, Temporary3));
     Temporary4 = HEX3Aanonymous__ui_u386.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u386; Temporary4.ClE_0 = null;
     speciesCountSlider_1224737136.onChange = Temporary4;
     bindToDOM__uiZcontrolsZslider_u365(speciesCountSlider_1224737136);
     var radiusSlider_1224737158 = newIntSlider__uiZcontrolsZslider_u220([105,110,116,101,114,97,99,116,105,111,110,82,97,100,105,117,115], [114,97,100,105,117,115,86,97,108,117,101], CONFIG.interactionRadius, 10, 200);
     Temporary5 = HEX3Aanonymous__ui_u400.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__ui_u400; Temporary5.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(radiusSlider_1224737158.value, Temporary5));
+    (subscribe__uiZcontrolsZslider_u438(radiusSlider_1224737158.value, Temporary5));
     bindToDOM__uiZcontrolsZslider_u365(radiusSlider_1224737158);
     var forceSlider_1224737176 = newFloatSlider__uiZcontrolsZslider_u228([102,111,114,99,101,83,116,114,101,110,103,116,104], [102,111,114,99,101,86,97,108,117,101], CONFIG.forceStrength, 1, 0.1, 10.0);
     Temporary6 = HEX3Aanonymous__ui_u418.bind(null); Temporary6.ClP_0 = HEX3Aanonymous__ui_u418; Temporary6.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(forceSlider_1224737176.value, Temporary6));
+    (subscribe__uiZcontrolsZslider_u438(forceSlider_1224737176.value, Temporary6));
     bindToDOM__uiZcontrolsZslider_u365(forceSlider_1224737176);
     var frictionSlider_1224737194 = newFloatSlider__uiZcontrolsZslider_u228([102,114,105,99,116,105,111,110], [102,114,105,99,116,105,111,110,86,97,108,117,101], CONFIG.friction, 2, 0.0, 1.0);
     Temporary7 = HEX3Aanonymous__ui_u436.bind(null); Temporary7.ClP_0 = HEX3Aanonymous__ui_u436; Temporary7.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(frictionSlider_1224737194.value, Temporary7));
+    (subscribe__uiZcontrolsZslider_u438(frictionSlider_1224737194.value, Temporary7));
     bindToDOM__uiZcontrolsZslider_u365(frictionSlider_1224737194);
     var timeScaleSlider_1224737212 = newFloatSlider__uiZcontrolsZslider_u228([116,105,109,101,83,99,97,108,101], [116,105,109,101,83,99,97,108,101,86,97,108,117,101], CONFIG.timeScale, 1, 0.1, 5.0);
     Temporary8 = HEX3Aanonymous__ui_u454.bind(null); Temporary8.ClP_0 = HEX3Aanonymous__ui_u454; Temporary8.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(timeScaleSlider_1224737212.value, Temporary8));
+    (subscribe__uiZcontrolsZslider_u438(timeScaleSlider_1224737212.value, Temporary8));
     bindToDOM__uiZcontrolsZslider_u365(timeScaleSlider_1224737212);
     var velocitySlider_1224737230 = newFloatSlider__uiZcontrolsZslider_u228([109,97,120,86,101,108,111,99,105,116,121], [118,101,108,111,99,105,116,121,86,97,108,117,101], CONFIG.maxVelocity, 0, 10.0, 500.0);
     Temporary9 = HEX3Aanonymous__ui_u472.bind(null); Temporary9.ClP_0 = HEX3Aanonymous__ui_u472; Temporary9.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(velocitySlider_1224737230.value, Temporary9));
+    (subscribe__uiZcontrolsZslider_u438(velocitySlider_1224737230.value, Temporary9));
     bindToDOM__uiZcontrolsZslider_u365(velocitySlider_1224737230);
     var trailSlider_1224737248 = newFloatSlider__uiZcontrolsZslider_u228([116,114,97,105,108,76,101,110,103,116,104], [116,114,97,105,108,86,97,108,117,101], CONFIG.trailAlpha, 2, 0.0, 1.0);
     Temporary10 = HEX3Aanonymous__ui_u490.bind(null); Temporary10.ClP_0 = HEX3Aanonymous__ui_u490; Temporary10.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(trailSlider_1224737248.value, Temporary10));
+    (subscribe__uiZcontrolsZslider_u438(trailSlider_1224737248.value, Temporary10));
     bindToDOM__uiZcontrolsZslider_u365(trailSlider_1224737248);
     var glowSlider_1224737266 = newFloatSlider__uiZcontrolsZslider_u228([103,108,111,119,73,110,116,101,110,115,105,116,121], [103,108,111,119,86,97,108,117,101], CONFIG.glowIntensity, 1, 0.0, 3.0);
     Temporary11 = HEX3Aanonymous__ui_u508.bind(null); Temporary11.ClP_0 = HEX3Aanonymous__ui_u508; Temporary11.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(glowSlider_1224737266.value, Temporary11));
+    (subscribe__uiZcontrolsZslider_u438(glowSlider_1224737266.value, Temporary11));
     bindToDOM__uiZcontrolsZslider_u365(glowSlider_1224737266);
     var velGlowSlider_1224737284 = newFloatSlider__uiZcontrolsZslider_u228([118,101,108,111,99,105,116,121,71,108,111,119,83,99,97,108,101], [118,101,108,111,99,105,116,121,71,108,111,119,86,97,108,117,101], CONFIG.velocityGlowScale, 1, 0.0, 5.0);
     Temporary12 = HEX3Aanonymous__ui_u526.bind(null); Temporary12.ClP_0 = HEX3Aanonymous__ui_u526; Temporary12.ClE_0 = null;
-    (subscribe__uiZcontrolsZslider_u432(velGlowSlider_1224737284.value, Temporary12));
+    (subscribe__uiZcontrolsZslider_u438(velGlowSlider_1224737284.value, Temporary12));
     bindToDOM__uiZcontrolsZslider_u365(velGlowSlider_1224737284);
+    var repulsionEndSlider_1224737302 = newFloatSlider__uiZcontrolsZslider_u228([114,101,112,117,108,115,105,111,110,69,110,100], [114,101,112,117,108,115,105,111,110,69,110,100,86,97,108,117,101], CONFIG.repulsionEnd, 2, 0.1, 0.9);
+    Temporary13 = HEX3Aanonymous__ui_u544.bind(null); Temporary13.ClP_0 = HEX3Aanonymous__ui_u544; Temporary13.ClE_0 = null;
+    (subscribe__uiZcontrolsZslider_u438(repulsionEndSlider_1224737302.value, Temporary13));
+    bindToDOM__uiZcontrolsZslider_u365(repulsionEndSlider_1224737302);
+    var attractionPeakSlider_1224737320 = newFloatSlider__uiZcontrolsZslider_u228([97,116,116,114,97,99,116,105,111,110,80,101,97,107], [97,116,116,114,97,99,116,105,111,110,80,101,97,107,86,97,108,117,101], CONFIG.attractionPeak, 2, 0.5, 0.95);
+    Temporary14 = HEX3Aanonymous__ui_u562.bind(null); Temporary14.ClP_0 = HEX3Aanonymous__ui_u562; Temporary14.ClE_0 = null;
+    (subscribe__uiZcontrolsZslider_u438(attractionPeakSlider_1224737320.value, Temporary14));
+    bindToDOM__uiZcontrolsZslider_u365(attractionPeakSlider_1224737320);
+    var expRepulsionAlphaSlider_1224737338 = newFloatSlider__uiZcontrolsZslider_u228([101,120,112,82,101,112,117,108,115,105,111,110,65,108,112,104,97], [101,120,112,82,101,112,117,108,115,105,111,110,65,108,112,104,97,86,97,108,117,101], CONFIG.expRepulsionAlpha, 1, 1.0, 15.0);
+    Temporary15 = HEX3Aanonymous__ui_u580.bind(null); Temporary15.ClP_0 = HEX3Aanonymous__ui_u580; Temporary15.ClE_0 = null;
+    (subscribe__uiZcontrolsZslider_u438(expRepulsionAlphaSlider_1224737338.value, Temporary15));
+    bindToDOM__uiZcontrolsZslider_u365(expRepulsionAlphaSlider_1224737338);
+    var expAttractionBetaSlider_1224737356 = newFloatSlider__uiZcontrolsZslider_u228([101,120,112,65,116,116,114,97,99,116,105,111,110,66,101,116,97], [101,120,112,65,116,116,114,97,99,116,105,111,110,66,101,116,97,86,97,108,117,101], CONFIG.expAttractionBeta, 1, 1.0, 10.0);
+    Temporary16 = HEX3Aanonymous__ui_u598.bind(null); Temporary16.ClP_0 = HEX3Aanonymous__ui_u598; Temporary16.ClE_0 = null;
+    (subscribe__uiZcontrolsZslider_u438(expAttractionBetaSlider_1224737356.value, Temporary16));
+    bindToDOM__uiZcontrolsZslider_u365(expAttractionBetaSlider_1224737356);
 
   
 }
@@ -2840,13 +2906,13 @@ function doNotify__ui_u215(obs_p0) {
     try {
     Label2: {
       var i_1224736994 = 0;
-      var colontmp__1224738025 = 0;
-      colontmp__1224738025 = (obs_p0.subscriptions).length;
-      var i_1224738026 = 0;
+      var colontmp__1224738107 = 0;
+      colontmp__1224738107 = (obs_p0.subscriptions).length;
+      var i_1224738108 = 0;
       Label3: {
           Label4: while (true) {
-          if (!(i_1224738026 < colontmp__1224738025)) break Label4;
-            i_1224736994 = i_1224738026;
+          if (!(i_1224738108 < colontmp__1224738107)) break Label4;
+            i_1224736994 = i_1224738108;
             if (!((obs_p0.subscriptions[chckIndx(i_1224736994, 0, (obs_p0.subscriptions).length - 1)].cleanup == null))) {
             obs_p0.subscriptions[chckIndx(i_1224736994, 0, (obs_p0.subscriptions).length - 1)].cleanup();
             obs_p0.subscriptions[chckIndx(i_1224736994, 0, (obs_p0.subscriptions).length - 1)].cleanup = null;
@@ -2854,7 +2920,7 @@ function doNotify__ui_u215(obs_p0) {
             
             var newCleanup_1224736998 = obs_p0.subscriptions[chckIndx(i_1224736994, 0, (obs_p0.subscriptions).length - 1)].fn(obs_p0.value);
             obs_p0.subscriptions[chckIndx(i_1224736994, 0, (obs_p0.subscriptions).length - 1)].cleanup = newCleanup_1224736998;
-            i_1224738026 = addInt(i_1224738026, 1);
+            i_1224738108 = addInt(i_1224738108, 1);
           }
       };
     };
@@ -2875,13 +2941,13 @@ function HEX3Aanonymous__ui_u205() {
 function set__ui_u200(obs_p0, newValue_p1) {
     var Temporary1;
 
-    var HEX3Aenv_1224737991 = null;
-    HEX3Aenv_1224737991 = {m_type: NTI1224737393, obsRef0: null};
+    var HEX3Aenv_1224738073 = null;
+    HEX3Aenv_1224738073 = {m_type: NTI1224737435, obsRef0: null};
     obs_p0.value = nimCopy(obs_p0.value, newValue_p1, NTI1275068419);
     if (!(obs_p0.pendingNotify)) {
     obs_p0.pendingNotify = true;
-    HEX3Aenv_1224737991.obsRef0 = obs_p0;
-    Temporary1 = HEX3Aanonymous__ui_u205.bind(HEX3Aenv_1224737991); Temporary1.ClP_0 = HEX3Aanonymous__ui_u205; Temporary1.ClE_0 = HEX3Aenv_1224737991;
+    HEX3Aenv_1224738073.obsRef0 = obs_p0;
+    Temporary1 = HEX3Aanonymous__ui_u205.bind(HEX3Aenv_1224738073); Temporary1.ClP_0 = HEX3Aanonymous__ui_u205; Temporary1.ClE_0 = HEX3Aenv_1224738073;
     scheduleNotification__uiZcoreZobservable_u111(Temporary1);
     }
     
@@ -3024,16 +3090,16 @@ function extractTouchData__uiZinputZtouch95handler_u52(event_p0) {
     var touches_1325400123 = nimCopy(null, event_p0.touches, NTI1056964776);
     Label1: {
       var i_1325400132 = 0;
-      var colontmp__1224738029 = 0;
-      colontmp__1224738029 = (touches_1325400123).length;
-      var i_1224738030 = 0;
+      var colontmp__1224738111 = 0;
+      colontmp__1224738111 = (touches_1325400123).length;
+      var i_1224738112 = 0;
       Label2: {
           Label3: while (true) {
-          if (!(i_1224738030 < colontmp__1224738029)) break Label3;
-            i_1325400132 = i_1224738030;
+          if (!(i_1224738112 < colontmp__1224738111)) break Label3;
+            i_1325400132 = i_1224738112;
             var touch_1325400133 = touches_1325400123[chckIndx(i_1325400132, 0, (touches_1325400123).length - 1)];
             result_1325400118.touches.push({clientX: touch_1325400133.clientX, clientY: touch_1325400133.clientY});;
-            i_1224738030 = addInt(i_1224738030, 1);
+            i_1224738112 = addInt(i_1224738112, 1);
           }
       };
     };
@@ -3092,7 +3158,7 @@ function handleTouchMove__uiZinputZtouch95handler_u40(state_p0, event_p1) {
 function setupEvents(canvas_p0) {
     var Temporary1;
 
-function HEX3Aanonymous__ui_u553() {
+function HEX3Aanonymous__ui_u625() {
     if (!((onResize == null))) {
     onResize();
     }
@@ -3102,112 +3168,112 @@ function HEX3Aanonymous__ui_u553() {
 }
     var Temporary2;
 
-function HEX3Aanonymous__ui_u557(e_p0) {
-    var eventData_1224737327 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleMouseDown__uiZinputZmouse95handler_u13(get__ui_u88(currentInput_1224736844[0]), eventData_1224737327));
+function HEX3Aanonymous__ui_u629(e_p0) {
+    var eventData_1224737399 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleMouseDown__uiZinputZmouse95handler_u13(get__ui_u88(currentInput_1224736844[0]), eventData_1224737399));
 
   
 }
     var Temporary3;
 
-function HEX3Aanonymous__ui_u585(e_p0) {
-    var eventData_1224737355 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleMouseUp__uiZinputZmouse95handler_u17(get__ui_u88(currentInput_1224736844[0]), eventData_1224737355));
+function HEX3Aanonymous__ui_u657(e_p0) {
+    var eventData_1224737427 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleMouseUp__uiZinputZmouse95handler_u17(get__ui_u88(currentInput_1224736844[0]), eventData_1224737427));
 
   
 }
     var Temporary4;
 
-function HEX3Aanonymous__ui_u613(e_p0) {
+function HEX3Aanonymous__ui_u685(e_p0) {
     set__ui_u200(currentInput_1224736844[0], handleMouseLeave__uiZinputZmouse95handler_u25(get__ui_u88(currentInput_1224736844[0])));
 
   
 }
     var Temporary5;
 
-function HEX3Aanonymous__ui_u640(e_p0) {
+function HEX3Aanonymous__ui_u712(e_p0) {
     e_p0.preventDefault();
 
   
 }
     var Temporary6;
 
-function HEX3Aanonymous__ui_u642(e_p0) {
-    var eventData_1224737412 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleDoubleClick__uiZinputZmouse95handler_u28(get__ui_u88(currentInput_1224736844[0]), eventData_1224737412));
+function HEX3Aanonymous__ui_u714(e_p0) {
+    var eventData_1224737484 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleDoubleClick__uiZinputZmouse95handler_u28(get__ui_u88(currentInput_1224736844[0]), eventData_1224737484));
 
   
 }
     var Temporary7;
 
-function HEX3Aanonymous__ui_u670(e_p0) {
-    var eventData_1224737440 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleMouseMove__uiZinputZmouse95handler_u21(get__ui_u88(currentInput_1224736844[0]), eventData_1224737440));
+function HEX3Aanonymous__ui_u742(e_p0) {
+    var eventData_1224737512 = extractMouseData__uiZinputZmouse95handler_u37(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleMouseMove__uiZinputZmouse95handler_u21(get__ui_u88(currentInput_1224736844[0]), eventData_1224737512));
 
   
 }
     var Temporary8;
 
-function HEX3Aanonymous__ui_u698(e_p0) {
+function HEX3Aanonymous__ui_u770(e_p0) {
     e_p0.preventDefault();
-    var eventData_1224737468 = extractTouchData__uiZinputZtouch95handler_u52(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleTouchStart__uiZinputZtouch95handler_u7(get__ui_u88(currentInput_1224736844[0]), eventData_1224737468));
+    var eventData_1224737540 = extractTouchData__uiZinputZtouch95handler_u52(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleTouchStart__uiZinputZtouch95handler_u7(get__ui_u88(currentInput_1224736844[0]), eventData_1224737540));
 
   
 }
     var Temporary9;
 
-function HEX3Aanonymous__ui_u758(e_p0) {
-    var eventData_1224737528 = extractTouchData__uiZinputZtouch95handler_u52(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleTouchEnd__uiZinputZtouch95handler_u33(get__ui_u88(currentInput_1224736844[0]), eventData_1224737528));
+function HEX3Aanonymous__ui_u830(e_p0) {
+    var eventData_1224737600 = extractTouchData__uiZinputZtouch95handler_u52(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleTouchEnd__uiZinputZtouch95handler_u33(get__ui_u88(currentInput_1224736844[0]), eventData_1224737600));
 
   
 }
     var Temporary10;
 
-function HEX3Aanonymous__ui_u786(e_p0) {
+function HEX3Aanonymous__ui_u858(e_p0) {
     e_p0.preventDefault();
-    var eventData_1224737556 = extractTouchData__uiZinputZtouch95handler_u52(e_p0);
-    set__ui_u200(currentInput_1224736844[0], handleTouchMove__uiZinputZtouch95handler_u40(get__ui_u88(currentInput_1224736844[0]), eventData_1224737556));
+    var eventData_1224737628 = extractTouchData__uiZinputZtouch95handler_u52(e_p0);
+    set__ui_u200(currentInput_1224736844[0], handleTouchMove__uiZinputZtouch95handler_u40(get__ui_u88(currentInput_1224736844[0]), eventData_1224737628));
 
   
 }
 
-    var canvasEl_1224737320 = canvas_p0;
-    Temporary1 = HEX3Aanonymous__ui_u553.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u553; Temporary1.ClE_0 = null;
+    var canvasEl_1224737392 = canvas_p0;
+    Temporary1 = HEX3Aanonymous__ui_u625.bind(null); Temporary1.ClP_0 = HEX3Aanonymous__ui_u625; Temporary1.ClE_0 = null;
     window.addEventListener("resize", Temporary1);
-    Temporary2 = HEX3Aanonymous__ui_u557.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u557; Temporary2.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("mousedown", Temporary2);
-    Temporary3 = HEX3Aanonymous__ui_u585.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__ui_u585; Temporary3.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("mouseup", Temporary3);
-    Temporary4 = HEX3Aanonymous__ui_u613.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u613; Temporary4.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("mouseleave", Temporary4);
-    Temporary5 = HEX3Aanonymous__ui_u640.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__ui_u640; Temporary5.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("contextmenu", Temporary5);
-    Temporary6 = HEX3Aanonymous__ui_u642.bind(null); Temporary6.ClP_0 = HEX3Aanonymous__ui_u642; Temporary6.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("dblclick", Temporary6);
-    Temporary7 = HEX3Aanonymous__ui_u670.bind(null); Temporary7.ClP_0 = HEX3Aanonymous__ui_u670; Temporary7.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("mousemove", Temporary7);
-    Temporary8 = HEX3Aanonymous__ui_u698.bind(null); Temporary8.ClP_0 = HEX3Aanonymous__ui_u698; Temporary8.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("touchstart", Temporary8);
-    Temporary9 = HEX3Aanonymous__ui_u758.bind(null); Temporary9.ClP_0 = HEX3Aanonymous__ui_u758; Temporary9.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("touchend", Temporary9);
-    Temporary10 = HEX3Aanonymous__ui_u786.bind(null); Temporary10.ClP_0 = HEX3Aanonymous__ui_u786; Temporary10.ClE_0 = null;
-    canvasEl_1224737320.addEventListener("touchmove", Temporary10);
+    Temporary2 = HEX3Aanonymous__ui_u629.bind(null); Temporary2.ClP_0 = HEX3Aanonymous__ui_u629; Temporary2.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("mousedown", Temporary2);
+    Temporary3 = HEX3Aanonymous__ui_u657.bind(null); Temporary3.ClP_0 = HEX3Aanonymous__ui_u657; Temporary3.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("mouseup", Temporary3);
+    Temporary4 = HEX3Aanonymous__ui_u685.bind(null); Temporary4.ClP_0 = HEX3Aanonymous__ui_u685; Temporary4.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("mouseleave", Temporary4);
+    Temporary5 = HEX3Aanonymous__ui_u712.bind(null); Temporary5.ClP_0 = HEX3Aanonymous__ui_u712; Temporary5.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("contextmenu", Temporary5);
+    Temporary6 = HEX3Aanonymous__ui_u714.bind(null); Temporary6.ClP_0 = HEX3Aanonymous__ui_u714; Temporary6.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("dblclick", Temporary6);
+    Temporary7 = HEX3Aanonymous__ui_u742.bind(null); Temporary7.ClP_0 = HEX3Aanonymous__ui_u742; Temporary7.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("mousemove", Temporary7);
+    Temporary8 = HEX3Aanonymous__ui_u770.bind(null); Temporary8.ClP_0 = HEX3Aanonymous__ui_u770; Temporary8.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("touchstart", Temporary8);
+    Temporary9 = HEX3Aanonymous__ui_u830.bind(null); Temporary9.ClP_0 = HEX3Aanonymous__ui_u830; Temporary9.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("touchend", Temporary9);
+    Temporary10 = HEX3Aanonymous__ui_u858.bind(null); Temporary10.ClP_0 = HEX3Aanonymous__ui_u858; Temporary10.ClE_0 = null;
+    canvasEl_1224737392.addEventListener("touchmove", Temporary10);
 
   
 }
 
 function toggleTrails() {
     CONFIG.trails = !(CONFIG.trails);
-    var trailBtn_1224737676 = document.getElementById("trailBtn");
-    (trailBtn_1224737676.classList.toggle("active", CONFIG.trails));
-    var trailSettings_1224737677 = document.getElementById("trailSettings");
+    var trailBtn_1224737748 = document.getElementById("trailBtn");
+    (trailBtn_1224737748.classList.toggle("active", CONFIG.trails));
+    var trailSettings_1224737749 = document.getElementById("trailSettings");
     if (CONFIG.trails) {
-    trailSettings_1224737677.style.display = "block";
+    trailSettings_1224737749.style.display = "block";
     }
     else {
-      trailSettings_1224737677.style.display = "none";
+      trailSettings_1224737749.style.display = "none";
     }
     
 
@@ -3215,14 +3281,54 @@ function toggleTrails() {
 }
 
 function toggleControls() {
-    var controls_1224737679 = document.getElementById("controls");
-    controls_1224737679.classList.toggle("collapsed");
-    var btn_1224737680 = controls_1224737679.querySelector(".collapse-btn");
-    if (controls_1224737679.classList.contains("collapsed")) {
-    btn_1224737680.textContent = "+";
+    var controls_1224737751 = document.getElementById("controls");
+    controls_1224737751.classList.toggle("collapsed");
+    var btn_1224737752 = controls_1224737751.querySelector(".collapse-btn");
+    if (controls_1224737751.classList.contains("collapsed")) {
+    btn_1224737752.textContent = "+";
     }
     else {
-      btn_1224737680.textContent = "-";
+      btn_1224737752.textContent = "-";
+    }
+    
+
+  
+}
+
+function toggleForceModelSection() {
+    var section_1224737770 = document.getElementById("forceModelSection");
+    var content_1224737771 = section_1224737770.querySelector(".section-content");
+    var toggle_1224737772 = section_1224737770.querySelector(".section-toggle");
+    if ((content_1224737771.style.display == "none")) {
+    content_1224737771.style.display = "block";
+    toggle_1224737772.textContent = "−";
+    }
+    else {
+      content_1224737771.style.display = "none";
+      toggle_1224737772.textContent = "+";
+    }
+    
+
+  
+}
+
+function setForceModel(model_p0) {
+    CONFIG.forceModel = model_p0;
+    var polyBtn_1224737775 = document.getElementById("polyModelBtn");
+    var expBtn_1224737776 = document.getElementById("expModelBtn");
+    var polyParams_1224737777 = document.getElementById("polynomialParams");
+    var expParams_1224737778 = document.getElementById("exponentialParams");
+    if ((model_p0 == 0)) {
+    (polyBtn_1224737775.classList.toggle("active", true));
+    (expBtn_1224737776.classList.toggle("active", false));
+    polyParams_1224737777.style.display = "block";
+    expParams_1224737778.style.display = "none";
+    }
+    else {
+      (polyBtn_1224737775.classList.toggle("active", false));
+      (expBtn_1224737776.classList.toggle("active", true));
+      polyParams_1224737777.style.display = "none";
+      expParams_1224737778.style.display = "block";
     }
     
 
@@ -3236,19 +3342,19 @@ function setMatrixUpdateCallback(callback_p0) {
 }
 
 function updateStats(fps_p0, gridTimeMs_p1, workerTimeMs_p2) {
-    var fpsEl_1224737874 = document.getElementById("fps");
-    fpsEl_1224737874.textContent = toJSStr(HEX24__systemZdollars_u14(fps_p0));
-    var gridTimeEl_1224737875 = document.getElementById("gridTime");
-    gridTimeEl_1224737875.textContent = gridTimeMs_p1.toFixed(2);
-    var workerTimeEl_1224737876 = document.getElementById("workerTime");
-    workerTimeEl_1224737876.textContent = workerTimeMs_p2.toFixed(1);
+    var fpsEl_1224737956 = document.getElementById("fps");
+    fpsEl_1224737956.textContent = toJSStr(HEX24__systemZdollars_u14(fps_p0));
+    var gridTimeEl_1224737957 = document.getElementById("gridTime");
+    gridTimeEl_1224737957.textContent = gridTimeMs_p1.toFixed(2);
+    var workerTimeEl_1224737958 = document.getElementById("workerTime");
+    workerTimeEl_1224737958.textContent = workerTimeMs_p2.toFixed(1);
 
   
 }
 
 function updateParticleStats(count_p0) {
-    var particleStatsEl_1224737879 = document.getElementById("particleStats");
-    particleStatsEl_1224737879.textContent = count_p0.toLocaleString();
+    var particleStatsEl_1224737961 = document.getElementById("particleStats");
+    particleStatsEl_1224737961.textContent = count_p0.toLocaleString();
 
   
 }
@@ -3259,6 +3365,8 @@ var onMatrixUpdate = null;
 window.toggleTrails = toggleTrails;
 window.toggleControls = toggleControls;
 window.randomizeMatrix = randomizeMatrix;
+window.toggleForceModelSection = toggleForceModelSection;
+window.setForceModel = setForceModel;
 
 
 function calculateBufferSizes() {
@@ -4531,7 +4639,7 @@ function initWebGPURender__webgpu95render_u48() {
     gpuContext_1627389968[0].configure(configObj_1627390011);
     var shaderDesc_1627390036 = ({});
     shaderDesc_1627390036["label"] = ("Particle Render Shader");
-    shaderDesc_1627390036["code"] = ("// =============================================================================\n// AUTO-GENERATED BY tools/wgsl_bundle.nim - DO NOT EDIT DIRECTLY\n// =============================================================================\n// Source: web/shaders/src/render.wgsl\n// Bundled modules: particle\n// Generated: 2026-01-02T22:43:56+01:00\n// =============================================================================\n\n// ─────────────────────────────────────────────────────────────────────────────\n// MODULE: particle\n// Source: web/shaders/modules/particle.wgsl\n// ─────────────────────────────────────────────────────────────────────────────\n\n// =============================================================================\n// MODULE: particle\n// =============================================================================\n// Particle struct: 32 bytes, cache-aligned AoS layout.\n//\n// Source of truth: src/memory_layout.nim\n// This definition MUST match the Nim memory layout exactly.\n//\n// CACHE BEHAVIOR:\n// - Two particles fit in one 64-byte CPU cache line\n// - Four particles fit in one 128-byte GPU cache line\n// - 32-byte alignment avoids straddling cache line boundaries\n//\n// FIELD LAYOUT:\n// ┌─────────┬──────────┬───────┬─────────────────────────────────────────────┐\n// │ Offset  │ Field    │ Size  │ Description                                 │\n// ├─────────┼──────────┼───────┼─────────────────────────────────────────────┤\n// │ 0       │ pos      │ 8     │ Position (vec2<f32>)                        │\n// │ 8       │ vel      │ 8     │ Velocity (vec2<f32>)                        │\n// │ 16      │ species  │ 4     │ Species ID (u32, 0-5)                       │\n// │ 20      │ density  │ 4     │ Local density (f32)                         │\n// │ 24      │ _pad0    │ 4     │ Padding for 32-byte alignment               │\n// │ 28      │ _pad1    │ 4     │ Padding for 32-byte alignment               │\n// └─────────┴──────────┴───────┴─────────────────────────────────────────────┘\n// =============================================================================\n\nstruct Particle {\n  pos: vec2<f32>,    // offset 0, size 8\n  vel: vec2<f32>,    // offset 8, size 8\n  species: u32,      // offset 16, size 4\n  density: f32,      // offset 20, size 4\n  _pad0: u32,        // offset 24, size 4\n  _pad1: u32,        // offset 28, size 4\n}\n\n// Maximum species count - MUST match memory_layout.nim:MAX_SPECIES\nconst MAX_SPECIES: u32 = 6u;\n\n// ─────────────────────────────────────────────────────────────────────────────\n// MAIN SHADER\n// ─────────────────────────────────────────────────────────────────────────────\n\n// =============================================================================\n// PARTICLE RENDER SHADER - WebGPU Vertex Pulling with AoS Layout\n// =============================================================================\n//\n// Based on lisyarus's approach:\n// https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n//\n// Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n// No instancing needed - just draw(6 * particleCount) vertices.\n//\n// AoS BENEFIT:\n// With AoS layout, we read all particle data (pos, vel, species, density) from\n// one Particle struct instead of 4 separate buffer reads. This reduces binding\n// count from 5 to 2 and improves cache locality.\n//\n// BINDING MANIFEST:\n// +-------+---------------------------+-----------------+--------+\n// | Bind  | Shader Type               | JS Buffer       | Access |\n// +-------+---------------------------+-----------------+--------+\n// |   0   | storage array<Particle>   | particles       | read   |\n// |   1   | uniform RenderParams      | renderParams    | read   |\n// +-------+---------------------------+-----------------+--------+\n// =============================================================================\n\n\nstruct RenderParams {\n  resolution: vec2f,       // Canvas width, height in pixels\n  worldSize: vec2f,        // World width, height (physics domain)\n  baseSize: f32,           // Base particle size in pixels\n  glowIntensity: f32,      // Base glow multiplier (unused in main shader)\n  velocityGlowScale: f32,  // 0=off, 1=full velocity influence (unused in main shader)\n  maxVelocity: f32,        // For velocity normalization\n};\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Density-based sizing: particles shrink smoothly in crowded areas\n// Uses exponential decay: sizeMod = MIN + (MAX-MIN) * exp(-density * DECAY_RATE)\n// This avoids the hard floor that causes visual \"snapping\"\n//\n// SIZE_DECAY_RATE calibration:\n// - Controls how quickly particles shrink as local density increases\n// - Half-neighbor iteration produces ~50% of full 9-cell density values\n// - Rate of 0.07 compensates: exp(-5 * 0.07) ~ 0.70 at \"half density\"\n// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)\n// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)\nconst SIZE_DECAY_RATE: f32 = 0.07;\nconst MIN_SIZE_MULTIPLIER: f32 = 0.7;      // Size multiplier at high density (floor)\nconst MAX_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at zero density (ceiling)\n\n// Density-based brightness: lonely particles are dimmer\nconst BRIGHTNESS_GROWTH_RATE: f32 = 0.07;  // Mirrors SIZE_DECAY_RATE\nconst MIN_BRIGHTNESS: f32 = 0.44;          // Lonely particles at 44% brightness\nconst MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full brightness\n\n// AoS particle buffer\n@group(0) @binding(0) var<storage, read> particles: array<Particle>;\n@group(0) @binding(1) var<uniform> params: RenderParams;\n@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors from config.nim\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n  @location(2) density: f32,       // Local particle density for glow effect\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from AoS buffer (all data in one read!)\n  let p = particles[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let cornerOffset = OFFSETS[cornerId];\n\n  // Calculate point size based on density using smooth exponential decay\n  // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3\n  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  // Scale point size by canvas/world ratio to maintain visual size\n  let scale = params.resolution / params.worldSize;\n  let halfSize = pointSize * 0.5;\n  let worldPos = p.pos + cornerOffset * halfSize / scale;\n\n  // Transform to clip space: world coords -> normalized device coords\n  // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)\n  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;\n\n  // Z-ordering: Position-based hash for stable layering\n  // Using position hash alone avoids Z-fighting when particles cluster tightly\n  let posHash = fract(sin(dot(p.pos, vec2f(12.9898, 78.233))) * 43758.5453);\n  let zDepth = 0.1 + posHash * 0.8;  // Spread across 0.1-0.9 range\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range\n  output.offset = cornerOffset;\n\n  // Pass density for glow intensity calculation\n  output.density = p.density;\n\n  // Look up species color from uniform buffer\n  let speciesIdx = min(p.species, 5u);\n  output.color = vec4f(colors[speciesIdx].rgb, 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let dist = length(input.offset);\n\n  // Screen-space anti-aliased circle\n  // fwidth() gives pixel-aware edge softness - adapts to particle screen size\n  let edge = fwidth(dist);\n  let alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);\n\n  if (alpha <= 0.0) {\n    discard;\n  }\n\n  // Density-based brightness: lonely (low density) particles are dimmer\n  let brightnessMod = MIN_BRIGHTNESS + (MAX_BRIGHTNESS - MIN_BRIGHTNESS) * (1.0 - exp(-input.density * BRIGHTNESS_GROWTH_RATE));\n\n  return vec4f(input.color.rgb * brightnessMod, alpha);\n}\n");
+    shaderDesc_1627390036["code"] = ("// =============================================================================\n// AUTO-GENERATED BY tools/wgsl_bundle.nim - DO NOT EDIT DIRECTLY\n// =============================================================================\n// Source: web/shaders/src/render.wgsl\n// Bundled modules: particle\n// Generated: 2026-01-03T11:50:35+01:00\n// =============================================================================\n\n// ─────────────────────────────────────────────────────────────────────────────\n// MODULE: particle\n// Source: web/shaders/modules/particle.wgsl\n// ─────────────────────────────────────────────────────────────────────────────\n\n// =============================================================================\n// MODULE: particle\n// =============================================================================\n// Particle struct: 32 bytes, cache-aligned AoS layout.\n//\n// Source of truth: src/memory_layout.nim\n// This definition MUST match the Nim memory layout exactly.\n//\n// CACHE BEHAVIOR:\n// - Two particles fit in one 64-byte CPU cache line\n// - Four particles fit in one 128-byte GPU cache line\n// - 32-byte alignment avoids straddling cache line boundaries\n//\n// FIELD LAYOUT:\n// ┌─────────┬──────────┬───────┬─────────────────────────────────────────────┐\n// │ Offset  │ Field    │ Size  │ Description                                 │\n// ├─────────┼──────────┼───────┼─────────────────────────────────────────────┤\n// │ 0       │ pos      │ 8     │ Position (vec2<f32>)                        │\n// │ 8       │ vel      │ 8     │ Velocity (vec2<f32>)                        │\n// │ 16      │ species  │ 4     │ Species ID (u32, 0-5)                       │\n// │ 20      │ density  │ 4     │ Local density (f32)                         │\n// │ 24      │ _pad0    │ 4     │ Padding for 32-byte alignment               │\n// │ 28      │ _pad1    │ 4     │ Padding for 32-byte alignment               │\n// └─────────┴──────────┴───────┴─────────────────────────────────────────────┘\n// =============================================================================\n\nstruct Particle {\n  pos: vec2<f32>,    // offset 0, size 8\n  vel: vec2<f32>,    // offset 8, size 8\n  species: u32,      // offset 16, size 4\n  density: f32,      // offset 20, size 4\n  _pad0: u32,        // offset 24, size 4\n  _pad1: u32,        // offset 28, size 4\n}\n\n// Maximum species count - MUST match memory_layout.nim:MAX_SPECIES\nconst MAX_SPECIES: u32 = 6u;\n\n// ─────────────────────────────────────────────────────────────────────────────\n// MAIN SHADER\n// ─────────────────────────────────────────────────────────────────────────────\n\n// =============================================================================\n// PARTICLE RENDER SHADER - WebGPU Vertex Pulling with AoS Layout\n// =============================================================================\n//\n// Based on lisyarus's approach:\n// https://lisyarus.github.io/blog/posts/particle-life-simulation-in-browser-using-webgpu.html\n//\n// Key insight: Use vertex_index / 6 to get particle ID, vertex_index % 6 for quad corner.\n// No instancing needed - just draw(6 * particleCount) vertices.\n//\n// AoS BENEFIT:\n// With AoS layout, we read all particle data (pos, vel, species, density) from\n// one Particle struct instead of 4 separate buffer reads. This reduces binding\n// count from 5 to 2 and improves cache locality.\n//\n// BINDING MANIFEST:\n// +-------+---------------------------+-----------------+--------+\n// | Bind  | Shader Type               | JS Buffer       | Access |\n// +-------+---------------------------+-----------------+--------+\n// |   0   | storage array<Particle>   | particles       | read   |\n// |   1   | uniform RenderParams      | renderParams    | read   |\n// +-------+---------------------------+-----------------+--------+\n// =============================================================================\n\n\nstruct RenderParams {\n  resolution: vec2f,       // Canvas width, height in pixels\n  worldSize: vec2f,        // World width, height (physics domain)\n  baseSize: f32,           // Base particle size in pixels\n  glowIntensity: f32,      // Base glow multiplier (unused in main shader)\n  velocityGlowScale: f32,  // 0=off, 1=full velocity influence (unused in main shader)\n  maxVelocity: f32,        // For velocity normalization\n};\n\n// Quad corner offsets (2 triangles = 6 vertices)\n// Unit quad: corners at distance sqrt(2) from center\nconst OFFSETS = array<vec2f, 6>(\n  vec2f(-1.0, -1.0),  // 0: bottom-left\n  vec2f( 1.0, -1.0),  // 1: bottom-right\n  vec2f(-1.0,  1.0),  // 2: top-left\n  vec2f(-1.0,  1.0),  // 3: top-left\n  vec2f( 1.0, -1.0),  // 4: bottom-right\n  vec2f( 1.0,  1.0),  // 5: top-right\n);\n\n// Density-based sizing: particles shrink smoothly in crowded areas\n// Uses exponential decay: sizeMod = MIN + (MAX-MIN) * exp(-density * DECAY_RATE)\n// This avoids the hard floor that causes visual \"snapping\"\n//\n// SIZE_DECAY_RATE calibration:\n// - Controls how quickly particles shrink as local density increases\n// - Half-neighbor iteration produces ~50% of full 9-cell density values\n// - Rate of 0.07 compensates: exp(-5 * 0.07) ~ 0.70 at \"half density\"\n// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)\n// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)\nconst SIZE_DECAY_RATE: f32 = 0.07;\nconst MIN_SIZE_MULTIPLIER: f32 = 0.7;      // Size multiplier at high density (floor)\nconst MAX_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at zero density (ceiling)\n\n// Density-based brightness: lonely particles are dimmer\nconst BRIGHTNESS_GROWTH_RATE: f32 = 0.07;  // Mirrors SIZE_DECAY_RATE\nconst MIN_BRIGHTNESS: f32 = 0.44;          // Lonely particles at 44% brightness\nconst MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full brightness\n\n// AoS particle buffer\n@group(0) @binding(0) var<storage, read> particles: array<Particle>;\n@group(0) @binding(1) var<uniform> params: RenderParams;\n@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors from config.nim\n\nstruct VertexOutput {\n  @builtin(position) position: vec4f,\n  @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha\n  @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)\n  @location(2) density: f32,       // Local particle density for glow effect\n};\n\n@vertex\nfn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {\n  var output: VertexOutput;\n\n  // Particle index = vertex_index / 6, quad corner = vertex_index % 6\n  let particleId = id / 6u;\n  let cornerId = id % 6u;\n\n  // Read particle data from AoS buffer (all data in one read!)\n  let p = particles[particleId];\n\n  // Get quad corner offset (unit quad, -1 to 1)\n  let cornerOffset = OFFSETS[cornerId];\n\n  // Calculate point size based on density using smooth exponential decay\n  // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3\n  let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);\n  let pointSize = params.baseSize * sizeMod;\n\n  // Scale offset by half point size to get world position\n  // offset is -1 to 1, so multiply by halfSize to get pixel offset\n  // Scale point size by canvas/world ratio to maintain visual size\n  let scale = params.resolution / params.worldSize;\n  let halfSize = pointSize * 0.5;\n  let worldPos = p.pos + cornerOffset * halfSize / scale;\n\n  // Transform to clip space: world coords -> normalized device coords\n  // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)\n  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;\n\n  // Z-ordering: Species-based layers with stable particle hash\n  // Each species occupies its own depth band (0.1-0.9 divided into 6 bands)\n  // Within a band, particle ID hash provides stable ordering (no flickering)\n  let speciesBandSize = 0.8 / 6.0;  // ~0.133 per species\n  let speciesBase = 0.1 + f32(p.species) * speciesBandSize;\n  let particleHash = fract(f32(particleId) * 0.6180339887);  // Golden ratio hash\n  let zDepth = speciesBase + particleHash * speciesBandSize * 0.9;  // Stay within band\n  output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);\n\n  // Pass offset for circle calculation in fragment shader\n  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range\n  output.offset = cornerOffset;\n\n  // Pass density for glow intensity calculation\n  output.density = p.density;\n\n  // Look up species color from uniform buffer\n  let speciesIdx = min(p.species, 5u);\n  output.color = vec4f(colors[speciesIdx].rgb, 1.0);\n\n  return output;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4f {\n  let dist = length(input.offset);\n\n  // Screen-space anti-aliased circle\n  // fwidth() gives pixel-aware edge softness - adapts to particle screen size\n  let edge = fwidth(dist);\n  let alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);\n\n  if (alpha <= 0.0) {\n    discard;\n  }\n\n  // Density-based brightness: lonely (low density) particles are dimmer\n  let brightnessMod = MIN_BRIGHTNESS + (MAX_BRIGHTNESS - MIN_BRIGHTNESS) * (1.0 - exp(-input.density * BRIGHTNESS_GROWTH_RATE));\n\n  return vec4f(input.color.rgb * brightnessMod, alpha);\n}\n");
     var shaderModule_1627390053 = device.createShaderModule(shaderDesc_1627390036);
     var paramsSize_1627390054 = 32;
     var paramsDesc_1627390055 = ({});

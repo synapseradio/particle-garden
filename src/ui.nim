@@ -263,6 +263,58 @@ proc setupUI*() {.exportc.} =
   )
   velGlowSlider.bindToDOM()
 
+  # ===========================================================================
+  # Force Model sliders
+  # ===========================================================================
+
+  # Polynomial: Repulsion End
+  let repulsionEndSlider = newFloatSlider(
+    "repulsionEnd", "repulsionEndValue",
+    CONFIG.repulsionEnd,
+    precision = 2, minValue = 0.1, maxValue = 0.9
+  )
+  discard repulsionEndSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.repulsionEnd = v.toFloat()
+    nil
+  )
+  repulsionEndSlider.bindToDOM()
+
+  # Polynomial: Attraction Peak
+  let attractionPeakSlider = newFloatSlider(
+    "attractionPeak", "attractionPeakValue",
+    CONFIG.attractionPeak,
+    precision = 2, minValue = 0.5, maxValue = 0.95
+  )
+  discard attractionPeakSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.attractionPeak = v.toFloat()
+    nil
+  )
+  attractionPeakSlider.bindToDOM()
+
+  # Exponential: Repulsion Alpha
+  let expRepulsionAlphaSlider = newFloatSlider(
+    "expRepulsionAlpha", "expRepulsionAlphaValue",
+    CONFIG.expRepulsionAlpha,
+    precision = 1, minValue = 1.0, maxValue = 15.0
+  )
+  discard expRepulsionAlphaSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.expRepulsionAlpha = v.toFloat()
+    nil
+  )
+  expRepulsionAlphaSlider.bindToDOM()
+
+  # Exponential: Attraction Beta
+  let expAttractionBetaSlider = newFloatSlider(
+    "expAttractionBeta", "expAttractionBetaValue",
+    CONFIG.expAttractionBeta,
+    precision = 1, minValue = 1.0, maxValue = 10.0
+  )
+  discard expAttractionBetaSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.expAttractionBeta = v.toFloat()
+    nil
+  )
+  expAttractionBetaSlider.bindToDOM()
+
 # ==============================================================================
 # SECTION 8: EVENT SETUP
 # ==============================================================================
@@ -362,6 +414,41 @@ proc toggleControls*() {.exportc.} =
     btn.textContent = "+"
   else:
     btn.textContent = "-"
+
+proc toggleForceModelSection*() {.exportc.} =
+  ## Toggle Force Model section visibility.
+
+  let section = cast[HTMLElement](getElementById("forceModelSection"))
+  let content = cast[HTMLElement](section.querySelector(".section-content"))
+  let toggle = section.querySelector(".section-toggle")
+  if content.style.display == "none":
+    content.style.display = "block"
+    toggle.textContent = "−"
+  else:
+    content.style.display = "none"
+    toggle.textContent = "+"
+
+proc setForceModel*(model: int) {.exportc.} =
+  ## Set the force model and update UI visibility.
+  ## @param model - 0 for polynomial, 1 for exponential
+
+  CONFIG.forceModel = model
+
+  let polyBtn = cast[HTMLElement](getElementById("polyModelBtn"))
+  let expBtn = cast[HTMLElement](getElementById("expModelBtn"))
+  let polyParams = cast[HTMLElement](getElementById("polynomialParams"))
+  let expParams = cast[HTMLElement](getElementById("exponentialParams"))
+
+  if model == 0:
+    discard polyBtn.classList.setClass("active", true)
+    discard expBtn.classList.setClass("active", false)
+    polyParams.style.display = "block"
+    expParams.style.display = "none"
+  else:
+    discard polyBtn.classList.setClass("active", false)
+    discard expBtn.classList.setClass("active", true)
+    polyParams.style.display = "none"
+    expParams.style.display = "block"
 
 # ==============================================================================
 # SECTION 10: MATRIX UI
@@ -497,4 +584,6 @@ proc updateParticleStats*(count: int) {.exportc.} =
 window.toggleTrails = toggleTrails;
 window.toggleControls = toggleControls;
 window.randomizeMatrix = randomizeMatrix;
+window.toggleForceModelSection = toggleForceModelSection;
+window.setForceModel = setForceModel;
 """.}

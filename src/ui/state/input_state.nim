@@ -40,7 +40,7 @@ type
 # SECTION 2: CONSTRUCTORS
 # ==============================================================================
 
-proc initInputState*(): InputState =
+func initInputState*(): InputState =
   ## Create initial input state with all values zeroed.
   InputState(
     mouseX: 0.0,
@@ -56,42 +56,42 @@ proc initInputState*(): InputState =
 # SECTION 3: PURE UPDATE FUNCTIONS
 # ==============================================================================
 
-proc withMousePosition*(state: InputState; x, y: float): InputState =
+func withMousePosition*(state: InputState; x, y: float): InputState =
   ## Return new state with updated mouse position.
   result = state
   result.mouseX = x
   result.mouseY = y
 
-proc withMouseDown*(state: InputState; down: bool): InputState =
+func withMouseDown*(state: InputState; down: bool): InputState =
   ## Return new state with updated left mouse button.
   result = state
   result.mouseDown = down
 
-proc withMouseRightDown*(state: InputState; down: bool): InputState =
+func withMouseRightDown*(state: InputState; down: bool): InputState =
   ## Return new state with updated right mouse button.
   result = state
   result.mouseRightDown = down
 
-proc withAllButtonsUp*(state: InputState): InputState =
+func withAllButtonsUp*(state: InputState): InputState =
   ## Return new state with all mouse buttons released.
   result = state
   result.mouseDown = false
   result.mouseRightDown = false
 
-proc withBlast*(state: InputState; x, y: float): InputState =
+func withBlast*(state: InputState; x, y: float): InputState =
   ## Return new state with blast triggered at position.
   result = state
   result.blastX = x
   result.blastY = y
   result.blastStrength = 1.0
 
-proc withBlastDecay*(state: InputState; decayFactor: float): InputState =
+func withBlastDecay*(state: InputState; decayFactor: float): InputState =
   ## Return new state with blast strength decayed.
   ## Typical decay: blastStrength *= 0.85 per frame (~300ms lifespan)
   result = state
   result.blastStrength = state.blastStrength * decayFactor
 
-proc withBlastCleared*(state: InputState): InputState =
+func withBlastCleared*(state: InputState): InputState =
   ## Return new state with blast effect cleared.
   result = state
   result.blastStrength = 0.0
@@ -100,10 +100,10 @@ proc withBlastCleared*(state: InputState): InputState =
 # SECTION 4: QUERIES
 # ==============================================================================
 
-proc hasActiveBlast*(state: InputState): bool =
+func hasActiveBlast*(state: InputState): bool =
   ## Check if blast effect is still active.
   state.blastStrength > 0.001
 
-proc isAnyButtonDown*(state: InputState): bool =
+func isAnyButtonDown*(state: InputState): bool =
   ## Check if any mouse button is pressed.
   state.mouseDown or state.mouseRightDown

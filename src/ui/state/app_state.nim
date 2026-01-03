@@ -25,7 +25,7 @@ type
     computeTimeMs*: float  # Total compute time
     frameTimeMs*: float    # Actual wall-clock frame time
 
-proc initTimingState*(): TimingState =
+func initTimingState*(): TimingState =
   TimingState(
     gridTimeMs: 0.0,
     physicsTimeMs: 0.0,
@@ -36,7 +36,7 @@ proc initTimingState*(): TimingState =
     frameTimeMs: 0.0
   )
 
-proc totalTimeMs*(state: TimingState): float =
+func totalTimeMs*(state: TimingState): float =
   state.gridTimeMs + state.physicsTimeMs + state.integrationTimeMs +
     state.renderPackTimeMs + state.renderUploadTimeMs
 
@@ -55,7 +55,7 @@ type
     renderUploadTimeSum*: float
     totalTimeSum*: float
 
-proc initProfilingState*(): ProfilingState =
+func initProfilingState*(): ProfilingState =
   ProfilingState(
     frameCount: 0,
     gridTimeSum: 0.0,
@@ -66,7 +66,7 @@ proc initProfilingState*(): ProfilingState =
     totalTimeSum: 0.0
   )
 
-proc accumulate*(state: ProfilingState; timing: TimingState): ProfilingState =
+func accumulate*(state: ProfilingState; timing: TimingState): ProfilingState =
   ## Add a frame's timing to profiling sums.
   result = state
   result.frameCount = state.frameCount + 1
@@ -77,16 +77,16 @@ proc accumulate*(state: ProfilingState; timing: TimingState): ProfilingState =
   result.renderUploadTimeSum = state.renderUploadTimeSum + timing.renderUploadTimeMs
   result.totalTimeSum = state.totalTimeSum + timing.frameTimeMs
 
-proc reset*(state: ProfilingState): ProfilingState =
+func reset*(state: ProfilingState): ProfilingState =
   initProfilingState()
 
-proc averageGridTime*(state: ProfilingState): float =
+func averageGridTime*(state: ProfilingState): float =
   if state.frameCount > 0: state.gridTimeSum / float(state.frameCount) else: 0.0
 
-proc averagePhysicsTime*(state: ProfilingState): float =
+func averagePhysicsTime*(state: ProfilingState): float =
   if state.frameCount > 0: state.physicsTimeSum / float(state.frameCount) else: 0.0
 
-proc averageTotalTime*(state: ProfilingState): float =
+func averageTotalTime*(state: ProfilingState): float =
   if state.frameCount > 0: state.totalTimeSum / float(state.frameCount) else: 0.0
 
 # ==============================================================================
@@ -107,7 +107,7 @@ type
     timing*: TimingState
     profiling*: ProfilingState
 
-proc initAppState*(): AppState =
+func initAppState*(): AppState =
   AppState(
     isRunning: false,
     renderMode: rmWebGL,
@@ -121,30 +121,30 @@ proc initAppState*(): AppState =
 # SECTION 4: IMMUTABLE UPDATES
 # ==============================================================================
 
-proc withRunning*(state: AppState; running: bool): AppState =
+func withRunning*(state: AppState; running: bool): AppState =
   result = state
   result.isRunning = running
 
-proc withRenderMode*(state: AppState; mode: RenderMode): AppState =
+func withRenderMode*(state: AppState; mode: RenderMode): AppState =
   result = state
   result.renderMode = mode
 
-proc withParticleCount*(state: AppState; count: int): AppState =
+func withParticleCount*(state: AppState; count: int): AppState =
   result = state
   result.particleCount = count
 
-proc withFps*(state: AppState; fps: int): AppState =
+func withFps*(state: AppState; fps: int): AppState =
   result = state
   result.fps = fps
 
-proc withTiming*(state: AppState; timing: TimingState): AppState =
+func withTiming*(state: AppState; timing: TimingState): AppState =
   result = state
   result.timing = timing
 
-proc accumulateProfiling*(state: AppState): AppState =
+func accumulateProfiling*(state: AppState): AppState =
   result = state
   result.profiling = state.profiling.accumulate(state.timing)
 
-proc resetProfiling*(state: AppState): AppState =
+func resetProfiling*(state: AppState): AppState =
   result = state
   result.profiling = initProfilingState()

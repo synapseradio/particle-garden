@@ -28,7 +28,7 @@ type
 # SECTION 2: EVENT HANDLERS (pure state transitions)
 # ==============================================================================
 
-proc handleTouchStart*(state: InputState; event: TouchEventData): InputState =
+func handleTouchStart*(state: InputState; event: TouchEventData): InputState =
   ## Process touch start event.
   ## First touch is treated as left mouse button down.
   if event.touches.len > 0:
@@ -39,7 +39,7 @@ proc handleTouchStart*(state: InputState; event: TouchEventData): InputState =
   else:
     result = state
 
-proc handleTouchEnd*(state: InputState; event: TouchEventData): InputState =
+func handleTouchEnd*(state: InputState; event: TouchEventData): InputState =
   ## Process touch end event.
   ## When all touches end, release mouse button.
   if event.touches.len == 0:
@@ -47,7 +47,7 @@ proc handleTouchEnd*(state: InputState; event: TouchEventData): InputState =
   else:
     result = state
 
-proc handleTouchMove*(state: InputState; event: TouchEventData): InputState =
+func handleTouchMove*(state: InputState; event: TouchEventData): InputState =
   ## Process touch move event.
   ## Track first touch position.
   if event.touches.len > 0:
@@ -56,7 +56,7 @@ proc handleTouchMove*(state: InputState; event: TouchEventData): InputState =
   else:
     result = state
 
-proc handleTouchCancel*(state: InputState): InputState =
+func handleTouchCancel*(state: InputState): InputState =
   ## Process touch cancel event.
   ## Releases all touch state.
   state.withAllButtonsUp()
