@@ -31,6 +31,10 @@ const nativeFlags = "-d:release --opt:speed " & qualityFlags
 const jsReleaseFlags = "-d:release " & qualityFlags
 const nativeReleaseFlags = "-d:release --opt:speed " & qualityFlags
 
+# Windows static linking flags - eliminate VCRUNTIME140.dll dependency
+# Uses MinGW static linking to create portable executables
+const windowsStaticFlags = "--passL:-static --passL:-static-libgcc --passL:-static-libstdc++"
+
 task app, "Build the web app":
   exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
 
@@ -56,5 +60,9 @@ task release, "Build optimized release":
   echo "Building app..."
   exec "nim js " & jsReleaseFlags & " --out:web/app.js src/app.nim"
   echo "Building native app..."
-  exec "nim c " & nativeReleaseFlags & " --out:main src/main.nim"
+  # Add static linking on Windows to avoid VCRUNTIME140.dll dependency
+  when defined(windows):
+    exec "nim c " & nativeReleaseFlags & " " & windowsStaticFlags & " --out:main src/main.nim"
+  else:
+    exec "nim c " & nativeReleaseFlags & " --out:main src/main.nim"
   echo "Release build complete. Run with: ./main"
