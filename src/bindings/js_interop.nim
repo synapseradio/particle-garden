@@ -169,19 +169,19 @@ type
 var console* {.importjs: "console".}: Console
   ## Global console object.
 
-proc log*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.log(@)".}
+proc log*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.log(...@)".}
   ## Log to console.
 
-proc warn*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.warn(@)".}
+proc warn*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.warn(...@)".}
   ## Log warning to console.
 
-proc error*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.error(@)".}
+proc error*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.error(...@)".}
   ## Log error to console.
 
-proc info*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.info(@)".}
+proc info*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.info(...@)".}
   ## Log info to console.
 
-proc debug*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.debug(@)".}
+proc debug*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.debug(...@)".}
   ## Log debug to console.
 
 proc trace*(c: Console) {.importjs: "#.trace()".}
@@ -206,13 +206,13 @@ proc table*(c: Console, data: JsObject) {.importjs: "#.table(#)".}
   ## Display data as a table.
 
 # Convenience procs that use the global console
-proc consoleLog*(args: varargs[JsObject, toJs]) {.importjs: "console.log(@)".}
+proc consoleLog*(args: varargs[JsObject, toJs]) {.importjs: "console.log(...@)".}
   ## Log to console (convenience).
 
-proc consoleWarn*(args: varargs[JsObject, toJs]) {.importjs: "console.warn(@)".}
+proc consoleWarn*(args: varargs[JsObject, toJs]) {.importjs: "console.warn(...@)".}
   ## Log warning (convenience).
 
-proc consoleError*(args: varargs[JsObject, toJs]) {.importjs: "console.error(@)".}
+proc consoleError*(args: varargs[JsObject, toJs]) {.importjs: "console.error(...@)".}
   ## Log error (convenience).
 
 # ==============================================================================

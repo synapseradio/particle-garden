@@ -37,6 +37,14 @@ from bindings/typed_arrays import Float32Array, `[]`, `[]=`
 import config
 import buffers
 
+# New reactive state system
+import ui/core/observable
+import ui/state/input_state
+import ui/state/matrix_state
+import ui/input/mouse_handler
+import ui/input/touch_handler
+import ui/controls/slider
+
 # ==============================================================================
 # SECTION 2: ADDITIONAL JS FFI BINDINGS
 # ==============================================================================
@@ -49,18 +57,31 @@ proc toFixed(x: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
 proc toLocaleString(x: int): cstring {.importjs: "#.toLocaleString()".}
 
 # ==============================================================================
-# SECTION 3: MOUSE STATE (exported for physics calculations)
+# SECTION 3: INPUT STATE (reactive + legacy shims)
 # ==============================================================================
+#
+# The canonical input state is now in currentInput (Observable[InputState]).
+# The exported vars below are shims for backward compatibility with app.nim.
+# They are synced automatically when currentInput changes.
 
-var mouseX* {.exportc.}: float = 0
-var mouseY* {.exportc.}: float = 0
-var mouseDown* {.exportc.}: bool = false
-var mouseRightDown* {.exportc.}: bool = false
+# Observable holding the true input state
+var currentInput* = newObservable(initInputState())
 
-# Blast effect state (triggered by double-click)
-var blastX* {.exportc.}: float = 0
-var blastY* {.exportc.}: float = 0
-var blastStrength* {.exportc.}: float = 0  # Decays from 1.0 to 0.0
+# Accessor procs - read directly from observable (no shims)
+proc getMouseX*(): float = currentInput.get().mouseX
+proc getMouseY*(): float = currentInput.get().mouseY
+proc getMouseDown*(): bool = currentInput.get().mouseDown
+proc getMouseRightDown*(): bool = currentInput.get().mouseRightDown
+proc getBlastX*(): float = currentInput.get().blastX
+proc getBlastY*(): float = currentInput.get().blastY
+proc getBlastStrength*(): float = currentInput.get().blastStrength
+
+# Frame update - decays blast in the observable
+const BLAST_DECAY_FACTOR = 0.85
+proc updateInputState*() =
+  let current = currentInput.get()
+  if current.hasActiveBlast():
+    currentInput.set(current.withBlastDecay(BLAST_DECAY_FACTOR))
 
 # ==============================================================================
 # SECTION 4: CALLBACK REFERENCES
@@ -103,141 +124,144 @@ proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.}
 # ==============================================================================
 
 proc setupUI*() {.exportc.} =
-  ## Bind slider inputs to CONFIG values.
-  ## Updates display values in real-time, triggers callbacks on change.
-  ## Syncs slider values to CONFIG defaults on initialization.
+  ## Bind slider inputs to CONFIG values using Slider components.
+  ## Each slider syncs to CONFIG via subscription and triggers callbacks on change.
+
+  # ===========================================================================
+  # Simulation sliders
+  # ===========================================================================
 
   # Particle count slider
-  let particleCountEl = cast[HTMLInputElement](getElementById("particleCount"))
-  let particleValueEl = getElementById("particleValue")
-  # Set max to MAX_PARTICLES from memory_layout
-  particleCountEl.max = cstring($MAX_PARTICLES)
-  # Sync slider to CONFIG value on init
-  particleCountEl.value = cstring($CONFIG.particleCount)
-  particleValueEl.textContent = cstring($CONFIG.particleCount)
-  particleCountEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.particleCount = parseIntJS(target.value, 10)
-    particleValueEl.textContent = cstring($CONFIG.particleCount)
+  let particleCountSlider = newIntSlider(
+    "particleCount", "particleValue",
+    CONFIG.particleCount,
+    minValue = 100, maxValue = MAX_PARTICLES
   )
-  particleCountEl.addEventListener("change", proc(e: Event) =
+  discard particleCountSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.particleCount = v.toInt()
+    nil
+  )
+  particleCountSlider.onChange = proc() =
     console.log("[ui] particleCount change, onInitParticles isNil:".toJs, onInitParticles.isNil.toJs)
     if not onInitParticles.isNil:
       onInitParticles()
-  )
+  particleCountSlider.bindToDOM()
 
   # Species count slider
-  let speciesCountEl = cast[HTMLInputElement](getElementById("speciesCount"))
-  let speciesValueEl = getElementById("speciesValue")
-  # Sync slider to CONFIG value on init
-  speciesCountEl.value = cstring($CONFIG.speciesCount)
-  speciesValueEl.textContent = cstring($CONFIG.speciesCount)
-  speciesCountEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.speciesCount = parseIntJS(target.value, 10)
-    speciesValueEl.textContent = cstring($CONFIG.speciesCount)
+  let speciesCountSlider = newIntSlider(
+    "speciesCount", "speciesValue",
+    CONFIG.speciesCount,
+    minValue = 1, maxValue = MAX_SPECIES
   )
-  speciesCountEl.addEventListener("change", proc(e: Event) =
+  discard speciesCountSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.speciesCount = v.toInt()
+    nil
+  )
+  speciesCountSlider.onChange = proc() =
     randomizeMatrix()
     if not onInitParticles.isNil:
       onInitParticles()
-  )
+  speciesCountSlider.bindToDOM()
 
   # Interaction radius slider
-  let radiusEl = cast[HTMLInputElement](getElementById("interactionRadius"))
-  let radiusValueEl = getElementById("radiusValue")
-  # Sync slider to CONFIG value on init
-  radiusEl.value = cstring($CONFIG.interactionRadius)
-  radiusValueEl.textContent = cstring($CONFIG.interactionRadius)
-  radiusEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.interactionRadius = parseIntJS(target.value, 10)
-    radiusValueEl.textContent = cstring($CONFIG.interactionRadius)
+  let radiusSlider = newIntSlider(
+    "interactionRadius", "radiusValue",
+    CONFIG.interactionRadius,
+    minValue = 10, maxValue = 200
   )
+  discard radiusSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.interactionRadius = v.toInt()
+    nil
+  )
+  radiusSlider.bindToDOM()
 
   # Force strength slider
-  let forceEl = cast[HTMLInputElement](getElementById("forceStrength"))
-  let forceValueEl = getElementById("forceValue")
-  # Sync slider to CONFIG value on init
-  forceEl.value = cstring($CONFIG.forceStrength)
-  forceValueEl.textContent = toFixed(CONFIG.forceStrength, 1)
-  forceEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.forceStrength = parseFloatJS(target.value)
-    forceValueEl.textContent = toFixed(CONFIG.forceStrength, 1)
+  let forceSlider = newFloatSlider(
+    "forceStrength", "forceValue",
+    CONFIG.forceStrength,
+    precision = 1, minValue = 0.1, maxValue = 10.0
   )
+  discard forceSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.forceStrength = v.toFloat()
+    nil
+  )
+  forceSlider.bindToDOM()
 
   # Friction slider
-  let frictionEl = cast[HTMLInputElement](getElementById("friction"))
-  let frictionValueEl = getElementById("frictionValue")
-  # Sync slider to CONFIG value on init
-  frictionEl.value = cstring($CONFIG.friction)
-  frictionValueEl.textContent = toFixed(CONFIG.friction, 2)
-  frictionEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.friction = parseFloatJS(target.value)
-    frictionValueEl.textContent = toFixed(CONFIG.friction, 2)
+  let frictionSlider = newFloatSlider(
+    "friction", "frictionValue",
+    CONFIG.friction,
+    precision = 2, minValue = 0.0, maxValue = 1.0
   )
+  discard frictionSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.friction = v.toFloat()
+    nil
+  )
+  frictionSlider.bindToDOM()
 
   # Time scale slider
-  let timeScaleEl = cast[HTMLInputElement](getElementById("timeScale"))
-  let timeScaleValueEl = getElementById("timeScaleValue")
-  # Sync slider to CONFIG value on init
-  timeScaleEl.value = cstring($CONFIG.timeScale)
-  timeScaleValueEl.textContent = toFixed(CONFIG.timeScale, 1)
-  timeScaleEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.timeScale = parseFloatJS(target.value)
-    timeScaleValueEl.textContent = toFixed(CONFIG.timeScale, 1)
+  let timeScaleSlider = newFloatSlider(
+    "timeScale", "timeScaleValue",
+    CONFIG.timeScale,
+    precision = 1, minValue = 0.1, maxValue = 5.0
   )
-
-  # Trail length slider
-  let trailEl = cast[HTMLInputElement](getElementById("trailLength"))
-  let trailValueEl = getElementById("trailValue")
-  # Sync slider to CONFIG value on init
-  trailEl.value = cstring($CONFIG.trailAlpha)
-  trailValueEl.textContent = toFixed(CONFIG.trailAlpha, 2)
-  trailEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.trailAlpha = parseFloatJS(target.value)
-    trailValueEl.textContent = toFixed(CONFIG.trailAlpha, 2)
+  discard timeScaleSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.timeScale = v.toFloat()
+    nil
   )
-
-  # Glow intensity slider
-  let glowEl = cast[HTMLInputElement](getElementById("glowIntensity"))
-  let glowValueEl = getElementById("glowValue")
-  # Sync slider to CONFIG value on init
-  glowEl.value = cstring($CONFIG.glowIntensity)
-  glowValueEl.textContent = toFixed(CONFIG.glowIntensity, 1)
-  glowEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.glowIntensity = parseFloatJS(target.value)
-    glowValueEl.textContent = toFixed(CONFIG.glowIntensity, 1)
-  )
-
-  # Velocity glow scale slider
-  let velGlowEl = cast[HTMLInputElement](getElementById("velocityGlowScale"))
-  let velGlowValueEl = getElementById("velocityGlowValue")
-  # Sync slider to CONFIG value on init
-  velGlowEl.value = cstring($CONFIG.velocityGlowScale)
-  velGlowValueEl.textContent = toFixed(CONFIG.velocityGlowScale, 1)
-  velGlowEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.velocityGlowScale = parseFloatJS(target.value)
-    velGlowValueEl.textContent = toFixed(CONFIG.velocityGlowScale, 1)
-  )
+  timeScaleSlider.bindToDOM()
 
   # Max velocity slider
-  let velocityEl = cast[HTMLInputElement](getElementById("maxVelocity"))
-  let velocityValueEl = getElementById("velocityValue")
-  # Sync slider to CONFIG value on init
-  velocityEl.value = cstring($CONFIG.maxVelocity)
-  velocityValueEl.textContent = toFixed(CONFIG.maxVelocity, 0)
-  velocityEl.addEventListener("input", proc(e: Event) =
-    let target = cast[HTMLInputElement](e.target)
-    CONFIG.maxVelocity = parseFloatJS(target.value)
-    velocityValueEl.textContent = toFixed(CONFIG.maxVelocity, 0)
+  let velocitySlider = newFloatSlider(
+    "maxVelocity", "velocityValue",
+    CONFIG.maxVelocity,
+    precision = 0, minValue = 10.0, maxValue = 500.0
   )
+  discard velocitySlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.maxVelocity = v.toFloat()
+    nil
+  )
+  velocitySlider.bindToDOM()
+
+  # ===========================================================================
+  # Render sliders
+  # ===========================================================================
+
+  # Trail length slider
+  let trailSlider = newFloatSlider(
+    "trailLength", "trailValue",
+    CONFIG.trailAlpha,
+    precision = 2, minValue = 0.0, maxValue = 1.0
+  )
+  discard trailSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.trailAlpha = v.toFloat()
+    nil
+  )
+  trailSlider.bindToDOM()
+
+  # Glow intensity slider
+  let glowSlider = newFloatSlider(
+    "glowIntensity", "glowValue",
+    CONFIG.glowIntensity,
+    precision = 1, minValue = 0.0, maxValue = 3.0
+  )
+  discard glowSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.glowIntensity = v.toFloat()
+    nil
+  )
+  glowSlider.bindToDOM()
+
+  # Velocity glow scale slider
+  let velGlowSlider = newFloatSlider(
+    "velocityGlowScale", "velocityGlowValue",
+    CONFIG.velocityGlowScale,
+    precision = 1, minValue = 0.0, maxValue = 5.0
+  )
+  discard velGlowSlider.value.subscribe(proc(v: SliderValue): proc() =
+    CONFIG.velocityGlowScale = v.toFloat()
+    nil
+  )
+  velGlowSlider.bindToDOM()
 
 # ==============================================================================
 # SECTION 8: EVENT SETUP
@@ -245,6 +269,10 @@ proc setupUI*() {.exportc.} =
 
 proc setupEvents*(canvas: JsObject) {.exportc.} =
   ## Set up mouse, touch, and resize event handlers.
+  ##
+  ## Event handlers use pure functions from mouse_handler/touch_handler
+  ## to compute new state, then update the currentInput observable.
+  ## Legacy shims are synced automatically via subscription.
   ##
   ## @param canvas - The canvas element for mouse/touch events
 
@@ -256,26 +284,19 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
       onResize()
   )
 
-  # Mouse events
+  # Mouse events - use pure handlers
   canvasEl.addEventListener("mousedown", proc(e: MouseEvent) =
-    if e.button == 0:  # Left button
-      mouseDown = true
-    elif e.button == 2:  # Right button
-      mouseRightDown = true
-    mouseX = e.clientX.float
-    mouseY = e.clientY.float
+    let eventData = extractMouseData(e)
+    currentInput.set(handleMouseDown(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("mouseup", proc(e: MouseEvent) =
-    if e.button == 0:  # Left button
-      mouseDown = false
-    elif e.button == 2:  # Right button
-      mouseRightDown = false
+    let eventData = extractMouseData(e)
+    currentInput.set(handleMouseUp(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("mouseleave", proc(e: MouseEvent) =
-    mouseDown = false
-    mouseRightDown = false
+    currentInput.set(handleMouseLeave(currentInput.get()))
   )
 
   # Prevent context menu on right-click
@@ -285,34 +306,32 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
 
   # Double-click triggers blast effect (powerful repellent)
   canvasEl.addEventListener("dblclick", proc(e: MouseEvent) =
-    blastX = e.clientX.float
-    blastY = e.clientY.float
-    blastStrength = 1.0
+    let eventData = extractMouseData(e)
+    currentInput.set(handleDoubleClick(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("mousemove", proc(e: MouseEvent) =
-    mouseX = e.clientX.float
-    mouseY = e.clientY.float
+    let eventData = extractMouseData(e)
+    currentInput.set(handleMouseMove(currentInput.get(), eventData))
   )
 
-  # Touch events
+  # Touch events - use pure handlers
   canvasEl.addEventListener("touchstart", proc(e: TouchEvent) =
     preventDefault(e)
-    mouseDown = true
-    let touch = e.touches[0]
-    mouseX = touch.clientX.float
-    mouseY = touch.clientY.float
+    let eventData = extractTouchData(e)
+    currentInput.set(handleTouchStart(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("touchend", proc(e: TouchEvent) =
-    mouseDown = false
+    # TouchEvent.touches contains remaining touches after this one ends
+    let eventData = extractTouchData(e)
+    currentInput.set(handleTouchEnd(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("touchmove", proc(e: TouchEvent) =
     preventDefault(e)
-    let touch = e.touches[0]
-    mouseX = touch.clientX.float
-    mouseY = touch.clientY.float
+    let eventData = extractTouchData(e)
+    currentInput.set(handleTouchMove(currentInput.get(), eventData))
   )
 
 # ==============================================================================
@@ -365,19 +384,19 @@ proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.} =
   let inputEl = cast[HTMLInputElement](el)
   let v = parseFloatJS(inputEl.value)
   if not isNaN(v):
-    matrix[i * MAX_SPECIES + j] = v
+    let clamped = clampMatrixValue(v)
+    matrix[matrixIndex(i, j)] = clamped
     if not onMatrixUpdate.isNil:
       onMatrixUpdate()
-    # Calculate background color based on value
-    let hue = if v > 0: 120 else: 0
-    let saturation = int(jsAbs(v) * 100.0)
-    let bg = "hsla(" & $hue & "," & $saturation & "%,40%,0.7)"
+    # Update background color using extracted function
+    let color = cellColorFromValue(clamped)
     let parent = cast[HTMLElement](inputEl.parentElement)
-    parent.style.background = cstring(bg)
+    parent.style.background = cstring(toHslaString(color))
 
 proc updateMatrixDisplay*() {.exportc.} =
   ## Update the matrix display grid to reflect current values.
   ## Creates editable input cells with color-coded backgrounds.
+  ## Uses pure functions from matrix_state for color calculations.
 
   let el = cast[HTMLElement](getElementById("matrixDisplay"))
   let ns = CONFIG.speciesCount
@@ -388,29 +407,33 @@ proc updateMatrixDisplay*() {.exportc.} =
   # Column headers (species colors)
   for j in 0 ..< ns:
     let c = j * 3
-    let r = int(COLORS[c] * 255.0)
-    let g = int(COLORS[c + 1] * 255.0)
-    let b = int(COLORS[c + 2] * 255.0)
-    html &= "<div class=\"matrix-cell matrix-header\" style=\"background:rgba(" &
-            $r & "," & $g & "," & $b & ",0.5)\"></div>"
+    let speciesColor = SpeciesColor(
+      r: int(COLORS[c] * 255.0),
+      g: int(COLORS[c + 1] * 255.0),
+      b: int(COLORS[c + 2] * 255.0),
+      alpha: 0.5
+    )
+    html &= "<div class=\"matrix-cell matrix-header\" style=\"background:" &
+            toRgbaString(speciesColor) & "\"></div>"
 
   # Matrix rows
   for i in 0 ..< ns:
     # Row header (species color)
     let c = i * 3
-    let r = int(COLORS[c] * 255.0)
-    let g = int(COLORS[c + 1] * 255.0)
-    let b = int(COLORS[c + 2] * 255.0)
-    html &= "<div class=\"matrix-cell matrix-header\" style=\"background:rgba(" &
-            $r & "," & $g & "," & $b & ",0.5)\"></div>"
+    let speciesColor = SpeciesColor(
+      r: int(COLORS[c] * 255.0),
+      g: int(COLORS[c + 1] * 255.0),
+      b: int(COLORS[c + 2] * 255.0),
+      alpha: 0.5
+    )
+    html &= "<div class=\"matrix-cell matrix-header\" style=\"background:" &
+            toRgbaString(speciesColor) & "\"></div>"
 
     # Matrix cells
     for j in 0 ..< ns:
-      let v = matrix[i * MAX_SPECIES + j]
-      let hue = if v > 0: 120 else: 0
-      let saturation = int(jsAbs(v) * 100.0)
-      let bg = "hsla(" & $hue & "," & $saturation & "%,40%,0.7)"
-      html &= "<div class=\"matrix-cell\" style=\"background:" & bg & "\">" &
+      let v = matrix[matrixIndex(i, j)]
+      let color = cellColorFromValue(v)
+      html &= "<div class=\"matrix-cell\" style=\"background:" & toHslaString(color) & "\">" &
               "<input type=\"number\" step=\"0.1\" value=\"" & $toFixed(v, 2) & "\" " &
               "data-row=\"" & $i & "\" data-col=\"" & $j & "\">" &
               "</div>"
@@ -437,7 +460,7 @@ proc randomizeMatrix*() {.exportc.} =
   let ns = CONFIG.speciesCount
   for i in 0 ..< ns:
     for j in 0 ..< ns:
-      matrix[i * MAX_SPECIES + j] = jsRandom() * 2.0 - 1.0
+      matrix[matrixIndex(i, j)] = jsRandom() * 2.0 - 1.0
 
   updateMatrixDisplay()
   if not onMatrixUpdate.isNil:

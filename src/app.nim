@@ -42,6 +42,9 @@ import webgpu_init
 import webgpu_compute
 import webgpu_render
 
+# Layer 5: UI state types
+import ui/state/app_state
+
 # ==============================================================================
 # BINDINGS - Helper procs
 # ==============================================================================
@@ -90,21 +93,9 @@ var fps {.exportc.}: int = 0
 var lastFpsTime {.exportc.}: float = 0
 var computeTimeMs {.exportc.}: float = 0
 
-# Performance profiling - per-frame measurements
-var gridTimeMs {.exportc.}: float = 0
-var physicsTimeMs {.exportc.}: float = 0
-var integrationTimeMs {.exportc.}: float = 0
-var renderPackTimeMs {.exportc.}: float = 0
-var renderUploadTimeMs {.exportc.}: float = 0
-
-# Performance profiling - rolling averages
-var profilingFrameCount {.exportc.}: int = 0
-var gridTimeSum {.exportc.}: float = 0
-var physicsTimeSum {.exportc.}: float = 0
-var integrationTimeSum {.exportc.}: float = 0
-var renderPackTimeSum {.exportc.}: float = 0
-var renderUploadTimeSum {.exportc.}: float = 0
-var totalTimeSum {.exportc.}: float = 0
+# Performance profiling using pure state types
+var currentTiming* = initTimingState()
+var profiling* = initProfilingState()
 
 # ==============================================================================
 # PARTICLE INITIALIZATION
@@ -176,7 +167,7 @@ proc physics(dt: float): Future[void] {.async.} =
 
   # Only compute grid dimensions - no CPU sorting
   let gridResult = grid.computeGridDimensions(canvasWidth(), canvasHeight())
-  gridTimeMs = 0  # Grid built on GPU
+  currentTiming.gridTimeMs = 0  # Grid built on GPU
 
   let tPhysics0 = performanceNow()
 
@@ -195,25 +186,22 @@ proc physics(dt: float): Future[void] {.async.} =
   # Scale mouse from canvas to world coordinates
   let mouseScaleX = config.WORLD_W / float(canvasWidth())
   let mouseScaleY = config.WORLD_H / float(canvasHeight())
-  params["mouseX"] = toJs(ui.mouseX * mouseScaleX)
-  params["mouseY"] = toJs(ui.mouseY * mouseScaleY)
-  params["mouseDown"] = toJs(if ui.mouseDown: 1 else: 0)
-  params["mouseRightDown"] = toJs(if ui.mouseRightDown: 1 else: 0)
-  params["blastX"] = toJs(ui.blastX * mouseScaleX)
-  params["blastY"] = toJs(ui.blastY * mouseScaleY)
-  params["blastStrength"] = toJs(ui.blastStrength)
+  params["mouseX"] = toJs(ui.getMouseX() * mouseScaleX)
+  params["mouseY"] = toJs(ui.getMouseY() * mouseScaleY)
+  params["mouseDown"] = toJs(if ui.getMouseDown(): 1 else: 0)
+  params["mouseRightDown"] = toJs(if ui.getMouseRightDown(): 1 else: 0)
+  params["blastX"] = toJs(ui.getBlastX() * mouseScaleX)
+  params["blastY"] = toJs(ui.getBlastY() * mouseScaleY)
+  params["blastStrength"] = toJs(ui.getBlastStrength())
   params["matrix"] = toJs(buffers.matrix)
 
   await webgpu_compute.runPhysicsFrame(params)
 
-  # Decay blast effect (exponential decay over ~0.3 seconds)
-  if ui.blastStrength > 0.001:
-    ui.blastStrength = ui.blastStrength * 0.85
-  else:
-    ui.blastStrength = 0.0
+  # Decay blast effect in observable (single source of truth)
+  ui.updateInputState()
 
-  physicsTimeMs = performanceNow() - tPhysics0
-  integrationTimeMs = 0  # Integration happens on GPU
+  currentTiming.physicsTimeMs = performanceNow() - tPhysics0
+  currentTiming.integrationTimeMs = 0  # Integration happens on GPU
 
   computeTimeMs = performanceNow() - t0
 
@@ -248,19 +236,14 @@ proc loop(now: float): Future[void] {.async.} =
   else:
     # WebGL render path - requires CPU data
     renderTiming = renderer.render(particleCount)
-  renderPackTimeMs = renderTiming["packTimeMs"].to(float)
-  renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
+  currentTiming.renderPackTimeMs = renderTiming["packTimeMs"].to(float)
+  currentTiming.renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
 
-  let frameTotal = performanceNow() - frameStart
+  currentTiming.frameTimeMs = performanceNow() - frameStart
+  currentTiming.computeTimeMs = computeTimeMs
 
-  # Accumulate profiling data
-  gridTimeSum = gridTimeSum + gridTimeMs
-  physicsTimeSum = physicsTimeSum + physicsTimeMs
-  integrationTimeSum = integrationTimeSum + integrationTimeMs
-  renderPackTimeSum = renderPackTimeSum + renderPackTimeMs
-  renderUploadTimeSum = renderUploadTimeSum + renderUploadTimeMs
-  totalTimeSum = totalTimeSum + frameTotal
-  profilingFrameCount = profilingFrameCount + 1
+  # Accumulate profiling data using pure state update
+  profiling = profiling.accumulate(currentTiming)
 
   # Update FPS and stats every 500ms
   frameCount = frameCount + 1
@@ -271,14 +254,8 @@ proc loop(now: float): Future[void] {.async.} =
     ui.updateStats(fps, 0, computeTimeMs)
 
   # Reset profiling accumulators every 60 frames
-  if profilingFrameCount >= 60:
-    profilingFrameCount = 0
-    gridTimeSum = 0
-    physicsTimeSum = 0
-    integrationTimeSum = 0
-    renderPackTimeSum = 0
-    renderUploadTimeSum = 0
-    totalTimeSum = 0
+  if profiling.frameCount >= 60:
+    profiling = profiling.reset()
 
   discard domWindow.requestAnimationFrame(proc(t: float) = discard loop(t))
 

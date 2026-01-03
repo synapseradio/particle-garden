@@ -84,8 +84,8 @@ suite "Memory Layout Size Constraints":
 # ==============================================================================
 
 suite "Memory Layout Constants":
-  test "MAX_PARTICLES is 64000":
-    check MAX_PARTICLES == 64000
+  test "MAX_PARTICLES is 100000":
+    check MAX_PARTICLES == 100000
 
   test "MAX_SPECIES is 6":
     check MAX_SPECIES == 6
