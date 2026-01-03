@@ -313,18 +313,22 @@ proc toggleControls*() {.exportc.} =
   else:
     btn.textContent = "-"
 
-proc toggleForceModelSection*() {.exportc.} =
-  ## Toggle Force Model section visibility.
-
-  let section = cast[HTMLElement](getElementById("forceModelSection"))
+proc toggleSection(sectionId: string) =
+  ## Toggle a collapsible section's visibility.
+  let section = cast[HTMLElement](getElementById(cstring(sectionId)))
   let content = cast[HTMLElement](section.querySelector(".section-content"))
   let toggle = section.querySelector(".section-toggle")
-  if content.style.display == "none":
-    content.style.display = "block"
-    toggle.textContent = "−"
-  else:
-    content.style.display = "none"
-    toggle.textContent = "+"
+  let isHidden = content.style.display == "none"
+  content.style.display = if isHidden: cstring"block" else: cstring"none"
+  toggle.textContent = if isHidden: cstring"−" else: cstring"+"
+
+proc toggleForceModelSection*() {.exportc.} =
+  ## Toggle Force Model section visibility.
+  toggleSection("forceModelSection")
+
+proc toggleGlowSection*() {.exportc.} =
+  ## Toggle Glow section visibility.
+  toggleSection("glowSection")
 
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
@@ -470,5 +474,6 @@ window.toggleTrails = toggleTrails;
 window.toggleControls = toggleControls;
 window.randomizeMatrix = randomizeMatrix;
 window.toggleForceModelSection = toggleForceModelSection;
+window.toggleGlowSection = toggleGlowSection;
 window.setForceModel = setForceModel;
 """.}
