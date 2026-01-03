@@ -39,7 +39,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: nimble install -y
+        run: nimble install -y --depsOnly --useSystemNim
+
+      - name: Setup Nim paths
+        run: nimble setup
 
       - name: Build release
         run: nimble release
