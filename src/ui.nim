@@ -44,6 +44,7 @@ import ui/state/matrix_state
 import ui/input/mouse_handler
 import ui/input/touch_handler
 import ui/controls/slider
+import ui/dom_helpers
 
 # ==============================================================================
 # SECTION 2: ADDITIONAL JS FFI BINDINGS
@@ -124,196 +125,99 @@ proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.}
 # ==============================================================================
 
 proc setupUI*() {.exportc.} =
-  ## Bind slider inputs to CONFIG values using Slider components.
-  ## Each slider syncs to CONFIG via subscription and triggers callbacks on change.
+  ## Bind slider inputs to CONFIG values.
 
-  # ===========================================================================
   # Simulation sliders
-  # ===========================================================================
+  configSlider("particleCount", "particleValue",
+    get = proc(): float = CONFIG.particleCount.float,
+    set = proc(v: float) = CONFIG.particleCount = v.int,
+    min = 100, max = MAX_PARTICLES.float,
+    onChange = proc() =
+      if not onInitParticles.isNil: onInitParticles()
+  )
 
-  # Particle count slider
-  let particleCountSlider = newIntSlider(
-    "particleCount", "particleValue",
-    CONFIG.particleCount,
-    minValue = 100, maxValue = MAX_PARTICLES
+  configSlider("speciesCount", "speciesValue",
+    get = proc(): float = CONFIG.speciesCount.float,
+    set = proc(v: float) = CONFIG.speciesCount = v.int,
+    min = 1, max = MAX_SPECIES.float,
+    onChange = proc() =
+      randomizeMatrix()
+      if not onInitParticles.isNil: onInitParticles()
   )
-  discard particleCountSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.particleCount = v.toInt()
-    nil
-  )
-  particleCountSlider.onChange = proc() =
-    console.log("[ui] particleCount change, onInitParticles isNil:".toJs, onInitParticles.isNil.toJs)
-    if not onInitParticles.isNil:
-      onInitParticles()
-  particleCountSlider.bindToDOM()
 
-  # Species count slider
-  let speciesCountSlider = newIntSlider(
-    "speciesCount", "speciesValue",
-    CONFIG.speciesCount,
-    minValue = 1, maxValue = MAX_SPECIES
+  configSlider("interactionRadius", "radiusValue",
+    get = proc(): float = CONFIG.interactionRadius.float,
+    set = proc(v: float) = CONFIG.interactionRadius = v.int,
+    min = 10, max = 200
   )
-  discard speciesCountSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.speciesCount = v.toInt()
-    nil
-  )
-  speciesCountSlider.onChange = proc() =
-    randomizeMatrix()
-    if not onInitParticles.isNil:
-      onInitParticles()
-  speciesCountSlider.bindToDOM()
 
-  # Interaction radius slider
-  let radiusSlider = newIntSlider(
-    "interactionRadius", "radiusValue",
-    CONFIG.interactionRadius,
-    minValue = 10, maxValue = 200
+  configSlider("forceStrength", "forceValue",
+    get = proc(): float = CONFIG.forceStrength,
+    set = proc(v: float) = CONFIG.forceStrength = v,
+    min = 0.1, max = 10.0, precision = 1
   )
-  discard radiusSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.interactionRadius = v.toInt()
-    nil
-  )
-  radiusSlider.bindToDOM()
 
-  # Force strength slider
-  let forceSlider = newFloatSlider(
-    "forceStrength", "forceValue",
-    CONFIG.forceStrength,
-    precision = 1, minValue = 0.1, maxValue = 10.0
+  configSlider("friction", "frictionValue",
+    get = proc(): float = CONFIG.friction,
+    set = proc(v: float) = CONFIG.friction = v,
+    min = 0.0, max = 1.0, precision = 2
   )
-  discard forceSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.forceStrength = v.toFloat()
-    nil
-  )
-  forceSlider.bindToDOM()
 
-  # Friction slider
-  let frictionSlider = newFloatSlider(
-    "friction", "frictionValue",
-    CONFIG.friction,
-    precision = 2, minValue = 0.0, maxValue = 1.0
+  configSlider("timeScale", "timeScaleValue",
+    get = proc(): float = CONFIG.timeScale,
+    set = proc(v: float) = CONFIG.timeScale = v,
+    min = 0.1, max = 5.0, precision = 1
   )
-  discard frictionSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.friction = v.toFloat()
-    nil
-  )
-  frictionSlider.bindToDOM()
 
-  # Time scale slider
-  let timeScaleSlider = newFloatSlider(
-    "timeScale", "timeScaleValue",
-    CONFIG.timeScale,
-    precision = 1, minValue = 0.1, maxValue = 5.0
+  configSlider("maxVelocity", "velocityValue",
+    get = proc(): float = CONFIG.maxVelocity,
+    set = proc(v: float) = CONFIG.maxVelocity = v,
+    min = 10.0, max = 500.0
   )
-  discard timeScaleSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.timeScale = v.toFloat()
-    nil
-  )
-  timeScaleSlider.bindToDOM()
 
-  # Max velocity slider
-  let velocitySlider = newFloatSlider(
-    "maxVelocity", "velocityValue",
-    CONFIG.maxVelocity,
-    precision = 0, minValue = 10.0, maxValue = 500.0
-  )
-  discard velocitySlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.maxVelocity = v.toFloat()
-    nil
-  )
-  velocitySlider.bindToDOM()
-
-  # ===========================================================================
   # Render sliders
-  # ===========================================================================
+  configSlider("trailLength", "trailValue",
+    get = proc(): float = CONFIG.trailAlpha,
+    set = proc(v: float) = CONFIG.trailAlpha = v,
+    min = 0.0, max = 1.0, precision = 2
+  )
 
-  # Trail length slider
-  let trailSlider = newFloatSlider(
-    "trailLength", "trailValue",
-    CONFIG.trailAlpha,
-    precision = 2, minValue = 0.0, maxValue = 1.0
+  configSlider("glowIntensity", "glowValue",
+    get = proc(): float = CONFIG.glowIntensity,
+    set = proc(v: float) = CONFIG.glowIntensity = v,
+    min = 0.0, max = 3.0, precision = 1
   )
-  discard trailSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.trailAlpha = v.toFloat()
-    nil
-  )
-  trailSlider.bindToDOM()
 
-  # Glow intensity slider
-  let glowSlider = newFloatSlider(
-    "glowIntensity", "glowValue",
-    CONFIG.glowIntensity,
-    precision = 1, minValue = 0.0, maxValue = 3.0
+  configSlider("velocityGlowScale", "velocityGlowValue",
+    get = proc(): float = CONFIG.velocityGlowScale,
+    set = proc(v: float) = CONFIG.velocityGlowScale = v,
+    min = 0.0, max = 5.0, precision = 1
   )
-  discard glowSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.glowIntensity = v.toFloat()
-    nil
-  )
-  glowSlider.bindToDOM()
 
-  # Velocity glow scale slider
-  let velGlowSlider = newFloatSlider(
-    "velocityGlowScale", "velocityGlowValue",
-    CONFIG.velocityGlowScale,
-    precision = 1, minValue = 0.0, maxValue = 5.0
-  )
-  discard velGlowSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.velocityGlowScale = v.toFloat()
-    nil
-  )
-  velGlowSlider.bindToDOM()
-
-  # ===========================================================================
   # Force Model sliders
-  # ===========================================================================
+  configSlider("repulsionEnd", "repulsionEndValue",
+    get = proc(): float = CONFIG.repulsionEnd,
+    set = proc(v: float) = CONFIG.repulsionEnd = v,
+    min = 0.1, max = 0.9, precision = 2
+  )
 
-  # Polynomial: Repulsion End
-  let repulsionEndSlider = newFloatSlider(
-    "repulsionEnd", "repulsionEndValue",
-    CONFIG.repulsionEnd,
-    precision = 2, minValue = 0.1, maxValue = 0.9
+  configSlider("attractionPeak", "attractionPeakValue",
+    get = proc(): float = CONFIG.attractionPeak,
+    set = proc(v: float) = CONFIG.attractionPeak = v,
+    min = 0.5, max = 0.95, precision = 2
   )
-  discard repulsionEndSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.repulsionEnd = v.toFloat()
-    nil
-  )
-  repulsionEndSlider.bindToDOM()
 
-  # Polynomial: Attraction Peak
-  let attractionPeakSlider = newFloatSlider(
-    "attractionPeak", "attractionPeakValue",
-    CONFIG.attractionPeak,
-    precision = 2, minValue = 0.5, maxValue = 0.95
+  configSlider("expRepulsionAlpha", "expRepulsionAlphaValue",
+    get = proc(): float = CONFIG.expRepulsionAlpha,
+    set = proc(v: float) = CONFIG.expRepulsionAlpha = v,
+    min = 1.0, max = 15.0, precision = 1
   )
-  discard attractionPeakSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.attractionPeak = v.toFloat()
-    nil
-  )
-  attractionPeakSlider.bindToDOM()
 
-  # Exponential: Repulsion Alpha
-  let expRepulsionAlphaSlider = newFloatSlider(
-    "expRepulsionAlpha", "expRepulsionAlphaValue",
-    CONFIG.expRepulsionAlpha,
-    precision = 1, minValue = 1.0, maxValue = 15.0
+  configSlider("expAttractionBeta", "expAttractionBetaValue",
+    get = proc(): float = CONFIG.expAttractionBeta,
+    set = proc(v: float) = CONFIG.expAttractionBeta = v,
+    min = 1.0, max = 10.0, precision = 1
   )
-  discard expRepulsionAlphaSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.expRepulsionAlpha = v.toFloat()
-    nil
-  )
-  expRepulsionAlphaSlider.bindToDOM()
-
-  # Exponential: Attraction Beta
-  let expAttractionBetaSlider = newFloatSlider(
-    "expAttractionBeta", "expAttractionBetaValue",
-    CONFIG.expAttractionBeta,
-    precision = 1, minValue = 1.0, maxValue = 10.0
-  )
-  discard expAttractionBetaSlider.value.subscribe(proc(v: SliderValue): proc() =
-    CONFIG.expAttractionBeta = v.toFloat()
-    nil
-  )
-  expAttractionBetaSlider.bindToDOM()
 
 # ==============================================================================
 # SECTION 8: EVENT SETUP
@@ -393,15 +297,9 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
 proc toggleTrails*() {.exportc.} =
   ## Toggle trail rendering mode.
   ## Updates button state and shows/hides trail length slider.
-
   CONFIG.trails = not CONFIG.trails
-  let trailBtn = getElementById("trailBtn")
-  discard trailBtn.classList.setClass("active", CONFIG.trails)
-  let trailSettings = cast[HTMLElement](getElementById("trailSettings"))
-  if CONFIG.trails:
-    trailSettings.style.display = "block"
-  else:
-    trailSettings.style.display = "none"
+  setActive("trailBtn", CONFIG.trails)
+  setVisible("trailSettings", CONFIG.trails)
 
 proc toggleControls*() {.exportc.} =
   ## Toggle controls panel visibility.
@@ -431,24 +329,11 @@ proc toggleForceModelSection*() {.exportc.} =
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
   ## @param model - 0 for polynomial, 1 for exponential
-
   CONFIG.forceModel = model
-
-  let polyBtn = cast[HTMLElement](getElementById("polyModelBtn"))
-  let expBtn = cast[HTMLElement](getElementById("expModelBtn"))
-  let polyParams = cast[HTMLElement](getElementById("polynomialParams"))
-  let expParams = cast[HTMLElement](getElementById("exponentialParams"))
-
-  if model == 0:
-    discard polyBtn.classList.setClass("active", true)
-    discard expBtn.classList.setClass("active", false)
-    polyParams.style.display = "block"
-    expParams.style.display = "none"
-  else:
-    discard polyBtn.classList.setClass("active", false)
-    discard expBtn.classList.setClass("active", true)
-    polyParams.style.display = "none"
-    expParams.style.display = "block"
+  setActive("polyModelBtn", model == 0)
+  setActive("expModelBtn", model == 1)
+  setVisible("polynomialParams", model == 0)
+  setVisible("exponentialParams", model == 1)
 
 # ==============================================================================
 # SECTION 10: MATRIX UI

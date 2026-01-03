@@ -274,3 +274,31 @@ when defined(js):
         displayEl.textContent = toFixed(v.floatVal, s.config.precision)
       nil
     )
+
+  proc configSlider*(
+    inputId, displayId: string;
+    get: proc(): float;
+    set: proc(v: float);
+    min, max: float;
+    precision: int = 0;
+    onChange: proc() = nil
+  ) =
+    ## Bind a slider directly to a value with minimal boilerplate.
+    ## Uses float internally; caller handles int conversion in get/set.
+    let slider = newFloatSlider(
+      inputId, displayId,
+      get(),
+      precision = precision,
+      minValue = min,
+      maxValue = max
+    )
+
+    discard slider.value.subscribe(proc(v: SliderValue): proc() =
+      set(v.toFloat())
+      nil
+    )
+
+    if not onChange.isNil:
+      slider.onChange = onChange
+
+    slider.bindToDOM()
