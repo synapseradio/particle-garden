@@ -4,14 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
-**BUILD USING `nimble all` EVERY TIME YOU MAKE ANY CHANGE.**
+**BUILD USING `nimble all --verbose` EVERY TIME YOU MAKE ANY CHANGE.**
+
+Always use the `--verbose` flag with nimble commands to see full output.
 
 ```bash
 # Install dependencies
 nimble install
 
+# Generate package paths (creates nimble.paths)
+# Run this after `nimble install` or if you see "cannot open file: webui"
+nimble setup
+
 # Build everything (frontend JS + native binary)
-nimble all
+nimble all --verbose
 
 # Run
 ./main

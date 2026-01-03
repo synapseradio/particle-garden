@@ -1,5 +1,9 @@
 # Build artifacts
 main
+web/app.js
+
+# Generated shaders (bundled from web/shaders/src/)
+web/shaders/*.wgsl
 Particle Garden.app/
 .DS_Store
 
@@ -18,4 +22,3 @@ src/main
 nimble.develop
 nimble.paths
 nimbledeps
-web/app.js
