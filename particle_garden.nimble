@@ -1,5 +1,5 @@
 # Package
-version       = "1.5.1"
+version       = "1.5.2"
 author        = "Particle Garden"
 description   = "Particle life simulation with WebGPU compute shaders"
 license       = "MIT"
