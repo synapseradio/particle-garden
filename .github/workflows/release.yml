@@ -88,6 +88,9 @@ jobs:
           # Use ditto instead of zip to preserve macOS bundle attributes
           ditto -c -k --sequesterRsrc --keepParent "${BUNDLE_DIR}" "${{ matrix.artifact }}"
 
+          # Also create a simple zip with just the binary
+          zip particle-garden-macos-bin.zip "${EXECUTABLE}"
+
       # Windows: Rename and zip
       - name: Package Windows
         if: matrix.os == 'windows-latest'
@@ -109,6 +112,13 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
+
+      - name: Upload macOS binary artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: particle-garden-macos-bin.zip
+          path: particle-garden-macos-bin.zip
 
   release:
     needs: build
