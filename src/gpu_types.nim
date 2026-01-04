@@ -285,7 +285,11 @@ const
   RENDER_GLOW_INTENSITY* = 5
   RENDER_VELOCITY_GLOW_SCALE* = 6
   RENDER_MAX_VELOCITY* = 7
-  RENDER_PARAMS_F32_COUNT* = 8
+  RENDER_TRAIL_LENGTH_SCALE* = 8  # Motion blur elongation factor
+  RENDER_PAD1* = 9                # Padding to 16-byte alignment
+  RENDER_PAD2* = 10
+  RENDER_PAD3* = 11
+  RENDER_PARAMS_F32_COUNT* = 12   # 48 bytes (3 vec4s)
 
 # =============================================================================
 # FADEPARAMS FIELD INDICES (webgpu_render.nim)

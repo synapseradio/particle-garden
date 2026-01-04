@@ -8,6 +8,7 @@
 # ==============================================================================
 
 from std/strutils import parseInt, parseFloat, formatFloat, ffDecimal
+from std/math import pow
 
 import ../core/observable
 
@@ -229,14 +230,18 @@ when defined(js):
       inputEl.value = cstring($s.getFloat())
       displayEl.textContent = toFixed(s.getFloat(), s.config.precision)
 
-    # Set min/max attributes based on slider type
+    # Set min/max/step attributes based on slider type
     case s.config.valueKind
     of svkInt:
       inputEl.min = cstring($int(s.config.minValue))
       inputEl.max = cstring($int(s.config.maxValue))
+      inputEl.step = cstring("1")
     of svkFloat:
       inputEl.min = cstring($s.config.minValue)
       inputEl.max = cstring($s.config.maxValue)
+      # Step based on precision: precision=1 → step=0.1, precision=2 → step=0.01
+      let stepVal = if s.config.precision <= 0: 1.0 else: pow(10.0, -float(s.config.precision))
+      inputEl.step = cstring($stepVal)
 
     # DOM → Observable: update on input
     inputEl.addEventListener("input", proc(e: Event) =

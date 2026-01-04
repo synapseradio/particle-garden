@@ -35,7 +35,7 @@ type
     timeScale* {.exportc.}: float
     particleSize* {.exportc.}: int
     trails* {.exportc.}: bool
-    trailAlpha* {.exportc.}: float
+    trailLength* {.exportc.}: float  # 0-100 particle diameters
     glowIntensity* {.exportc.}: float
     velocityGlowScale* {.exportc.}: float
     maxVelocity* {.exportc.}: float
@@ -154,7 +154,7 @@ proc createConfig(): ConfigObject =
   result.timeScale = 0.5
   result.particleSize = 3
   result.trails = false
-  result.trailAlpha = 0.96
+  result.trailLength = 0.0  # 0-100 particle diameters (0 = no trails)
   result.glowIntensity = 0.8  # Subtle glow, reduced 30% from 1.15
   result.velocityGlowScale = 1.0  # Full velocity-to-glow influence
   result.maxVelocity = 50.0

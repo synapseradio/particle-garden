@@ -1,6 +1,7 @@
 # Build artifacts
 main
 web/app.js
+tools/wgsl_bundle
 
 # Generated shaders (bundled from web/shaders/src/)
 web/shaders/*.wgsl
@@ -18,6 +19,9 @@ build/
 
 # Editor/IDE
 .ck/
+.codanna/
+.codannaignore
+.fastembed_cache
 src/main
 nimble.develop
 nimble.paths

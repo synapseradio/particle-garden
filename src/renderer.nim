@@ -17,6 +17,7 @@
 # ==============================================================================
 
 from std/jsffi import JsObject
+import std/math
 import bindings/js_interop
 import bindings/webgl
 import bindings/typed_arrays
@@ -196,7 +197,13 @@ proc render*(particleCount: int): RenderTiming {.exportc.} =
   # Handle trails or clear
   if CONFIG.trails:
     gl.useProgram(fadeProg)
-    gl.uniform1f(fadeAlpha, 1.0 - CONFIG.trailAlpha)
+    # Convert trail length to fade amount (same calculation as webgpu_render.nim)
+    let fadeAmount = if CONFIG.trailLength <= 0.0:
+      0.0
+    else:
+      let framesVisible = CONFIG.trailLength * 2.0
+      pow(0.05, 1.0 / framesVisible)
+    gl.uniform1f(fadeAlpha, 1.0 - fadeAmount)
     gl.bindBuffer(gl.glArrayBuffer(), quadVbo)
     gl.enableVertexAttribArray(fadeAPos)
     gl.vertexAttribPointer(fadeAPos, 2, gl.glFloat(), false, 0, 0)

@@ -31,6 +31,10 @@ struct RenderParams {
   glowIntensity: f32,      // Base glow multiplier (unused in main shader)
   velocityGlowScale: f32,  // 0=off, 1=full velocity influence (unused in main shader)
   maxVelocity: f32,        // For velocity normalization
+  trailLengthScale: f32,   // Motion blur elongation factor (0 = no blur)
+  _pad1: f32,
+  _pad2: f32,
+  _pad3: f32,
 };
 
 // Quad corner offsets (2 triangles = 6 vertices)
@@ -73,6 +77,7 @@ struct VertexOutput {
   @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha
   @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)
   @location(2) density: f32,       // Local particle density for glow effect
+  @location(3) trailPos: f32,      // Position along trail: -1 (tail) to 1 (head)
 };
 
 @vertex
@@ -93,13 +98,45 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3
   let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);
   let pointSize = params.baseSize * sizeMod;
-
-  // Scale offset by half point size to get world position
-  // offset is -1 to 1, so multiply by halfSize to get pixel offset
-  // Scale point size by canvas/world ratio to maintain visual size
-  let scale = params.resolution / params.worldSize;
   let halfSize = pointSize * 0.5;
-  let worldPos = p.pos + cornerOffset * halfSize / scale;
+
+  // Scale from world to screen space
+  let scale = params.resolution / params.worldSize;
+
+  // Motion blur: elongate quad in velocity direction
+  let speed = length(p.vel);
+  let hasMotion = speed > 0.001 && params.trailLengthScale > 0.0;
+
+  // Compute velocity-aligned coordinate system
+  let velDir = select(vec2f(1.0, 0.0), p.vel / speed, hasMotion);
+  let velPerp = vec2f(-velDir.y, velDir.x);
+
+  // Trail elongation: how far to extend the tail
+  // Scales with velocity and trailLengthScale parameter
+  let elongation = select(0.0, speed * params.trailLengthScale, hasMotion);
+
+  // Transform corner offset from axis-aligned to velocity-aligned
+  // cornerOffset.x: along velocity axis (positive = head, negative = tail)
+  // cornerOffset.y: perpendicular to velocity
+  var alongVel: f32;
+  var trailPosVal: f32;
+
+  if (cornerOffset.x < 0.0) {
+    // Tail vertices: extend backward by elongation
+    alongVel = cornerOffset.x * halfSize - elongation;
+    // Normalize trail position: more negative = further back in trail
+    let totalLength = halfSize + elongation;
+    trailPosVal = alongVel / totalLength;  // Will be negative (tail end)
+  } else {
+    // Head vertices: stay at normal position
+    alongVel = cornerOffset.x * halfSize;
+    trailPosVal = 1.0;  // Head of trail
+  }
+  let acrossVel = cornerOffset.y * halfSize;
+
+  // Compute world offset using velocity-aligned axes
+  let worldOffset = (velDir * alongVel + velPerp * acrossVel) / scale;
+  let worldPos = p.pos + worldOffset;
 
   // Transform to clip space: world coords -> normalized device coords
   // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
@@ -114,9 +151,12 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let zDepth = speciesBase + particleHash * speciesBandSize * 0.9;  // Stay within band
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
-  // Pass offset for circle calculation in fragment shader
-  // Scale offset by glowScale so fragment shader sees normalized -1 to 1 range
+  // Pass offset for circle/capsule shape calculation in fragment shader
+  // When elongated, we need to adjust offset to maintain circular ends
   output.offset = cornerOffset;
+
+  // Pass trail position for tapered alpha (-1 = tail, 1 = head)
+  output.trailPos = trailPosVal;
 
   // Pass density for glow intensity calculation
   output.density = p.density;
@@ -130,12 +170,30 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  let dist = length(input.offset);
+  // Determine if this fragment is at the particle head or in the trail tail
+  // trailPos = 1.0 at head, < 1.0 in tail region
+  let isHead = input.trailPos > 0.99;
 
-  // Screen-space anti-aliased circle
-  // fwidth() gives pixel-aware edge softness - adapts to particle screen size
+  // For head: use radial distance (circle shape)
+  // For tail: use perpendicular distance (capsule/band shape)
+  let dist = select(abs(input.offset.y), length(input.offset), isHead);
+
+  // Screen-space anti-aliased edge
   let edge = fwidth(dist);
-  let alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+  var shapeAlpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+
+  if (shapeAlpha <= 0.0) {
+    discard;
+  }
+
+  // Trail taper: fade from head (1.0) to tail (0.0)
+  // trailPos: 1 = head, negative = further back in tail
+  // Map to 0-1 range and apply soft falloff
+  let t = clamp((input.trailPos + 1.0) * 0.5, 0.0, 1.0);
+  let tailFade = sqrt(t);  // Soft falloff curve: sqrt gives gentle fade
+
+  // Combine shape alpha with trail taper
+  let alpha = shapeAlpha * tailFade;
 
   if (alpha <= 0.0) {
     discard;

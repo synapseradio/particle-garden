@@ -148,19 +148,19 @@ proc setupUI*() {.exportc.} =
   configSlider("interactionRadius", "radiusValue",
     get = proc(): float = CONFIG.interactionRadius.float,
     set = proc(v: float) = CONFIG.interactionRadius = v.int,
-    min = 10, max = 200
+    min = 10, max = 150
   )
 
   configSlider("forceStrength", "forceValue",
     get = proc(): float = CONFIG.forceStrength,
     set = proc(v: float) = CONFIG.forceStrength = v,
-    min = 0.1, max = 10.0, precision = 1
+    min = 0.1, max = 5.0, precision = 1
   )
 
   configSlider("friction", "frictionValue",
     get = proc(): float = CONFIG.friction,
     set = proc(v: float) = CONFIG.friction = v,
-    min = 0.0, max = 1.0, precision = 2
+    min = 0.0, max = 0.5, precision = 2
   )
 
   configSlider("timeScale", "timeScaleValue",
@@ -172,14 +172,14 @@ proc setupUI*() {.exportc.} =
   configSlider("maxVelocity", "velocityValue",
     get = proc(): float = CONFIG.maxVelocity,
     set = proc(v: float) = CONFIG.maxVelocity = v,
-    min = 10.0, max = 500.0
+    min = 0.0, max = 100.0
   )
 
   # Render sliders
   configSlider("trailLength", "trailValue",
-    get = proc(): float = CONFIG.trailAlpha,
-    set = proc(v: float) = CONFIG.trailAlpha = v,
-    min = 0.0, max = 1.0, precision = 2
+    get = proc(): float = CONFIG.trailLength,
+    set = proc(v: float) = CONFIG.trailLength = v,
+    min = 0.0, max = 200.0, precision = 0
   )
 
   configSlider("glowIntensity", "glowValue",
@@ -210,13 +210,13 @@ proc setupUI*() {.exportc.} =
   configSlider("expRepulsionAlpha", "expRepulsionAlphaValue",
     get = proc(): float = CONFIG.expRepulsionAlpha,
     set = proc(v: float) = CONFIG.expRepulsionAlpha = v,
-    min = 1.0, max = 15.0, precision = 1
+    min = 1.0, max = 15.0, precision = 2
   )
 
   configSlider("expAttractionBeta", "expAttractionBetaValue",
     get = proc(): float = CONFIG.expAttractionBeta,
     set = proc(v: float) = CONFIG.expAttractionBeta = v,
-    min = 1.0, max = 10.0, precision = 1
+    min = 1.0, max = 10.0, precision = 2
   )
 
 # ==============================================================================

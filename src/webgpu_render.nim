@@ -15,6 +15,7 @@
 
 from std/jsffi import JsObject, toJs, `[]`, `[]=`
 import std/dom
+import std/math
 import bindings/js_interop
 import bindings/webgpu
 import bindings/typed_arrays
@@ -359,8 +360,8 @@ proc initWebGPURender*(): bool =
   shaderDesc["code"] = RENDER_SHADER.cstring.toJs
   let shaderModule = webgpu_init.device.createShaderModule(shaderDesc)
 
-  # Create render params uniform buffer (resolution, worldSize, baseSize, glowIntensity, padding)
-  let paramsSize = 32  # vec2f + vec2f + f32 + f32 + f32 + f32 = 32 bytes
+  # Create render params uniform buffer (resolution, worldSize, baseSize, glowIntensity, etc.)
+  let paramsSize = 48  # 12 floats × 4 bytes = 48 bytes (RENDER_PARAMS_F32_COUNT)
   let paramsDesc = newJsObject()
   paramsDesc["size"] = paramsSize.toJs
   paramsDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
@@ -970,6 +971,13 @@ proc render*(particleCount: int): RenderTiming =
   paramsData[RENDER_GLOW_INTENSITY] = float32(config.CONFIG.glowIntensity)
   paramsData[RENDER_VELOCITY_GLOW_SCALE] = float32(config.CONFIG.velocityGlowScale)
   paramsData[RENDER_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
+  # Trail length scale: convert 0-100 slider to shader-friendly multiplier
+  # At trailLength=0: no elongation. At trailLength=100: significant elongation
+  let trailLengthScale = config.CONFIG.trailLength * 0.02  # Scale factor for motion blur
+  paramsData[RENDER_TRAIL_LENGTH_SCALE] = float32(trailLengthScale)
+  paramsData[RENDER_PAD1] = 0.0
+  paramsData[RENDER_PAD2] = 0.0
+  paramsData[RENDER_PAD3] = 0.0
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
   # Update species colors uniform (pack RGB as vec4f for 16-byte alignment)
@@ -983,8 +991,18 @@ proc render*(particleCount: int): RenderTiming =
 
   # Update fade params
   # Layout matches FadeParams indices in gpu_types.nim
+  # Convert trail length (0-100 particle diameters) to decay factor
+  # fadeAmount: higher = more of previous frame retained = longer trails
+  let fadeAmount = if config.CONFIG.trailLength <= 0.0:
+    0.0  # No trails: instant clear
+  else:
+    # Approximate frames to show trailLength worth of trail
+    # At 60fps, typical particle covers ~1 diameter per 2 frames
+    let framesVisible = config.CONFIG.trailLength * 2.0
+    # Decay to 5% visibility over that many frames: decay^frames = 0.05
+    pow(0.05, 1.0 / framesVisible)
   let fadeData = newFloat32Array(FADE_PARAMS_F32_COUNT)
-  fadeData[FADE_AMOUNT] = float32(config.CONFIG.trailAlpha)  # 0 = no fade, 1 = instant clear
+  fadeData[FADE_AMOUNT] = float32(fadeAmount)
   fadeData[FADE_PAD1] = 0.0
   fadeData[FADE_PAD2] = 0.0
   fadeData[FADE_PAD3] = 0.0
