@@ -1,6 +1,8 @@
 # Particle Garden
 
-Thousands of particles attract and repel each other based on simple rules. Different species interact differently, creating emergent behaviors — swarms, orbits, symbiosis, predation. You define the rules; the physics creates the patterns.
+<img width="1364" height="859" alt="Screenshot 2026-01-07 at 13 06 07" src="https://github.com/user-attachments/assets/9958c1e8-2152-40fb-b2e6-a18c7d3299cc" />
+
+Thousands of particles attract and repel each other based on simple rules. Different species interact differently, creating emergent behaviors — swarms, orbits, symbiosis, predation.  Very zen.
 
 ## Download
 
