@@ -8,7 +8,6 @@
 # ==============================================================================
 
 from std/strutils import parseInt, parseFloat, formatFloat, ffDecimal
-from std/math import pow
 
 import ../core/observable
 
@@ -202,6 +201,8 @@ proc getDisplayText*(s: Slider): string =
 # ==============================================================================
 
 when defined(js):
+  from std/math import pow
+
   from std/dom import
     Element, Event, getElementById, addEventListener
 
