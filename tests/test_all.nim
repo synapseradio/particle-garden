@@ -17,6 +17,11 @@ import test_observable
 import test_input
 import test_slider
 import test_matrix
+import test_config
+import test_gpu_types
+import test_shader_config
+import test_stats
+import test_app_state
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -28,3 +33,8 @@ static:
   discard test_input.INPUT_TESTS_LOADED
   discard test_slider.SLIDER_TESTS_LOADED
   discard test_matrix.MATRIX_STATE_TESTS_LOADED
+  discard test_config.CONFIG_TESTS_LOADED
+  discard test_gpu_types.GPU_TYPES_TESTS_LOADED
+  discard test_shader_config.SHADER_CONFIG_TESTS_LOADED
+  discard test_stats.STATS_TESTS_LOADED
+  discard test_app_state.APP_STATE_TESTS_LOADED

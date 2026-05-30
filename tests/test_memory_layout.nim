@@ -83,22 +83,30 @@ suite "Memory Layout Size Constraints":
 # CONSTANT EXPORT TESTS
 # ==============================================================================
 
+suite "Alignment Helper":
+  # align4 places every buffer offset; an off-by-one here silently misaligns a
+  # TypedArray view and corrupts reads. These pin the rounding contract directly.
+  test "align4 returns the input unchanged when it is already a multiple of 4":
+    check align4(0) == 0
+    check align4(4) == 4
+    check align4(8) == 8
+    check align4(4096) == 4096
+
+  test "align4 rounds up to the next multiple of 4 when the input is unaligned":
+    check align4(1) == 4
+    check align4(2) == 4
+    check align4(3) == 4
+    check align4(5) == 8
+    check align4(7) == 8
+    check align4(4095) == 4096
+
+
 suite "Memory Layout Constants":
-  test "MAX_PARTICLES is 100000":
-    check MAX_PARTICLES == 100000
-
-  test "MAX_SPECIES is 6":
-    check MAX_SPECIES == 6
-
-  test "MAX_GRID is 256":
-    check MAX_GRID == 256
-
-  test "PARTICLE_STRIDE is 32 bytes":
-    check PARTICLE_STRIDE == 32
-
-  test "WASM_DATA_OFFSET is 1MB":
-    check WASM_DATA_OFFSET == 1024 * 1024
-
+  # Literal-value pins for MAX_PARTICLES / MAX_SPECIES / MAX_GRID / PARTICLE_STRIDE /
+  # WASM_DATA_OFFSET were removed: they were change-detectors that proved no behavior.
+  # The structural contracts now live as compile-time `static: assert`s beside the
+  # constants in memory_layout.nim (PARTICLE_STRIDE, MAX_SPECIES) and are guarded by
+  # the relationship invariants below and the totalSize / non-overlap asserts in source.
   test "individual offset exports match OFFSETS object":
     check PARTICLES_A_OFFSET == OFFSETS.particlesA
     check PARTICLES_SORTED_OFFSET == OFFSETS.particlesSorted

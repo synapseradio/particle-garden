@@ -144,6 +144,15 @@ suite "Cell Color - From Value":
     let c = cellColorFromValue(0.0)
     check c.saturation == 0  # No saturation at zero
 
+  test "cellColorFromValue clamps saturation to 100 when magnitude exceeds 1.0":
+    # CONTRACT: saturation = min(100, int(abs(v)*100)). Values beyond +/-1.0 must
+    # not produce a >100 saturation (an invalid CSS percentage). The existing
+    # v=1.0 cases land exactly on 100 and never exercise the clamp branch.
+    check cellColorFromValue(2.0).saturation == 100
+    check cellColorFromValue(-3.5).saturation == 100
+    check cellColorFromValue(1.5).hue == 120
+    check cellColorFromValue(-1.5).hue == 0
+
 
 suite "Cell Color - String Conversion":
   test "toHslaString format":

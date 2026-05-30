@@ -89,8 +89,10 @@ const
 # SECTION 5: ALIGNMENT HELPER
 # ==============================================================================
 
-func align4(x: int): int {.inline.} =
+func align4*(x: int): int {.inline.} =
   ## Align to 4-byte boundary for typed array compatibility.
+  ## Exported so the alignment contract every buffer offset depends on can be
+  ## tested directly rather than only inferred from computed offsets.
   (x + 3) and (not 3)
 
 # ==============================================================================
@@ -221,3 +223,11 @@ static:
 
   # Verify total size fits
   assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated memory"
+
+  # MAX_SPECIES is a cross-language contract: the WGSL compute shaders hardcode
+  # `const MAX_SPECIES: u32 = 6u` (forces.wgsl, bin-count.wgsl, bin-scatter.wgsl,
+  # integrate.wgsl, cell-stats.wgsl) and must match this value, and the SimParams
+  # attraction matrix is sized MAX_SPECIES * MAX_SPECIES floats. Changing it here
+  # without updating the shaders silently corrupts force lookups. This lives at
+  # compile time beside the constant so it cannot drift out of a forgotten import.
+  assert MAX_SPECIES == 6, "WGSL shaders hardcode MAX_SPECIES = 6u; both sides must agree"

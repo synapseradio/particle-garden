@@ -309,3 +309,26 @@ suite "Neighbor Cell Computation":
     check n.ny == 9
     check approxEq(n.wrapX, -100.0f, EPSILON_TIGHT)
     check approxEq(n.wrapY, -100.0f, EPSILON_TIGHT)
+
+
+suite "Neighbor Cell Index Validity":
+  # getNeighborCell feeds a buffer index (cell = ny*gridW + nx). If wrapping ever
+  # produced an out-of-range cell, the forces pass would read or write outside the
+  # grid buffer. This sweeps every cell and every neighbor offset to prove the
+  # returned index always lands inside [0, gridW*gridH).
+  test "getNeighborCell returns an in-range cell for every offset at every cell":
+    const gridW = 10
+    const gridH = 10
+    for cy in 0 ..< gridH:
+      for cx in 0 ..< gridW:
+        for dy in [-1, 0, 1]:
+          for dx in [-1, 0, 1]:
+            let n = getNeighborCell(cx, cy, dx, dy, gridW, gridH,
+                canvasW = 100.0f, canvasH = 100.0f)
+            check n.nx >= 0
+            check n.nx < gridW
+            check n.ny >= 0
+            check n.ny < gridH
+            check n.cell >= 0
+            check n.cell < gridW * gridH
+            check n.cell == n.ny * gridW + n.nx

@@ -162,7 +162,8 @@ suite "Limit Constants Contract":
   test "MAX_SPECIES supports attraction matrix":
     ## CONTRACT: MAX_SPECIES defines the attraction matrix dimension
     ## WHY: The matrix is MAX_SPECIES x MAX_SPECIES = 36 floats
-    check MAX_SPECIES == 6
+    ## The exact value (6) is pinned by a static assert in memory_layout.nim;
+    ## this documents the derived matrix-element count the GPU buffer must hold.
     check MAX_SPECIES * MAX_SPECIES == 36
 
   test "MAX_PARTICLES provides headroom above default":

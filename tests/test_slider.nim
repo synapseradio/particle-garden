@@ -13,6 +13,7 @@ import std/unittest
 import ../src/ui/controls/slider
 import ../src/ui/state/simulation_state
 import ../src/ui/state/render_state
+import ../src/memory_layout  # MAX_PARTICLES / MAX_SPECIES for default-validity checks
 
 # Exported symbol for test_all.nim to reference
 const SLIDER_TESTS_LOADED* = true
@@ -201,15 +202,22 @@ suite "Slider - Callbacks":
 # ==============================================================================
 
 suite "SimulationState - Initialization":
-  test "initSimulationState creates defaults":
+  test "initSimulationState defaults sit within the engine's valid ranges":
+    # The exact default values are tunable and deliberately not pinned. What must
+    # hold is that the shipped defaults are usable: a particle count above
+    # MAX_PARTICLES would overflow the buffers, a species count above MAX_SPECIES
+    # would index past the attraction matrix, and the rates must stay sane.
     let state = initSimulationState()
-    check state.particleCount == 16000
-    check state.speciesCount == 4
-    check state.interactionRadius == 50
-    check abs(state.forceStrength - 1.0) < 0.001
-    check abs(state.friction - 0.05) < 0.001
-    check abs(state.timeScale - 0.5) < 0.001
-    check abs(state.maxVelocity - 50.0) < 0.001
+    check state.particleCount > 0
+    check state.particleCount <= MAX_PARTICLES
+    check state.speciesCount >= 1
+    check state.speciesCount <= MAX_SPECIES
+    check state.interactionRadius > 0
+    check state.forceStrength > 0.0
+    check state.friction >= 0.0
+    check state.friction < 1.0
+    check state.timeScale > 0.0
+    check state.maxVelocity > 0.0
 
   test "initSimulationState with values":
     let state = initSimulationState(
@@ -271,13 +279,15 @@ suite "SimulationState - Updates":
 # ==============================================================================
 
 suite "RenderState - Initialization":
-  test "initRenderState creates defaults":
+  test "initRenderState defaults sit within valid display ranges":
+    # Exact values are tunable; these bounds are the real contract: a non-positive
+    # particle size renders nothing, and trailAlpha must be a valid [0, 1] alpha.
     let state = initRenderState()
-    check state.particleSize == 3
-    check state.trails == false
-    check abs(state.trailAlpha - 0.96) < 0.001
-    check abs(state.glowIntensity - 0.8) < 0.001
-    check abs(state.velocityGlowScale - 1.0) < 0.001
+    check state.particleSize > 0
+    check state.trailAlpha >= 0.0
+    check state.trailAlpha <= 1.0
+    check state.glowIntensity >= 0.0
+    check state.velocityGlowScale >= 0.0
 
   test "initRenderState with values":
     let state = initRenderState(
