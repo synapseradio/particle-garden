@@ -141,7 +141,15 @@ func validateGridOffsets*(offsets, counts: openArray[int];
   ## Returns true if:
   ##   - All offsets are non-negative
   ##   - offsets[i] + counts[i] <= particleCount for all i
+  ##   - Offsets form a contiguous exclusive prefix sum:
+  ##     offsets[i] == offsets[i-1] + counts[i-1] for every i > 0
   ##   - Sum of counts equals particleCount
+  ##
+  ## The contiguity check is what separates a healthy prefix sum from a corrupted
+  ## bin-scatter. A gap leaves sorted-buffer slots unclaimed, and an overlap makes
+  ## two cells share slots. Both can satisfy the per-cell bound and the total-count
+  ## check while still being garbage, so the consecutive-offset relationship is
+  ## what actually catches them.
   ##
   if offsets.len != counts.len:
     return false
@@ -151,6 +159,8 @@ func validateGridOffsets*(offsets, counts: openArray[int];
     if offsets[i] < 0:
       return false
     if offsets[i] + counts[i] > particleCount:
+      return false
+    if i > 0 and offsets[i] != offsets[i - 1] + counts[i - 1]:
       return false
     totalCount += counts[i]
 

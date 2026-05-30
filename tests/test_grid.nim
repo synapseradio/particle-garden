@@ -230,6 +230,27 @@ suite "Grid Offset Validation":
 
     check not validateGridOffsets(offsets, counts, particleCount)
 
+  test "rejects offsets that gap then overlap when the total still matches":
+    # CONTRACT: a valid prefix sum is contiguous, offset[i] == offset[i-1] + counts[i-1].
+    # Here offset[1]=3 leaves a 1-slot gap after cell 0 (ends at 2), and offset[2]=4
+    # overlaps into cell 1's range. Bins corrupt each other, yet every non-negativity,
+    # particleCount-bound, and total-count check still passes. The validator must
+    # reject this as a non-contiguous (corrupted bin-scatter) offset array.
+    let counts = @[2, 2, 1]
+    let offsets = @[0, 3, 4]
+    let particleCount = 5
+
+    check not validateGridOffsets(offsets, counts, particleCount)
+
+  test "rejects offsets where a later offset moves backward into a prior bin":
+    # CONTRACT: offsets must not decrease relative to the running prefix sum.
+    # offset[1]=1 sits before offset[0]+counts[0]=2, so cell 1 overlaps cell 0.
+    let counts = @[2, 2, 1]
+    let offsets = @[0, 1, 3]
+    let particleCount = 5
+
+    check not validateGridOffsets(offsets, counts, particleCount)
+
 
 # ==============================================================================
 # INVARIANT CHECKING TESTS
