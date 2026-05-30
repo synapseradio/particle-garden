@@ -35,25 +35,39 @@ test "computeMemoryOffsets adds padding correctly":
 
 | File | Purpose | Compilation |
 |------|---------|-------------|
-| `test_all.nim` | Entry point that imports all test modules | Native (`nim c`) |
-| `test_memory_layout.nim` | Memory layout constants, alignment, AoS structure | Native |
-| `test_grid_core.nim` | Pure grid algorithms (cell indexing, prefix sums) | Native |
-| `test_physics_core.nim` | Pure physics math (forces, wrapping, density) | Native |
-| `test_karax_import.nim` | Karax integration smoke test | JS (`nim js`) |
+| `test_all.nim` | Entry point that imports every test module | Native (`nim c`) |
+| `test_memory_layout.nim` | Memory layout constants, alignment, AoS structure, `align4` | Native |
+| `test_grid.nim` | Pure grid algorithms (cell indexing, prefix sums, offset validation) | Native |
+| `test_physics.nim` | Pure physics math (forces, wrapping, density, neighbor cells) | Native |
+| `test_config.nim` | Configuration constraint invariants derived from the layout limits | Native |
+| `test_gpu_types.nim` | GPU struct layout helpers (type sizes, field offsets, accessors) | Native |
+| `test_shader_config.nim` | Shader workgroup-size and tunable-constant accessors | Native |
+| `test_observable.nim` | Observable reactive primitive (subscribe, set, dispose) | Native |
+| `test_input.nim` | Input handling logic | Native |
+| `test_slider.nim` | Slider component plus simulation and render state | Native |
+| `test_matrix.nim` | Attraction matrix state plus cell and species colors | Native |
+| `test_stats.nim` | Performance stats formatters and immutable updates | Native |
+| `test_app_state.nim` | App runtime and profiling-average accumulators | Native |
+
+Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself.
 
 ### Test Architecture
 
 ```
 test_all.nim (runner)
     │
-    ├── test_memory_layout.nim
-    │   └── tests memory_layout.nim (compile-time constants)
-    │
-    ├── test_grid_core.nim
-    │   └── tests grid_core.nim (pure functions, no FFI)
-    │
-    └── test_physics_core.nim
-        └── tests physics_core.nim (pure functions, no FFI)
+    ├── test_memory_layout.nim  → memory_layout.nim (constants, offsets, align4)
+    ├── test_config.nim         → memory_layout.nim (constraint invariants)
+    ├── test_grid.nim           → grid_core.nim (grid math, offset validation)
+    ├── test_physics.nim        → physics_core.nim (forces, wrapping, neighbors)
+    ├── test_gpu_types.nim      → gpu_types.nim (struct layout helpers)
+    ├── test_shader_config.nim  → shader_config.nim (workgroup/tuning accessors)
+    ├── test_observable.nim     → ui/core/observable.nim
+    ├── test_input.nim          → ui/input (input logic)
+    ├── test_slider.nim         → ui/controls/slider.nim, ui/state (sim/render)
+    ├── test_matrix.nim         → ui/state/matrix_state.nim (matrix, colors)
+    ├── test_stats.nim          → ui/stats/stats_view.nim (formatters, updates)
+    └── test_app_state.nim      → ui/state/app_state.nim (profiling averages)
 ```
 
 ## Running Tests
@@ -63,12 +77,7 @@ test_all.nim (runner)
 nimble test
 ```
 
-### JS Compilation Verification
-```bash
-nimble testjs
-```
-
-This verifies that Karax and JS-specific modules compile correctly, but doesn't run browser tests.
+This compiles `tests/test_all.nim` with the native backend and runs the whole suite. The same run also happens in CI before any release is built, so a failing test blocks the release.
 
 ## Test Categories
 
@@ -150,9 +159,9 @@ These modules are thin FFI bindings to browser APIs. Testing them requires:
 3. Mocking browser APIs (defeats the purpose)
 
 **Mitigation:**
-- `nimble testjs` verifies JS compilation succeeds
+- The application build (`nimble app`) compiles the JS frontend, so a broken FFI binding fails the build
 - Manual browser testing covers integration
-- Pure algorithm modules (`*_core.nim`) are thoroughly tested
+- The pure-logic modules are thoroughly tested natively, and behavior is extracted into pure modules wherever it can be separated from the browser surface
 
 ### Implementation Details
 
@@ -407,14 +416,10 @@ else:
 
 **Compiler flags (from particle_garden.nimble):**
 - `--styleCheck:error` — Enforces snake_case
-- `--warningAsError:*` — Treats warnings as errors
+- `--warningAsError:*` — Treats warnings as errors (an unused import or variable fails the build)
 - `--hint:XDeclaredButNotUsed:on` — Catches unused variables
 
-### What `nimble testjs` Does
-
-1. Compiles `tests/test_karax_import.nim` with JS backend (`nim js`)
-2. Verifies Karax and browser-dependent modules compile
-3. Does NOT run tests (no browser environment)
+The browser-dependent modules have no separate test target. Their correctness is exercised by the application build (`nimble app`, which compiles the JS frontend) and by manual testing in the browser.
 
 ## Future Test Improvements
 
@@ -435,12 +440,8 @@ else:
 
 ---
 
-**Last Updated:** 2025-12-31
+## Coverage Summary
 
-**Test Count:** 108 tests across 3 modules
+The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, GPU struct layouts and field accessors, shader workgroup and tuning configuration, the reactive `Observable` primitive, and the UI state models (simulation, render, matrix and its colors, slider, stats formatting, and profiling averages). Run `nimble test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
 
-**Test Coverage:**
-- ✅ Memory layout (32 tests)
-- ✅ Grid algorithms (35 tests)
-- ✅ Physics algorithms (41 tests)
-- ⚠️ Browser integration (manual testing only)
+Browser integration (WebGPU, DOM, the FFI bindings) is not covered by this suite. It is exercised by the application build and by manual testing in the browser.
