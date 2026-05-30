@@ -27,7 +27,7 @@ const
 # FORCE CALCULATION
 # ==============================================================================
 
-proc calculateForce*(r, attr, fMul, invD: float32): float32 =
+func calculateForce*(r, attr, fMul, invD: float32): float32 =
   ## Calculate force magnitude between two particles.
   ##
   ## r - Normalized distance in [0, 1] range (d / rMax)
@@ -56,7 +56,7 @@ proc calculateForce*(r, attr, fMul, invD: float32): float32 =
   result = f * fMul * invD
 
 
-proc calculateForceMagnitude*(r, attr: float32): float32 =
+func calculateForceMagnitude*(r, attr: float32): float32 =
   ## Calculate raw force magnitude without scaling.
   ##
   ## Useful for testing the force curve shape independent of fMul and invD.
@@ -74,7 +74,7 @@ proc calculateForceMagnitude*(r, attr: float32): float32 =
 # DISTANCE NORMALIZATION
 # ==============================================================================
 
-proc normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ): tuple[
+func normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ): tuple[
     r: float32, invD: float32, valid: bool] =
   ## Normalize displacement vector to interaction range.
   ##
@@ -107,7 +107,7 @@ proc normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ)
 # DENSITY ACCUMULATION
 # ==============================================================================
 
-proc accumulateDensity*(r: float32; sameSpecies: bool): float32 =
+func accumulateDensity*(r: float32; sameSpecies: bool): float32 =
   ## Calculate density contribution from a neighbor particle.
   ##
   ## r - Normalized distance in [0, 1] range
@@ -126,7 +126,7 @@ proc accumulateDensity*(r: float32; sameSpecies: bool): float32 =
 # TOROIDAL WRAPPING
 # ==============================================================================
 
-proc wrapDelta*(delta, size, halfSize: float32): float32 =
+func wrapDelta*(delta, size, halfSize: float32): float32 =
   ## Apply toroidal wrapping to a displacement component.
   ##
   ## delta - Displacement value (e.g., x2 - x1)
@@ -144,7 +144,7 @@ proc wrapDelta*(delta, size, halfSize: float32): float32 =
     result = delta
 
 
-proc wrapPosition*(pos, size: float32): float32 =
+func wrapPosition*(pos, size: float32): float32 =
   ## Wrap a position to stay within [0, size) bounds.
   ##
   ## pos - Position value
@@ -164,7 +164,7 @@ proc wrapPosition*(pos, size: float32): float32 =
 # CELL INDEX COMPUTATION
 # ==============================================================================
 
-proc computeCellCoords*(px, py: float32; gridW, gridH: int;
+func computeCellCoords*(px, py: float32; gridW, gridH: int;
     invCellW, invCellH: float32): tuple[cx: int, cy: int] =
   ## Compute grid cell coordinates from particle position.
   ##
@@ -191,7 +191,7 @@ proc computeCellCoords*(px, py: float32; gridW, gridH: int;
   result = (cx: cx, cy: cy)
 
 
-proc cellCoordsToIndex*(cx, cy, gridW: int): int =
+func cellCoordsToIndex*(cx, cy, gridW: int): int =
   ## Convert cell coordinates to linear cell index.
   ##
   ## cx, cy - Cell coordinates
@@ -206,7 +206,7 @@ proc cellCoordsToIndex*(cx, cy, gridW: int): int =
 # NEIGHBOR CELL ITERATION
 # ==============================================================================
 
-proc getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
+func getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
     canvasW, canvasH: float32): tuple[nx: int, ny: int, cell: int,
         wrapX: float32, wrapY: float32] =
   ## Get neighbor cell with toroidal wrapping.

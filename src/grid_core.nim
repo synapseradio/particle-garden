@@ -20,7 +20,7 @@ const MAX_GRID* = memory_layout.MAX_GRID
 # GRID DIMENSION COMPUTATION
 # ==============================================================================
 
-proc computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
+func computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
     gridW: int, gridH: int, cellSize: int] =
   ## Compute grid dimensions from canvas size and interaction radius.
   ##
@@ -53,7 +53,7 @@ proc computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
   result = (gridW: gridW, gridH: gridH, cellSize: cellSize)
 
 
-proc computeInverseCellDims*(gridW, gridH: int;
+func computeInverseCellDims*(gridW, gridH: int;
     canvasW, canvasH: float): tuple[invCellW: float, invCellH: float] =
   ## Compute inverse cell dimensions for efficient position-to-cell mapping.
   ##
@@ -72,7 +72,7 @@ proc computeInverseCellDims*(gridW, gridH: int;
 # CELL INDEX COMPUTATION
 # ==============================================================================
 
-proc positionToCellIndex*(px, py: float; gridW, gridH: int;
+func positionToCellIndex*(px, py: float; gridW, gridH: int;
     invCellW, invCellH: float): int =
   ## Map a particle position to a cell index.
   ##
@@ -100,7 +100,7 @@ proc positionToCellIndex*(px, py: float; gridW, gridH: int;
   result = cy * gridW + cx
 
 
-proc cellIndexToCoords*(cellIdx, gridW: int): tuple[cx: int, cy: int] =
+func cellIndexToCoords*(cellIdx, gridW: int): tuple[cx: int, cy: int] =
   ## Convert a linear cell index back to cell coordinates.
   ##
   ## cellIdx - Linear cell index
@@ -115,7 +115,7 @@ proc cellIndexToCoords*(cellIdx, gridW: int): tuple[cx: int, cy: int] =
 # PREFIX SUM HELPERS
 # ==============================================================================
 
-proc computePrefixSum*(counts: openArray[int]): seq[int] =
+func computePrefixSum*(counts: openArray[int]): seq[int] =
   ## Compute exclusive prefix sum of cell counts.
   ##
   ## counts - Array of particle counts per cell
@@ -130,7 +130,7 @@ proc computePrefixSum*(counts: openArray[int]): seq[int] =
     offset += counts[i]
 
 
-proc validateGridOffsets*(offsets, counts: openArray[int];
+func validateGridOffsets*(offsets, counts: openArray[int];
     particleCount: int): bool =
   ## Validate that grid offsets are consistent with counts.
   ##
@@ -161,13 +161,13 @@ proc validateGridOffsets*(offsets, counts: openArray[int];
 # INVARIANT CHECKING
 # ==============================================================================
 
-proc isValidCellIndex*(cellIdx, gridW, gridH: int): bool =
+func isValidCellIndex*(cellIdx, gridW, gridH: int): bool =
   ## Check if a cell index is valid.
   ##
   result = cellIdx >= 0 and cellIdx < gridW * gridH
 
 
-proc isValidCellCoords*(cx, cy, gridW, gridH: int): bool =
+func isValidCellCoords*(cx, cy, gridW, gridH: int): bool =
   ## Check if cell coordinates are valid.
   ##
   result = cx >= 0 and cx < gridW and cy >= 0 and cy < gridH
