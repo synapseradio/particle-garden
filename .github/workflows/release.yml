@@ -44,6 +44,9 @@ jobs:
       - name: Setup Nim paths
         run: nimble setup
 
+      - name: Run tests
+        run: nimble test
+
       - name: Build release
         run: nimble release
 
