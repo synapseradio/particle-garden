@@ -277,6 +277,12 @@
           </button>
         </div>
 
+        <!--
+          Slider min/max/step/value attributes below mirror the authoritative
+          Nim registrations (ui.nim configSlider + src/config_ranges.nim).
+          slider.bindToDOM overwrites them from Nim at bind time, so editing
+          them here changes nothing — edit config_ranges.nim instead.
+        -->
         <div class="control-group">
           <label
             >Particles
@@ -285,10 +291,10 @@
           <input
             type="range"
             id="particleCount"
-            min="1000"
-            max="64000"
+            min="100"
+            max="128000"
             value="16000"
-            step="1000"
+            step="1"
           />
         </div>
 
@@ -308,8 +314,8 @@
           <input
             type="range"
             id="interactionRadius"
-            min="20"
-            max="120"
+            min="10"
+            max="150"
             value="50"
           />
         </div>
@@ -323,7 +329,7 @@
             type="range"
             id="forceStrength"
             min="0.1"
-            max="3"
+            max="5"
             value="1"
             step="0.1"
           />
@@ -337,8 +343,8 @@
           <input
             type="range"
             id="friction"
-            min="0.01"
-            max="0.2"
+            min="0"
+            max="0.5"
             value="0.05"
             step="0.01"
           />
@@ -352,10 +358,10 @@
           <input
             type="range"
             id="timeScale"
-            min="0.0"
-            max="2.0"
+            min="0.1"
+            max="5"
             value="0.5"
-            step="0.05"
+            step="0.1"
           />
         </div>
 
@@ -396,10 +402,10 @@
           <input
             type="range"
             id="trailLength"
-            min="0.5"
-            max="0.99"
-            value="0.92"
-            step="0.01"
+            min="0"
+            max="200"
+            value="0"
+            step="1"
           />
         </div>
 
@@ -558,7 +564,7 @@
                   min="0.1"
                   max="0.9"
                   value="0.5"
-                  step="0.05"
+                  step="0.01"
                 />
               </div>
               <div class="control-group">
@@ -574,7 +580,7 @@
                   min="0.5"
                   max="0.95"
                   value="0.75"
-                  step="0.05"
+                  step="0.01"
                 />
               </div>
             </div>
@@ -594,7 +600,7 @@
                   min="1"
                   max="15"
                   value="6"
-                  step="0.5"
+                  step="0.01"
                 />
               </div>
               <div class="control-group">
@@ -610,7 +616,7 @@
                   min="1"
                   max="10"
                   value="3"
-                  step="0.5"
+                  step="0.01"
                 />
               </div>
             </div>

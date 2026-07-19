@@ -9,7 +9,7 @@
 #
 # ==============================================================================
 
-import std/[strutils, unittest]
+import std/[sets, strutils, unittest]
 import ../src/ui/state/matrix_state
 
 # Exported symbol for test_all.nim to reference
@@ -280,3 +280,32 @@ suite "Matrix Grid HTML - Pure Builders":
     values[matrixIndex(5, 5)] = 0.99
     let colorChannels = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     check "0.99" notin matrixGridHtml(values, colorChannels, 2)
+
+# ==============================================================================
+# SPECIES GROWTH - NEWLY EXPOSED CELLS
+# ==============================================================================
+#
+# When the species count grows interactively, only the newly exposed matrix
+# cells get randomized; established rules survive. Shrinking preserves the
+# hidden values in the buffer so they reappear on re-grow.
+
+suite "Species Growth Exposes Exactly The New Cells":
+  test "shrinking or keeping the species count exposes nothing":
+    check newlyExposedCells(4, 4).len == 0
+    check newlyExposedCells(6, 2).len == 0
+
+  test "growing exposes exactly the L-shaped band of new cells":
+    let cells = newlyExposedCells(2, 3)
+    check cells.len == 3 * 3 - 2 * 2
+    for cell in cells:
+      check cell.row < 3
+      check cell.col < 3
+      check cell.row >= 2 or cell.col >= 2
+
+  test "growing from zero exposes the full grid":
+    check newlyExposedCells(0, 2).len == 4
+
+  test "every exposed cell appears exactly once":
+    let cells = newlyExposedCells(3, 5)
+    check cells.len == 5 * 5 - 3 * 3
+    check toHashSet(cells).len == cells.len

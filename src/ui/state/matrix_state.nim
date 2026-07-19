@@ -121,6 +121,24 @@ func toRgbaString*(c: SpeciesColor): string =
   "rgba(" & $c.r & "," & $c.g & "," & $c.b & "," & $c.alpha & ")"
 
 # ==============================================================================
+# SECTION 5b: SPECIES GROWTH
+# ==============================================================================
+
+type
+  MatrixCell* = tuple[row, col: int]
+
+func newlyExposedCells*(oldCount, newCount: int): seq[MatrixCell] =
+  ## The cells visible at newCount that were not visible at oldCount: the
+  ## L-shaped band a species-count grow exposes. Shrinks expose nothing —
+  ## hidden values persist in the buffer and reappear on re-grow.
+  if newCount <= oldCount:
+    return @[]
+  for row in 0 ..< newCount:
+    for col in 0 ..< newCount:
+      if row >= oldCount or col >= oldCount:
+        result.add((row: row, col: col))
+
+# ==============================================================================
 # SECTION 6: RULE RANDOMIZATION (pure core)
 # ==============================================================================
 

@@ -24,6 +24,9 @@ when defined(js):
 
   import ../state/matrix_state
 
+  # Callers (ui.nim) speak the state vocabulary too: cells, indices, samplers
+  export matrix_state
+
   # ============================================================================
   # SECTION 1: JS FFI
   # ============================================================================
@@ -96,6 +99,17 @@ when defined(js):
         editor.matrix[matrixIndex(row, col)] = sampleRuleValue(sigma, gaussian)
 
     # Refresh display and trigger callback
+    editor.render()
+    if not editor.onUpdate.isNil:
+      editor.onUpdate()
+
+  proc randomizeCells*(editor: MatrixEditor; cells: seq[MatrixCell]; sigma: float) =
+    ## Randomize only the given cells (a species-count grow randomizes just
+    ## the newly exposed band; established rules survive). Re-renders and
+    ## fires the update callback even for an empty set, so a shrink still
+    ## refreshes the visible grid.
+    for cell in cells:
+      editor.matrix[matrixIndex(cell.row, cell.col)] = sampleRuleValue(sigma, gaussian)
     editor.render()
     if not editor.onUpdate.isNil:
       editor.onUpdate()

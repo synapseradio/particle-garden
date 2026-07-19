@@ -171,12 +171,17 @@ proc setResizeCallback*(callback: proc()) {.exportc.} =
 # Forward declarations for procs used before they are defined
 proc randomizeMatrix*() {.exportc.}
 proc updateMatrixDisplay*() {.exportc.}
+proc applySpeciesCountChange(newCount: int, randomizeNew: bool)
 
 # The matrix editor instance (delegates live in Section 10). The exportc
 # name forces the JS backend to assign the global its generated name up
 # front; without it, codegen of the forward-declared delegates dies with
 # "symbol has no generated name".
 var matrixEditor {.exportc: "pgMatrixEditor".}: MatrixEditor = nil
+
+# The species count the matrix grid last rendered with; lets a grow
+# distinguish newly exposed cells from established ones.
+var lastSpeciesCount {.exportc: "pgLastSpeciesCount".}: int = 0
 
 proc initMatrixEditor() =
   ## Create the matrix editor over the shared buffers. Runs first in setupUI,
@@ -186,6 +191,7 @@ proc initMatrixEditor() =
   matrixEditor.onUpdate = proc() =
     if not onMatrixUpdate.isNil:
       onMatrixUpdate()
+  lastSpeciesCount = CONFIG.speciesCount
 
 # ==============================================================================
 # SECTION 7: UI SETUP
@@ -214,7 +220,9 @@ proc setupUI*() {.exportc.} =
       proc(simState: var SimulationState) = simState.speciesCount = value.int),
     min = SPECIES_COUNT_MIN.float, max = SPECIES_COUNT_MAX.float,
     onChange = proc() =
-      randomizeMatrix()
+      # Interactive grow randomizes only the newly exposed matrix cells;
+      # shrink preserves values (they reappear on re-grow).
+      applySpeciesCountChange(CONFIG.speciesCount, randomizeNew = true)
       if not onInitParticles.isNil: onInitParticles()
   )
 
@@ -500,6 +508,25 @@ proc randomizeMatrix*() {.exportc.} =
   ## Values range from -1 (repulsion) to +1 (attraction).
   matrixEditor.randomize(CONFIG.ruleTemperature)
   console.log("Matrix randomized - sample values:".toJs, matrix[0].toJs, matrix[1].toJs, matrix[6].toJs, matrix[7].toJs)
+
+proc applySpeciesCountChange(newCount: int, randomizeNew: bool) =
+  ## React to a species-count change: a grow randomizes only the newly
+  ## exposed matrix band (when randomizeNew), a shrink just re-renders —
+  ## hidden values persist in the buffer and reappear on re-grow.
+  let exposed = newlyExposedCells(lastSpeciesCount, newCount)
+  lastSpeciesCount = newCount
+  if randomizeNew:
+    matrixEditor.randomizeCells(exposed, CONFIG.ruleTemperature)
+  else:
+    matrixEditor.render()
+
+proc setSpeciesCount*(newCount: int, randomizeNew: bool = false) {.exportc.} =
+  ## Programmatic species-count change (preset apply): updates the typed
+  ## state and the matrix grid without re-initializing particles — the
+  ## caller owns that ordering.
+  updateSimulation(proc(simState: var SimulationState) =
+    simState.speciesCount = newCount)
+  applySpeciesCountChange(newCount, randomizeNew)
 
 # ==============================================================================
 # SECTION 11: STATS DISPLAY
