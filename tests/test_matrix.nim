@@ -38,9 +38,9 @@ suite "Matrix Index - Calculations":
     for row in 0 ..< 6:
       for col in 0 ..< 6:
         let idx = matrixIndex(row, col)
-        let (r, c) = matrixCoords(idx)
-        check r == row
-        check c == col
+        let (gotRow, gotCol) = matrixCoords(idx)
+        check gotRow == row
+        check gotCol == col
 
 
 suite "Matrix Index - Validation":
@@ -119,30 +119,30 @@ suite "Matrix Values - Classification":
 
 suite "Cell Color - From Value":
   test "cellColorFromValue positive (attraction)":
-    let c = cellColorFromValue(0.5)
-    check c.hue == 120  # Green
-    check c.saturation == 50
-    check c.lightness == 40
-    check abs(c.alpha - 0.7) < 0.001
+    let color = cellColorFromValue(0.5)
+    check color.hue == 120  # Green
+    check color.saturation == 50
+    check color.lightness == 40
+    check abs(color.alpha - 0.7) < 0.001
 
   test "cellColorFromValue negative (repulsion)":
-    let c = cellColorFromValue(-0.5)
-    check c.hue == 0  # Red
-    check c.saturation == 50
+    let color = cellColorFromValue(-0.5)
+    check color.hue == 0  # Red
+    check color.saturation == 50
 
   test "cellColorFromValue max attraction":
-    let c = cellColorFromValue(1.0)
-    check c.hue == 120
-    check c.saturation == 100
+    let color = cellColorFromValue(1.0)
+    check color.hue == 120
+    check color.saturation == 100
 
   test "cellColorFromValue max repulsion":
-    let c = cellColorFromValue(-1.0)
-    check c.hue == 0
-    check c.saturation == 100
+    let color = cellColorFromValue(-1.0)
+    check color.hue == 0
+    check color.saturation == 100
 
   test "cellColorFromValue neutral":
-    let c = cellColorFromValue(0.0)
-    check c.saturation == 0  # No saturation at zero
+    let color = cellColorFromValue(0.0)
+    check color.saturation == 0  # No saturation at zero
 
   test "cellColorFromValue clamps saturation to 100 when magnitude exceeds 1.0":
     # CONTRACT: saturation = min(100, int(abs(v)*100)). Values beyond +/-1.0 must
@@ -156,42 +156,42 @@ suite "Cell Color - From Value":
 
 suite "Cell Color - String Conversion":
   test "toHslaString format":
-    let c = CellColor(hue: 120, saturation: 50, lightness: 40, alpha: 0.7)
-    check toHslaString(c) == "hsla(120,50%,40%,0.7)"
+    let color = CellColor(hue: 120, saturation: 50, lightness: 40, alpha: 0.7)
+    check toHslaString(color) == "hsla(120,50%,40%,0.7)"
 
   test "toHslaString red":
-    let c = cellColorFromValue(-1.0)
-    let s = toHslaString(c)
-    check s == "hsla(0,100%,40%,0.7)"
+    let color = cellColorFromValue(-1.0)
+    let hsla = toHslaString(color)
+    check hsla == "hsla(0,100%,40%,0.7)"
 
 
 suite "Species Color - From Index":
   test "speciesColorFromIndex valid":
     let colors = [1.0, 0.5, 0.0, 0.0, 1.0, 0.5]  # 2 species
-    let c = speciesColorFromIndex(0, colors)
-    check c.r == 255
-    check c.g == 127  # 0.5 * 255 ≈ 127
-    check c.b == 0
+    let color = speciesColorFromIndex(0, colors)
+    check color.red == 255
+    check color.green == 127  # 0.5 * 255 ≈ 127
+    check color.blue == 0
 
   test "speciesColorFromIndex second species":
     let colors = [1.0, 0.5, 0.0, 0.0, 1.0, 0.5]
-    let c = speciesColorFromIndex(1, colors)
-    check c.r == 0
-    check c.g == 255
-    check c.b == 127
+    let color = speciesColorFromIndex(1, colors)
+    check color.red == 0
+    check color.green == 255
+    check color.blue == 127
 
   test "speciesColorFromIndex out of bounds":
     let colors = [1.0, 0.5, 0.0]  # Only 1 species
-    let c = speciesColorFromIndex(5, colors)
-    check c.r == 128  # Default gray
-    check c.g == 128
-    check c.b == 128
+    let color = speciesColorFromIndex(5, colors)
+    check color.red == 128  # Default gray
+    check color.green == 128
+    check color.blue == 128
 
 
 suite "Species Color - String Conversion":
   test "toRgbaString format":
-    let c = SpeciesColor(r: 255, g: 128, b: 0, alpha: 0.5)
-    check toRgbaString(c) == "rgba(255,128,0,0.5)"
+    let color = SpeciesColor(red: 255, green: 128, blue: 0, alpha: 0.5)
+    check toRgbaString(color) == "rgba(255,128,0,0.5)"
 
 # ==============================================================================
 # RULE RANDOMIZATION - REJECTION SAMPLING

@@ -396,11 +396,11 @@ proc parsePreset*(jsonText: string): PresetLoadResult =
   var node: JsonNode
   try:
     node = parseJson(jsonText)
-  except ValueError as e:
+  except ValueError as err:
     return PresetLoadResult(
       preset: defaultPreset(),
       errorKind: pekInvalidJson,
-      errorMessage: "malformed JSON: " & e.msg)
+      errorMessage: "malformed JSON: " & err.msg)
   validate(node)
 
 # ==============================================================================

@@ -369,52 +369,52 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
   )
 
   # Mouse events - use pure handlers
-  canvasEl.addEventListener("mousedown", proc(e: MouseEvent) =
-    let eventData = extractMouseData(e)
+  canvasEl.addEventListener("mousedown", proc(event: MouseEvent) =
+    let eventData = extractMouseData(event)
     currentInput.set(handleMouseDown(currentInput.get(), eventData))
   )
 
-  canvasEl.addEventListener("mouseup", proc(e: MouseEvent) =
-    let eventData = extractMouseData(e)
+  canvasEl.addEventListener("mouseup", proc(event: MouseEvent) =
+    let eventData = extractMouseData(event)
     currentInput.set(handleMouseUp(currentInput.get(), eventData))
   )
 
-  canvasEl.addEventListener("mouseleave", proc(e: MouseEvent) =
+  canvasEl.addEventListener("mouseleave", proc(event: MouseEvent) =
     currentInput.set(handleMouseLeave(currentInput.get()))
   )
 
   # Prevent context menu on right-click
-  canvasEl.addEventListener("contextmenu", proc(e: Event) =
-    preventDefault(e)
+  canvasEl.addEventListener("contextmenu", proc(event: Event) =
+    preventDefault(event)
   )
 
   # Double-click triggers blast effect (powerful repellent)
-  canvasEl.addEventListener("dblclick", proc(e: MouseEvent) =
-    let eventData = extractMouseData(e)
+  canvasEl.addEventListener("dblclick", proc(event: MouseEvent) =
+    let eventData = extractMouseData(event)
     currentInput.set(handleDoubleClick(currentInput.get(), eventData))
   )
 
-  canvasEl.addEventListener("mousemove", proc(e: MouseEvent) =
-    let eventData = extractMouseData(e)
+  canvasEl.addEventListener("mousemove", proc(event: MouseEvent) =
+    let eventData = extractMouseData(event)
     currentInput.set(handleMouseMove(currentInput.get(), eventData))
   )
 
   # Touch events - use pure handlers
-  canvasEl.addEventListener("touchstart", proc(e: TouchEvent) =
-    preventDefault(e)
-    let eventData = extractTouchData(e)
+  canvasEl.addEventListener("touchstart", proc(event: TouchEvent) =
+    preventDefault(event)
+    let eventData = extractTouchData(event)
     currentInput.set(handleTouchStart(currentInput.get(), eventData))
   )
 
-  canvasEl.addEventListener("touchend", proc(e: TouchEvent) =
+  canvasEl.addEventListener("touchend", proc(event: TouchEvent) =
     # TouchEvent.touches contains remaining touches after this one ends
-    let eventData = extractTouchData(e)
+    let eventData = extractTouchData(event)
     currentInput.set(handleTouchEnd(currentInput.get(), eventData))
   )
 
-  canvasEl.addEventListener("touchmove", proc(e: TouchEvent) =
-    preventDefault(e)
-    let eventData = extractTouchData(e)
+  canvasEl.addEventListener("touchmove", proc(event: TouchEvent) =
+    preventDefault(event)
+    let eventData = extractTouchData(event)
     currentInput.set(handleTouchMove(currentInput.get(), eventData))
   )
 

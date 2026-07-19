@@ -73,8 +73,8 @@ when defined(js):
     result = TouchEventData(touches: @[])
 
     let touches = event.touches
-    for i in 0 ..< touches.len:
-      let touch = touches[i]
+    for idx in 0 ..< touches.len:
+      let touch = touches[idx]
       result.touches.add(TouchPoint(
         clientX: touch.clientX.float,
         clientY: touch.clientY.float

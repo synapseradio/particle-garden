@@ -18,9 +18,9 @@ import ../src/physics_core
 const
   EPSILON_TIGHT* = 1e-5f   # For exact algorithm comparisons
 
-proc approxEq(a, b: float32; epsilon: float32 = EPSILON_TIGHT): bool =
+proc approxEq(lhs, rhs: float32; epsilon: float32 = EPSILON_TIGHT): bool =
   ## Epsilon-based float comparison for testing.
-  abs(a - b) <= epsilon
+  abs(lhs - rhs) <= epsilon
 
 # ==============================================================================
 # FORCE CALCULATION TESTS
@@ -28,8 +28,8 @@ proc approxEq(a, b: float32; epsilon: float32 = EPSILON_TIGHT): bool =
 
 suite "Force Magnitude (unscaled)":
   test "repulsion at r=0 is -1":
-    let f = calculateForceMagnitude(0.0f, attr = 1.0f)
-    check approxEq(f, -1.0f, EPSILON_TIGHT)
+    let force = calculateForceMagnitude(0.0f, attr = 1.0f)
+    check approxEq(force, -1.0f, EPSILON_TIGHT)
 
   test "repulsion decreases linearly to 0 at r=0.3":
     let f0 = calculateForceMagnitude(0.0f, attr = 1.0f)
@@ -52,8 +52,8 @@ suite "Force Magnitude (unscaled)":
 
   test "zero force at r=1.0":
     # At r=1.0: |2*1.0 - 1.3| / 0.7 = 0.7/0.7 = 1, so force = attr * (1 - 1) = 0
-    let f = calculateForceMagnitude(1.0f, attr = 1.0f)
-    check approxEq(f, 0.0f, EPSILON_TIGHT)
+    let force = calculateForceMagnitude(1.0f, attr = 1.0f)
+    check approxEq(force, 0.0f, EPSILON_TIGHT)
 
   test "negative attraction inverts force":
     let fPos = calculateForceMagnitude(0.65f, attr = 1.0f)
@@ -62,8 +62,8 @@ suite "Force Magnitude (unscaled)":
     check approxEq(fPos, -fNeg, EPSILON_TIGHT)
 
   test "zero attraction gives zero force in attraction zone":
-    let f = calculateForceMagnitude(0.65f, attr = 0.0f)
-    check approxEq(f, 0.0f, EPSILON_TIGHT)
+    let force = calculateForceMagnitude(0.65f, attr = 0.0f)
+    check approxEq(force, 0.0f, EPSILON_TIGHT)
 
   test "repulsion zone ignores attraction value":
     # In repulsion zone (r < 0.3), attr is not used
@@ -103,48 +103,48 @@ suite "Force Calculation (scaled)":
 
 suite "Distance Normalization":
   test "normalizes distance to [0,1] range":
-    let (r, invD, valid) = normalizeDistance(30.0f, 40.0f, rMax = 100.0f)
+    let (normDist, invD, valid) = normalizeDistance(30.0f, 40.0f, rMax = 100.0f)
     # Distance is 50, normalized to 50/100 = 0.5
 
     check valid
-    check approxEq(r, 0.5f, EPSILON_TIGHT)
+    check approxEq(normDist, 0.5f, EPSILON_TIGHT)
     check approxEq(invD, 1.0f / 50.0f, EPSILON_TIGHT)
 
   test "rejects zero distance":
-    let (r, invD, valid) = normalizeDistance(0.0f, 0.0f, rMax = 100.0f)
+    let (normDist, invD, valid) = normalizeDistance(0.0f, 0.0f, rMax = 100.0f)
 
     check not valid
 
   test "rejects distance beyond rMax":
-    let (r, invD, valid) = normalizeDistance(80.0f, 60.0f, rMax = 50.0f)
+    let (normDist, invD, valid) = normalizeDistance(80.0f, 60.0f, rMax = 50.0f)
     # Distance is 100, which exceeds rMax=50
 
     check not valid
 
   test "accepts distance at boundary (just under rMax)":
-    let (r, invD, valid) = normalizeDistance(49.0f, 0.0f, rMax = 50.0f)
+    let (normDist, invD, valid) = normalizeDistance(49.0f, 0.0f, rMax = 50.0f)
 
     check valid
-    check approxEq(r, 0.98f, EPSILON_TIGHT)
+    check approxEq(normDist, 0.98f, EPSILON_TIGHT)
 
   test "clamps minimum distance":
     # Very close particles: distance would be 1.0, but minDistSq=4 clamps to 2.0
-    let (r, invD, valid) = normalizeDistance(0.6f, 0.8f, rMax = 100.0f,
+    let (normDist, invD, valid) = normalizeDistance(0.6f, 0.8f, rMax = 100.0f,
         minDistSq = 4.0f)
     # Actual distance: sqrt(0.36 + 0.64) = 1.0
     # Clamped distance: sqrt(4) = 2.0
 
     check valid
-    check approxEq(r, 2.0f / 100.0f, EPSILON_TIGHT)
+    check approxEq(normDist, 2.0f / 100.0f, EPSILON_TIGHT)
     check approxEq(invD, 0.5f, EPSILON_TIGHT)  # 1/2
 
   test "does not clamp when above minimum":
-    let (r, invD, valid) = normalizeDistance(3.0f, 4.0f, rMax = 100.0f,
+    let (normDist, invD, valid) = normalizeDistance(3.0f, 4.0f, rMax = 100.0f,
         minDistSq = 4.0f)
     # Distance is 5.0, which is above sqrt(4)=2
 
     check valid
-    check approxEq(r, 0.05f, EPSILON_TIGHT)
+    check approxEq(normDist, 0.05f, EPSILON_TIGHT)
     check approxEq(invD, 0.2f, EPSILON_TIGHT)
 
 
@@ -168,10 +168,10 @@ suite "Density Accumulation":
         EPSILON_TIGHT)
 
   test "density is non-negative for valid r":
-    for i in 0..10:
-      let r = float32(i) / 10.0f
-      let d = accumulateDensity(r, sameSpecies = true)
-      check d >= 0.0f
+    for idx in 0..10:
+      let normDist = float32(idx) / 10.0f
+      let density = accumulateDensity(normDist, sameSpecies = true)
+      check density >= 0.0f
 
 
 # ==============================================================================
@@ -180,27 +180,27 @@ suite "Density Accumulation":
 
 suite "Toroidal Wrapping (Delta)":
   test "no wrap when delta is small":
-    let d = wrapDelta(10.0f, size = 100.0f, halfSize = 50.0f)
-    check approxEq(d, 10.0f, EPSILON_TIGHT)
+    let delta = wrapDelta(10.0f, size = 100.0f, halfSize = 50.0f)
+    check approxEq(delta, 10.0f, EPSILON_TIGHT)
 
   test "wraps positive delta across boundary":
     # Delta of 80 on a 100-wide domain should wrap to -20
-    let d = wrapDelta(80.0f, size = 100.0f, halfSize = 50.0f)
-    check approxEq(d, -20.0f, EPSILON_TIGHT)
+    let delta = wrapDelta(80.0f, size = 100.0f, halfSize = 50.0f)
+    check approxEq(delta, -20.0f, EPSILON_TIGHT)
 
   test "wraps negative delta across boundary":
     # Delta of -80 on a 100-wide domain should wrap to +20
-    let d = wrapDelta(-80.0f, size = 100.0f, halfSize = 50.0f)
-    check approxEq(d, 20.0f, EPSILON_TIGHT)
+    let delta = wrapDelta(-80.0f, size = 100.0f, halfSize = 50.0f)
+    check approxEq(delta, 20.0f, EPSILON_TIGHT)
 
   test "boundary case at exactly halfSize":
     # At exactly halfSize, no wrap (delta <= halfSize)
-    let d = wrapDelta(50.0f, size = 100.0f, halfSize = 50.0f)
-    check approxEq(d, 50.0f, EPSILON_TIGHT)
+    let delta = wrapDelta(50.0f, size = 100.0f, halfSize = 50.0f)
+    check approxEq(delta, 50.0f, EPSILON_TIGHT)
 
   test "wraps just over halfSize":
-    let d = wrapDelta(50.1f, size = 100.0f, halfSize = 50.0f)
-    check approxEq(d, -49.9f, EPSILON_TIGHT)
+    let delta = wrapDelta(50.1f, size = 100.0f, halfSize = 50.0f)
+    check approxEq(delta, -49.9f, EPSILON_TIGHT)
 
 
 suite "Toroidal Wrapping (Position)":
@@ -263,52 +263,52 @@ suite "Cell Index Conversion":
 
 suite "Neighbor Cell Computation":
   test "center neighbor (no offset)":
-    let n = getNeighborCell(5, 5, dx = 0, dy = 0, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(5, 5, dx = 0, dy = 0, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.nx == 5
-    check n.ny == 5
-    check n.cell == 55
-    check approxEq(n.wrapX, 0.0f, EPSILON_TIGHT)
-    check approxEq(n.wrapY, 0.0f, EPSILON_TIGHT)
+    check neighbor.nx == 5
+    check neighbor.ny == 5
+    check neighbor.cell == 55
+    check approxEq(neighbor.wrapX, 0.0f, EPSILON_TIGHT)
+    check approxEq(neighbor.wrapY, 0.0f, EPSILON_TIGHT)
 
   test "right neighbor":
-    let n = getNeighborCell(5, 5, dx = 1, dy = 0, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(5, 5, dx = 1, dy = 0, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.nx == 6
-    check n.cell == 56
+    check neighbor.nx == 6
+    check neighbor.cell == 56
 
   test "wraps left edge to right":
-    let n = getNeighborCell(0, 5, dx = -1, dy = 0, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(0, 5, dx = -1, dy = 0, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.nx == 9
-    check n.ny == 5
-    check approxEq(n.wrapX, -100.0f, EPSILON_TIGHT)
+    check neighbor.nx == 9
+    check neighbor.ny == 5
+    check approxEq(neighbor.wrapX, -100.0f, EPSILON_TIGHT)
 
   test "wraps right edge to left":
-    let n = getNeighborCell(9, 5, dx = 1, dy = 0, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(9, 5, dx = 1, dy = 0, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.nx == 0
-    check approxEq(n.wrapX, 100.0f, EPSILON_TIGHT)
+    check neighbor.nx == 0
+    check approxEq(neighbor.wrapX, 100.0f, EPSILON_TIGHT)
 
   test "wraps top edge to bottom":
-    let n = getNeighborCell(5, 0, dx = 0, dy = -1, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(5, 0, dx = 0, dy = -1, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.ny == 9
-    check approxEq(n.wrapY, -100.0f, EPSILON_TIGHT)
+    check neighbor.ny == 9
+    check approxEq(neighbor.wrapY, -100.0f, EPSILON_TIGHT)
 
   test "wraps bottom edge to top":
-    let n = getNeighborCell(5, 9, dx = 0, dy = 1, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(5, 9, dx = 0, dy = 1, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.ny == 0
-    check approxEq(n.wrapY, 100.0f, EPSILON_TIGHT)
+    check neighbor.ny == 0
+    check approxEq(neighbor.wrapY, 100.0f, EPSILON_TIGHT)
 
   test "corner wrap (top-left to bottom-right)":
-    let n = getNeighborCell(0, 0, dx = -1, dy = -1, gridW = 10, gridH = 10,
+    let neighbor = getNeighborCell(0, 0, dx = -1, dy = -1, gridW = 10, gridH = 10,
         canvasW = 100.0f, canvasH = 100.0f)
-    check n.nx == 9
-    check n.ny == 9
-    check approxEq(n.wrapX, -100.0f, EPSILON_TIGHT)
-    check approxEq(n.wrapY, -100.0f, EPSILON_TIGHT)
+    check neighbor.nx == 9
+    check neighbor.ny == 9
+    check approxEq(neighbor.wrapX, -100.0f, EPSILON_TIGHT)
+    check approxEq(neighbor.wrapY, -100.0f, EPSILON_TIGHT)
 
 
 suite "Neighbor Cell Index Validity":
@@ -323,12 +323,12 @@ suite "Neighbor Cell Index Validity":
       for cx in 0 ..< gridW:
         for dy in [-1, 0, 1]:
           for dx in [-1, 0, 1]:
-            let n = getNeighborCell(cx, cy, dx, dy, gridW, gridH,
+            let neighbor = getNeighborCell(cx, cy, dx, dy, gridW, gridH,
                 canvasW = 100.0f, canvasH = 100.0f)
-            check n.nx >= 0
-            check n.nx < gridW
-            check n.ny >= 0
-            check n.ny < gridH
-            check n.cell >= 0
-            check n.cell < gridW * gridH
-            check n.cell == n.ny * gridW + n.nx
+            check neighbor.nx >= 0
+            check neighbor.nx < gridW
+            check neighbor.ny >= 0
+            check neighbor.ny < gridH
+            check neighbor.cell >= 0
+            check neighbor.cell < gridW * gridH
+            check neighbor.cell == neighbor.ny * gridW + neighbor.nx

@@ -43,14 +43,14 @@ suite "GPU Struct Layouts Are Non-Overlapping And Contiguous":
   const allStructs = [ParticleLayout, GridParamsLayout, ScanParamsLayout, SimParamsLayout]
 
   test "every struct has monotonic, non-overlapping field offsets":
-    for s in allStructs:
-      for i in 1 ..< s.fields.len:
-        check s.fields[i].offset >= s.fields[i - 1].offset + s.fields[i - 1].size
+    for struct in allStructs:
+      for idx in 1 ..< struct.fields.len:
+        check struct.fields[idx].offset >= struct.fields[idx - 1].offset + struct.fields[idx - 1].size
 
   test "every struct totalSize covers its final field":
-    for s in allStructs:
-      let last = s.fields[^1]
-      check s.totalSize >= last.offset + last.size
+    for struct in allStructs:
+      let last = struct.fields[^1]
+      check struct.totalSize >= last.offset + last.size
 
 
 suite "GPU Field Accessors":

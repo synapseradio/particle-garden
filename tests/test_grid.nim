@@ -18,8 +18,8 @@ import ../src/grid_core
 const
   EPSILON* = 1e-6
 
-proc approxEq(a, b: float; epsilon: float = EPSILON): bool =
-  abs(a - b) <= epsilon
+proc approxEq(lhs, rhs: float; epsilon: float = EPSILON): bool =
+  abs(lhs - rhs) <= epsilon
 
 # ==============================================================================
 # GRID DIMENSION TESTS

@@ -91,8 +91,8 @@ proc dispose*(group: DisposableGroup) =
   group.disposed = true
 
   # Dispose in reverse order (LIFO)
-  for i in countdown(group.cleanups.high, 0):
-    group.cleanups[i]()
+  for idx in countdown(group.cleanups.high, 0):
+    group.cleanups[idx]()
 
   group.cleanups = @[]
 
@@ -134,12 +134,12 @@ when defined(js):
     group: DisposableGroup,
     element: Element,
     eventName: cstring,
-    handler: proc(e: Event)
+    handler: proc(event: Event)
   ) =
     ## Attach an event listener and register cleanup with the group.
     ##
     ## Example:
-    ##   disposables.onEvent(button, "click", proc(e: Event) =
+    ##   disposables.onEvent(button, "click", proc(event: Event) =
     ##     handleClick()
     ##   )
     element.addEventListener(eventName, handler)
@@ -151,7 +151,7 @@ when defined(js):
     group: DisposableGroup,
     element: Element,
     eventName: cstring,
-    handler: proc(e: Event)
+    handler: proc(event: Event)
   ) =
     ## Attach an event listener with capture and register cleanup.
     {.emit: """

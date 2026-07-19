@@ -86,13 +86,13 @@ proc encodeResolve*(encoder: GPUCommandEncoder) =
 proc readback(): Future[void] {.async.} =
   await readbackBuffer.mapAsyncRead()
   let view = bigInt64View(readbackBuffer.getMappedRange())
-  for p in 0 ..< numPasses:
-    let deltaMs = (timestampNs(view, p * 2 + 1) - timestampNs(view, p * 2)) / 1e6
+  for passIdx in 0 ..< numPasses:
+    let deltaMs = (timestampNs(view, passIdx * 2 + 1) - timestampNs(view, passIdx * 2)) / 1e6
     # Negative or zero deltas mean the slot was not written this frame; skip.
     if deltaMs > 0.0:
-      passMs[p] =
+      passMs[passIdx] =
         if sampleCount == 0: deltaMs
-        else: passMs[p] * 0.9 + deltaMs * 0.1
+        else: passMs[passIdx] * 0.9 + deltaMs * 0.1
   readbackBuffer.unmap()
   sampleCount = sampleCount + 1
   readbackBusy = false

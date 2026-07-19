@@ -125,9 +125,9 @@ func computePrefixSum*(counts: openArray[int]): seq[int] =
   ##
   result = newSeq[int](counts.len)
   var offset = 0
-  for i in 0 ..< counts.len:
-    result[i] = offset
-    offset += counts[i]
+  for idx in 0 ..< counts.len:
+    result[idx] = offset
+    offset += counts[idx]
 
 
 func validateGridOffsets*(offsets, counts: openArray[int];
@@ -155,14 +155,14 @@ func validateGridOffsets*(offsets, counts: openArray[int];
     return false
 
   var totalCount = 0
-  for i in 0 ..< offsets.len:
-    if offsets[i] < 0:
+  for idx in 0 ..< offsets.len:
+    if offsets[idx] < 0:
       return false
-    if offsets[i] + counts[i] > particleCount:
+    if offsets[idx] + counts[idx] > particleCount:
       return false
-    if i > 0 and offsets[i] != offsets[i - 1] + counts[i - 1]:
+    if idx > 0 and offsets[idx] != offsets[idx - 1] + counts[idx - 1]:
       return false
-    totalCount += counts[i]
+    totalCount += counts[idx]
 
   result = (totalCount == particleCount)
 

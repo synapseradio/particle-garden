@@ -40,7 +40,7 @@ type
     pendingNotify: bool
     notifying: bool  # Guard against recursive notifications
 
-proc `==`*(a, b: SubscriptionId): bool {.borrow.}
+proc `==`*(lhs, rhs: SubscriptionId): bool {.borrow.}
 
 # ==============================================================================
 # SECTION 2: BATCH STATE (module-level, manages notification coalescing)
@@ -158,15 +158,15 @@ proc doNotify[T](obs: Observable[T]) =
   obs.pendingNotify = false
 
   try:
-    for i in 0 ..< obs.subscriptions.len:
+    for idx in 0 ..< obs.subscriptions.len:
       # Run previous cleanup if any
-      if not obs.subscriptions[i].cleanup.isNil:
-        obs.subscriptions[i].cleanup()
-        obs.subscriptions[i].cleanup = nil
+      if not obs.subscriptions[idx].cleanup.isNil:
+        obs.subscriptions[idx].cleanup()
+        obs.subscriptions[idx].cleanup = nil
 
       # Call observer, store new cleanup
-      let newCleanup = obs.subscriptions[i].fn(obs.value)
-      obs.subscriptions[i].cleanup = newCleanup
+      let newCleanup = obs.subscriptions[idx].fn(obs.value)
+      obs.subscriptions[idx].cleanup = newCleanup
   finally:
     obs.notifying = false
 
@@ -193,7 +193,7 @@ proc update*[T](obs: Observable[T], fn: proc(current: T): T) =
   ## Update value via transformation function.
   ##
   ## Example:
-  ##   count.update(proc(c: int): int = c + 1)
+  ##   count.update(proc(current: int): int = current + 1)
   obs.set(fn(obs.value))
 
 # ==============================================================================
@@ -247,9 +247,9 @@ proc unsubscribe*[T](obs: Observable[T], id: SubscriptionId) =
   ## Example:
   ##   count.unsubscribe(subId)
   var idx = -1
-  for i, sub in obs.subscriptions:
+  for position, sub in obs.subscriptions:
     if sub.id == id:
-      idx = i
+      idx = position
       break
 
   if idx >= 0:
@@ -273,14 +273,14 @@ proc observerCount*[T](obs: Observable[T]): int =
   ## Return the number of active subscriptions.
   obs.subscriptions.len
 
-proc map*[T, U](obs: Observable[T], fn: proc(v: T): U): Observable[U] =
+proc map*[T, U](obs: Observable[T], fn: proc(value: T): U): Observable[U] =
   ## Create a derived observable that transforms values.
   ##
   ## Note: This creates a new independent observable. For computed
   ## values that auto-update, use the computed module.
   ##
   ## Example:
-  ##   let doubled = count.map(proc(c: int): int = c * 2)
+  ##   let doubled = count.map(proc(value: int): int = value * 2)
   result = newObservable(fn(obs.get()))
 
   let derived = result

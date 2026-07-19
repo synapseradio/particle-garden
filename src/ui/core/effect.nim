@@ -100,8 +100,8 @@ proc effectAll*[T](
   let obs = observables  # Capture
 
   # Subscribe to all observables
-  for o in observables:
-    discard o.subscribe(proc(value: T): proc() =
+  for source in observables:
+    discard source.subscribe(proc(value: T): proc() =
       if eff.disposed:
         return nil
 
@@ -121,9 +121,9 @@ proc effectAll*[T](
     )
 
 proc effect2*[A, B](
-  a: Observable[A],
-  b: Observable[B],
-  fn: proc(a: A, b: B): proc()
+  obsA: Observable[A],
+  obsB: Observable[B],
+  fn: proc(valueA: A, valueB: B): proc()
 ): Effect =
   ## Create an effect that runs when either of two observables change.
   ##
@@ -135,8 +135,6 @@ proc effect2*[A, B](
   result = Effect(disposed: false, cleanup: nil)
 
   let eff = result
-  let obsA = a
-  let obsB = b
 
   proc runEffect() =
     if eff.disposed:
@@ -147,12 +145,12 @@ proc effect2*[A, B](
 
     eff.cleanup = fn(obsA.get(), obsB.get())
 
-  discard a.subscribe(proc(value: A): proc() =
+  discard obsA.subscribe(proc(value: A): proc() =
     runEffect()
     nil
   )
 
-  discard b.subscribe(proc(value: B): proc() =
+  discard obsB.subscribe(proc(value: B): proc() =
     runEffect()
     nil
   )

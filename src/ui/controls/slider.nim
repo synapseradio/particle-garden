@@ -28,21 +28,21 @@ type
     of svkFloat:
       floatVal*: float
 
-func intValue*(v: int): SliderValue =
-  SliderValue(kind: svkInt, intVal: v)
+func intValue*(value: int): SliderValue =
+  SliderValue(kind: svkInt, intVal: value)
 
-func floatValue*(v: float): SliderValue =
-  SliderValue(kind: svkFloat, floatVal: v)
+func floatValue*(value: float): SliderValue =
+  SliderValue(kind: svkFloat, floatVal: value)
 
-func toFloat*(v: SliderValue): float =
-  case v.kind
-  of svkInt: float(v.intVal)
-  of svkFloat: v.floatVal
+func toFloat*(value: SliderValue): float =
+  case value.kind
+  of svkInt: float(value.intVal)
+  of svkFloat: value.floatVal
 
-func toInt*(v: SliderValue): int =
-  case v.kind
-  of svkInt: v.intVal
-  of svkFloat: int(v.floatVal)
+func toInt*(value: SliderValue): int =
+  case value.kind
+  of svkInt: value.intVal
+  of svkFloat: int(value.floatVal)
 
 # ==============================================================================
 # SECTION 2: SLIDER CONFIGURATION
@@ -79,24 +79,24 @@ func initSliderConfig*(
 # SECTION 3: VALUE PARSING (pure functions)
 # ==============================================================================
 
-func parseSliderValue*(s: string, kind: SliderValueKind): SliderValue =
+func parseSliderValue*(text: string, kind: SliderValueKind): SliderValue =
   ## Parse a string to a slider value. Returns 0 on parse error.
   case kind
   of svkInt:
     try:
-      result = intValue(parseInt(s))
+      result = intValue(parseInt(text))
     except ValueError:
       result = intValue(0)
   of svkFloat:
     try:
-      result = floatValue(parseFloat(s))
+      result = floatValue(parseFloat(text))
     except ValueError:
       result = floatValue(0.0)
 
-func clampValue*(v: SliderValue, config: SliderConfig): SliderValue =
+func clampValue*(value: SliderValue, config: SliderConfig): SliderValue =
   ## Clamp value to config min/max range.
-  let f = v.toFloat()
-  let clamped = max(config.minValue, min(config.maxValue, f))
+  let rawFloat = value.toFloat()
+  let clamped = max(config.minValue, min(config.maxValue, rawFloat))
   case config.valueKind
   of svkInt: intValue(int(clamped))
   of svkFloat: floatValue(clamped)
@@ -105,20 +105,20 @@ func clampValue*(v: SliderValue, config: SliderConfig): SliderValue =
 # SECTION 4: VALUE FORMATTING (pure functions)
 # ==============================================================================
 
-func formatValue*(v: SliderValue, precision: int): string =
+func formatValue*(value: SliderValue, precision: int): string =
   ## Format a value for display.
-  case v.kind
+  case value.kind
   of svkInt:
-    $v.intVal
+    $value.intVal
   of svkFloat:
     if precision == 0:
-      $int(v.floatVal)
+      $int(value.floatVal)
     else:
-      formatFloat(v.floatVal, ffDecimal, precision)
+      formatFloat(value.floatVal, ffDecimal, precision)
 
-func formatSliderValue*(v: SliderValue, config: SliderConfig): string =
+func formatSliderValue*(value: SliderValue, config: SliderConfig): string =
   ## Format value according to config.
-  formatValue(v, config.precision)
+  formatValue(value, config.precision)
 
 # ==============================================================================
 # SECTION 5: SLIDER STATE
@@ -172,29 +172,29 @@ proc newFloatSlider*(
   )
   newSlider(config, floatValue(initial))
 
-proc getValue*(s: Slider): SliderValue =
-  s.value.get()
+proc getValue*(slider: Slider): SliderValue =
+  slider.value.get()
 
-proc getInt*(s: Slider): int =
-  s.value.get().toInt()
+proc getInt*(slider: Slider): int =
+  slider.value.get().toInt()
 
-proc getFloat*(s: Slider): float =
-  s.value.get().toFloat()
+proc getFloat*(slider: Slider): float =
+  slider.value.get().toFloat()
 
-proc setValue*(s: Slider, v: SliderValue) =
-  let clamped = clampValue(v, s.config)
-  s.value.set(clamped)
-  if not s.onChange.isNil:
-    s.onChange()
+proc setValue*(slider: Slider, value: SliderValue) =
+  let clamped = clampValue(value, slider.config)
+  slider.value.set(clamped)
+  if not slider.onChange.isNil:
+    slider.onChange()
 
-proc setInt*(s: Slider, v: int) =
-  s.setValue(intValue(v))
+proc setInt*(slider: Slider, value: int) =
+  slider.setValue(intValue(value))
 
-proc setFloat*(s: Slider, v: float) =
-  s.setValue(floatValue(v))
+proc setFloat*(slider: Slider, value: float) =
+  slider.setValue(floatValue(value))
 
-proc getDisplayText*(s: Slider): string =
-  formatSliderValue(s.value.get(), s.config)
+proc getDisplayText*(slider: Slider): string =
+  formatSliderValue(slider.value.get(), slider.config)
 
 # ==============================================================================
 # SECTION 6: DOM BINDING (JS-only)
@@ -209,82 +209,82 @@ when defined(js):
   from ../../bindings/dom_extensions import
     HTMLInputElement
 
-  proc parseIntJS(s: cstring, radix: int): int {.importjs: "parseInt(#, #)".}
-  proc parseFloatJS(s: cstring): float {.importjs: "parseFloat(#)".}
-  proc toFixed(x: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
+  proc parseIntJS(text: cstring, radix: int): int {.importjs: "parseInt(#, #)".}
+  proc parseFloatJS(text: cstring): float {.importjs: "parseFloat(#)".}
+  proc toFixed(num: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
 
-  proc bindToDOM*(s: Slider) =
+  proc bindToDOM*(slider: Slider) =
     ## Bind slider to DOM elements.
     ## Sets up bidirectional sync: DOM → observable and observable → DOM.
-    let inputEl = cast[HTMLInputElement](getElementById(cstring(s.config.inputId)))
-    let displayEl = getElementById(cstring(s.config.displayId))
+    let inputEl = cast[HTMLInputElement](getElementById(cstring(slider.config.inputId)))
+    let displayEl = getElementById(cstring(slider.config.displayId))
 
     if inputEl.isNil or displayEl.isNil:
       return
 
     # Set initial DOM state
-    case s.config.valueKind
+    case slider.config.valueKind
     of svkInt:
-      inputEl.value = cstring($s.getInt())
-      displayEl.textContent = cstring($s.getInt())
+      inputEl.value = cstring($slider.getInt())
+      displayEl.textContent = cstring($slider.getInt())
     of svkFloat:
-      inputEl.value = cstring($s.getFloat())
-      displayEl.textContent = toFixed(s.getFloat(), s.config.precision)
+      inputEl.value = cstring($slider.getFloat())
+      displayEl.textContent = toFixed(slider.getFloat(), slider.config.precision)
 
     # Set min/max/step attributes based on slider type
-    case s.config.valueKind
+    case slider.config.valueKind
     of svkInt:
-      inputEl.min = cstring($int(s.config.minValue))
-      inputEl.max = cstring($int(s.config.maxValue))
+      inputEl.min = cstring($int(slider.config.minValue))
+      inputEl.max = cstring($int(slider.config.maxValue))
       inputEl.step = cstring("1")
     of svkFloat:
-      inputEl.min = cstring($s.config.minValue)
-      inputEl.max = cstring($s.config.maxValue)
+      inputEl.min = cstring($slider.config.minValue)
+      inputEl.max = cstring($slider.config.maxValue)
       # Step based on precision: precision=1 → step=0.1, precision=2 → step=0.01
-      let stepVal = if s.config.precision <= 0: 1.0 else: pow(10.0, -float(s.config.precision))
+      let stepVal = if slider.config.precision <= 0: 1.0 else: pow(10.0, -float(slider.config.precision))
       inputEl.step = cstring($stepVal)
 
     # DOM → Observable: update on input
-    inputEl.addEventListener("input", proc(e: Event) =
-      let target = cast[HTMLInputElement](e.target)
-      case s.config.valueKind
+    inputEl.addEventListener("input", proc(event: Event) =
+      let target = cast[HTMLInputElement](event.target)
+      case slider.config.valueKind
       of svkInt:
-        let v = parseIntJS(target.value, 10)
-        s.value.set(intValue(v))  # Don't trigger onChange yet
+        let parsed = parseIntJS(target.value, 10)
+        slider.value.set(intValue(parsed))  # Don't trigger onChange yet
       of svkFloat:
-        let v = parseFloatJS(target.value)
-        s.value.set(floatValue(v))
+        let parsed = parseFloatJS(target.value)
+        slider.value.set(floatValue(parsed))
 
       # Update display
-      case s.config.valueKind
+      case slider.config.valueKind
       of svkInt:
-        displayEl.textContent = cstring($s.getInt())
+        displayEl.textContent = cstring($slider.getInt())
       of svkFloat:
-        displayEl.textContent = toFixed(s.getFloat(), s.config.precision)
+        displayEl.textContent = toFixed(slider.getFloat(), slider.config.precision)
     )
 
     # Trigger onChange on "change" event (after user releases slider)
-    inputEl.addEventListener("change", proc(e: Event) =
-      if not s.onChange.isNil:
-        s.onChange()
+    inputEl.addEventListener("change", proc(event: Event) =
+      if not slider.onChange.isNil:
+        slider.onChange()
     )
 
     # Observable → DOM: subscribe for external updates
-    discard s.value.subscribe(proc(v: SliderValue): proc() =
-      case v.kind
+    discard slider.value.subscribe(proc(value: SliderValue): proc() =
+      case value.kind
       of svkInt:
-        inputEl.value = cstring($v.intVal)
-        displayEl.textContent = cstring($v.intVal)
+        inputEl.value = cstring($value.intVal)
+        displayEl.textContent = cstring($value.intVal)
       of svkFloat:
-        inputEl.value = cstring($v.floatVal)
-        displayEl.textContent = toFixed(v.floatVal, s.config.precision)
+        inputEl.value = cstring($value.floatVal)
+        displayEl.textContent = toFixed(value.floatVal, slider.config.precision)
       nil
     )
 
   proc configSlider*(
     inputId, displayId: string;
     get: proc(): float;
-    set: proc(v: float);
+    set: proc(value: float);
     min, max: float;
     precision: int = 0;
     onChange: proc() = nil
@@ -299,8 +299,8 @@ when defined(js):
       maxValue = max
     )
 
-    discard slider.value.subscribe(proc(v: SliderValue): proc() =
-      set(v.toFloat())
+    discard slider.value.subscribe(proc(value: SliderValue): proc() =
+      set(value.toFloat())
       nil
     )
 

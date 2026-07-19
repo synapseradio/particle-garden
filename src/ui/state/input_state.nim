@@ -56,11 +56,11 @@ func initInputState*(): InputState =
 # SECTION 3: PURE UPDATE FUNCTIONS
 # ==============================================================================
 
-func withMousePosition*(state: InputState; x, y: float): InputState =
+func withMousePosition*(state: InputState; posX, posY: float): InputState =
   ## Return new state with updated mouse position.
   result = state
-  result.mouseX = x
-  result.mouseY = y
+  result.mouseX = posX
+  result.mouseY = posY
 
 func withMouseDown*(state: InputState; down: bool): InputState =
   ## Return new state with updated left mouse button.
@@ -78,11 +78,11 @@ func withAllButtonsUp*(state: InputState): InputState =
   result.mouseDown = false
   result.mouseRightDown = false
 
-func withBlast*(state: InputState; x, y: float): InputState =
+func withBlast*(state: InputState; posX, posY: float): InputState =
   ## Return new state with blast triggered at position.
   result = state
-  result.blastX = x
-  result.blastY = y
+  result.blastX = posX
+  result.blastY = posY
   result.blastStrength = 1.0
 
 func withBlastDecay*(state: InputState; decayFactor: float): InputState =

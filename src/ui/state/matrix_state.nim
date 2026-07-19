@@ -42,26 +42,26 @@ func isValidIndex*(row, col, speciesCount: int): bool =
 # SECTION 3: VALUE OPERATIONS (pure functions)
 # ==============================================================================
 
-func clampMatrixValue*(v: float): float =
+func clampMatrixValue*(value: float): float =
   ## Clamp value to valid matrix range [-1, 1].
-  max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, v))
+  max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, value))
 
 proc randomMatrixValue*(): float =
   ## Generate a random value in [-1, 1].
   ## Note: Caller must provide actual random value, this just documents the range.
   0.0  # Placeholder - actual randomization done in JS with jsRandom()
 
-func isAttraction*(v: float): bool =
+func isAttraction*(value: float): bool =
   ## Check if value represents attraction (positive).
-  v > 0.0
+  value > 0.0
 
-func isRepulsion*(v: float): bool =
+func isRepulsion*(value: float): bool =
   ## Check if value represents repulsion (negative).
-  v < 0.0
+  value < 0.0
 
-func isNeutral*(v: float): bool =
+func isNeutral*(value: float): bool =
   ## Check if value is neutral (zero or very close).
-  abs(v) < 0.001
+  abs(value) < 0.001
 
 # ==============================================================================
 # SECTION 4: COLOR CALCULATIONS (pure functions)
@@ -75,12 +75,12 @@ type
     lightness*: int    ## Fixed at 40
     alpha*: float      ## Fixed at 0.7
 
-func cellColorFromValue*(v: float): CellColor =
+func cellColorFromValue*(value: float): CellColor =
   ## Calculate cell background color from attraction value.
   ## Positive values → green, negative → red.
   ## Saturation indicates strength.
-  let hue = if v > 0: 120 else: 0
-  let saturation = int(abs(v) * 100.0)
+  let hue = if value > 0: 120 else: 0
+  let saturation = int(abs(value) * 100.0)
   CellColor(
     hue: hue,
     saturation: min(100, saturation),
@@ -88,9 +88,9 @@ func cellColorFromValue*(v: float): CellColor =
     alpha: 0.7
   )
 
-func toHslaString*(c: CellColor): string =
+func toHslaString*(color: CellColor): string =
   ## Convert to CSS hsla() string.
-  "hsla(" & $c.hue & "," & $c.saturation & "%," & $c.lightness & "%," & $c.alpha & ")"
+  "hsla(" & $color.hue & "," & $color.saturation & "%," & $color.lightness & "%," & $color.alpha & ")"
 
 # ==============================================================================
 # SECTION 5: SPECIES COLOR (for headers)
@@ -99,7 +99,7 @@ func toHslaString*(c: CellColor): string =
 type
   SpeciesColor* = object
     ## RGB color for species header.
-    r*, g*, b*: int
+    red*, green*, blue*: int
     alpha*: float
 
 func speciesColorFromIndex*(index: int, colors: openArray[float]): SpeciesColor =
@@ -108,17 +108,17 @@ func speciesColorFromIndex*(index: int, colors: openArray[float]): SpeciesColor 
   let offset = index * 3
   if offset + 2 < colors.len:
     SpeciesColor(
-      r: int(colors[offset] * 255.0),
-      g: int(colors[offset + 1] * 255.0),
-      b: int(colors[offset + 2] * 255.0),
+      red: int(colors[offset] * 255.0),
+      green: int(colors[offset + 1] * 255.0),
+      blue: int(colors[offset + 2] * 255.0),
       alpha: 0.5
     )
   else:
-    SpeciesColor(r: 128, g: 128, b: 128, alpha: 0.5)
+    SpeciesColor(red: 128, green: 128, blue: 128, alpha: 0.5)
 
-func toRgbaString*(c: SpeciesColor): string =
+func toRgbaString*(color: SpeciesColor): string =
   ## Convert to CSS rgba() string.
-  "rgba(" & $c.r & "," & $c.g & "," & $c.b & "," & $c.alpha & ")"
+  "rgba(" & $color.red & "," & $color.green & "," & $color.blue & "," & $color.alpha & ")"
 
 # ==============================================================================
 # SECTION 5b: SPECIES GROWTH

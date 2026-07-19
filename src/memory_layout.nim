@@ -89,11 +89,11 @@ const
 # SECTION 5: ALIGNMENT HELPER
 # ==============================================================================
 
-func align4*(x: int): int {.inline.} =
+func align4*(value: int): int {.inline.} =
   ## Align to 4-byte boundary for typed array compatibility.
   ## Exported so the alignment contract every buffer offset depends on can be
   ## tested directly rather than only inferred from computed offsets.
-  (x + 3) and (not 3)
+  (value + 3) and (not 3)
 
 # ==============================================================================
 # SECTION 6: MEMORY OFFSET TYPES

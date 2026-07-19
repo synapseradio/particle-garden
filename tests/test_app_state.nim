@@ -16,8 +16,8 @@ import ../src/ui/state/app_state
 
 const APP_STATE_TESTS_LOADED* = true
 
-proc approxEq(a, b: float; epsilon: float = 1e-9): bool =
-  abs(a - b) <= epsilon
+proc approxEq(lhs, rhs: float; epsilon: float = 1e-9): bool =
+  abs(lhs - rhs) <= epsilon
 
 proc timingWith(grid, frame: float): TimingState =
   result = initTimingState()
@@ -33,17 +33,17 @@ suite "Profiling Averages Divide By Frame Count":
     check initProfilingState().averageTotalTime() == 0.0
 
   test "averageGridTime returns the mean of accumulated grid times across frames":
-    var p = initProfilingState()
-    p = p.accumulate(timingWith(grid = 4.0, frame = 10.0))
-    p = p.accumulate(timingWith(grid = 6.0, frame = 20.0))
-    check p.frameCount == 2
-    check approxEq(p.averageGridTime(), 5.0)
+    var profile = initProfilingState()
+    profile = profile.accumulate(timingWith(grid = 4.0, frame = 10.0))
+    profile = profile.accumulate(timingWith(grid = 6.0, frame = 20.0))
+    check profile.frameCount == 2
+    check approxEq(profile.averageGridTime(), 5.0)
 
   test "averageTotalTime averages the per-frame wall-clock time":
-    var p = initProfilingState()
-    p = p.accumulate(timingWith(grid = 1.0, frame = 10.0))
-    p = p.accumulate(timingWith(grid = 1.0, frame = 20.0))
-    check approxEq(p.averageTotalTime(), 15.0)
+    var profile = initProfilingState()
+    profile = profile.accumulate(timingWith(grid = 1.0, frame = 10.0))
+    profile = profile.accumulate(timingWith(grid = 1.0, frame = 20.0))
+    check approxEq(profile.averageTotalTime(), 15.0)
 
 
 suite "Profiling Accumulation Is Immutable And Resettable":
@@ -54,9 +54,9 @@ suite "Profiling Accumulation Is Immutable And Resettable":
     check original.frameCount == 0
 
   test "reset clears all accumulated sums and the frame count":
-    var p = initProfilingState()
-    p = p.accumulate(timingWith(grid = 3.0, frame = 9.0))
-    let cleared = p.reset()
+    var profile = initProfilingState()
+    profile = profile.accumulate(timingWith(grid = 3.0, frame = 9.0))
+    let cleared = profile.reset()
     check cleared.frameCount == 0
     check cleared.gridTimeSum == 0.0
     check cleared.totalTimeSum == 0.0

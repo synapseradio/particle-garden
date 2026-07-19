@@ -126,41 +126,41 @@ proc dispose*[T](comp: Computed[T]) =
 # ==============================================================================
 
 proc combine*[A, B, R](
-  a: Observable[A],
-  b: Observable[B],
-  fn: proc(a: A, b: B): R
+  obsA: Observable[A],
+  obsB: Observable[B],
+  fn: proc(valueA: A, valueB: B): R
 ): Computed[R] =
   ## Combine two observables into a computed value.
   ##
   ## Example:
   ##   let fullName = combine(firstName, lastName,
-  ##     proc(f, l: string): string = f & " " & l)
-  result = newComputed(proc(): R = fn(a.get(), b.get()))
-    .dependsOn(a)
-    .dependsOn(b)
+  ##     proc(first, last: string): string = first & " " & last)
+  result = newComputed(proc(): R = fn(obsA.get(), obsB.get()))
+    .dependsOn(obsA)
+    .dependsOn(obsB)
 
 proc combine*[A, B, C, R](
-  a: Observable[A],
-  b: Observable[B],
-  c: Observable[C],
-  fn: proc(a: A, b: B, c: C): R
+  obsA: Observable[A],
+  obsB: Observable[B],
+  obsC: Observable[C],
+  fn: proc(valueA: A, valueB: B, valueC: C): R
 ): Computed[R] =
   ## Combine three observables into a computed value.
-  result = newComputed(proc(): R = fn(a.get(), b.get(), c.get()))
-    .dependsOn(a)
-    .dependsOn(b)
-    .dependsOn(c)
+  result = newComputed(proc(): R = fn(obsA.get(), obsB.get(), obsC.get()))
+    .dependsOn(obsA)
+    .dependsOn(obsB)
+    .dependsOn(obsC)
 
 proc combine*[A, B, C, D, R](
-  a: Observable[A],
-  b: Observable[B],
-  c: Observable[C],
-  d: Observable[D],
-  fn: proc(a: A, b: B, c: C, d: D): R
+  obsA: Observable[A],
+  obsB: Observable[B],
+  obsC: Observable[C],
+  obsD: Observable[D],
+  fn: proc(valueA: A, valueB: B, valueC: C, valueD: D): R
 ): Computed[R] =
   ## Combine four observables into a computed value.
-  result = newComputed(proc(): R = fn(a.get(), b.get(), c.get(), d.get()))
-    .dependsOn(a)
-    .dependsOn(b)
-    .dependsOn(c)
-    .dependsOn(d)
+  result = newComputed(proc(): R = fn(obsA.get(), obsB.get(), obsC.get(), obsD.get()))
+    .dependsOn(obsA)
+    .dependsOn(obsB)
+    .dependsOn(obsC)
+    .dependsOn(obsD)

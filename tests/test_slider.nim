@@ -24,30 +24,30 @@ const SLIDER_TESTS_LOADED* = true
 
 suite "SliderValue - Construction":
   test "intValue creates integer value":
-    let v = intValue(42)
-    check v.kind == svkInt
-    check v.intVal == 42
+    let value = intValue(42)
+    check value.kind == svkInt
+    check value.intVal == 42
 
   test "floatValue creates float value":
-    let v = floatValue(3.14)
-    check v.kind == svkFloat
-    check abs(v.floatVal - 3.14) < 0.001
+    let value = floatValue(3.14)
+    check value.kind == svkFloat
+    check abs(value.floatVal - 3.14) < 0.001
 
   test "toFloat converts int to float":
-    let v = intValue(10)
-    check abs(v.toFloat() - 10.0) < 0.001
+    let value = intValue(10)
+    check abs(value.toFloat() - 10.0) < 0.001
 
   test "toFloat preserves float":
-    let v = floatValue(2.5)
-    check abs(v.toFloat() - 2.5) < 0.001
+    let value = floatValue(2.5)
+    check abs(value.toFloat() - 2.5) < 0.001
 
   test "toInt converts float to int":
-    let v = floatValue(7.9)
-    check v.toInt() == 7  # Truncates
+    let value = floatValue(7.9)
+    check value.toInt() == 7  # Truncates
 
   test "toInt preserves int":
-    let v = intValue(25)
-    check v.toInt() == 25
+    let value = intValue(25)
+    check value.toInt() == 25
 
 
 suite "SliderConfig - Creation":
@@ -78,22 +78,22 @@ suite "SliderConfig - Creation":
 
 suite "SliderValue - Parsing":
   test "parseSliderValue int":
-    let v = parseSliderValue("42", svkInt)
-    check v.kind == svkInt
-    check v.intVal == 42
+    let value = parseSliderValue("42", svkInt)
+    check value.kind == svkInt
+    check value.intVal == 42
 
   test "parseSliderValue float":
-    let v = parseSliderValue("3.14", svkFloat)
-    check v.kind == svkFloat
-    check abs(v.floatVal - 3.14) < 0.001
+    let value = parseSliderValue("3.14", svkFloat)
+    check value.kind == svkFloat
+    check abs(value.floatVal - 3.14) < 0.001
 
   test "parseSliderValue int invalid returns 0":
-    let v = parseSliderValue("not a number", svkInt)
-    check v.intVal == 0
+    let value = parseSliderValue("not a number", svkInt)
+    check value.intVal == 0
 
   test "parseSliderValue float invalid returns 0.0":
-    let v = parseSliderValue("abc", svkFloat)
-    check v.floatVal == 0.0
+    let value = parseSliderValue("abc", svkFloat)
+    check value.floatVal == 0.0
 
   test "parseSliderValue empty string":
     let vi = parseSliderValue("", svkInt)
@@ -105,18 +105,18 @@ suite "SliderValue - Parsing":
 suite "SliderValue - Clamping":
   test "clampValue within range unchanged":
     let config = initSliderConfig("a", "b", svkInt, minValue = 0, maxValue = 100)
-    let v = clampValue(intValue(50), config)
-    check v.intVal == 50
+    let value = clampValue(intValue(50), config)
+    check value.intVal == 50
 
   test "clampValue below min":
     let config = initSliderConfig("a", "b", svkInt, minValue = 10, maxValue = 100)
-    let v = clampValue(intValue(5), config)
-    check v.intVal == 10
+    let value = clampValue(intValue(5), config)
+    check value.intVal == 10
 
   test "clampValue above max":
     let config = initSliderConfig("a", "b", svkFloat, minValue = 0, maxValue = 1.0)
-    let v = clampValue(floatValue(1.5), config)
-    check abs(v.floatVal - 1.0) < 0.001
+    let value = clampValue(floatValue(1.5), config)
+    check abs(value.floatVal - 1.0) < 0.001
 
   test "clampValue at boundary":
     let config = initSliderConfig("a", "b", svkInt, minValue = 0, maxValue = 100)
@@ -128,73 +128,73 @@ suite "SliderValue - Clamping":
 
 suite "SliderValue - Formatting":
   test "formatValue int":
-    let v = intValue(1234)
-    check formatValue(v, 0) == "1234"
+    let value = intValue(1234)
+    check formatValue(value, 0) == "1234"
 
   test "formatValue float no decimals":
-    let v = floatValue(42.7)
-    check formatValue(v, 0) == "42"
+    let value = floatValue(42.7)
+    check formatValue(value, 0) == "42"
 
   test "formatValue float one decimal":
-    let v = floatValue(3.14159)
-    check formatValue(v, 1) == "3.1"
+    let value = floatValue(3.14159)
+    check formatValue(value, 1) == "3.1"
 
   test "formatValue float two decimals":
-    let v = floatValue(0.956)
-    check formatValue(v, 2) == "0.96"
+    let value = floatValue(0.956)
+    check formatValue(value, 2) == "0.96"
 
   test "formatSliderValue uses config precision":
     let config = initSliderConfig("a", "b", svkFloat, precision = 2)
-    let v = floatValue(1.2345)
-    check formatSliderValue(v, config) == "1.23"
+    let value = floatValue(1.2345)
+    check formatSliderValue(value, config) == "1.23"
 
 
 suite "Slider - Basic Operations":
   test "newIntSlider creates slider":
-    let s = newIntSlider("in", "out", 50, minValue = 0, maxValue = 100)
-    check s.getInt() == 50
-    check s.config.valueKind == svkInt
+    let slider = newIntSlider("in", "out", 50, minValue = 0, maxValue = 100)
+    check slider.getInt() == 50
+    check slider.config.valueKind == svkInt
 
   test "newFloatSlider creates slider":
-    let s = newFloatSlider("in", "out", 0.75, precision = 2)
-    check abs(s.getFloat() - 0.75) < 0.001
-    check s.config.precision == 2
+    let slider = newFloatSlider("in", "out", 0.75, precision = 2)
+    check abs(slider.getFloat() - 0.75) < 0.001
+    check slider.config.precision == 2
 
   test "setInt updates value":
-    let s = newIntSlider("in", "out", 10)
-    s.setInt(20)
-    check s.getInt() == 20
+    let slider = newIntSlider("in", "out", 10)
+    slider.setInt(20)
+    check slider.getInt() == 20
 
   test "setFloat updates value":
-    let s = newFloatSlider("in", "out", 0.5)
-    s.setFloat(0.8)
-    check abs(s.getFloat() - 0.8) < 0.001
+    let slider = newFloatSlider("in", "out", 0.5)
+    slider.setFloat(0.8)
+    check abs(slider.getFloat() - 0.8) < 0.001
 
   test "setValue clamps to range":
-    let s = newIntSlider("in", "out", 50, minValue = 0, maxValue = 100)
-    s.setInt(200)
-    check s.getInt() == 100
-    s.setInt(-50)
-    check s.getInt() == 0
+    let slider = newIntSlider("in", "out", 50, minValue = 0, maxValue = 100)
+    slider.setInt(200)
+    check slider.getInt() == 100
+    slider.setInt(-50)
+    check slider.getInt() == 0
 
   test "getDisplayText formats correctly":
-    let s = newFloatSlider("in", "out", 1.234, precision = 2)
-    check s.getDisplayText() == "1.23"
+    let slider = newFloatSlider("in", "out", 1.234, precision = 2)
+    check slider.getDisplayText() == "1.23"
 
 
 suite "Slider - Callbacks":
   test "onChange called on setValue":
     var callCount = 0
-    let s = newIntSlider("in", "out", 10)
-    s.onChange = proc() = callCount += 1
-    s.setInt(20)
+    let slider = newIntSlider("in", "out", 10)
+    slider.onChange = proc() = callCount += 1
+    slider.setInt(20)
     check callCount == 1
 
   test "onChange not called when nil":
-    let s = newIntSlider("in", "out", 10)
+    let slider = newIntSlider("in", "out", 10)
     # Should not crash
-    s.setInt(20)
-    check s.getInt() == 20
+    slider.setInt(20)
+    check slider.getInt() == 20
 
 
 # ==============================================================================

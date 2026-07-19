@@ -37,7 +37,7 @@ suite "Observable - Basic Operations":
 
   test "update transforms value":
     let obs = newObservable(5)
-    obs.update(proc(x: int): int = x * 2)
+    obs.update(proc(value: int): int = value * 2)
     check obs.get() == 10
 
 
@@ -46,8 +46,8 @@ suite "Observable - Subscriptions":
     let obs = newObservable(100)
     var received = -1
 
-    discard obs.subscribe(proc(v: int): proc() =
-      received = v
+    discard obs.subscribe(proc(value: int): proc() =
+      received = value
       nil
     )
 
@@ -57,8 +57,8 @@ suite "Observable - Subscriptions":
     let obs = newObservable(0)
     var history: seq[int] = @[]
 
-    discard obs.subscribe(proc(v: int): proc() =
-      history.add(v)
+    discard obs.subscribe(proc(value: int): proc() =
+      history.add(value)
       nil
     )
 
@@ -70,23 +70,23 @@ suite "Observable - Subscriptions":
 
   test "multiple subscribers all receive updates":
     let obs = newObservable(0)
-    var a = 0
-    var b = 0
+    var receivedA = 0
+    var receivedB = 0
 
-    discard obs.subscribe(proc(v: int): proc() = a = v; nil)
-    discard obs.subscribe(proc(v: int): proc() = b = v * 10; nil)
+    discard obs.subscribe(proc(value: int): proc() = receivedA = value; nil)
+    discard obs.subscribe(proc(value: int): proc() = receivedB = value * 10; nil)
 
     obs.set(5)
 
-    check a == 5
-    check b == 50
+    check receivedA == 5
+    check receivedB == 50
 
   test "unsubscribe stops notifications":
     let obs = newObservable(0)
     var received = 0
 
-    let id = obs.subscribe(proc(v: int): proc() =
-      received = v
+    let id = obs.subscribe(proc(value: int): proc() =
+      received = value
       nil
     )
 
@@ -102,10 +102,10 @@ suite "Observable - Subscriptions":
 
     check obs.observerCount() == 0
 
-    let id1 = obs.subscribe(proc(v: int): proc() = nil)
+    let id1 = obs.subscribe(proc(value: int): proc() = nil)
     check obs.observerCount() == 1
 
-    let id2 = obs.subscribe(proc(v: int): proc() = nil)
+    let id2 = obs.subscribe(proc(value: int): proc() = nil)
     check obs.observerCount() == 2
 
     obs.unsubscribe(id1)
@@ -120,7 +120,7 @@ suite "Observable - Cleanup":
     let obs = newObservable(0)
     var cleanupCalls = 0
 
-    discard obs.subscribe(proc(v: int): proc() =
+    discard obs.subscribe(proc(value: int): proc() =
       return proc() = cleanupCalls += 1
     )
 
@@ -134,7 +134,7 @@ suite "Observable - Cleanup":
     let obs = newObservable(0)
     var cleanupCalled = false
 
-    let id = obs.subscribe(proc(v: int): proc() =
+    let id = obs.subscribe(proc(value: int): proc() =
       return proc() = cleanupCalled = true
     )
 
@@ -146,8 +146,8 @@ suite "Observable - Cleanup":
     let obs = newObservable(0)
     var cleanups = 0
 
-    discard obs.subscribe(proc(v: int): proc() = return proc() = cleanups += 1)
-    discard obs.subscribe(proc(v: int): proc() = return proc() = cleanups += 1)
+    discard obs.subscribe(proc(value: int): proc() = return proc() = cleanups += 1)
+    discard obs.subscribe(proc(value: int): proc() = return proc() = cleanups += 1)
 
     obs.unsubscribeAll()
     check cleanups == 2
@@ -159,7 +159,7 @@ suite "Observable - Batching":
     let obs = newObservable(0)
     var notifications = 0
 
-    discard obs.subscribe(proc(v: int): proc() =
+    discard obs.subscribe(proc(value: int): proc() =
       notifications += 1
       nil
     )
@@ -181,7 +181,7 @@ suite "Observable - Batching":
     let obs = newObservable(0)
     var count = 0
 
-    discard obs.subscribe(proc(v: int): proc() = count += 1; nil)
+    discard obs.subscribe(proc(value: int): proc() = count += 1; nil)
 
     withBatch:
       obs.set(10)
@@ -194,7 +194,7 @@ suite "Observable - Batching":
     let obs = newObservable(0)
     var notifications = 0
 
-    discard obs.subscribe(proc(v: int): proc() = notifications += 1; nil)
+    discard obs.subscribe(proc(value: int): proc() = notifications += 1; nil)
 
     batch(proc() =
       obs.set(1)
@@ -211,7 +211,7 @@ suite "Observable - Batching":
 suite "Observable - Map":
   test "map creates derived observable":
     let source = newObservable(5)
-    let doubled = source.map(proc(x: int): int = x * 2)
+    let doubled = source.map(proc(value: int): int = value * 2)
 
     check doubled.get() == 10
 
@@ -225,48 +225,48 @@ suite "Observable - Map":
 
 suite "Computed - Basic":
   test "computes initial value":
-    let a = newObservable(2)
-    let b = newObservable(3)
+    let first = newObservable(2)
+    let second = newObservable(3)
 
-    let sum = newComputed(proc(): int = a.get() + b.get())
-      .dependsOn(a)
-      .dependsOn(b)
+    let sum = newComputed(proc(): int = first.get() + second.get())
+      .dependsOn(first)
+      .dependsOn(second)
 
     check sum.get() == 5
 
   test "recomputes when dependency changes":
-    let x = newObservable(10)
+    let source = newObservable(10)
 
-    let doubled = newComputed(proc(): int = x.get() * 2)
-      .dependsOn(x)
+    let doubled = newComputed(proc(): int = source.get() * 2)
+      .dependsOn(source)
 
     check doubled.get() == 20
 
-    x.set(5)
+    source.set(5)
     check doubled.get() == 10
 
   test "combine creates computed from two observables":
-    let a = newObservable(3)
-    let b = newObservable(4)
+    let first = newObservable(3)
+    let second = newObservable(4)
 
-    let product = combine(a, b, proc(x, y: int): int = x * y)
+    let product = combine(first, second, proc(left, right: int): int = left * right)
 
     check product.get() == 12
 
-    a.set(5)
+    first.set(5)
     check product.get() == 20
 
   test "computed notifies subscribers":
-    let x = newObservable(1)
-    let squared = newComputed(proc(): int = x.get() * x.get())
-      .dependsOn(x)
+    let source = newObservable(1)
+    let squared = newComputed(proc(): int = source.get() * source.get())
+      .dependsOn(source)
 
     var received = 0
-    discard squared.subscribe(proc(v: int): proc() = received = v; nil)
+    discard squared.subscribe(proc(value: int): proc() = received = value; nil)
 
     check received == 1
 
-    x.set(4)
+    source.set(4)
     check received == 16
 
 
@@ -279,7 +279,7 @@ suite "Effect - Basic":
     let obs = newObservable("hello")
     var ran = false
 
-    let eff = effectSimple(obs, proc(v: string) = ran = true)
+    let eff = effectSimple(obs, proc(value: string) = ran = true)
 
     check ran == true
 
@@ -287,7 +287,7 @@ suite "Effect - Basic":
     let obs = newObservable(0)
     var history: seq[int] = @[]
 
-    let eff = effectSimple(obs, proc(v: int) = history.add(v))
+    let eff = effectSimple(obs, proc(value: int) = history.add(value))
 
     obs.set(1)
     obs.set(2)
@@ -298,7 +298,7 @@ suite "Effect - Basic":
     let obs = newObservable(0)
     var cleanups = 0
 
-    let eff = effect(obs, proc(v: int): proc() =
+    let eff = effect(obs, proc(value: int): proc() =
       return proc() = cleanups += 1
     )
 
@@ -312,7 +312,7 @@ suite "Effect - Basic":
     let obs = newObservable(0)
     var runs = 0
 
-    let eff = effectSimple(obs, proc(v: int) = runs += 1)
+    let eff = effectSimple(obs, proc(value: int) = runs += 1)
 
     check runs == 1
     obs.set(1)
@@ -326,7 +326,7 @@ suite "Effect - Basic":
     let obs = newObservable(0)
     var cleanedUp = false
 
-    let eff = effect(obs, proc(v: int): proc() =
+    let eff = effect(obs, proc(value: int): proc() =
       return proc() = cleanedUp = true
     )
 
@@ -385,7 +385,7 @@ suite "DisposableGroup":
     var runs = 0
 
     let group = newDisposableGroup()
-    let eff = effectSimple(obs, proc(v: int) = runs += 1)
+    let eff = effectSimple(obs, proc(value: int) = runs += 1)
     group.add(eff)
 
     obs.set(1)
