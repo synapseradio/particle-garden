@@ -15,7 +15,9 @@
       "WebFetch(domain:www.youtube.com)",
       "WebFetch(domain:www.google.com)",
       "WebFetch(domain:manifest.googlevideo.com)",
-      "WebFetch(domain:rr3---sn-4g5lznly.googlevideo.com)"
+      "WebFetch(domain:rr3---sn-4g5lznly.googlevideo.com)",
+      "mcp__tavily__tavily_search",
+      "mcp__tavily__tavily_extract"
     ]
   },
   "sandbox": {
