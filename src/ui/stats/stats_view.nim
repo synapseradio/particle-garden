@@ -7,7 +7,7 @@
 #
 # ==============================================================================
 
-from std/strutils import formatFloat, ffDecimal
+from std/strutils import formatFloat, ffDecimal, insertSep
 
 # ==============================================================================
 # SECTION 1: STATS STATE
@@ -68,7 +68,12 @@ func formatWorkerTime*(ms: float): string =
   ## Format worker time (1 decimal place).
   formatFloat(ms, ffDecimal, 1)
 
+func formatGpuTime*(ms: float): string =
+  ## Format a per-pass GPU timing (2 decimal places).
+  formatFloat(ms, ffDecimal, 2)
+
 func formatParticleCount*(count: int): string =
-  ## Format particle count with locale separators.
-  ## Note: Actual locale formatting requires JS runtime.
-  $count
+  ## Format particle count with comma thousands separators. Deterministic
+  ## replacement for JS toLocaleString: identical visible output in the
+  ## default locale, but pure and locale-independent.
+  insertSep($count, ',')

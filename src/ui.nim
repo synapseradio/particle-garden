@@ -44,6 +44,7 @@ import ui/matrix/matrix_view
 import ui/input/mouse_handler
 import ui/input/touch_handler
 import ui/controls/slider
+import ui/stats/stats_view
 import ui/dom_helpers
 
 # ==============================================================================
@@ -51,8 +52,6 @@ import ui/dom_helpers
 # ==============================================================================
 # These supplement the bindings from dom.nim and js_interop.nim
 
-proc toFixed(value: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
-proc toLocaleString(value: int): cstring {.importjs: "#.toLocaleString()".}
 
 # ==============================================================================
 # SECTION 3: INPUT STATE (reactive + legacy shims)
@@ -419,18 +418,16 @@ proc randomizeMatrix*() {.exportc.} =
 # ==============================================================================
 
 proc updateStats*(fps: int, gridTimeMs: float, workerTimeMs: float) {.exportc.} =
-  ## Update the stats display panel.
+  ## Update the stats display panel. Formatting lives in the natively-tested
+  ## stats_view module; this proc only writes the DOM.
   ##
   ## @param fps - Current frames per second
   ## @param gridTimeMs - Time spent building spatial grid (ms)
   ## @param workerTimeMs - Time spent in worker physics (ms)
 
-  let fpsEl = getElementById("fps")
-  fpsEl.textContent = cstring($fps)
-  let gridTimeEl = getElementById("gridTime")
-  gridTimeEl.textContent = toFixed(gridTimeMs, 2)
-  let workerTimeEl = getElementById("workerTime")
-  workerTimeEl.textContent = toFixed(workerTimeMs, 1)
+  getElementById("fps").textContent = cstring(formatFps(fps))
+  getElementById("gridTime").textContent = cstring(formatGridTime(gridTimeMs))
+  getElementById("workerTime").textContent = cstring(formatWorkerTime(workerTimeMs))
 
 proc updateGpuTimes*(gridMs: float, physicsMs: float, drawMs: float, presentMs: float) {.exportc.} =
   ## Update the per-pass GPU timing readout (timestamp-query measurements).
@@ -440,18 +437,17 @@ proc updateGpuTimes*(gridMs: float, physicsMs: float, drawMs: float, presentMs: 
   ## @param drawMs - Offscreen render pass (trails + particles)
   ## @param presentMs - Present render pass (glow + blit)
 
-  getElementById("gpuGrid").textContent = toFixed(gridMs, 2)
-  getElementById("gpuPhysics").textContent = toFixed(physicsMs, 2)
-  getElementById("gpuDraw").textContent = toFixed(drawMs, 2)
-  getElementById("gpuPresent").textContent = toFixed(presentMs, 2)
+  getElementById("gpuGrid").textContent = cstring(formatGpuTime(gridMs))
+  getElementById("gpuPhysics").textContent = cstring(formatGpuTime(physicsMs))
+  getElementById("gpuDraw").textContent = cstring(formatGpuTime(drawMs))
+  getElementById("gpuPresent").textContent = cstring(formatGpuTime(presentMs))
 
 proc updateParticleStats*(count: int) {.exportc.} =
   ## Update the particle count display.
   ##
   ## @param count - Current particle count
 
-  let particleStatsEl = getElementById("particleStats")
-  particleStatsEl.textContent = toLocaleString(count)
+  getElementById("particleStats").textContent = cstring(formatParticleCount(count))
 
 {.emit: """
 window.toggleTrails = toggleTrails;

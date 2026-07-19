@@ -30,6 +30,19 @@ suite "Stats Formatters Produce Fixed Precision":
     check formatFps(0) == "0"
     check formatFps(60) == "60"
 
+  test "formatGpuTime renders two decimal places":
+    # The per-pass GPU timing readout (grid/physics/draw/present).
+    check formatGpuTime(0.0) == "0.00"
+    check formatGpuTime(1.5) == "1.50"
+    check formatGpuTime(12.345) == "12.35"
+
+  test "formatParticleCount groups thousands with commas":
+    # Deterministic replacement for JS toLocaleString: same visible output
+    # in the default locale, but pure and locale-independent.
+    check formatParticleCount(999) == "999"
+    check formatParticleCount(16000) == "16,000"
+    check formatParticleCount(1234567) == "1,234,567"
+
 
 suite "Stats Updates Are Immutable":
   test "withFps sets fps and leaves the original state unchanged":
