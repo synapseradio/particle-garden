@@ -2,7 +2,7 @@
 # SIMULATION STATE - Physics simulation parameters
 # ==============================================================================
 #
-# The typed record for every physics-side tunable: the seventeen ConfigObject
+# The typed record for every physics-side tunable: the nineteen ConfigObject
 # fields the compute pipeline and force model read. ui.nim holds this in an
 # Observable and mirrors each change synchronously into the flat CONFIG the
 # hot paths consume; config.nim's createConfig copies these defaults, so the
@@ -11,6 +11,8 @@
 # Pure module: compiles on both the native (nimble test) and JS backends.
 #
 # ==============================================================================
+
+import ../../field_core
 
 type
   SimulationState* = object
@@ -33,6 +35,8 @@ type
     sphStiffness*: float      ## SPH pressure gain (Tait stiffness)
     sphViscosity*: float      ## SPH XSPH viscosity strength
     sphSubsteps*: int         ## SPH physics substeps per rendered frame
+    rdFeed*: float            ## Gray-Scott feed rate F
+    rdKill*: float            ## Gray-Scott kill rate k
 
 func initSimulationState*(): SimulationState =
   ## The authoritative physics defaults (copied into CONFIG by createConfig).
@@ -53,5 +57,7 @@ func initSimulationState*(): SimulationState =
     sphRestDensity: 1.0,
     sphStiffness: 8.0,
     sphViscosity: 0.1,
-    sphSubsteps: 1
+    sphSubsteps: 1,
+    rdFeed: RD_DEFAULT_FEED,
+    rdKill: RD_DEFAULT_KILL
   )

@@ -635,17 +635,27 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbGridOffsets: cast[GPUBuffer](gpuBuffers.gridOffsets)
     of sbFillPointers: cast[GPUBuffer](gpuBuffers.fillPointers)
     of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
+    of sbFieldDeposit:
+      # RD lands with its shader stage; the mode is not pre-warmed, so no
+      # frame reaching this executor can name the buffer yet.
+      raise newException(CatchableError, "field deposit buffer not created yet (roadmap S8)")
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
     case simBuffer
     of sbGridCounts, sbGridOffsets, sbFillPointers: numCells * 4
     of sbDensityDelta: particleCount * 4  # i32 per particle
+    of sbFieldDeposit:
+      raise newException(CatchableError, "field deposit buffer not created yet (roadmap S8)")
 
   proc resolveDispatchSize(size: DispatchSize): int =
     case size
     of dsParticleWorkgroups: particleWorkgroups
     of dsScanBlocks: scanBlocks
     of dsOne: 1
+    of dsFieldWorkgroups:
+      # The one 2D dispatch size; the executor grows real 2D handling when the
+      # RD shaders land. Unreachable until skReactionDiffusion pre-warms.
+      raise newException(CatchableError, "field dispatch not implemented yet (roadmap S8)")
 
   let commandEncoder = device.createCommandEncoderLabeled("Physics Frame Command Encoder")
 

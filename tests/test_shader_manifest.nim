@@ -53,19 +53,23 @@ suite "Every Dispatched Pipeline Has A Registered Shader Spec":
       for dispatchKey in dispatchKeysOf(buildFrame(kind)):
         check dispatchKey in specKeys
 
-  test "at least the two implemented kinds are covered by this relation":
-    # Guards against the relation silently testing nothing: particle-life and
-    # SPH both have frames this stage.
+  test "at least the three implemented kinds are covered by this relation":
+    # Guards against the relation silently testing nothing: particle-life,
+    # SPH, and reaction-diffusion all have frames as of S8a.
     var implementedKinds = 0
     for kind in SimKind:
       if not buildFrameRaises(kind):
         inc implementedKinds
-    check implementedKinds >= 2
+    check implementedKinds >= 3
 
 
 suite "Shader Spec Manifests Are Well-Formed":
   test "spec keys are unique within each kind":
-    # A duplicate key would make the pipelines/bindGroups dictionaries collide.
+    # A duplicate key would make the pipelines/bindGroups dictionaries
+    # collide. Paths are NOT required to be unique: reaction-diffusion's
+    # rdStepForward and rdStepReverse deliberately share one path/entry
+    # (one WGSL pipeline, two bind-group orientations over it) while keeping
+    # distinct keys, so this only checks the keys.
     for kind in SimKind:
       let specs = shaderSpecsFor(kind)
       var keys: HashSet[string]
@@ -98,5 +102,43 @@ suite "Shader Spec Manifests Are Well-Formed":
                    "binScatter", "integrate"]:
       check shared in sphKeys
 
-  test "reaction-diffusion registers no shaders yet":
-    check shaderSpecsFor(skReactionDiffusion).len == 0
+  test "reaction-diffusion registers its five field shaders plus shared integrate":
+    let rdKeys = block:
+      var keys: HashSet[string]
+      for spec in shaderSpecsFor(skReactionDiffusion):
+        keys.incl spec.key
+      keys
+    check rdKeys.len == 6
+    for expectedKey in ["fieldDeposit", "fieldResolve", "rdStepForward",
+        "rdStepReverse", "fieldForce", "integrate"]:
+      check expectedKey in rdKeys
+
+  test "rdStepForward and rdStepReverse share one shader path and entry point":
+    let specs = shaderSpecsFor(skReactionDiffusion)
+    let forwardSpec = block:
+      var found: ShaderSpec
+      for spec in specs:
+        if spec.key == "rdStepForward": found = spec
+      found
+    let reverseSpec = block:
+      var found: ShaderSpec
+      for spec in specs:
+        if spec.key == "rdStepReverse": found = spec
+      found
+    check forwardSpec.path == reverseSpec.path
+    check forwardSpec.entryPoint == reverseSpec.entryPoint
+
+  test "reaction-diffusion's integrate spec is identical to particle-life's":
+    # RD's fieldForce writes velocityDelta in the same layout integrate
+    # expects, so both kinds share the exact same pipeline spec.
+    let particleLifeIntegrate = block:
+      var found: ShaderSpec
+      for spec in shaderSpecsFor(skParticleLife):
+        if spec.key == "integrate": found = spec
+      found
+    let rdIntegrate = block:
+      var found: ShaderSpec
+      for spec in shaderSpecsFor(skReactionDiffusion):
+        if spec.key == "integrate": found = spec
+      found
+    check particleLifeIntegrate == rdIntegrate

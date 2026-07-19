@@ -22,6 +22,7 @@
 
 import memory_layout
 import sph_core
+import field_core
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -79,6 +80,10 @@ const
   SPH_SUBSTEPS_MAX* = SPH_MAX_SUBSTEPS
     ## The substep ceiling is sph_core's SPH_MAX_SUBSTEPS, not a bare literal —
     ## the executor loop and the slider bound stay one value.
+  RD_FEED_MIN* = 0.010
+  RD_FEED_MAX* = 0.080
+  RD_KILL_MIN* = 0.040
+  RD_KILL_MAX* = 0.075
 
 static:
   # Every range must be non-empty, or clamping inverts.
@@ -92,3 +97,10 @@ static:
   doAssert SPH_STIFFNESS_MIN < SPH_STIFFNESS_MAX
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
+  doAssert RD_FEED_MIN < RD_FEED_MAX
+  doAssert RD_KILL_MIN < RD_KILL_MAX
+  # field_core's Pearson defaults must themselves lie inside the slider range
+  # they are the default value of — a future default change that escapes the
+  # range fails the build here rather than shipping an out-of-bounds slider.
+  doAssert RD_DEFAULT_FEED >= RD_FEED_MIN and RD_DEFAULT_FEED <= RD_FEED_MAX
+  doAssert RD_DEFAULT_KILL >= RD_KILL_MIN and RD_DEFAULT_KILL <= RD_KILL_MAX

@@ -72,5 +72,24 @@ func shaderSpecsFor*(kind: SimKind): seq[ShaderSpec] =
       label: "Integrate Shader (AoS)", entryPoint: "integrate"),
   ]
   of skReactionDiffusion:
-    # Pipelines land with their stage (roadmap S8).
-    @[]
+    # The field mode's own five compute shaders, plus the particle-life
+    # integrate pass it reuses verbatim (same pipeline, same spec entry — RD's
+    # fieldForce writes velocityDelta in the same layout integrate expects).
+    # rdStepForward and rdStepReverse share one shader file and entry point:
+    # one WGSL pipeline, but the executor gives each dispatch key its own bind
+    # group over that pipeline (the two orientations of the field-texture
+    # ping-pong), so both keys are registered against the same path/entry.
+    @[
+      ShaderSpec(key: "fieldDeposit", path: "./shaders/field-deposit.wgsl",
+        label: "Field Deposit Shader", entryPoint: "depositField"),
+      ShaderSpec(key: "fieldResolve", path: "./shaders/field-resolve.wgsl",
+        label: "Field Resolve Shader", entryPoint: "resolveField"),
+      ShaderSpec(key: "rdStepForward", path: "./shaders/rd-step.wgsl",
+        label: "Gray-Scott Step Shader (Forward)", entryPoint: "rdStep"),
+      ShaderSpec(key: "rdStepReverse", path: "./shaders/rd-step.wgsl",
+        label: "Gray-Scott Step Shader (Reverse)", entryPoint: "rdStep"),
+      ShaderSpec(key: "fieldForce", path: "./shaders/field-force.wgsl",
+        label: "Field Force Shader", entryPoint: "applyFieldForce"),
+      ShaderSpec(key: "integrate", path: "./shaders/integrate.wgsl",
+        label: "Integrate Shader (AoS)", entryPoint: "integrate"),
+    ]

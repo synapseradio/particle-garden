@@ -14,6 +14,7 @@
 
 import std/unittest
 import ../src/sim_registry
+import ../src/field_core
 
 const SIM_REGISTRY_TESTS_LOADED* = true
 
@@ -136,7 +137,53 @@ suite "SPH Frame Description":
         check node.clearTarget == sbGridCounts
 
 
-suite "Unimplemented Modes Fail Loudly":
-  test "buildFrame raises for modes that have no frame yet":
-    expect ValueError:
-      discard buildFrame(skReactionDiffusion)
+suite "Reaction-Diffusion Frame Description":
+  # S8a: no grid triad and no gridOffsets->fillPointers copy — RD never runs a
+  # spatial-hash neighbor search. The exact sequence:
+  #   compute "Field (RD)" [fieldDeposit, fieldResolve,
+  #     8x alternating rdStepForward/rdStepReverse (starting Forward),
+  #     fieldForce];
+  #   clear sbDensityDelta (no pass in this frame self-resets it, unlike
+  #     forces.wgsl/forces-sph.wgsl for particle-life/SPH);
+  #   compute "Physics (RD)" [integrate].
+
+  let frame = buildFrame(skReactionDiffusion)
+
+  test "the frame has exactly three nodes in order":
+    check frame.len == 3
+    check frame[0].kind == fnkComputePass
+    check frame[1].kind == fnkClearBuffer
+    check frame[2].kind == fnkComputePass
+
+  test "node 0 is the Field (RD) pass with the profiler's grid-build slot":
+    check frame[0].label == "Field (RD)"
+    check frame[0].profilerSlot == PROFILER_SLOT_GRID_BUILD
+    check frame[0].dispatches.len == 2 + RD_STEPS_PER_FRAME + 1
+
+  test "the Field (RD) pass opens with fieldDeposit then fieldResolve":
+    check frame[0].dispatches[0] == Dispatch(pipelineKey: "fieldDeposit", size: dsParticleWorkgroups)
+    check frame[0].dispatches[1] == Dispatch(pipelineKey: "fieldResolve", size: dsFieldWorkgroups)
+
+  test "the eight rd-step dispatches alternate Forward/Reverse, starting Forward":
+    let stepDispatches = frame[0].dispatches[2 ..< 2 + RD_STEPS_PER_FRAME]
+    check stepDispatches.len == 8
+    for stepIndex, stepDispatch in stepDispatches:
+      let expectedKey = if stepIndex mod 2 == 0: "rdStepForward" else: "rdStepReverse"
+      check stepDispatch == Dispatch(pipelineKey: expectedKey, size: dsFieldWorkgroups)
+
+  test "the Field (RD) pass closes with fieldForce":
+    check frame[0].dispatches[^1] == Dispatch(pipelineKey: "fieldForce", size: dsParticleWorkgroups)
+
+  test "node 1 explicitly clears densityDelta (no pass in this frame self-resets it)":
+    check frame[1].clearTarget == sbDensityDelta
+
+  test "node 2 is the Physics (RD) pass dispatching only integrate":
+    check frame[2].label == "Physics (RD)"
+    check frame[2].profilerSlot == PROFILER_SLOT_PHYSICS
+    check frame[2].dispatches == @[Dispatch(pipelineKey: "integrate", size: dsParticleWorkgroups)]
+
+  test "no node clears gridCounts, gridOffsets, or fillPointers (no spatial hash in this mode)":
+    for node in frame:
+      if node.kind == fnkClearBuffer:
+        check node.clearTarget notin {sbGridCounts, sbGridOffsets, sbFillPointers}
+      check node.kind != fnkCopyBuffer

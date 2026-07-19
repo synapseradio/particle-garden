@@ -190,6 +190,28 @@ const
     totalSize: 16
   )
 
+  # FieldParams struct (32 bytes, generated into web/shaders/modules/field_params.wgsl)
+  # The reaction-diffusion mode's uniform: the two Gray-Scott tunables (feed,
+  # kill), the diffusion rates and timestep field_core.nim's grayScottStep
+  # takes as parameters, and the two live knobs (depositAmount,
+  # fieldForceScale) the next stage's fieldDeposit/fieldForce shaders read.
+  # depositAmount/fieldForceScale are layout slots only this stage — S8a's
+  # CONFIG plumbing does not wire them to a live tunable yet.
+  FieldParamsLayout* = GpuStruct(
+    name: "FieldParams",
+    fields: @[
+      GpuField(name: "feed",            kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "kill",            kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "diffusionA",      kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "diffusionB",      kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "deltaT",          kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "depositAmount",   kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "fieldForceScale", kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "padding0",        kind: gtF32, offset: 28, size: 4, count: 1),
+    ],
+    totalSize: 32
+  )
+
 # =============================================================================
 # FIELD LOOKUP
 # =============================================================================
@@ -454,3 +476,23 @@ static:
         layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
   assert RenderParamsLayout.wgslUniformSize == 48, "RenderParams allocates 48 bytes"
   assert FadeParamsLayout.wgslUniformSize == 16, "FadeParams allocates 16 bytes"
+
+# =============================================================================
+# FIELDPARAMS FIELD INDICES (reaction-diffusion mode, webgpu_compute.nim)
+# =============================================================================
+# Generated from FieldParamsLayout by genFieldIndices, like SIM_*/RENDER_*/
+# FADE_* above: FIELD_FEED=0, FIELD_KILL=1, ... FIELD_PADDING0=7,
+# FIELD_PARAMS_F32_COUNT=8.
+
+genFieldIndices(FieldParamsLayout, "FIELD")
+
+static:
+  # Same offset-agreement invariant as SimParams/RenderParams/FadeParams: a
+  # drift here would corrupt every reaction-diffusion uniform write.
+  block:
+    let computedOffsets = FieldParamsLayout.wgslComputedOffsets
+    for fieldIndex in 0 ..< FieldParamsLayout.fields.len:
+      assert computedOffsets[fieldIndex] == FieldParamsLayout.fields[fieldIndex].offset,
+        "FieldParams." & FieldParamsLayout.fields[fieldIndex].name & " offset drift"
+  assert FieldParamsLayout.totalSize == 32, "FieldParams must be 32 bytes"
+  assert FieldParamsLayout.wgslUniformSize == 32, "FieldParams allocates 32 bytes"

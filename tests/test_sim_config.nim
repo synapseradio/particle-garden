@@ -67,6 +67,12 @@ suite "Simulation Defaults Lie Inside Their Slider Ranges":
     check defaults.sphViscosity <= SPH_VISCOSITY_MAX
     check defaults.sphSubsteps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX
 
+  test "reaction-diffusion defaults are inside their clamp ranges":
+    check defaults.rdFeed >= RD_FEED_MIN
+    check defaults.rdFeed <= RD_FEED_MAX
+    check defaults.rdKill >= RD_KILL_MIN
+    check defaults.rdKill <= RD_KILL_MAX
+
 
 suite "Render Defaults Lie Inside Their Slider Ranges":
   let defaults = initRenderState()

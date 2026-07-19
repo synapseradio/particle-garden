@@ -103,6 +103,8 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.sphStiffness = 20.0
     customPreset.settings.sphViscosity = 0.5
     customPreset.settings.sphSubsteps = 2
+    customPreset.settings.rdFeed = 0.045
+    customPreset.settings.rdKill = 0.058
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
         (if matrixIndex mod 2 == 0: 0.5 else: -0.5)
@@ -318,6 +320,20 @@ suite "Preset Clamp Behavior Contract":
     let result = validate(%*{"settings": {}})
     check result.preset.settings.sphRestDensity == defaultSettings().sphRestDensity
     check result.preset.settings.sphSubsteps == defaultSettings().sphSubsteps
+
+  test "reaction-diffusion settings clamp into their ranges":
+    let node = %*{"settings": {
+      "rdFeed": 99.0,
+      "rdKill": -5.0
+    }}
+    let result = validate(node)
+    check result.preset.settings.rdFeed == RD_FEED_MAX
+    check result.preset.settings.rdKill == RD_KILL_MIN
+
+  test "a missing reaction-diffusion field defaults rather than crashing":
+    let result = validate(%*{"settings": {}})
+    check result.preset.settings.rdFeed == defaultSettings().rdFeed
+    check result.preset.settings.rdKill == defaultSettings().rdKill
 
   test "matrix values clamp into [-1, 1]":
     var arr = newSeq[float](MATRIX_LEN)

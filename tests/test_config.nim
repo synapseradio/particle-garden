@@ -20,6 +20,7 @@
 
 import std/unittest
 import ../src/memory_layout
+import ../src/field_core
 
 # Export a constant so test_all.nim can reference it
 const CONFIG_TESTS_LOADED* = true
@@ -56,6 +57,11 @@ const
   DEFAULT_SPH_VISCOSITY = 0.1
   DEFAULT_SPH_SUBSTEPS = 1
   # World dimensions (from config.nim)
+  # Reaction-diffusion mode (S8a): mirror config.nim createConfig() /
+  # initSimulationState(), which set these from field_core's own constants
+  # directly (not literals) — referenced the same way here.
+  DEFAULT_RD_FEED = field_core.RD_DEFAULT_FEED
+  DEFAULT_RD_KILL = field_core.RD_DEFAULT_KILL
   WORLD_W = 3840.0
   WORLD_H = 2160.0
 
@@ -143,6 +149,15 @@ suite "Configuration Invariants":
     check DEFAULT_SPH_VISCOSITY >= 0.0
     check DEFAULT_SPH_VISCOSITY <= 1.0
     check DEFAULT_SPH_SUBSTEPS >= 1
+
+  test "reaction-diffusion defaults sit in the Gray-Scott self-replicating-spots regime":
+    ## CONTRACT: feed and kill are both positive rates; kill must exceed feed
+    ## for the depleting term (feed+kill)*inhibitor to dominate at low
+    ## activator (see field_core's direction-property tests) — Gray-Scott's
+    ## patterns require this ordering.
+    check DEFAULT_RD_FEED > 0.0
+    check DEFAULT_RD_KILL > 0.0
+    check DEFAULT_RD_KILL > DEFAULT_RD_FEED
 
   test "glow knob defaults reproduce the legacy hard-coded glow radius":
     ## CONTRACT: baseRadius in glow.wgsl is params.baseSize * params.glowRadiusScale,

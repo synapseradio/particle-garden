@@ -18,6 +18,10 @@
 #
 # ==============================================================================
 
+# field_core is itself pure (no FFI), so importing it for RD_STEPS_PER_FRAME
+# keeps this module's own purity guarantee intact.
+import field_core
+
 # ==============================================================================
 # SECTION 1: SIMULATION KINDS
 # ==============================================================================
@@ -54,12 +58,22 @@ func parseSimKind*(id: string): SimKind =
 type
   SimBuffer* = enum
     ## GPU buffers a frame node may clear or copy. The executor maps each to
-    ## the live GPUBuffer and its per-frame byte length (all four are sized
-    ## by grid cell count today).
+    ## the live GPUBuffer and its per-frame byte length (the first four are
+    ## sized by grid cell count; sbFieldDeposit is sized by field cell count).
     sbGridCounts
     sbGridOffsets
     sbFillPointers
     sbDensityDelta
+    sbFieldDeposit
+      ## The reaction-diffusion fixed-point splat buffer: fieldDeposit
+      ## accumulates each particle's contribution into it (per FIELD_W x
+      ## FIELD_H cell), and fieldResolve reads it to update the field
+      ## texture. Declared here for the executor's buffer-allocation table;
+      ## this stage's buildFrame(skReactionDiffusion) does not clear it —
+      ## whether fieldDeposit.wgsl self-resets it via atomicStore (the
+      ## convention forces.wgsl/forces-sph.wgsl use for velocityDelta/
+      ## densityDelta) or an encoder-level clear belongs here is a decision
+      ## for the shader that writes it (roadmap S8, next stage).
 
   DispatchSize* = enum
     ## Symbolic dispatch sizes, resolved by the executor each frame. The
@@ -68,6 +82,15 @@ type
     dsParticleWorkgroups  ## ceil(particleCount / workgroup size)
     dsScanBlocks          ## ceil(numCells / prefix-sum block size)
     dsOne                 ## a single workgroup
+    dsFieldWorkgroups
+      ## ceil(FIELD_W / workgroup size X) x ceil(FIELD_H / workgroup size Y):
+      ## the one 2D dispatch size in this enum. Every other DispatchSize
+      ## resolves to a single workgroup count (the executor's
+      ## dispatchWorkgroups call today takes one argument); a dispatch sized
+      ## dsFieldWorkgroups needs dispatchWorkgroups(x, y), so the executor
+      ## must special-case this value rather than resolving it through the
+      ## same one-int path as the others (executor wiring is out of scope
+      ## for this stage — see roadmap S8, next stage).
 
   Dispatch* = object
     ## One setPipeline/setBindGroup/dispatchWorkgroups triple. pipelineKey
@@ -180,5 +203,36 @@ func buildFrame*(kind: SimKind): FrameDescription =
       ]),
     ]
   of skReactionDiffusion:
-    raise newException(ValueError,
-      "reaction-diffusion frame not implemented yet (roadmap S8)")
+    # No grid triad and no gridOffsets->fillPointers copy: the field mode
+    # never runs a spatial-hash neighbor search (fieldForce reads the field
+    # texture directly, not sorted neighbor particles), so those nodes are
+    # simply absent rather than present-and-unused.
+    var fieldDispatches = @[
+      dispatch("fieldDeposit", dsParticleWorkgroups),
+      dispatch("fieldResolve", dsFieldWorkgroups),
+    ]
+    # RD_STEPS_PER_FRAME Gray-Scott substeps, alternating which of the two
+    # field-texture copies is read from vs. written to each substep (the
+    # ping-pong pattern a storage texture needs since a shader cannot read
+    # and write the same texture binding in one dispatch). Starts Forward.
+    for stepIndex in 0 ..< RD_STEPS_PER_FRAME:
+      if stepIndex mod 2 == 0:
+        fieldDispatches.add dispatch("rdStepForward", dsFieldWorkgroups)
+      else:
+        fieldDispatches.add dispatch("rdStepReverse", dsFieldWorkgroups)
+    fieldDispatches.add dispatch("fieldForce", dsParticleWorkgroups)
+    @[
+      computePassNode("Field (RD)", PROFILER_SLOT_GRID_BUILD, fieldDispatches),
+      # densityDelta is read by integrate (EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE
+      # binds it unconditionally) but no pass in this frame writes it: unlike
+      # forces.wgsl/forces-sph.wgsl, which self-reset velocityDelta/
+      # densityDelta via atomicStore, this mode's fieldForce pass is the one
+      # place velocityDelta is written and it does not touch densityDelta (RD
+      # has no neighbor-density computation). Left uncleared, integrate would
+      # read stale densityDelta values carried over from whichever mode ran
+      # before it — this explicit clear is that reset.
+      clearBufferNode(sbDensityDelta),
+      computePassNode("Physics (RD)", PROFILER_SLOT_PHYSICS, @[
+        dispatch("integrate", dsParticleWorkgroups),
+      ]),
+    ]

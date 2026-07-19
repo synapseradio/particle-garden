@@ -99,6 +99,8 @@ type
     sphStiffness*: float
     sphViscosity*: float
     sphSubsteps*: int
+    rdFeed*: float
+    rdKill*: float
 
   Preset* = object
     ## The full persisted shape: `{schemaVersion, name, createdAt, mode,
@@ -188,7 +190,13 @@ func defaultSettings*(): PresetSettings =
     sphRestDensity: 1.0,
     sphStiffness: 8.0,
     sphViscosity: 0.1,
-    sphSubsteps: 1
+    sphSubsteps: 1,
+    # Mirrors field_core.RD_DEFAULT_FEED/RD_DEFAULT_KILL as literals rather
+    # than an import: this module's dependencies are intentionally restricted
+    # to config_ranges and palette (see file header), the same reason
+    # sphRestDensity etc. above are literals rather than sph_core imports.
+    rdFeed: 0.030,
+    rdKill: 0.062
   )
 
 func defaultMatrix*(): Matrix =
@@ -313,6 +321,10 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "sphViscosity").getFloat(defaults.sphViscosity), SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX)
   result.sphSubsteps = clampInt(
     field(node, "sphSubsteps").getInt(defaults.sphSubsteps), SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX)
+  result.rdFeed = clampFloat(
+    field(node, "rdFeed").getFloat(defaults.rdFeed), RD_FEED_MIN, RD_FEED_MAX)
+  result.rdKill = clampFloat(
+    field(node, "rdKill").getFloat(defaults.rdKill), RD_KILL_MIN, RD_KILL_MAX)
 
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
@@ -450,6 +462,8 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["sphStiffness"] = %settings.sphStiffness
   result["sphViscosity"] = %settings.sphViscosity
   result["sphSubsteps"] = %settings.sphSubsteps
+  result["rdFeed"] = %settings.rdFeed
+  result["rdKill"] = %settings.rdKill
 
 proc toJson*(preset: Preset): JsonNode =
   result = newJObject()

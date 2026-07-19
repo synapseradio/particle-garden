@@ -217,6 +217,44 @@ suite "RenderParams Glow Knob Indices":
     check RENDER_PARAMS_F32_COUNT == 12
 
 
+suite "Generated FieldParams Layout (Reaction-Diffusion)":
+  # S8a: FieldParams joins SimParams/RenderParams/FadeParams as a
+  # layout-table-generated struct — the reaction-diffusion mode's uniform.
+
+  test "FieldParamsLayout is 8 floats, 32 bytes written and allocated":
+    check FieldParamsLayout.totalSize == 32
+    check wgslUniformSize(FieldParamsLayout) == 32
+
+  test "FieldParamsLayout offsets match WGSL's own layout algorithm":
+    let computedOffsets = wgslComputedOffsets(FieldParamsLayout)
+    for fieldIndex in 0 ..< FieldParamsLayout.fields.len:
+      check computedOffsets[fieldIndex] == FieldParamsLayout.fields[fieldIndex].offset
+
+  test "the generated FIELD_ indices reproduce the declared field order":
+    check FIELD_FEED == 0
+    check FIELD_KILL == 1
+    check FIELD_DIFFUSION_A == 2
+    check FIELD_DIFFUSION_B == 3
+    check FIELD_DELTA_T == 4
+    check FIELD_DEPOSIT_AMOUNT == 5
+    check FIELD_FORCE_SCALE == 6
+    check FIELD_PADDING0 == 7
+    check FIELD_PARAMS_F32_COUNT == 8
+
+  test "a field name that already begins with the prefix does not double it":
+    # fieldForceScale under prefix FIELD must emit FIELD_FORCE_SCALE, not
+    # FIELD_FIELD_FORCE_SCALE — the same rule FadeParams' fadeAmount pins.
+    check FieldParamsLayout.fields[6].name == "fieldForceScale"
+
+  test "toWgslStruct renders FieldParams with WGSL scalar types":
+    let generated = toWgslStruct(FieldParamsLayout)
+    check generated.startsWith("struct FieldParams {")
+    check "feed: f32," in generated
+    check "kill: f32," in generated
+    check "fieldForceScale: f32," in generated
+    check generated.strip.endsWith("}")
+
+
 suite "toUpperSnake Names Index Constants From Field Names":
   test "camelCase field names become UPPER_SNAKE":
     check toUpperSnake("dt") == "DT"

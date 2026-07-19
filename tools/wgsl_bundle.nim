@@ -270,6 +270,9 @@ proc generateStructModules() =
   generateStructModule("fade_params",
     structModuleHeader("fade_params", "FadeParamsLayout"),
     toWgslStruct(FadeParamsLayout))
+  generateStructModule("field_params",
+    structModuleHeader("field_params", "FieldParamsLayout"),
+    toWgslStruct(FieldParamsLayout))
 
 # ==============================================================================
 # MAIN

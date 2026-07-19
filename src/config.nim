@@ -55,6 +55,8 @@ type
     sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
     sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
     sphSubsteps* {.exportc.}: int         # SPH physics substeps per rendered frame
+    rdFeed* {.exportc.}: float            # Gray-Scott feed rate F
+    rdKill* {.exportc.}: float            # Gray-Scott kill rate k
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -180,6 +182,8 @@ proc createConfig(): ConfigObject =
   result.sphStiffness = sim.sphStiffness
   result.sphViscosity = sim.sphViscosity
   result.sphSubsteps = sim.sphSubsteps
+  result.rdFeed = sim.rdFeed
+  result.rdKill = sim.rdKill
   result.particleSize = visual.particleSize
   result.trails = visual.trails
   result.trailLength = visual.trailLength
