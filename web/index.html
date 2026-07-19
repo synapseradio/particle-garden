@@ -712,6 +712,43 @@
           </div>
         </div>
 
+        <!-- Presets Section (collapsible) -->
+        <div class="control-section" id="presetsSection">
+          <button class="section-header" onclick="togglePresetsSection()">
+            Presets <span class="section-toggle">+</span>
+          </button>
+          <div class="section-content" style="display: none">
+            <div class="control-group">
+              <label>Saved Presets</label>
+              <select id="presetList" style="width: 100%"></select>
+            </div>
+
+            <div class="control-group model-selector">
+              <button class="model-btn" onclick="presetLoadClicked()">
+                Load
+              </button>
+              <button class="model-btn" onclick="presetSaveClicked()">
+                Save
+              </button>
+              <button class="model-btn" onclick="presetExportClicked()">
+                Export
+              </button>
+              <button class="model-btn" onclick="presetImportClicked()">
+                Import
+              </button>
+            </div>
+
+            <div class="control-group">
+              <label>Preset JSON (Export / Import)</label>
+              <textarea
+                id="presetJsonArea"
+                rows="6"
+                style="width: 100%; font-family: monospace; font-size: 11px"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
         <div class="stats">
           <div>FPS: <span id="fps">0</span></div>
           <div>Particles: <span id="particleStats">0</span></div>

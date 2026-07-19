@@ -281,6 +281,21 @@ when defined(js):
       nil
     )
 
+  var registeredSliders: seq[tuple[slider: Slider, get: proc(): float]] = @[]
+    ## Every slider configSlider has bound, paired with its own CONFIG
+    ## getter. refreshRegisteredSliders() replays each getter into its
+    ## slider's observable so the DOM display stays in sync after a
+    ## non-slider write to CONFIG (e.g. a preset apply) — `.set()` only
+    ## fires the Observable→DOM subscription above, never `onChange`, so
+    ## replaying every slider here triggers no particle re-init or other
+    ## onChange side effect.
+
+  proc refreshRegisteredSliders*() =
+    ## Re-sync every registered slider's DOM display from its live CONFIG
+    ## getter, without firing any slider's onChange.
+    for entry in registeredSliders:
+      entry.slider.value.set(floatValue(entry.get()))
+
   proc configSlider*(
     inputId, displayId: string;
     get: proc(): float;
@@ -308,3 +323,4 @@ when defined(js):
       slider.onChange = onChange
 
     slider.bindToDOM()
+    registeredSliders.add((slider: slider, get: get))

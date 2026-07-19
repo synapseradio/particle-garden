@@ -35,6 +35,7 @@ from bindings/typed_arrays import Float32Array, `[]`, `[]=`
 
 import config
 import config_ranges
+import preset
 import buffers
 
 # New reactive state system
@@ -49,6 +50,11 @@ import ui/controls/slider
 import ui/controls/control_panel
 import ui/stats/stats_view
 import ui/dom_helpers
+# ui/presets depends on ui/state/sim_config, ui/dom_helpers, and
+# ui/controls/slider (refreshRegisteredSliders) above; it must import after
+# all three, so it is the last import here rather than immediately after
+# the ui/state group.
+import ui/presets/preset_store
 
 # ==============================================================================
 # SECTION 2: ADDITIONAL JS FFI BINDINGS
@@ -174,6 +180,7 @@ proc randomizeMatrix*() {.exportc.}
 proc updateMatrixDisplay*() {.exportc.}
 proc applySpeciesCountChange(newCount: int, randomizeNew: bool)
 proc applyPaletteToColors()
+proc setupPresetStoreHooks*() {.exportc.}
 
 # The matrix editor instance (delegates live in Section 10). The exportc
 # name forces the JS backend to assign the global its generated name up
@@ -378,6 +385,8 @@ proc setupUI*() {.exportc.} =
     min = PALETTE_LIGHTNESS_MIN, max = PALETTE_LIGHTNESS_MAX, precision = 2
   )
 
+  setupPresetStoreHooks()
+
 # ==============================================================================
 # SECTION 8: EVENT SETUP
 # ==============================================================================
@@ -466,6 +475,15 @@ proc toggleTrails*() {.exportc.} =
   setActive("trailBtn", trailsOn)
   setVisible("trailSettings", trailsOn)
 
+proc setTrails*(enabled: bool) {.exportc.} =
+  ## Set trail rendering to an explicit value (preset apply): unlike
+  ## toggleTrails, this does not flip the current state — it lets a preset
+  ## land on its exact saved value regardless of what trails was before.
+  panelState = control_panel.withTrailsEnabled(panelState, enabled)
+  updateRender(proc(renderState: var RenderState) = renderState.trails = enabled)
+  setActive("trailBtn", enabled)
+  setVisible("trailSettings", enabled)
+
 proc showWebGPURequiredOverlay*() {.exportc.} =
   ## Show the "WebGPU required" overlay. Called when WebGPU init or the
   ## render/compute pipeline setup fails; WebGPU is the only pipeline.
@@ -501,6 +519,10 @@ proc toggleGlowSection*() {.exportc.} =
 proc togglePaletteSection*() {.exportc.} =
   ## Toggle Palette section visibility.
   toggleSection("paletteSection")
+
+proc togglePresetsSection*() {.exportc.} =
+  ## Toggle Presets section visibility.
+  toggleSection("presetsSection")
 
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
@@ -600,6 +622,60 @@ proc setPaletteScheme*(schemeIdValue: cstring) {.exportc.} =
   setActive("paletteCoolBtn", scheme == psCool)
 
 # ==============================================================================
+# SECTION 10c: PRESET STORE WIRING
+# ==============================================================================
+#
+# preset_store.nim (JS glue, ui/presets/preset_store.nim) cannot import
+# ui.nim — ui.nim imports it, and Nim forbids the cycle — so it exposes a
+# handful of apply hooks for the three preset-apply steps that touch
+# ui.nim-private state (setSpeciesCount's re-init ordering, the typed
+# updateSimulation/updateRender/setForceModel/setTrails helpers, and the
+# matrix editor). Everything else (mode switching, writing the matrix/
+# palette buffers, refreshing sliders) preset_store does directly. Called
+# once from setupUI.
+
+proc setupPresetStoreHooks*() {.exportc.} =
+  ## Register this module's apply hooks with preset_store, then refresh the
+  ## saved-preset list from whatever localStorage already holds.
+  preset_store.onSpeciesCountApply(proc(newCount: int) =
+    setSpeciesCount(newCount, randomizeNew = false))
+
+  preset_store.onParticleCountApply(proc(newCount: int) =
+    updateSimulation(proc(simState: var SimulationState) = simState.particleCount = newCount)
+    if not onInitParticles.isNil: onInitParticles()
+  )
+
+  preset_store.onScalarsApply(proc(settings: PresetSettings) =
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.interactionRadius = settings.interactionRadius
+      simState.forceStrength = settings.forceStrength
+      simState.friction = settings.friction
+      simState.ruleTemperature = settings.ruleTemperature
+      simState.timeScale = settings.timeScale
+      simState.maxVelocity = settings.maxVelocity
+      simState.repulsionEnd = settings.repulsionEnd
+      simState.attractionPeak = settings.attractionPeak
+      simState.expRepulsionAlpha = settings.expRepulsionAlpha
+      simState.expAttractionBeta = settings.expAttractionBeta
+    )
+    updateRender(proc(renderState: var RenderState) =
+      renderState.particleSize = settings.particleSize
+      renderState.trailLength = settings.trailLength
+      renderState.glowIntensity = settings.glowIntensity
+      renderState.velocityGlowScale = settings.velocityGlowScale
+      renderState.glowRadiusScale = settings.glowRadiusScale
+      renderState.glowFalloff = settings.glowFalloff
+      renderState.glowWarmth = settings.glowWarmth
+    )
+    setForceModel(settings.forceModel)
+    setTrails(settings.trails)
+  )
+
+  preset_store.onMatrixDisplayRefresh(proc() = updateMatrixDisplay())
+
+  preset_store.refreshPresetListDom()
+
+# ==============================================================================
 # SECTION 11: STATS DISPLAY
 # ==============================================================================
 
@@ -642,7 +718,12 @@ window.randomizeMatrix = randomizeMatrix;
 window.toggleForceModelSection = toggleForceModelSection;
 window.toggleGlowSection = toggleGlowSection;
 window.togglePaletteSection = togglePaletteSection;
+window.togglePresetsSection = togglePresetsSection;
 window.setForceModel = setForceModel;
 window.setSimMode = setSimMode;
 window.setPaletteScheme = setPaletteScheme;
+window.presetSaveClicked = presetSaveClicked;
+window.presetLoadClicked = presetLoadClicked;
+window.presetExportClicked = presetExportClicked;
+window.presetImportClicked = presetImportClicked;
 """.}

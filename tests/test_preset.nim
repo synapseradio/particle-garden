@@ -179,6 +179,17 @@ suite "Preset Malformed Input Contract":
     let result = parsePreset("")
     check result.errorKind == pekInvalidJson
 
+  test "structurally invalid JSON text is rejected outright: isOk false with a non-empty error":
+    ## CONTRACT: "not JSON at all" is a structural error (pekInvalidJson) and
+    ## never returns isOk == true. This is distinct from a wrong-typed FIELD
+    ## inside an otherwise well-formed JSON object, which defaults/clamps
+    ## per-field and stays isOk == true (see "wrong-typed scalar fields
+    ## default rather than crash" below) — the schema's documented
+    ## validation-first, never-silently-corrupt-but-still-usable stance.
+    let result = parsePreset("not json at all")
+    check not result.isOk
+    check result.errorMessage.len > 0
+
   test "a JSON array root (not an object) is reported as invalid":
     let result = parsePreset("[1, 2, 3]")
     check result.errorKind == pekInvalidJson
