@@ -393,6 +393,9 @@ proc jsSqrt*(x: float): float {.importjs: "Math.sqrt(#)".}
 proc jsPow*(base, exp: float): float {.importjs: "Math.pow(#, #)".}
   ## Power.
 
+proc jsLog*(x: float): float {.importjs: "Math.log(#)".}
+  ## Natural logarithm.
+
 proc jsSin*(x: float): float {.importjs: "Math.sin(#)".}
   ## Sine.
 
@@ -404,6 +407,12 @@ proc jsAtan2*(y, x: float): float {.importjs: "Math.atan2(#, #)".}
 
 const jsPi* = 3.141592653589793
   ## Pi constant.
+
+proc gaussian*(): float =
+  ## Standard normal sample (mean 0, std 1) via Box-Muller.
+  let u1 = jsMax(jsRandom(), 1e-12)   # guard ln(0)
+  let u2 = jsRandom()
+  jsSqrt(-2.0 * jsLog(u1)) * jsCos(2.0 * jsPi * u2)
 
 # ==============================================================================
 # SECTION 12: UTILITY MACROS AND TEMPLATES

@@ -25,7 +25,7 @@ from std/jsffi import JsObject, toJs, `[]`, `[]=`
 
 from bindings/js_interop import
   Console, console, log, isUndefined, isJsFunction,
-  jsRandom, jsAbs
+  jsRandom, jsAbs, gaussian
 
 from bindings/dom_extensions import
   HTMLElement, HTMLInputElement, HTMLCanvasElement,
@@ -167,6 +167,12 @@ proc setupUI*() {.exportc.} =
     get = proc(): float = CONFIG.timeScale,
     set = proc(v: float) = CONFIG.timeScale = v,
     min = 0.1, max = 5.0, precision = 1
+  )
+
+  configSlider("ruleTemperature", "ruleTemperatureValue",
+    get = proc(): float = CONFIG.ruleTemperature,
+    set = proc(v: float) = CONFIG.ruleTemperature = v,
+    min = 0.1, max = 0.6, precision = 2
   )
 
   configSlider("maxVelocity", "velocityValue",
@@ -434,9 +440,13 @@ proc randomizeMatrix*() {.exportc.} =
   ## Values range from -1 (repulsion) to +1 (attraction).
 
   let ns = CONFIG.speciesCount
+  let sigma = CONFIG.ruleTemperature
   for i in 0 ..< ns:
     for j in 0 ..< ns:
-      matrix[matrixIndex(i, j)] = jsRandom() * 2.0 - 1.0
+      var v = gaussian() * sigma
+      while v < -1.0 or v > 1.0:   # reject to keep the true bell shape
+        v = gaussian() * sigma
+      matrix[matrixIndex(i, j)] = v
 
   updateMatrixDisplay()
   if not onMatrixUpdate.isNil:

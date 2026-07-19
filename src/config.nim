@@ -32,6 +32,7 @@ type
     interactionRadius* {.exportc.}: int
     forceStrength* {.exportc.}: float
     friction* {.exportc.}: float
+    ruleTemperature* {.exportc.}: float  # Std dev sigma for the bell-curve rule randomizer
     timeScale* {.exportc.}: float
     particleSize* {.exportc.}: int
     trails* {.exportc.}: bool
@@ -151,6 +152,7 @@ proc createConfig(): ConfigObject =
   result.interactionRadius = 50
   result.forceStrength = 1.0
   result.friction = 0.05
+  result.ruleTemperature = 0.3  # Tight bell curve: +/-0.99 is ~3.3 sigma out
   result.timeScale = 0.5
   result.particleSize = 3
   result.trails = false

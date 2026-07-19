@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash([ -e \"$p/nimble\" ])",
+      "Bash(grep -rishE 'nim|choosenim|\\\\.nimble' __TRACKED_VAR__/.zshrc __TRACKED_VAR__/.zprofile __TRACKED_VAR__/.zshenv)",
+      "Bash(command -v nim nimble)",
+      "Bash(nim --version)",
+      "Bash(nimble test *)",
+      "Bash(awk '/^Executing task test/,/^$/ {print}')",
+      "Bash(awk '{print $3}')",
+      "Skill(tavily-search)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('answer',''\\)\\); print\\('---'\\); [print\\('•',r['title'],'::',r['url']\\) for r in d.get\\('results',[]\\)]\")",
+      "Bash(curl -fsSL https://cli.tavily.com/install.sh)",
+      "Bash(bash)",
+      "WebFetch(domain:www.youtube.com)",
+      "WebFetch(domain:www.google.com)",
+      "WebFetch(domain:manifest.googlevideo.com)",
+      "WebFetch(domain:rr3---sn-4g5lznly.googlevideo.com)"
+    ]
+  },
+  "sandbox": {
+    "enabled": false,
+    "autoAllowBashIfSandboxed": false
+  }
+}

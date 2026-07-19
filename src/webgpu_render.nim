@@ -174,7 +174,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // Compute normalized velocity BEFORE using it for radius
   let speed = length(p.vel);
-  let velocityNorm = clamp(speed / params.maxVelocity, 0.0, 1.0);
+  let velocityNorm = clamp(speed / max(params.maxVelocity, 0.0001), 0.0, 1.0);
   output.velocityNorm = velocityNorm;
 
   // Glow radius coupled to velocity and sweep
@@ -205,6 +205,16 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let l = length(input.offset);
 
+  // Crisp circular edge: anti-alias the disc boundary with a one-pixel smoothstep,
+  // then discard everything outside the unit circle so the square billboard never
+  // shows. fwidth is computed before the discard so the derivative stays defined
+  // under uniform control flow.
+  let edge = fwidth(l);
+  let circleMask = 1.0 - smoothstep(1.0 - edge, 1.0, l);
+  if (l > 1.0) {
+    discard;
+  }
+
   // Density factor: high density = more glow
   let densityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
 
@@ -224,8 +234,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let logVel = log(1.0 + input.velocityNorm * VELOCITY_LOG_SCALE) / log(1.0 + VELOCITY_LOG_SCALE);
   let velocityFactor = VELOCITY_BASE + logVel * (1.0 - VELOCITY_BASE + params.velocityGlowScale * params.glowIntensity);
 
-  // Combined glow with Gaussian falloff
-  let alpha = exp(-GLOW_FALLOFF * l * l) * params.glowIntensity * densityFactor * velocityFactor / GLOW_DIVISOR;
+  // Gaussian falloff gives the soft interior gradient; the circle mask gives the
+  // crisp anti-aliased disc edge so nothing renders outside the circular boundary.
+  let gauss = exp(-GLOW_FALLOFF * l * l);
+  let alpha = gauss * circleMask * params.glowIntensity * densityFactor * velocityFactor / GLOW_DIVISOR;
 
   // Color shift: dense particles glow warm, fast particles glow white
   let warmth = densityFactor * WARMTH_MAX;

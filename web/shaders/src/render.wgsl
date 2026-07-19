@@ -78,6 +78,8 @@ struct VertexOutput {
   @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)
   @location(2) density: f32,       // Local particle density for glow effect
   @location(3) trailPos: f32,      // Position along trail: -1 (tail) to 1 (head)
+  @location(4) alongN: f32,        // Along-velocity position in radius units (capsule spine coord)
+  @location(5) elongN: f32,        // Tail length in radius units (per-particle constant)
 };
 
 @vertex
@@ -124,9 +126,16 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   if (cornerOffset.x < 0.0) {
     // Tail vertices: extend backward by elongation
     alongVel = cornerOffset.x * halfSize - elongation;
-    // Normalize trail position: more negative = further back in trail
-    let totalLength = halfSize + elongation;
-    trailPosVal = alongVel / totalLength;  // Will be negative (tail end)
+    if (elongation > 0.0) {
+      // Motion blur active: mark this vertex as trail body so the fragment draws
+      // the elongated capsule and tapers alpha toward the tail.
+      let totalLength = halfSize + elongation;
+      trailPosVal = alongVel / totalLength;  // Negative = further back in trail
+    } else {
+      // No elongation: the whole quad is the particle head, so the fragment takes
+      // the circular path (length(offset)) at full alpha — a clean disc.
+      trailPosVal = 1.0;
+    }
   } else {
     // Head vertices: stay at normal position
     alongVel = cornerOffset.x * halfSize;
@@ -158,6 +167,11 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Pass trail position for tapered alpha (-1 = tail, 1 = head)
   output.trailPos = trailPosVal;
 
+  // Capsule spine coordinates in radius-normalized units (halfSize > 0 always).
+  // alongN interpolates across the quad; elongN is a per-particle constant.
+  output.alongN = alongVel / halfSize;
+  output.elongN = elongation / halfSize;
+
   // Pass density for glow intensity calculation
   output.density = p.density;
 
@@ -170,19 +184,21 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  // Determine if this fragment is at the particle head or in the trail tail
-  // trailPos = 1.0 at head, < 1.0 in tail region
-  let isHead = input.trailPos > 0.99;
+  // Capsule signed-distance: distance from the fragment to the nearest point on
+  // the velocity-aligned spine, in radius-normalized units. The spine runs from
+  // the head cap center (alongN = 0) back to the tail cap center
+  // (alongN = -elongN). When elongN = 0 this reduces to length(offset) — a pure
+  // unit circle — so still particles stay clean discs.
+  let alongCoord = input.alongN - clamp(input.alongN, -input.elongN, 0.0);
+  let capsuleDist = length(vec2f(alongCoord, input.offset.y));
 
-  // For head: use radial distance (circle shape)
-  // For tail: use perpendicular distance (capsule/band shape)
-  let dist = select(abs(input.offset.y), length(input.offset), isHead);
+  // Compute the derivative before any discard so it stays defined under uniform
+  // control flow. The smoothstep softens the kept edge; the hard discard below
+  // is what kills the square quad corners for small / sub-pixel particles.
+  let edge = fwidth(capsuleDist);
+  let shapeAlpha = 1.0 - smoothstep(1.0 - edge, 1.0, capsuleDist);
 
-  // Screen-space anti-aliased edge
-  let edge = fwidth(dist);
-  var shapeAlpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
-
-  if (shapeAlpha <= 0.0) {
+  if (capsuleDist > 1.0) {
     discard;
   }
 
