@@ -77,19 +77,19 @@ proc instanceOf*(obj: JsObject, constructor: JsObject): bool {.importjs: "(# ins
 # SECTION 3: TYPE CONVERSIONS
 # ==============================================================================
 
-proc toJsObject*(x: int): JsObject {.importjs: "(#)".}
+proc toJsObject*(value: int): JsObject {.importjs: "(#)".}
   ## Convert Nim int to JsObject.
 
-proc toJsObject*(x: float): JsObject {.importjs: "(#)".}
+proc toJsObject*(value: float): JsObject {.importjs: "(#)".}
   ## Convert Nim float to JsObject.
 
-proc toJsObject*(x: bool): JsObject {.importjs: "(#)".}
+proc toJsObject*(value: bool): JsObject {.importjs: "(#)".}
   ## Convert Nim bool to JsObject.
 
-proc toJsObject*(x: cstring): JsObject {.importjs: "(#)".}
+proc toJsObject*(value: cstring): JsObject {.importjs: "(#)".}
   ## Convert cstring to JsObject.
 
-proc toJsObject*(x: string): JsObject {.importjs: "(#)".}
+proc toJsObject*(value: string): JsObject {.importjs: "(#)".}
   ## Convert Nim string to JsObject.
 
 proc toInt*(obj: JsObject): int {.importjs: "(#|0)".}
@@ -112,7 +112,7 @@ proc toCstring*(obj: JsObject): cstring {.importjs: "String(#)".}
 proc toJsString*(obj: JsObject): JsObject {.importjs: "String(#)".}
   ## Convert JsObject to JS string object.
 
-proc parseJsonJs*(s: cstring): JsObject {.importjs: "JSON.parse(#)".}
+proc parseJsonJs*(jsonText: cstring): JsObject {.importjs: "JSON.parse(#)".}
   ## Parse a JSON string to JsObject.
 
 proc stringifyJs*(obj: JsObject): cstring {.importjs: "JSON.stringify(#)".}
@@ -169,40 +169,40 @@ type
 var console* {.importjs: "console".}: Console
   ## Global console object.
 
-proc log*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.log(...@)".}
+proc log*(console: Console, args: varargs[JsObject, toJs]) {.importjs: "#.log(...@)".}
   ## Log to console.
 
-proc warn*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.warn(...@)".}
+proc warn*(console: Console, args: varargs[JsObject, toJs]) {.importjs: "#.warn(...@)".}
   ## Log warning to console.
 
-proc error*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.error(...@)".}
+proc error*(console: Console, args: varargs[JsObject, toJs]) {.importjs: "#.error(...@)".}
   ## Log error to console.
 
-proc info*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.info(...@)".}
+proc info*(console: Console, args: varargs[JsObject, toJs]) {.importjs: "#.info(...@)".}
   ## Log info to console.
 
-proc debug*(c: Console, args: varargs[JsObject, toJs]) {.importjs: "#.debug(...@)".}
+proc debug*(console: Console, args: varargs[JsObject, toJs]) {.importjs: "#.debug(...@)".}
   ## Log debug to console.
 
-proc trace*(c: Console) {.importjs: "#.trace()".}
+proc trace*(console: Console) {.importjs: "#.trace()".}
   ## Print stack trace.
 
-proc clear*(c: Console) {.importjs: "#.clear()".}
+proc clear*(console: Console) {.importjs: "#.clear()".}
   ## Clear console.
 
-proc group*(c: Console, label: cstring) {.importjs: "#.group(#)".}
+proc group*(console: Console, label: cstring) {.importjs: "#.group(#)".}
   ## Start a console group.
 
-proc groupEnd*(c: Console) {.importjs: "#.groupEnd()".}
+proc groupEnd*(console: Console) {.importjs: "#.groupEnd()".}
   ## End a console group.
 
-proc time*(c: Console, label: cstring) {.importjs: "#.time(#)".}
+proc time*(console: Console, label: cstring) {.importjs: "#.time(#)".}
   ## Start a timer.
 
-proc timeEnd*(c: Console, label: cstring) {.importjs: "#.timeEnd(#)".}
+proc timeEnd*(console: Console, label: cstring) {.importjs: "#.timeEnd(#)".}
   ## End a timer and log duration.
 
-proc table*(c: Console, data: JsObject) {.importjs: "#.table(#)".}
+proc table*(console: Console, data: JsObject) {.importjs: "#.table(#)".}
   ## Display data as a table.
 
 # Convenience procs that use the global console
@@ -248,16 +248,16 @@ type
 var performance* {.importjs: "performance".}: Performance
   ## Global performance object.
 
-proc now*(p: Performance): float {.importjs: "#.now()".}
+proc now*(performance: Performance): float {.importjs: "#.now()".}
   ## Get high-resolution timestamp in milliseconds.
 
 proc performanceNow*(): float {.importjs: "performance.now()".}
   ## Get high-resolution timestamp (convenience).
 
-proc mark*(p: Performance, name: cstring) {.importjs: "#.mark(#)".}
+proc mark*(performance: Performance, name: cstring) {.importjs: "#.mark(#)".}
   ## Create a performance mark.
 
-proc measure*(p: Performance, name: cstring, startMark: cstring, endMark: cstring) {.importjs: "#.measure(#, #, #)".}
+proc measure*(performance: Performance, name: cstring, startMark: cstring, endMark: cstring) {.importjs: "#.measure(#, #, #)".}
   ## Create a performance measure between two marks.
 
 # ==============================================================================
@@ -406,40 +406,40 @@ proc jsRandom*(): float =
   else:
     mathRandom()
 
-proc jsFloor*(x: float): int {.importjs: "Math.floor(#)".}
+proc jsFloor*(value: float): int {.importjs: "Math.floor(#)".}
   ## Floor a number.
 
-proc jsCeil*(x: float): int {.importjs: "Math.ceil(#)".}
+proc jsCeil*(value: float): int {.importjs: "Math.ceil(#)".}
   ## Ceiling a number.
 
-proc jsRound*(x: float): int {.importjs: "Math.round(#)".}
+proc jsRound*(value: float): int {.importjs: "Math.round(#)".}
   ## Round a number.
 
-proc jsAbs*(x: float): float {.importjs: "Math.abs(#)".}
+proc jsAbs*(value: float): float {.importjs: "Math.abs(#)".}
   ## Absolute value.
 
-proc jsMin*(a, b: float): float {.importjs: "Math.min(#, #)".}
+proc jsMin*(first, second: float): float {.importjs: "Math.min(#, #)".}
   ## Minimum of two numbers.
 
-proc jsMax*(a, b: float): float {.importjs: "Math.max(#, #)".}
+proc jsMax*(first, second: float): float {.importjs: "Math.max(#, #)".}
   ## Maximum of two numbers.
 
-proc jsSqrt*(x: float): float {.importjs: "Math.sqrt(#)".}
+proc jsSqrt*(value: float): float {.importjs: "Math.sqrt(#)".}
   ## Square root.
 
 proc jsPow*(base, exp: float): float {.importjs: "Math.pow(#, #)".}
   ## Power.
 
-proc jsLog*(x: float): float {.importjs: "Math.log(#)".}
+proc jsLog*(value: float): float {.importjs: "Math.log(#)".}
   ## Natural logarithm.
 
-proc jsSin*(x: float): float {.importjs: "Math.sin(#)".}
+proc jsSin*(radians: float): float {.importjs: "Math.sin(#)".}
   ## Sine.
 
-proc jsCos*(x: float): float {.importjs: "Math.cos(#)".}
+proc jsCos*(radians: float): float {.importjs: "Math.cos(#)".}
   ## Cosine.
 
-proc jsAtan2*(y, x: float): float {.importjs: "Math.atan2(#, #)".}
+proc jsAtan2*(yComponent, xComponent: float): float {.importjs: "Math.atan2(#, #)".}
   ## Arc tangent of y/x.
 
 const jsPi* = 3.141592653589793
@@ -447,9 +447,9 @@ const jsPi* = 3.141592653589793
 
 proc gaussian*(): float =
   ## Standard normal sample (mean 0, std 1) via Box-Muller.
-  let u1 = jsMax(jsRandom(), 1e-12)   # guard ln(0)
-  let u2 = jsRandom()
-  jsSqrt(-2.0 * jsLog(u1)) * jsCos(2.0 * jsPi * u2)
+  let uniform1 = jsMax(jsRandom(), 1e-12)   # guard ln(0)
+  let uniform2 = jsRandom()
+  jsSqrt(-2.0 * jsLog(uniform1)) * jsCos(2.0 * jsPi * uniform2)
 
 # ==============================================================================
 # SECTION 12: UTILITY MACROS AND TEMPLATES
