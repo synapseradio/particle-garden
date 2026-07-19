@@ -41,6 +41,7 @@ import buffers
 import ui/core/observable
 import ui/state/input_state
 import ui/state/sim_config
+import ui/state/palette_state
 import ui/matrix/matrix_view
 import ui/input/mouse_handler
 import ui/input/touch_handler
@@ -172,6 +173,7 @@ proc setResizeCallback*(callback: proc()) {.exportc.} =
 proc randomizeMatrix*() {.exportc.}
 proc updateMatrixDisplay*() {.exportc.}
 proc applySpeciesCountChange(newCount: int, randomizeNew: bool)
+proc applyPaletteToColors()
 
 # The matrix editor instance (delegates live in Section 10). The exportc
 # name forces the JS backend to assign the global its generated name up
@@ -182,6 +184,13 @@ var matrixEditor {.exportc: "pgMatrixEditor".}: MatrixEditor = nil
 # The species count the matrix grid last rendered with; lets a grow
 # distinguish newly exposed cells from established ones.
 var lastSpeciesCount {.exportc: "pgLastSpeciesCount".}: int = 0
+
+# The palette editor's live scheme/saturation/lightness (Section 10b).
+# setupUI's palette sliders read/write this before Section 10b's proc
+# bodies appear in the file, so it is declared here alongside the other
+# module globals setupUI depends on.
+var paletteEditorState {.exportc: "pgPaletteEditorState".}: PaletteEditorState =
+  initPaletteEditorState()
 
 proc initMatrixEditor() =
   ## Create the matrix editor over the shared buffers. Runs first in setupUI,
@@ -347,6 +356,28 @@ proc setupUI*() {.exportc.} =
     min = EXP_ATTRACTION_BETA_MIN, max = EXP_ATTRACTION_BETA_MAX, precision = 2
   )
 
+  # Palette sliders. Unlike the sliders above, these do NOT write CONFIG:
+  # they read/write paletteEditorState directly and are not part of
+  # SimConfig or the preset store (see palette_state.nim). Regenerating a
+  # 6-color palette is cheap (unlike a particle re-init), so `set` applies
+  # it on every drag tick for live color feedback rather than waiting for
+  # `onChange` on release.
+  configSlider("paletteSaturation", "paletteSaturationValue",
+    get = proc(): float = paletteEditorState.saturation,
+    set = proc(value: float) =
+      paletteEditorState.saturation = value
+      applyPaletteToColors(),
+    min = PALETTE_SATURATION_MIN, max = PALETTE_SATURATION_MAX, precision = 2
+  )
+
+  configSlider("paletteLightness", "paletteLightnessValue",
+    get = proc(): float = paletteEditorState.lightness,
+    set = proc(value: float) =
+      paletteEditorState.lightness = value
+      applyPaletteToColors(),
+    min = PALETTE_LIGHTNESS_MIN, max = PALETTE_LIGHTNESS_MAX, precision = 2
+  )
+
 # ==============================================================================
 # SECTION 8: EVENT SETUP
 # ==============================================================================
@@ -467,6 +498,10 @@ proc toggleGlowSection*() {.exportc.} =
   ## Toggle Glow section visibility.
   toggleSection("glowSection")
 
+proc togglePaletteSection*() {.exportc.} =
+  ## Toggle Palette section visibility.
+  toggleSection("paletteSection")
+
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
   ## @param model - 0 for polynomial, 1 for exponential
@@ -529,6 +564,42 @@ proc setSpeciesCount*(newCount: int, randomizeNew: bool = false) {.exportc.} =
   applySpeciesCountChange(newCount, randomizeNew)
 
 # ==============================================================================
+# SECTION 10b: PALETTE UI
+# ==============================================================================
+#
+# The palette editor: five scheme buttons plus saturation/lightness sliders.
+# Changing any of them regenerates the six species colors via
+# palette_state's pure paletteFor/flatPaletteFor and writes them into COLORS
+# in place. webgpu_render.nim repacks COLORS into the GPU colors uniform
+# every frame, so no explicit GPU upload is needed here — the matrix legend
+# is the only thing that needs an explicit re-render.
+#
+# paletteEditorState (declared in Section 6, alongside the other globals
+# setupUI depends on) is deliberately not part of SimConfig or the preset
+# store (see palette_state.nim): it is session-only UI state.
+
+proc applyPaletteToColors() =
+  ## Regenerate the six species colors from paletteEditorState and write
+  ## them into COLORS in place, then re-render the matrix legend swatches.
+  let flatPalette = flatPaletteFor(paletteEditorState)
+  for colorIndex in 0 ..< flatPalette.len:
+    COLORS[colorIndex] = flatPalette[colorIndex]
+  updateMatrixDisplay()
+
+proc setPaletteScheme*(schemeIdValue: cstring) {.exportc.} =
+  ## Switch the active palette scheme (palette-selector buttons). Schemes
+  ## are addressed by palette_state's stable string ids, never enum
+  ## ordinals.
+  let scheme = parsePaletteScheme($schemeIdValue)
+  paletteEditorState.scheme = scheme
+  applyPaletteToColors()
+  setActive("paletteOpenColorBtn", scheme == psOpenColor)
+  setActive("paletteGoldenBtn", scheme == psGolden)
+  setActive("paletteSpectrumBtn", scheme == psSpectrum)
+  setActive("paletteWarmBtn", scheme == psWarm)
+  setActive("paletteCoolBtn", scheme == psCool)
+
+# ==============================================================================
 # SECTION 11: STATS DISPLAY
 # ==============================================================================
 
@@ -570,6 +641,8 @@ window.toggleControls = toggleControls;
 window.randomizeMatrix = randomizeMatrix;
 window.toggleForceModelSection = toggleForceModelSection;
 window.toggleGlowSection = toggleGlowSection;
+window.togglePaletteSection = togglePaletteSection;
 window.setForceModel = setForceModel;
 window.setSimMode = setSimMode;
+window.setPaletteScheme = setPaletteScheme;
 """.}

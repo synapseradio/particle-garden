@@ -64,6 +64,10 @@ const
   GLOW_FALLOFF_MAX* = 12.0
   GLOW_WARMTH_MIN* = 0.0
   GLOW_WARMTH_MAX* = 1.0
+  PALETTE_SATURATION_MIN* = 0.0
+  PALETTE_SATURATION_MAX* = 1.0
+  PALETTE_LIGHTNESS_MIN* = 0.0
+  PALETTE_LIGHTNESS_MAX* = 1.0
 
 static:
   # Every range must be non-empty, or clamping inverts.

@@ -628,6 +628,90 @@
           <div class="matrix-display" id="matrixDisplay"></div>
         </div>
 
+        <!-- Palette Section (collapsible) -->
+        <div class="control-section" id="paletteSection">
+          <button class="section-header" onclick="togglePaletteSection()">
+            Palette <span class="section-toggle">+</span>
+          </button>
+          <div class="section-content" style="display: none">
+            <!-- Scheme selector buttons -->
+            <div class="control-group model-selector">
+              <button
+                id="paletteOpenColorBtn"
+                class="model-btn active"
+                onclick="setPaletteScheme('open-color')"
+              >
+                Open Color
+              </button>
+              <button
+                id="paletteGoldenBtn"
+                class="model-btn"
+                onclick="setPaletteScheme('golden')"
+              >
+                Golden
+              </button>
+              <button
+                id="paletteSpectrumBtn"
+                class="model-btn"
+                onclick="setPaletteScheme('spectrum')"
+              >
+                Spectrum
+              </button>
+              <button
+                id="paletteWarmBtn"
+                class="model-btn"
+                onclick="setPaletteScheme('warm')"
+              >
+                Warm
+              </button>
+              <button
+                id="paletteCoolBtn"
+                class="model-btn"
+                onclick="setPaletteScheme('cool')"
+              >
+                Cool
+              </button>
+            </div>
+
+            <!-- Slider min/max/step attributes mirror the authoritative
+                 Nim registrations (ui.nim configSlider + config_ranges.nim);
+                 slider.bindToDOM overwrites them at bind time. -->
+            <div class="control-group">
+              <label
+                >Saturation
+                <span class="value-display" id="paletteSaturationValue"
+                  >0.70</span
+                ></label
+              >
+              <input
+                type="range"
+                id="paletteSaturation"
+                min="0"
+                max="1"
+                value="0.7"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Lightness
+                <span class="value-display" id="paletteLightnessValue"
+                  >0.55</span
+                ></label
+              >
+              <input
+                type="range"
+                id="paletteLightness"
+                min="0"
+                max="1"
+                value="0.55"
+                step="0.01"
+              />
+            </div>
+          </div>
+        </div>
+
         <div class="stats">
           <div>FPS: <span id="fps">0</span></div>
           <div>Particles: <span id="particleStats">0</span></div>

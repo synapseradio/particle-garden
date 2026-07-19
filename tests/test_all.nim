@@ -24,6 +24,7 @@ import test_stats
 import test_control_panel
 import test_app_state
 import test_palette
+import test_palette_state
 import test_preset
 import test_sim_registry
 import test_sim_config
@@ -45,6 +46,7 @@ static:
   discard test_control_panel.CONTROL_PANEL_TESTS_LOADED
   discard test_app_state.APP_STATE_TESTS_LOADED
   discard test_palette.PALETTE_TESTS_LOADED
+  discard test_palette_state.PALETTE_STATE_TESTS_LOADED
   discard test_preset.PRESET_TESTS_LOADED
   discard test_sim_registry.SIM_REGISTRY_TESTS_LOADED
   discard test_sim_config.SIM_CONFIG_TESTS_LOADED
