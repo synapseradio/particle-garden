@@ -181,8 +181,8 @@ func fieldIndex*(s: GpuStruct, name: string): int =
 # WGSL uniform address-space layout rules. tools/wgsl_bundle.nim writes the
 # result to web/shaders/modules/sim_params.wgsl, so the Nim byte-writer (the
 # SIM_* indices below) and the WGSL struct are generated from one table and
-# cannot silently disagree. B3 (SPH) and B4 (reaction-diffusion) grow this by
-# extending the layout table alone.
+# cannot silently disagree. New uniform members are added by extending the
+# layout table alone.
 
 func roundUpTo(value, multiple: int): int {.inline.} =
   ## Smallest multiple of `multiple` that is >= value.
