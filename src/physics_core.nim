@@ -27,10 +27,10 @@ const
 # FORCE CALCULATION
 # ==============================================================================
 
-func calculateForce*(r, attr, fMul, invD: float32): float32 =
+func calculateForce*(normalizedDistance, attr, fMul, invD: float32): float32 =
   ## Calculate force magnitude between two particles.
   ##
-  ## r - Normalized distance in [0, 1] range (d / rMax)
+  ## normalizedDistance - Normalized distance in [0, 1] range (d / rMax)
   ## attr - Attraction value from matrix (-1 to 1 typically)
   ## fMul - Force multiplier (scales overall force strength)
   ## invD - Inverse of actual distance (1 / d)
@@ -39,35 +39,35 @@ func calculateForce*(r, attr, fMul, invD: float32): float32 =
   ## The returned value should be multiplied by the displacement vector.
   ##
   ## Physics:
-  ##   - r < 0.3: Repulsion zone. Force = (r/0.3 - 1) * fMul / d
-  ##   - r >= 0.3: Attraction zone. Force = attr * (1 - |2r - 1.3| / 0.7) * fMul / d
+  ##   - normalizedDistance < 0.3: Repulsion zone. Force = (r/0.3 - 1) * fMul / d
+  ##   - normalizedDistance >= 0.3: Attraction zone. Force = attr * (1 - |2r - 1.3| / 0.7) * fMul / d
   ##
-  var f: float32
+  var force: float32
 
-  if r < 0.3f:
+  if normalizedDistance < 0.3f:
     # Repulsion: linear ramp from -1 at r=0 to 0 at r=0.3
-    f = r * INV_03 - 1.0f
+    force = normalizedDistance * INV_03 - 1.0f
   else:
     # Attraction: triangular envelope centered at r=0.65
-    let t = 2.0f * r - 1.3f
-    let absT = if t < 0.0f: -t else: t
-    f = attr * (1.0f - absT * INV_07)
+    let triangleOffset = 2.0f * normalizedDistance - 1.3f
+    let absTriangleOffset = if triangleOffset < 0.0f: -triangleOffset else: triangleOffset
+    force = attr * (1.0f - absTriangleOffset * INV_07)
 
-  result = f * fMul * invD
+  result = force * fMul * invD
 
 
-func calculateForceMagnitude*(r, attr: float32): float32 =
+func calculateForceMagnitude*(normalizedDistance, attr: float32): float32 =
   ## Calculate raw force magnitude without scaling.
   ##
   ## Useful for testing the force curve shape independent of fMul and invD.
   ## Returns the unscaled force value.
   ##
-  if r < 0.3f:
-    result = r * INV_03 - 1.0f
+  if normalizedDistance < 0.3f:
+    result = normalizedDistance * INV_03 - 1.0f
   else:
-    let t = 2.0f * r - 1.3f
-    let absT = if t < 0.0f: -t else: t
-    result = attr * (1.0f - absT * INV_07)
+    let triangleOffset = 2.0f * normalizedDistance - 1.3f
+    let absTriangleOffset = if triangleOffset < 0.0f: -triangleOffset else: triangleOffset
+    result = attr * (1.0f - absTriangleOffset * INV_07)
 
 
 # ==============================================================================
@@ -75,7 +75,7 @@ func calculateForceMagnitude*(r, attr: float32): float32 =
 # ==============================================================================
 
 func normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ): tuple[
-    r: float32, invD: float32, valid: bool] =
+    normalizedDist: float32, invD: float32, valid: bool] =
   ## Normalize displacement vector to interaction range.
   ##
   ## dx, dy - Displacement vector components
@@ -83,41 +83,41 @@ func normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ)
   ## minDistSq - Minimum distance squared (clamped to avoid division issues)
   ##
   ## Returns:
-  ##   r - Normalized distance in [0, 1] range
-  ##   invD - Inverse of clamped distance (1 / d)
-  ##   valid - True if particles are within interaction range (0 < d < rMax)
+  ##   normalizedDist - Normalized distance in [0, 1] range
+  ##   invD - Inverse of clamped distance (1 / dist)
+  ##   valid - True if particles are within interaction range (0 < dist < rMax)
   ##
-  let d2 = dx * dx + dy * dy
+  let distSq = dx * dx + dy * dy
   let rMaxSq = rMax * rMax
 
-  if d2 <= 0.0f or d2 >= rMaxSq:
+  if distSq <= 0.0f or distSq >= rMaxSq:
     # Outside interaction range or same particle
-    return (r: 0.0f, invD: 0.0f, valid: false)
+    return (normalizedDist: 0.0f, invD: 0.0f, valid: false)
 
   # Clamp minimum distance to avoid extreme forces
-  let d2Clamped = if d2 < minDistSq: minDistSq else: d2
-  let d = sqrt(d2Clamped)
-  let invD = 1.0f / d
-  let r = d / rMax
+  let distSqClamped = if distSq < minDistSq: minDistSq else: distSq
+  let dist = sqrt(distSqClamped)
+  let invD = 1.0f / dist
+  let normalizedDistance = dist / rMax
 
-  result = (r: r, invD: invD, valid: true)
+  result = (normalizedDist: normalizedDistance, invD: invD, valid: true)
 
 
 # ==============================================================================
 # DENSITY ACCUMULATION
 # ==============================================================================
 
-func accumulateDensity*(r: float32; sameSpecies: bool): float32 =
+func accumulateDensity*(normalizedDistance: float32; sameSpecies: bool): float32 =
   ## Calculate density contribution from a neighbor particle.
   ##
-  ## r - Normalized distance in [0, 1] range
+  ## normalizedDistance - Normalized distance in [0, 1] range
   ## sameSpecies - True if both particles are the same species
   ##
   ## Returns density contribution. Only same-species particles contribute.
   ## Contribution falls off linearly: (1 - r) at distance 0, 0 at distance rMax.
   ##
   if sameSpecies:
-    result = 1.0f - r
+    result = 1.0f - normalizedDistance
   else:
     result = 0.0f
 

@@ -120,15 +120,15 @@ proc validateShaderCompilation*(shaderModule: GPUShaderModule, label: cstring): 
 
     if jsArrayLength(errors) > 0:
       var errorDetails = ""
-      for i in 0..<jsArrayLength(errors):
-        let err = cast[JsObject](errors[i])
+      for errorIndex in 0..<jsArrayLength(errors):
+        let err = cast[JsObject](errors[errorIndex])
         errorDetails &= "  Line " & $err.msgLineNum & ": " & $err.msgMessage & "\n"
       raise newException(CatchableError, "Shader compilation failed for \"" & $label & "\":\n" & errorDetails)
 
     if jsArrayLength(warnings) > 0:
-      for i in 0..<jsArrayLength(warnings):
-        let w = cast[JsObject](warnings[i])
-        consoleWarn(("Shader warning for \"" & $label & "\" Line " & $w.msgLineNum & ": " & $w.msgMessage).toJs)
+      for warningIndex in 0..<jsArrayLength(warnings):
+        let warning = cast[JsObject](warnings[warningIndex])
+        consoleWarn(("Shader warning for \"" & $label & "\" Line " & $warning.msgLineNum & ": " & $warning.msgMessage).toJs)
 
 proc validateBindGroupLayout*(layout: GPUBindGroupLayout, passName: cstring) {.exportc.} =
   if cast[JsObject](layout).isNullOrUndefined:
@@ -165,10 +165,10 @@ proc createBindGroupWithValidation*(
 
   if not error.isNullOrUndefined:
     var entryDetails = ""
-    for i in 0..<jsArrayLength(entries):
-      let e = cast[JsObject](entries[i])
-      let binding = e["binding"]
-      let resource = e["resource"]
+    for entryIndex in 0..<jsArrayLength(entries):
+      let entry = cast[JsObject](entries[entryIndex])
+      let binding = entry["binding"]
+      let resource = entry["resource"]
       let buffer = resource["buffer"]
       let bufferLabel = if not buffer.isNullOrUndefined and not buffer["label"].isNullOrUndefined:
         $buffer["label"].to(cstring)
@@ -477,11 +477,11 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     resultObj["info"] = infoObj
     return resultObj
 
-  except CatchableError as e:
-    consoleError(("Pipeline initialization failed: " & e.msg).toJs)
+  except CatchableError as err:
+    consoleError(("Pipeline initialization failed: " & err.msg).toJs)
     let resultObj = createJsObject()
     resultObj["success"] = false.toJs
-    resultObj["error"] = ("Pipeline initialization error: " & e.msg).cstring.toJs
+    resultObj["error"] = ("Pipeline initialization error: " & err.msg).cstring.toJs
     return resultObj
 
 # ==============================================================================
@@ -672,14 +672,14 @@ proc uploadInitialData*(particleCount: int): Future[JsObject] {.async, exportc.}
     let particleDataUint = newUint32Array(particleData.buffer)
 
     # Pack particle data from CPU SoA buffers into AoS format
-    for i in 0..<particleCount:
-      let baseIdx = i * 8
-      particleData[baseIdx + 0] = cpuBuffers.particlesA[i * 8 + 0]  # pos.x
-      particleData[baseIdx + 1] = cpuBuffers.particlesA[i * 8 + 1]  # pos.y
-      particleData[baseIdx + 2] = cpuBuffers.particlesA[i * 8 + 2]  # vel.x
-      particleData[baseIdx + 3] = cpuBuffers.particlesA[i * 8 + 3]  # vel.y
-      particleDataUint[baseIdx + 4] = uint32(cpuBuffers.particlesA[i * 8 + 4])  # species (reinterpret as u32)
-      particleData[baseIdx + 5] = cpuBuffers.particlesA[i * 8 + 5]  # density
+    for particleIndex in 0..<particleCount:
+      let baseIdx = particleIndex * 8
+      particleData[baseIdx + 0] = cpuBuffers.particlesA[particleIndex * 8 + 0]  # pos.x
+      particleData[baseIdx + 1] = cpuBuffers.particlesA[particleIndex * 8 + 1]  # pos.y
+      particleData[baseIdx + 2] = cpuBuffers.particlesA[particleIndex * 8 + 2]  # vel.x
+      particleData[baseIdx + 3] = cpuBuffers.particlesA[particleIndex * 8 + 3]  # vel.y
+      particleDataUint[baseIdx + 4] = uint32(cpuBuffers.particlesA[particleIndex * 8 + 4])  # species (reinterpret as u32)
+      particleData[baseIdx + 5] = cpuBuffers.particlesA[particleIndex * 8 + 5]  # density
       particleDataUint[baseIdx + 6] = 0  # padding
       particleDataUint[baseIdx + 7] = 0  # padding
 
@@ -696,9 +696,9 @@ proc uploadInitialData*(particleCount: int): Future[JsObject] {.async, exportc.}
     resultObj["success"] = true.toJs
     return resultObj
 
-  except CatchableError as e:
-    consoleError(("Failed to upload initial data: " & e.msg).toJs)
+  except CatchableError as err:
+    consoleError(("Failed to upload initial data: " & err.msg).toJs)
     let resultObj = createJsObject()
     resultObj["success"] = false.toJs
-    resultObj["error"] = e.msg.cstring.toJs
+    resultObj["error"] = err.msg.cstring.toJs
     return resultObj

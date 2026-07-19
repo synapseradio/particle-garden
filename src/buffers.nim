@@ -100,42 +100,42 @@ proc allocateBuffers*() {.exportc.} =
   wasmMemory = newWebAssemblyMemory(memory_layout.WASM_MEMORY_PAGES, memory_layout.WASM_MEMORY_PAGES_MAX, true)
   sharedBuffer = wasmMemory.buffer
 
-  let L = MEMORY_LAYOUT
+  let layout = MEMORY_LAYOUT
   let maxCells = memory_layout.MAX_GRID * memory_layout.MAX_GRID
 
   # ─────────────────────────────────────────────────────────────────────────────
   # AoS particle buffers (8 f32s per particle = 32 bytes)
   # ─────────────────────────────────────────────────────────────────────────────
 
-  particlesA = newFloat32Array(sharedBuffer, L.particlesA, memory_layout.MAX_PARTICLES * FLOATS_PER_PARTICLE)
-  particlesSorted = newFloat32Array(sharedBuffer, L.particlesSorted, memory_layout.MAX_PARTICLES * FLOATS_PER_PARTICLE)
+  particlesA = newFloat32Array(sharedBuffer, layout.particlesA, memory_layout.MAX_PARTICLES * FLOATS_PER_PARTICLE)
+  particlesSorted = newFloat32Array(sharedBuffer, layout.particlesSorted, memory_layout.MAX_PARTICLES * FLOATS_PER_PARTICLE)
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Index mappings
   # ─────────────────────────────────────────────────────────────────────────────
 
-  sortedIndices = newUint32Array(sharedBuffer, L.sortedIndices, memory_layout.MAX_PARTICLES)
-  reverseIndices = newUint32Array(sharedBuffer, L.reverseIndices, memory_layout.MAX_PARTICLES)
+  sortedIndices = newUint32Array(sharedBuffer, layout.sortedIndices, memory_layout.MAX_PARTICLES)
+  reverseIndices = newUint32Array(sharedBuffer, layout.reverseIndices, memory_layout.MAX_PARTICLES)
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Velocity deltas (2 i32s per particle)
   # ─────────────────────────────────────────────────────────────────────────────
 
-  velocityDeltaFixed = newInt32Array(sharedBuffer, L.velocityDeltaFixed, memory_layout.MAX_PARTICLES * 2)
+  velocityDeltaFixed = newInt32Array(sharedBuffer, layout.velocityDeltaFixed, memory_layout.MAX_PARTICLES * 2)
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Grid structure
   # ─────────────────────────────────────────────────────────────────────────────
 
-  gridCounts = newUint32Array(sharedBuffer, L.gridCounts, maxCells)
-  gridOffsets = newUint32Array(sharedBuffer, L.gridOffsets, maxCells)
+  gridCounts = newUint32Array(sharedBuffer, layout.gridCounts, maxCells)
+  gridOffsets = newUint32Array(sharedBuffer, layout.gridOffsets, maxCells)
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Shared state
   # ─────────────────────────────────────────────────────────────────────────────
 
-  syncArray = newInt32Array(sharedBuffer, L.sync, 256)
-  matrix = newFloat32Array(sharedBuffer, L.matrix, 36)
+  syncArray = newInt32Array(sharedBuffer, layout.sync, 256)
+  matrix = newFloat32Array(sharedBuffer, layout.matrix, 36)
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Local arrays (not shared)

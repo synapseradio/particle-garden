@@ -686,28 +686,28 @@ proc updateBindGroup*() =
   let entries = newJsArray()
 
   # Entry 0: particles (AoS buffer)
-  let e0 = newJsObject()
-  e0["binding"] = 0.toJs
-  let r0 = newJsObject()
-  r0["buffer"] = particles.toJs
-  e0["resource"] = r0
-  discard entries.push(e0)
+  let particlesEntry = newJsObject()
+  particlesEntry["binding"] = 0.toJs
+  let particlesResource = newJsObject()
+  particlesResource["buffer"] = particles.toJs
+  particlesEntry["resource"] = particlesResource
+  discard entries.push(particlesEntry)
 
   # Entry 1: render params
-  let e1 = newJsObject()
-  e1["binding"] = 1.toJs
-  let r1 = newJsObject()
-  r1["buffer"] = renderParamsBuffer.toJs
-  e1["resource"] = r1
-  discard entries.push(e1)
+  let renderParamsEntry = newJsObject()
+  renderParamsEntry["binding"] = 1.toJs
+  let renderParamsResource = newJsObject()
+  renderParamsResource["buffer"] = renderParamsBuffer.toJs
+  renderParamsEntry["resource"] = renderParamsResource
+  discard entries.push(renderParamsEntry)
 
   # Entry 2: species colors
-  let e2 = newJsObject()
-  e2["binding"] = 2.toJs
-  let r2 = newJsObject()
-  r2["buffer"] = colorBuffer.toJs
-  e2["resource"] = r2
-  discard entries.push(e2)
+  let colorsEntry = newJsObject()
+  colorsEntry["binding"] = 2.toJs
+  let colorsResource = newJsObject()
+  colorsResource["buffer"] = colorBuffer.toJs
+  colorsEntry["resource"] = colorsResource
+  discard entries.push(colorsEntry)
 
   bindGroupDesc["entries"] = entries
   renderBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
@@ -760,11 +760,11 @@ proc render*(particleCount: int): RenderTiming =
 
   # Update species colors uniform (pack RGB as vec4f for 16-byte alignment)
   let colorData = newFloat32Array(24)  # 6 colors × 4 floats
-  for i in 0 ..< 6:
-    colorData[i * 4 + 0] = config.COLORS[i * 3 + 0]
-    colorData[i * 4 + 1] = config.COLORS[i * 3 + 1]
-    colorData[i * 4 + 2] = config.COLORS[i * 3 + 2]
-    colorData[i * 4 + 3] = 1.0  # padding/alpha
+  for speciesIndex in 0 ..< 6:
+    colorData[speciesIndex * 4 + 0] = config.COLORS[speciesIndex * 3 + 0]
+    colorData[speciesIndex * 4 + 1] = config.COLORS[speciesIndex * 3 + 1]
+    colorData[speciesIndex * 4 + 2] = config.COLORS[speciesIndex * 3 + 2]
+    colorData[speciesIndex * 4 + 3] = 1.0  # padding/alpha
   webgpu_init.queue.writeBuffer(colorBuffer, 0, colorData)
 
   # Update fade params

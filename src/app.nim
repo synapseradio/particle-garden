@@ -63,8 +63,8 @@ import bindings/typed_arrays
 proc makeJsObject(): JsObject {.importjs: "({})".}
 
 # Bitwise OR for int truncation
-proc bitwiseOr(x: float, y: int): int {.importjs: "(#|#)".}
-proc logGpuProfile(n: int, gridMs: float, physicsMs: float, drawMs: float,
+proc bitwiseOr(value: float, mask: int): int {.importjs: "(#|#)".}
+proc logGpuProfile(particleCount: int, gridMs: float, physicsMs: float, drawMs: float,
                    presentMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
@@ -112,29 +112,29 @@ proc initParticles*() {.exportc.} =
   let ns = config.CONFIG.speciesCount
 
   # Use WORLD dimensions for particle positions (physics domain)
-  let W = config.WORLD_W
-  let H = config.WORLD_H
+  let worldWidth = config.WORLD_W
+  let worldHeight = config.WORLD_H
 
   # Initialize particlesA buffer using AoS layout
   # Struct: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5), pad(6-7)
-  for i in 0 ..< newCount:
-    let base = i * buffers.FLOATS_PER_PARTICLE  # 8 floats per particle
-    buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * W
-    buffers.particlesA[base + buffers.FIELD_POS_Y] = jsRandom() * H
+  for particleIndex in 0 ..< newCount:
+    let base = particleIndex * buffers.FLOATS_PER_PARTICLE  # 8 floats per particle
+    buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * worldWidth
+    buffers.particlesA[base + buffers.FIELD_POS_Y] = jsRandom() * worldHeight
     buffers.particlesA[base + buffers.FIELD_VEL_X] = (jsRandom() - 0.5) * 2.0
     buffers.particlesA[base + buffers.FIELD_VEL_Y] = (jsRandom() - 0.5) * 2.0
-    buffers.particlesA[base + buffers.FIELD_SPECIES] = float32(i mod ns)
+    buffers.particlesA[base + buffers.FIELD_SPECIES] = float32(particleIndex mod ns)
     buffers.particlesA[base + buffers.FIELD_DENSITY] = 0.0
 
   # Fisher-Yates shuffle for even species distribution
   # Swap species values within AoS layout
-  for i in countdown(newCount - 1, 1):
-    let j = bitwiseOr(jsRandom() * float(i + 1), 0)
-    let iBase = i * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
-    let jBase = j * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
-    let t = buffers.particlesA[iBase]
-    buffers.particlesA[iBase] = buffers.particlesA[jBase]
-    buffers.particlesA[jBase] = t
+  for shuffleIndex in countdown(newCount - 1, 1):
+    let swapIndex = bitwiseOr(jsRandom() * float(shuffleIndex + 1), 0)
+    let shuffleBase = shuffleIndex * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
+    let swapBase = swapIndex * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
+    let tempSpecies = buffers.particlesA[shuffleBase]
+    buffers.particlesA[shuffleBase] = buffers.particlesA[swapBase]
+    buffers.particlesA[swapBase] = tempSpecies
 
   ui.updateParticleStats(newCount)
 
@@ -154,7 +154,7 @@ proc physics(dt: float): Future[void] {.async.} =
   ## Run one physics step using WebGPU compute shaders.
   ## All computation (grid building, forces, integration) happens on GPU.
 
-  let t0 = performanceNow()
+  let physicsStart = performanceNow()
 
   if not (useWebGPU and webgpu_compute.isPipelineReady):
     # WebGPU not available - cannot run physics
@@ -203,7 +203,7 @@ proc physics(dt: float): Future[void] {.async.} =
   currentTiming.physicsTimeMs = performanceNow() - tPhysics0
   currentTiming.integrationTimeMs = 0  # Integration happens on GPU
 
-  computeTimeMs = performanceNow() - t0
+  computeTimeMs = performanceNow() - physicsStart
 
 # ==============================================================================
 # MAIN LOOP
@@ -264,7 +264,7 @@ proc loop(now: float): Future[void] {.async.} =
   if runtimeState.profiling.frameCount >= 60:
     runtimeState = runtimeState.resetProfiling()
 
-  discard domWindow.requestAnimationFrame(proc(t: float) = discard loop(t))
+  discard domWindow.requestAnimationFrame(proc(timestamp: float) = discard loop(timestamp))
 
 # ==============================================================================
 # INITIALIZATION
@@ -361,7 +361,7 @@ proc init(): Future[void] {.async, exportc.} =
   lastTime = performanceNow()
   lastFpsTime = lastTime
   runtimeState = runtimeState.withRunning(true)
-  discard domWindow.requestAnimationFrame(proc(t: float) = discard loop(t))
+  discard domWindow.requestAnimationFrame(proc(timestamp: float) = discard loop(timestamp))
 
 # ==============================================================================
 # ENTRY POINT

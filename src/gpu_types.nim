@@ -187,22 +187,22 @@ const
 # FIELD LOOKUP
 # =============================================================================
 
-func fieldByName*(s: GpuStruct, name: string): GpuField =
+func fieldByName*(gpuStruct: GpuStruct, name: string): GpuField =
   ## Find a field by name, raises if not found
-  for f in s.fields:
-    if f.name == name:
-      return f
-  raise newException(KeyError, "Field not found: " & name & " in struct " & s.name)
+  for field in gpuStruct.fields:
+    if field.name == name:
+      return field
+  raise newException(KeyError, "Field not found: " & name & " in struct " & gpuStruct.name)
 
-func fieldOffset*(s: GpuStruct, name: string): int =
+func fieldOffset*(gpuStruct: GpuStruct, name: string): int =
   ## Get byte offset for a field by name
-  fieldByName(s, name).offset
+  fieldByName(gpuStruct, name).offset
 
-func fieldIndex*(s: GpuStruct, name: string): int =
+func fieldIndex*(gpuStruct: GpuStruct, name: string): int =
   ## Get array index for a field (offset / 4 for f32/u32 fields)
-  let f = fieldByName(s, name)
-  if f.kind in {gtF32, gtU32, gtI32}:
-    f.offset div 4
+  let field = fieldByName(gpuStruct, name)
+  if field.kind in {gtF32, gtU32, gtI32}:
+    field.offset div 4
   else:
     raise newException(ValueError, "fieldIndex only valid for scalar types")
 
