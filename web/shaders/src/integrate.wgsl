@@ -65,7 +65,7 @@ struct IntegrationParams {
 
 const DENSITY_SMOOTH_FACTOR: f32 = 0.7;  // 70% old + 30% new for temporal smoothing
 
-@compute @workgroup_size(128, 1, 1)
+@compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let particleIdx = globalId.x;
 

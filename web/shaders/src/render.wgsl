@@ -23,19 +23,7 @@
 // =============================================================================
 
 //! import particle
-
-struct RenderParams {
-  resolution: vec2f,       // Canvas width, height in pixels
-  worldSize: vec2f,        // World width, height (physics domain)
-  baseSize: f32,           // Base particle size in pixels
-  glowIntensity: f32,      // Base glow multiplier (unused in main shader)
-  velocityGlowScale: f32,  // 0=off, 1=full velocity influence (unused in main shader)
-  maxVelocity: f32,        // For velocity normalization
-  trailLengthScale: f32,   // Motion blur elongation factor (0 = no blur)
-  _pad1: f32,
-  _pad2: f32,
-  _pad3: f32,
-};
+//! import render_params
 
 // Quad corner offsets (2 triangles = 6 vertices)
 // Unit quad: corners at distance sqrt(2) from center

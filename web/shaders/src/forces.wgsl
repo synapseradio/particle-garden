@@ -119,7 +119,7 @@ fn exponentialForce(r: f32, attraction: f32, alpha: f32, beta: f32) -> f32 {
   return -repulsion + attraction * attract * 2.0;
 }
 
-@compute @workgroup_size(128, 1, 1)
+@compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let thisSortedIdx = globalId.x;
 

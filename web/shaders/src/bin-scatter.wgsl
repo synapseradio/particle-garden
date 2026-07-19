@@ -49,7 +49,7 @@
 @group(0) @binding(4) var<storage, read_write> reverseIndices: array<u32>;
 @group(0) @binding(5) var<storage, read_write> fillOffsets: array<atomic<u32>>;
 
-@compute @workgroup_size(128)
+@compute @workgroup_size({{WORKGROUP_SIZE}})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let originalIdx = global_id.x;
 

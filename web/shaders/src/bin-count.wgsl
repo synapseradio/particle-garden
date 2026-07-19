@@ -33,7 +33,7 @@
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
 @group(0) @binding(2) var<storage, read_write> cellCounts: array<atomic<u32>>;
 
-@compute @workgroup_size(128)
+@compute @workgroup_size({{WORKGROUP_SIZE}})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let particleIdx = global_id.x;
 

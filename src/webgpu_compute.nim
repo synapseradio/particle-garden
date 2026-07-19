@@ -41,6 +41,7 @@ import webgpu_init
 import gpu_profiler
 import buffers as cpuBuffers
 import config
+import shader_config
 import gpu_types
 
 # Alias for GPU buffers to distinguish from CPU buffers
@@ -501,7 +502,12 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let matrix = params["matrix"]
 
   let numCells = gridW * gridH
-  let workgroupSize = 128
+  # bin-count, bin-scatter, forces, and integrate all dispatch per-particle
+  # and share one workgroup-size-derived divisor here. They're independently
+  # tunable in shader_config.nim's WorkgroupConfig but all sit at the same
+  # production value today; if that ever diverges, this single divisor needs
+  # splitting per pass (pass-registry rewrite territory, not this stage's).
+  let workgroupSize = shader_config.getWorkgroupSize("bin-count")
   let particleWorkgroups = jsCeil(particleCount.float / workgroupSize.float)
 
   # =========================================================================

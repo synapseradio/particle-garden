@@ -22,7 +22,7 @@
 @group(0) @binding(1) var<storage, read_write> offsets: array<u32>;     // Local offsets → final offsets
 @group(0) @binding(2) var<storage, read> blockOffsets: array<u32>;      // Scanned block totals
 
-@compute @workgroup_size(256)
+@compute @workgroup_size({{WORKGROUP_SIZE}})
 fn main(
   @builtin(global_invocation_id) globalId: vec3<u32>,
   @builtin(workgroup_id) workgroupId: vec3<u32>

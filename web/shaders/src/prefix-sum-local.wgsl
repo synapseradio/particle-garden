@@ -35,7 +35,7 @@ const BLOCK_SIZE: u32 = 256u;
 // Shared memory for local scan
 var<workgroup> temp: array<u32, BLOCK_SIZE>;
 
-@compute @workgroup_size(256)
+@compute @workgroup_size({{WORKGROUP_SIZE}})
 fn main(
   @builtin(global_invocation_id) globalId: vec3<u32>,
   @builtin(local_invocation_id) localId: vec3<u32>,
