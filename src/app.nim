@@ -68,6 +68,7 @@ proc logGpuProfile(particleCount: int, gridMs: float, physicsMs: float, drawMs: 
                    presentMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
+proc urlParamStr(name: cstring): cstring {.importjs: "(new URLSearchParams(location.search).get(#) || '')".}
 
 # ==============================================================================
 # APPLICATION STATE
@@ -353,6 +354,23 @@ proc init(): Future[void] {.async, exportc.} =
     return
 
   consoleLog(toJs("Initial data uploaded to GPU"))
+
+  # Optional ?mode=<sim-kind-id> URL override (machine interface, like ?n=/?seed=
+  # — never a user-facing surface). Routes through ui.setSimMode, the same path
+  # the mode buttons use, so the compute executor swaps to the requested frame.
+  # Runs after setup so the activeSimKind subscription and pipelines are live.
+  # An unknown id is ignored with a warning rather than crashing the loop.
+  if urlParamHas("mode"):
+    let requestedMode = urlParamStr("mode")
+    var isKnownMode = false
+    for kind in SimKind:
+      if simKindId(kind) == $requestedMode:
+        isKnownMode = true
+    if isKnownMode:
+      consoleLog(toJs("[app] ?mode= override:"), toJs(requestedMode))
+      ui.setSimMode(requestedMode)
+    else:
+      consoleWarn(toJs("[app] unknown ?mode= value, ignoring:"), toJs(requestedMode))
 
   # Expose resetParticles globally for HTML onclick handler
   setGlobal("resetParticles", toJs(resetParticles))

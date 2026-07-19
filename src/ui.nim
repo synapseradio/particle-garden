@@ -35,6 +35,7 @@ from bindings/typed_arrays import Float32Array, `[]`, `[]=`
 
 import config
 import config_ranges
+import sph_core
 import preset
 import buffers
 
@@ -117,6 +118,10 @@ proc applySimulationToConfig(simState: SimulationState) =
   CONFIG.forceModel = simState.forceModel
   CONFIG.expRepulsionAlpha = simState.expRepulsionAlpha
   CONFIG.expAttractionBeta = simState.expAttractionBeta
+  CONFIG.sphRestDensity = simState.sphRestDensity
+  CONFIG.sphStiffness = simState.sphStiffness
+  CONFIG.sphViscosity = simState.sphViscosity
+  CONFIG.sphSubsteps = simState.sphSubsteps
 
 proc applyRenderToConfig(renderState: RenderState) =
   CONFIG.particleSize = renderState.particleSize
@@ -385,6 +390,36 @@ proc setupUI*() {.exportc.} =
     min = PALETTE_LIGHTNESS_MIN, max = PALETTE_LIGHTNESS_MAX, precision = 2
   )
 
+  # SPH fluid-mode sliders. Plain CONFIG fields the forces-sph pass reads via
+  # SimParams; the substep count also bounds the executor's per-frame loop.
+  configSlider("sphRestDensity", "sphRestDensityValue",
+    get = proc(): float = CONFIG.sphRestDensity,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.sphRestDensity = value),
+    min = SPH_REST_DENSITY_MIN, max = SPH_REST_DENSITY_MAX, precision = 2
+  )
+
+  configSlider("sphStiffness", "sphStiffnessValue",
+    get = proc(): float = CONFIG.sphStiffness,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.sphStiffness = value),
+    min = SPH_STIFFNESS_MIN, max = SPH_STIFFNESS_MAX, precision = 1
+  )
+
+  configSlider("sphViscosity", "sphViscosityValue",
+    get = proc(): float = CONFIG.sphViscosity,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.sphViscosity = value),
+    min = SPH_VISCOSITY_MIN, max = SPH_VISCOSITY_MAX, precision = 2
+  )
+
+  configSlider("sphSubsteps", "sphSubstepsValue",
+    get = proc(): float = CONFIG.sphSubsteps.float,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.sphSubsteps = value.int),
+    min = SPH_SUBSTEPS_MIN.float, max = SPH_SUBSTEPS_MAX.float
+  )
+
   setupPresetStoreHooks()
 
 # ==============================================================================
@@ -524,6 +559,10 @@ proc togglePresetsSection*() {.exportc.} =
   ## Toggle Presets section visibility.
   toggleSection("presetsSection")
 
+proc toggleSphSection*() {.exportc.} =
+  ## Toggle SPH Fluid section visibility.
+  toggleSection("sphSection")
+
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
   ## @param model - 0 for polynomial, 1 for exponential
@@ -537,9 +576,22 @@ proc setSimMode*(modeId: cstring) {.exportc.} =
   ## Switch the active simulation mode (mode-selector buttons). Modes are
   ## addressed by sim_registry's stable string ids, never enum ordinals;
   ## app.nim subscribes activeSimKind to the compute executor.
+  ##
+  ## Entering SPH clamps the particle count to SPH_PARTICLE_CEILING (SPH's
+  ## neighbor pressure loop is heavier than particle-life's) through the same
+  ## update + re-init path the particleCount slider uses, then re-syncs the
+  ## slider display. Leaving SPH does not restore the previous count — the
+  ## clamped value stands until the user raises it again.
   let kind = parseSimKind($modeId)
   activeSimKind.set(kind)
   setActive("modeParticleLifeBtn", kind == skParticleLife)
+  setActive("modeSphBtn", kind == skSph)
+
+  if kind == skSph and CONFIG.particleCount > SPH_PARTICLE_CEILING:
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.particleCount = SPH_PARTICLE_CEILING)
+    refreshRegisteredSliders()
+    if not onInitParticles.isNil: onInitParticles()
 
 # ==============================================================================
 # SECTION 10: MATRIX UI
@@ -719,6 +771,7 @@ window.toggleForceModelSection = toggleForceModelSection;
 window.toggleGlowSection = toggleGlowSection;
 window.togglePaletteSection = togglePaletteSection;
 window.togglePresetsSection = togglePresetsSection;
+window.toggleSphSection = toggleSphSection;
 window.setForceModel = setForceModel;
 window.setSimMode = setSimMode;
 window.setPaletteScheme = setPaletteScheme;

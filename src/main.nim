@@ -43,6 +43,7 @@ const StaticFiles = {
   "/shaders/prefix-sum-final.wgsl": staticRead("../web/shaders/prefix-sum-final.wgsl"),
   "/shaders/bin-scatter.wgsl": staticRead("../web/shaders/bin-scatter.wgsl"),  # Merged AoS
   "/shaders/forces.wgsl": staticRead("../web/shaders/forces.wgsl"),
+  "/shaders/forces-sph.wgsl": staticRead("../web/shaders/forces-sph.wgsl"),  # SPH fluid force pass
   "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),  # Merged AoS
   "/shaders/render.wgsl": staticRead("../web/shaders/render.wgsl"),
 }.toTable

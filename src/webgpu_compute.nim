@@ -61,6 +61,7 @@ const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 6        # AoS: merged pass
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 7             # AoS: velocity + density deltas for symmetric accumulation
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: clones the forces layout exactly (7 entries)
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 4          # AoS: + densityDelta for temporal smoothing
 
 proc getExpectedEntryCount(passName: cstring): int =
@@ -72,6 +73,7 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "prefixFinal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL
   of "binScatter": result = EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER
   of "forces": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES
+  of "forcesSph": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH
   of "integrate": result = EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE
   else: result = -1
 
@@ -93,14 +95,13 @@ var isPipelineReady* {.exportc.}: bool = false
 var activeFrame: FrameDescription = @[]
 var activeSimKind*: SimKind = skParticleLife
 
-const prewarmedKinds = {skParticleLife}
-  ## Kinds whose compute shaders exist on disk this build and can safely
-  ## pre-warm at init. skSph's frame is registered (sim_registry) and its
-  ## manifest lists forces-sph.wgsl, but that shader lands with the SPH shader
-  ## stage; pre-warming skSph now would fetch a 404 and fail init. SPH's other
+const prewarmedKinds = {skParticleLife, skSph}
+  ## Kinds whose compute shaders exist on disk this build and pre-warm at init.
+  ## skSph joins particle-life now that forces-sph.wgsl exists and main.nim
+  ## serves it: its forcesSph pipeline is created here and its bind group in
+  ## createBindGroups, so a switch to skSph finds a ready pipeline. SPH's other
   ## pipelines (grid triad, bin-scatter, integrate) are shared with
-  ## particle-life and pre-warm through it. Add skSph here when forces-sph.wgsl
-  ## exists. skReactionDiffusion registers no shaders yet (roadmap S8).
+  ## particle-life. skReactionDiffusion registers no shaders yet (roadmap S8).
 
 proc setActiveSimKind*(kind: SimKind) =
   ## Switch the executor to another simulation's frame description. A kind whose
@@ -303,6 +304,27 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     cast[GPUBindGroupLayout](bindGroupLayouts["forces"]),
     forcesEntries,
     "Forces Bind Group"
+  )
+
+  # Pass 4 (SPH): forces-sph clones the forces layout exactly (same 7 buffers in
+  # the same binding slots), so its bind group is a clone of the one above. Built
+  # unconditionally here because skSph pre-warms; the executor picks it by
+  # pipeline key when the SPH frame is active.
+  let forcesSphEntries = createJsArray()
+  discard forcesSphEntries.push(createBindGroupEntry(0, uniformBuffers["simParams"]))
+  discard forcesSphEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesSorted)))
+  discard forcesSphEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.sortedIndices)))
+  discard forcesSphEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.gridOffsets)))
+  discard forcesSphEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.gridCounts)))
+  discard forcesSphEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.velocityDelta)))
+  discard forcesSphEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.densityDelta)))
+
+  validateBindGroupEntryCount(forcesSphEntries, "forcesSph", "bind group creation")
+  bindGroups["forcesSph"] = await createBindGroupWithValidation(
+    "SPH Forces",
+    cast[GPUBindGroupLayout](bindGroupLayouts["forcesSph"]),
+    forcesSphEntries,
+    "SPH Forces Bind Group"
   )
 
   # Pass 5: Integrate (AoS - unified velocity + position update)
@@ -534,10 +556,19 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   scanParamsData[SCAN_NUM_BLOCKS] = scanBlocks
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
+  # Substepping (SPH only): the executor runs the whole frame description
+  # substepCount times per rendered frame for stability at high stiffness, each
+  # substep advancing dt/substepCount. Particle-life always runs a single step.
+  # sphSubsteps is clamped to sph_core's SPH_MAX_SUBSTEPS ceiling.
+  let substepCount =
+    if activeSimKind == skSph: clamp(config.CONFIG.sphSubsteps, 1, SPH_MAX_SUBSTEPS)
+    else: 1
+  let substepDt = dt / substepCount.float
+
   # Simulation parameters (used by forces)
   # Layout matches SimParamsLayout in gpu_types.nim
   let simParamsData = newFloat32Array(SIM_PARAMS_F32_COUNT)
-  simParamsData[SIM_DT] = dt
+  simParamsData[SIM_DT] = substepDt
   simParamsData[SIM_WORLD_WIDTH] = width
   simParamsData[SIM_WORLD_HEIGHT] = height
   simParamsData[SIM_INTERACTION_RADIUS] = rMax
@@ -618,26 +649,36 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
 
   let commandEncoder = device.createCommandEncoderLabeled("Physics Frame Command Encoder")
 
-  for node in activeFrame:
-    case node.kind
-    of fnkClearBuffer:
-      commandEncoder.clearBuffer(gpuBufferFor(node.clearTarget), 0,
-        byteLengthFor(node.clearTarget))
-    of fnkCopyBuffer:
-      commandEncoder.copyBufferToBuffer(
-        gpuBufferFor(node.copySource), 0,
-        gpuBufferFor(node.copyDest), 0,
-        byteLengthFor(node.copySource))
-    of fnkComputePass:
-      let passDesc = createJsObject()
-      passDesc["label"] = (node.label & " Compute Pass").cstring.toJs
-      gpu_profiler.attachTimestamps(passDesc, node.profilerSlot)
-      let computePass = commandEncoder.beginComputePass(passDesc)
-      for dispatchStep in node.dispatches:
-        computePass.setPipeline(cast[GPUComputePipeline](pipelines[dispatchStep.pipelineKey.cstring]))
-        computePass.setBindGroup(0, cast[GPUBindGroup](bindGroups[dispatchStep.pipelineKey.cstring]))
-        computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
-      computePass.endPass()
+  # Encode the frame description substepCount times into this one encoder. Each
+  # repetition is a full physics step (grid build + scatter + forces + integrate)
+  # reading and writing particlesA in place; passes in a single encoder execute
+  # in order, so the substeps advance sequentially. substepCount is 1 outside
+  # SPH, making this a plain single walk of the frame.
+  for substep in 0 ..< substepCount:
+    # Timestamps write a fixed query slot per profiler pass; attach them only on
+    # the first substep so multiple substeps never double-write the same query.
+    let attachProfiling = (substep == 0)
+    for node in activeFrame:
+      case node.kind
+      of fnkClearBuffer:
+        commandEncoder.clearBuffer(gpuBufferFor(node.clearTarget), 0,
+          byteLengthFor(node.clearTarget))
+      of fnkCopyBuffer:
+        commandEncoder.copyBufferToBuffer(
+          gpuBufferFor(node.copySource), 0,
+          gpuBufferFor(node.copyDest), 0,
+          byteLengthFor(node.copySource))
+      of fnkComputePass:
+        let passDesc = createJsObject()
+        passDesc["label"] = (node.label & " Compute Pass").cstring.toJs
+        if attachProfiling:
+          gpu_profiler.attachTimestamps(passDesc, node.profilerSlot)
+        let computePass = commandEncoder.beginComputePass(passDesc)
+        for dispatchStep in node.dispatches:
+          computePass.setPipeline(cast[GPUComputePipeline](pipelines[dispatchStep.pipelineKey.cstring]))
+          computePass.setBindGroup(0, cast[GPUBindGroup](bindGroups[dispatchStep.pipelineKey.cstring]))
+          computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
+        computePass.endPass()
 
   # Submit
   let commandBuffer = commandEncoder.finish()

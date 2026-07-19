@@ -163,6 +163,9 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_BIN_COUNT"] = $activeConfig.workgroups.binCount
   result["WORKGROUP_SIZE_BIN_SCATTER"] = $activeConfig.workgroups.binScatter
   result["WORKGROUP_SIZE_FORCES"] = $activeConfig.workgroups.forces
+  # forces-sph dispatches per-particle exactly like forces, and its dispatch
+  # divisor is the shared per-particle workgroup size, so it reuses forces'.
+  result["WORKGROUP_SIZE_FORCES_SPH"] = $activeConfig.workgroups.forces
   result["WORKGROUP_SIZE_INTEGRATE"] = $activeConfig.workgroups.integrate
   result["WORKGROUP_SIZE_PREFIX_SUM_LOCAL"] = $activeConfig.workgroups.prefixSumLocal
   result["WORKGROUP_SIZE_PREFIX_SUM_BLOCKS"] = $activeConfig.workgroups.prefixSumBlocks

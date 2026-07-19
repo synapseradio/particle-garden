@@ -275,6 +275,13 @@
           >
             Particle Life
           </button>
+          <button
+            id="modeSphBtn"
+            class="model-btn"
+            onclick="setSimMode('sph')"
+          >
+            SPH Fluid
+          </button>
         </div>
 
         <!--
@@ -619,6 +626,81 @@
                   step="0.01"
                 />
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SPH Fluid Section (collapsible; active in SPH mode) -->
+        <div class="control-section" id="sphSection">
+          <button class="section-header" onclick="toggleSphSection()">
+            SPH Fluid <span class="section-toggle">+</span>
+          </button>
+          <div class="section-content" style="display: none">
+            <!-- Slider min/max/step/value attributes are placeholders; ui.nim's
+                 configSlider registrations (config_ranges.nim SPH_* bounds)
+                 overwrite them at bind time and are authoritative. -->
+            <div class="control-group">
+              <label
+                >Rest Density
+                <span class="value-display" id="sphRestDensityValue"
+                  >1.00</span
+                ></label
+              >
+              <input
+                type="range"
+                id="sphRestDensity"
+                min="0.2"
+                max="4"
+                value="1"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Stiffness
+                <span class="value-display" id="sphStiffnessValue">8.0</span></label
+              >
+              <input
+                type="range"
+                id="sphStiffness"
+                min="1"
+                max="40"
+                value="8"
+                step="0.1"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Viscosity
+                <span class="value-display" id="sphViscosityValue"
+                  >0.10</span
+                ></label
+              >
+              <input
+                type="range"
+                id="sphViscosity"
+                min="0"
+                max="1"
+                value="0.1"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Substeps
+                <span class="value-display" id="sphSubstepsValue">1</span></label
+              >
+              <input
+                type="range"
+                id="sphSubsteps"
+                min="1"
+                max="3"
+                value="1"
+                step="1"
+              />
             </div>
           </div>
         </div>
