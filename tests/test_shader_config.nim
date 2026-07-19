@@ -19,7 +19,7 @@ const SHADER_CONFIG_TESTS_LOADED* = true
 const knownShaders = [
   "bin-count", "bin-scatter", "forces", "integrate",
   "prefix-sum-local", "prefix-sum-blocks", "prefix-sum-final",
-  "cell-stats", "render",
+  "render",
 ]
 
 suite "Workgroup Sizes Are Valid GPU Dispatch Sizes":

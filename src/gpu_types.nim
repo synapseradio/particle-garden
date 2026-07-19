@@ -10,7 +10,9 @@
 # The WGSL modules in web/shaders/modules/ should match these definitions.
 # =============================================================================
 
-# No imports needed - pure compile-time definitions
+# std/macros powers genFieldIndices, which emits the SIM_* buffer-write indices
+# from SimParamsLayout. Compile-time only; the JS backend never ships it.
+import std/macros
 
 # =============================================================================
 # GPU TYPE SYSTEM
@@ -36,6 +38,9 @@ type
     offset*: int      ## Byte offset from struct start
     size*: int        ## Size in bytes
     count*: int       ## Array element count (1 for non-arrays)
+    elemKind*: GpuType  ## Element type for gtArray fields; ignored for scalars
+                        ## (defaults to gtF32). Drives the WGSL `array<T, N>`
+                        ## emitted by toWgslStruct.
 
   GpuStruct* = object
     ## A complete GPU struct definition
@@ -134,7 +139,7 @@ const
       GpuField(name: "blastStrength",   kind: gtF32, offset: 56, size: 4, count: 1),
       GpuField(name: "_pad",            kind: gtF32, offset: 60, size: 4, count: 1),
       # Attraction matrix: 36 floats packed as 9 vec4s (64-208)
-      GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 144, count: 9),
+      GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 144, count: 9, elemKind: gtVec4F32),
       # Force model parameters (208-232)
       GpuField(name: "repulsionEnd",    kind: gtF32, offset: 208, size: 4, count: 1),
       GpuField(name: "attractionPeak",  kind: gtF32, offset: 212, size: 4, count: 1),
@@ -170,6 +175,133 @@ func fieldIndex*(s: GpuStruct, name: string): int =
     raise newException(ValueError, "fieldIndex only valid for scalar types")
 
 # =============================================================================
+# WGSL STRUCT CODEGEN
+# =============================================================================
+# toWgslStruct renders a GpuStruct as a WGSL struct declaration, enforcing the
+# WGSL uniform address-space layout rules. tools/wgsl_bundle.nim writes the
+# result to web/shaders/modules/sim_params.wgsl, so the Nim byte-writer (the
+# SIM_* indices below) and the WGSL struct are generated from one table and
+# cannot silently disagree. B3 (SPH) and B4 (reaction-diffusion) grow this by
+# extending the layout table alone.
+
+func roundUpTo(value, multiple: int): int {.inline.} =
+  ## Smallest multiple of `multiple` that is >= value.
+  ((value + multiple - 1) div multiple) * multiple
+
+func wgslTypeName(gpuType: GpuType): string =
+  ## WGSL spelling for a scalar or vector type. gtArray has no standalone
+  ## spelling; toWgslType renders it from its element type.
+  case gpuType
+  of gtF32: "f32"
+  of gtU32: "u32"
+  of gtI32: "i32"
+  of gtVec2F32: "vec2<f32>"
+  of gtVec3F32: "vec3<f32>"
+  of gtVec4F32: "vec4<f32>"
+  of gtVec2U32: "vec2<u32>"
+  of gtVec4U32: "vec4<u32>"
+  of gtArray: ""
+
+func fieldAlignment(field: GpuField): int =
+  ## WGSL alignment of a field: an array (and its vec4 elements) aligns to 16.
+  if field.kind == gtArray: gpuTypeAlignment(gtArray)
+  else: gpuTypeAlignment(field.kind)
+
+func toWgslType*(field: GpuField): string =
+  ## WGSL type expression for a field: "f32" or "array<vec4<f32>, 9>".
+  if field.kind == gtArray:
+    "array<" & wgslTypeName(field.elemKind) & ", " & $field.count & ">"
+  else:
+    wgslTypeName(field.kind)
+
+func wgslComputedOffsets*(layout: GpuStruct): seq[int] =
+  ## The byte offset WGSL's layout algorithm assigns each member — each placed at
+  ## the next position satisfying its alignment. Equality with the declared
+  ## offsets proves the shader compiler and the Nim writer agree, the invariant
+  ## that keeps SimParams/FieldParams growth from corrupting physics.
+  var cursor = 0
+  for field in layout.fields:
+    cursor = roundUpTo(cursor, fieldAlignment(field))
+    result.add cursor
+    cursor += field.size
+
+func wgslUniformSize*(layout: GpuStruct): int =
+  ## Bytes a uniform buffer must allocate: struct size rounded up to 16.
+  ## SimParams is 232 bytes written, 240 allocated.
+  roundUpTo(layout.totalSize, 16)
+
+func toWgslStruct*(layout: GpuStruct): string =
+  ## Render `layout` as a WGSL struct declaration. Raises (failing the build) if a
+  ## field violates WGSL uniform layout: a misaligned offset, an offset the WGSL
+  ## compiler would not itself choose, or an array whose size <> elemSize*count.
+  let computedOffsets = wgslComputedOffsets(layout)
+  for fieldIndex, field in layout.fields:
+    doAssert field.offset mod fieldAlignment(field) == 0,
+      layout.name & "." & field.name & " offset " & $field.offset &
+      " is not aligned to " & $fieldAlignment(field)
+    doAssert field.offset == computedOffsets[fieldIndex],
+      layout.name & "." & field.name & " declared offset " & $field.offset &
+      " != WGSL-computed offset " & $computedOffsets[fieldIndex] &
+      " (layout would corrupt)"
+    if field.kind == gtArray:
+      doAssert field.size == gpuTypeSize(field.elemKind) * field.count,
+        layout.name & "." & field.name & " array size " & $field.size &
+        " != elemSize*count"
+  result = "struct " & layout.name & " {\n"
+  for field in layout.fields:
+    result &= "  " & field.name & ": " & toWgslType(field) & ",\n"
+  result &= "}\n"
+
+# =============================================================================
+# FIELD-INDEX CODEGEN (macro)
+# =============================================================================
+
+func toUpperSnake*(name: string): string =
+  ## camelCase or _leading-underscore name -> UPPER_SNAKE. "gridCellsX" ->
+  ## "GRID_CELLS_X", "_pad2" -> "PAD2". Names the generated index constants.
+  var charIndex = 0
+  while charIndex < name.len and name[charIndex] == '_':  # drop leading underscores
+    inc charIndex
+  var prevWasLower = false
+  while charIndex < name.len:
+    let currentChar = name[charIndex]
+    if currentChar in {'A'..'Z'}:
+      if prevWasLower: result.add '_'
+      result.add currentChar
+      prevWasLower = false
+    elif currentChar in {'a'..'z'}:
+      result.add char(ord(currentChar) - 32)
+      prevWasLower = true
+    else:
+      result.add currentChar
+      prevWasLower = false
+    inc charIndex
+
+proc newExportedIntConst(constName: string, constValue: int): NimNode =
+  ## Build the AST for `constName* = constValue` inside a const section.
+  nnkConstDef.newTree(
+    nnkPostfix.newTree(ident"*", ident(constName)),
+    newEmptyNode(),
+    newLit(constValue),
+  )
+
+macro genFieldIndices*(layout: static GpuStruct, prefix: static string): untyped =
+  ## Emit an exported const per field of `layout`, named `<prefix>_<FIELD>` and
+  ## valued at the field's f32-array index (byte offset div 4). An array field
+  ## emits `<prefix>_<FIELD>_START` and `_END`; a trailing
+  ## `<prefix>_PARAMS_F32_COUNT` gives the total f32 count. Replaces the hand
+  ## SIM_* block so the write indices can never drift from the layout table.
+  result = nnkConstSection.newTree()
+  for field in layout.fields:
+    let constBase = prefix & "_" & toUpperSnake(field.name)
+    if field.kind == gtArray:
+      result.add newExportedIntConst(constBase & "_START", field.offset div 4)
+      result.add newExportedIntConst(constBase & "_END", (field.offset + field.size) div 4 - 1)
+    else:
+      result.add newExportedIntConst(constBase, field.offset div 4)
+  result.add newExportedIntConst(prefix & "_PARAMS_F32_COUNT", layout.totalSize div 4)
+
+# =============================================================================
 # COMPILE-TIME VALIDATION
 # =============================================================================
 
@@ -192,44 +324,24 @@ static:
   assert SimParamsLayout.fieldOffset("attractionMatrix") == 64
   assert SimParamsLayout.fieldOffset("repulsionEnd") == 208
 
+  # WGSL's own layout algorithm must assign every SimParams member the exact
+  # offset the Nim writer targets, or a uniform write lands on the wrong field.
+  block:
+    let computedOffsets = SimParamsLayout.wgslComputedOffsets
+    for fieldIndex in 0 ..< SimParamsLayout.fields.len:
+      assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
+        "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
+    assert SimParamsLayout.wgslUniformSize == 240, "SimParams allocates 240 bytes"
+
 # =============================================================================
 # SIMPARAMS FIELD INDICES (for type-safe buffer writes)
 # =============================================================================
-# These replace magic numbers like simParamsData[52] with named constants.
+# Generated from SimParamsLayout by genFieldIndices — see the macro above. This
+# emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
+# _END=51, ... SIM_PAD2=57, and SIM_PARAMS_F32_COUNT=58, replacing the
+# magic numbers webgpu_compute.nim once hand-wrote.
 
-const
-  # Core fields (indices 0-15)
-  SIM_DT* = 0
-  SIM_WORLD_WIDTH* = 1
-  SIM_WORLD_HEIGHT* = 2
-  SIM_INTERACTION_RADIUS* = 3
-  SIM_FORCE_MULTIPLIER* = 4
-  SIM_GRID_CELLS_X* = 5
-  SIM_GRID_CELLS_Y* = 6
-  SIM_MOUSE_X* = 7
-  SIM_MOUSE_Y* = 8
-  SIM_MOUSE_LEFT_DOWN* = 9
-  SIM_MOUSE_RIGHT_DOWN* = 10
-  SIM_PARTICLE_COUNT* = 11
-  SIM_BLAST_X* = 12
-  SIM_BLAST_Y* = 13
-  SIM_BLAST_STRENGTH* = 14
-  SIM_PAD* = 15
-
-  # Attraction matrix (indices 16-51, 36 floats)
-  SIM_MATRIX_START* = 16
-  SIM_MATRIX_END* = 51
-
-  # Force model parameters (indices 52-57)
-  SIM_REPULSION_END* = 52
-  SIM_ATTRACTION_PEAK* = 53
-  SIM_FORCE_MODEL* = 54
-  SIM_EXP_ALPHA* = 55
-  SIM_EXP_BETA* = 56
-  SIM_PAD2* = 57
-
-  # Total size in f32 units
-  SIM_PARAMS_F32_COUNT* = 58
+genFieldIndices(SimParamsLayout, "SIM")
 
 # =============================================================================
 # GRIDPARAMS FIELD INDICES
