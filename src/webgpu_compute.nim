@@ -38,6 +38,7 @@ proc createJsArray(): JsObject {.importjs: "([])".}
 proc typeofJs(obj: JsObject): cstring {.importjs: "(typeof #)".}
 
 import webgpu_init
+import gpu_profiler
 import buffers as cpuBuffers
 import config
 import gpu_types
@@ -589,6 +590,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Compute Pass 1: Grid building
   let gridBuildPassDesc = createJsObject()
   gridBuildPassDesc["label"] = "Grid Build Compute Pass".cstring.toJs
+  gpu_profiler.attachTimestamps(gridBuildPassDesc, gpu_profiler.passGridBuild)
   let gridBuildPass = commandEncoder.beginComputePass(gridBuildPassDesc)
 
   # Pass 1: Bin Count
@@ -629,6 +631,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Compute Pass 2: Physics (AoS Pipeline)
   let physicsPassDesc = createJsObject()
   physicsPassDesc["label"] = "Physics Compute Pass (AoS)".cstring.toJs
+  gpu_profiler.attachTimestamps(physicsPassDesc, gpu_profiler.passPhysics)
   let physicsPass = commandEncoder.beginComputePass(physicsPassDesc)
 
   # Pass 3: Bin Scatter (unified AoS scatter)

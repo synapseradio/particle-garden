@@ -95,6 +95,7 @@ type
 proc jsObjectLength*(obj: JsObject): int {.importjs: "Object.keys(#).length".}
 proc jsReduceSum*(obj: JsObject): int {.importjs: "Object.values(#).reduce((sum, size) => sum + size, 0)".}
 proc jsCeilDiv*(a, b: int): int {.importjs: "Math.ceil(# / #)".}
+proc makeFeatureList(name: cstring): JsObject {.importjs: "[#]".}
 proc destroyAllBuffers*(obj: JsObject) {.importjs: "Object.values(#).forEach((buffer) => { if (buffer && typeof buffer.destroy === 'function') { buffer.destroy(); } })".}
 
 # ==============================================================================
@@ -106,6 +107,7 @@ var device* {.exportc.}: GPUDevice = nil
 var queue* {.exportc.}: GPUQueue = nil
 var buffers* {.exportc.}: GPUBuffersObject = cast[GPUBuffersObject](makeJsObject())
 var isWebGPUAvailable* {.exportc.}: bool = false
+var hasTimestampQuery* {.exportc.}: bool = false
 
 # ==============================================================================
 # SECTION 4: BUFFER SIZE CALCULATIONS
@@ -217,6 +219,15 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
 
   let deviceDescriptor = makeJsObject()
   deviceDescriptor["requiredLimits".cstring] = requiredLimits
+
+  # timestamp-query is optional: request it when the adapter offers it,
+  # degrade to CPU-side performance.now timing otherwise.
+  hasTimestampQuery = adapter.hasFeature("timestamp-query")
+  if hasTimestampQuery:
+    deviceDescriptor["requiredFeatures".cstring] = makeFeatureList("timestamp-query")
+    {.emit: "console.log('GPU timestamp-query: enabled');".}
+  else:
+    {.emit: "console.log('GPU timestamp-query: unavailable, per-pass GPU timing disabled');".}
 
   device = await adapter.requestDevice(deviceDescriptor)
 

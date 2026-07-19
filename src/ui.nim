@@ -471,6 +471,19 @@ proc updateStats*(fps: int, gridTimeMs: float, workerTimeMs: float) {.exportc.} 
   let workerTimeEl = getElementById("workerTime")
   workerTimeEl.textContent = toFixed(workerTimeMs, 1)
 
+proc updateGpuTimes*(gridMs: float, physicsMs: float, drawMs: float, presentMs: float) {.exportc.} =
+  ## Update the per-pass GPU timing readout (timestamp-query measurements).
+  ##
+  ## @param gridMs - Grid build compute pass (bin-count + prefix-sum)
+  ## @param physicsMs - Physics compute pass (scatter + forces + integrate)
+  ## @param drawMs - Offscreen render pass (trails + particles)
+  ## @param presentMs - Present render pass (glow + blit)
+
+  getElementById("gpuGrid").textContent = toFixed(gridMs, 2)
+  getElementById("gpuPhysics").textContent = toFixed(physicsMs, 2)
+  getElementById("gpuDraw").textContent = toFixed(drawMs, 2)
+  getElementById("gpuPresent").textContent = toFixed(presentMs, 2)
+
 proc updateParticleStats*(count: int) {.exportc.} =
   ## Update the particle count display.
   ##

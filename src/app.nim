@@ -39,6 +39,7 @@ import ui
 
 # Layer 4: WebGPU modules
 import webgpu_init
+import gpu_profiler
 import webgpu_compute
 import webgpu_render
 
@@ -63,6 +64,9 @@ proc makeJsObject(): JsObject {.importjs: "({})".}
 
 # Bitwise OR for int truncation
 proc bitwiseOr(x: float, y: int): int {.importjs: "(#|#)".}
+proc logGpuProfile(n: int, gridMs: float, physicsMs: float, drawMs: float,
+                   presentMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms')".}
+proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 
 # ==============================================================================
 # APPLICATION STATE
@@ -92,6 +96,7 @@ var frameCount {.exportc.}: int = 0
 var fps {.exportc.}: int = 0
 var lastFpsTime {.exportc.}: float = 0
 var computeTimeMs {.exportc.}: float = 0
+var gpuLogCounter {.exportc.}: int = 0
 
 # Performance profiling using pure state types
 var currentTiming* = initTimingState()
@@ -252,6 +257,17 @@ proc loop(now: float): Future[void] {.async.} =
     frameCount = 0
     lastFpsTime = now
     ui.updateStats(fps, 0, computeTimeMs)
+    if gpu_profiler.isActive():
+      let gridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
+      let physicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
+      let drawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
+      let presentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
+      ui.updateGpuTimes(gridMs, physicsMs, drawMs, presentMs)
+      # Leave a capturable baseline record in the console every ~5s
+      gpuLogCounter = gpuLogCounter + 1
+      if gpuLogCounter >= 10:
+        gpuLogCounter = 0
+        logGpuProfile(particleCount, gridMs, physicsMs, drawMs, presentMs)
 
   # Reset profiling accumulators every 60 frames
   if profiling.frameCount >= 60:
@@ -267,6 +283,10 @@ proc init(): Future[void] {.async, exportc.} =
   ## Initialize the application.
   ## Requires WebGPU - no fallback to WASM workers.
 
+  # Optional ?n=<count> URL override for profiling runs at a chosen scale
+  let requestedCount = urlParamInt("n", config.CONFIG.particleCount)
+  config.CONFIG.particleCount = clamp(requestedCount, 1000, config.MAX_PARTICLES)
+
   # Allocate shared memory buffers
   buffers.allocateBuffers()
 
@@ -279,6 +299,10 @@ proc init(): Future[void] {.async, exportc.} =
     return
 
   consoleLog(toJs("WebGPU device acquired:"), webgpuResult["info"])
+
+  # GPU pass profiling (no-op when timestamp-query is unavailable)
+  gpu_profiler.initProfiler()
+
   consoleLog(toJs("Initializing WebGPU compute pipelines..."))
   let pipelineResult = await webgpu_compute.initPipelines()
   if not pipelineResult["success"].to(bool):

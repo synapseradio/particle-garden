@@ -80,6 +80,9 @@ type
   GPUCommandBuffer* = ref object of JsObject
     ## Finished command buffer ready for submission
 
+  GPUQuerySet* = ref object of JsObject
+    ## Set of GPU queries (occlusion or timestamp)
+
   GPUCompilationInfo* = ref object of JsObject
     ## Shader compilation results
 
@@ -231,6 +234,9 @@ proc limits*(adapter: GPUAdapter): GPUSupportedLimits {.importjs: "#.limits".}
 
 proc isFallbackAdapter*(adapter: GPUAdapter): bool {.importjs: "#.isFallbackAdapter".}
   ## Check if this is a fallback (software) adapter
+
+proc hasFeature*(adapter: GPUAdapter, name: cstring): bool {.importjs: "#.features.has(#)".}
+  ## Check whether the adapter supports an optional feature (e.g. "timestamp-query")
 
 # ==============================================================================
 # SECTION 7: GPU DEVICE ACQUISITION
@@ -537,6 +543,18 @@ proc finish*(encoder: GPUCommandEncoder): GPUCommandBuffer {.importjs: "#.finish
   ## Finish encoding and return command buffer
 
 proc finish*(encoder: GPUCommandEncoder, descriptor: JsObject): GPUCommandBuffer {.importjs: "#.finish(#)".}
+
+# ==============================================================================
+# QUERY SETS (timestamp profiling)
+# ==============================================================================
+
+proc createQuerySet*(device: GPUDevice, descriptor: JsObject): GPUQuerySet {.importjs: "#.createQuerySet(#)".}
+  ## Create a query set; descriptor takes {type: "timestamp", count: n}
+
+proc resolveQuerySet*(encoder: GPUCommandEncoder, querySet: GPUQuerySet,
+                      firstQuery: int, queryCount: int,
+                      destination: GPUBuffer, destinationOffset: int) {.importjs: "#.resolveQuerySet(#, #, #, #, #)".}
+  ## Resolve query results into a buffer with QUERY_RESOLVE usage (8 bytes per query)
   ## Finish with descriptor
 
 # ==============================================================================

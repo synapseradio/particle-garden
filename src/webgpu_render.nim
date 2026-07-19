@@ -23,6 +23,7 @@ import bindings/dom_extensions
 import bindings/window
 import config
 import webgpu_init
+import gpu_profiler
 import gpu_types
 
 # ==============================================================================
@@ -1036,6 +1037,7 @@ proc render*(particleCount: int): RenderTiming =
 
   let offscreenPassDesc = newJsObject()
   offscreenPassDesc["label"] = "Offscreen Render Pass".cstring.toJs
+  gpu_profiler.attachTimestamps(offscreenPassDesc, gpu_profiler.passDraw)
 
   let offscreenAttachments = newJsArray()
   let offscreenAttachment = newJsObject()
@@ -1085,6 +1087,7 @@ proc render*(particleCount: int): RenderTiming =
 
   let presentPassDesc = newJsObject()
   presentPassDesc["label"] = "Present Pass".cstring.toJs
+  gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
 
   let presentAttachments = newJsArray()
   let presentAttachment = newJsObject()
@@ -1128,11 +1131,15 @@ proc render*(particleCount: int): RenderTiming =
 
   presentPass.endPass()
 
+  # Resolve pass timestamps (render encoder is the frame's final submit)
+  gpu_profiler.encodeResolve(commandEncoder)
+
   # Submit
   let commandBuffer = commandEncoder.finish()
   let commandBufferArray = newJsArray()
   discard commandBufferArray.push(cast[JsObject](commandBuffer))
   webgpu_init.queue.submit(commandBufferArray)
+  gpu_profiler.pumpReadback()
 
   # Flip trail parity for next frame
   trailParity = 1 - trailParity
