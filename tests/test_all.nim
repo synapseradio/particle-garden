@@ -22,6 +22,7 @@ import test_gpu_types
 import test_shader_config
 import test_stats
 import test_app_state
+import test_palette
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -38,3 +39,4 @@ static:
   discard test_shader_config.SHADER_CONFIG_TESTS_LOADED
   discard test_stats.STATS_TESTS_LOADED
   discard test_app_state.APP_STATE_TESTS_LOADED
+  discard test_palette.PALETTE_TESTS_LOADED
