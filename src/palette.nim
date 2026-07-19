@@ -14,7 +14,7 @@
 #
 # This module is the serialization contract for palettes: presets (B2) store
 # a generated or edited palette by its RGB tuples, so the shape returned here
-# (seq[tuple[r, g, b: float]]) is load-bearing beyond config.nim.
+# (seq[tuple[red, green, blue: float]]) is load-bearing beyond config.nim.
 #
 # ==============================================================================
 
@@ -34,6 +34,10 @@ type
     psSpectrum  ## Hues evenly spaced across the full 360-degree wheel.
     psWarm      ## Hues confined to magenta-red-orange-yellow.
     psCool      ## Hues confined to green-cyan-blue-violet.
+
+  RgbColor* = tuple[red, green, blue: float]
+    ## One color as RGB channels, each in [0, 1]. The palette serialization
+    ## contract: presets store palettes in this shape.
 
 # ==============================================================================
 # SECTION 2: CONSTANTS
@@ -62,36 +66,41 @@ const
 # SECTION 3: HSL -> RGB CONVERSION
 # ==============================================================================
 
-func hslToRgb*(h, s, l: float): tuple[r, g, b: float] =
+func hslToRgb*(hue, saturation, lightness: float): RgbColor =
   ## Convert an HSL color to RGB.
   ##
-  ## h - Hue as a fraction of the wheel, any real value (wrapped into [0, 1);
-  ##     0 = red, 1/3 = green, 2/3 = blue)
-  ## s - Saturation in [0, 1] (0 = gray, 1 = fully saturated)
-  ## l - Lightness in [0, 1] (0 = black, 1 = white)
+  ## hue - Fraction of the wheel, any real value (wrapped into [0, 1);
+  ##       0 = red, 1/3 = green, 2/3 = blue)
+  ## saturation - In [0, 1] (0 = gray, 1 = fully saturated)
+  ## lightness - In [0, 1] (0 = black, 1 = white)
   ##
-  ## Returns (r, g, b), each in [0, 1].
-  var hue = h - floor(h)  # wrap into [0, 1)
+  ## Returns (red, green, blue), each in [0, 1].
+  let wrappedHue = hue - floor(hue)  # wrap into [0, 1)
 
-  if s <= 0.0:
-    return (r: l, g: l, b: l)
+  if saturation <= 0.0:
+    return (red: lightness, green: lightness, blue: lightness)
 
-  let q = if l < 0.5: l * (1.0 + s) else: l + s - l * s
-  let p = 2.0 * l - q
+  let chromaHigh =
+    if lightness < 0.5: lightness * (1.0 + saturation)
+    else: lightness + saturation - lightness * saturation
+  let chromaLow = 2.0 * lightness - chromaHigh
 
-  func hueToChannel(p, q, tIn: float): float =
-    var t = tIn
-    if t < 0.0: t += 1.0
-    if t > 1.0: t -= 1.0
-    if t < 1.0 / 6.0: return p + (q - p) * 6.0 * t
-    if t < 1.0 / 2.0: return q
-    if t < 2.0 / 3.0: return p + (q - p) * (2.0 / 3.0 - t) * 6.0
-    return p
+  func hueToChannel(chromaLow, chromaHigh, rawHue: float): float =
+    var channelHue = rawHue
+    if channelHue < 0.0: channelHue += 1.0
+    if channelHue > 1.0: channelHue -= 1.0
+    if channelHue < 1.0 / 6.0:
+      return chromaLow + (chromaHigh - chromaLow) * 6.0 * channelHue
+    if channelHue < 1.0 / 2.0:
+      return chromaHigh
+    if channelHue < 2.0 / 3.0:
+      return chromaLow + (chromaHigh - chromaLow) * (2.0 / 3.0 - channelHue) * 6.0
+    return chromaLow
 
   result = (
-    r: hueToChannel(p, q, hue + 1.0 / 3.0),
-    g: hueToChannel(p, q, hue),
-    b: hueToChannel(p, q, hue - 1.0 / 3.0)
+    red: hueToChannel(chromaLow, chromaHigh, wrappedHue + 1.0 / 3.0),
+    green: hueToChannel(chromaLow, chromaHigh, wrappedHue),
+    blue: hueToChannel(chromaLow, chromaHigh, wrappedHue - 1.0 / 3.0)
   )
 
 # ==============================================================================
@@ -118,8 +127,8 @@ func hueAt(scheme: PaletteScheme, index, count: int): float =
   of psWarm, psCool:
     let (start, spread) = hueRangeFor(scheme)
     # Single color: place it at the arc's start rather than dividing by zero.
-    let t = if count <= 1: 0.0 else: index.float / (count - 1).float
-    result = start + t * spread
+    let arcPosition = if count <= 1: 0.0 else: index.float / (count - 1).float
+    result = start + arcPosition * spread
     result -= floor(result)
 
 # ==============================================================================
@@ -128,7 +137,7 @@ func hueAt(scheme: PaletteScheme, index, count: int): float =
 
 func generatePalette*(count: int, scheme: PaletteScheme = psGolden;
     saturation: float = DEFAULT_SATURATION,
-    lightness: float = DEFAULT_LIGHTNESS): seq[tuple[r, g, b: float]] =
+    lightness: float = DEFAULT_LIGHTNESS): seq[RgbColor] =
   ## Generate `count` species colors as RGB tuples, each channel in [0, 1].
   ##
   ## count - Number of colors to generate. count <= 0 returns an empty seq.
@@ -138,21 +147,21 @@ func generatePalette*(count: int, scheme: PaletteScheme = psGolden;
   if count <= 0:
     return @[]
 
-  result = newSeq[tuple[r, g, b: float]](count)
-  for i in 0 ..< count:
-    let hue = hueAt(scheme, i, count)
-    result[i] = hslToRgb(hue, saturation, lightness)
+  result = newSeq[RgbColor](count)
+  for colorIndex in 0 ..< count:
+    let hue = hueAt(scheme, colorIndex, count)
+    result[colorIndex] = hslToRgb(hue, saturation, lightness)
 
 # ==============================================================================
 # SECTION 6: FLAT ENCODING (for Float32Array / GPU buffers)
 # ==============================================================================
 
-func flattenPalette*(palette: seq[tuple[r, g, b: float]]): seq[float] =
+func flattenPalette*(palette: seq[RgbColor]): seq[float] =
   ## Interleave a palette's RGB tuples into a flat [r0, g0, b0, r1, g1, b1, ...]
   ## sequence — the layout config.COLORS (and the GPU-facing Float32Array it
   ## backs) expects.
   result = newSeq[float](palette.len * 3)
-  for i, c in palette:
-    result[i * 3 + 0] = c.r
-    result[i * 3 + 1] = c.g
-    result[i * 3 + 2] = c.b
+  for colorIndex, color in palette:
+    result[colorIndex * 3 + 0] = color.red
+    result[colorIndex * 3 + 1] = color.green
+    result[colorIndex * 3 + 2] = color.blue

@@ -369,7 +369,7 @@ var jsMath* {.importjs: "Math".}: JsObject
 proc mathRandom(): float {.importjs: "Math.random()".}
   ## Get random number [0, 1). Non-deterministic; the default random source.
 
-proc jsImul(a, b: uint32): uint32 {.importjs: "(Math.imul(#, #) >>> 0)".}
+proc jsImul(multiplicand, multiplier: uint32): uint32 {.importjs: "(Math.imul(#, #) >>> 0)".}
   ## 32-bit integer multiply with correct wraparound (JS `*` loses precision
   ## past 2^53, so the mulberry32 PRNG below needs Math.imul specifically).
 
@@ -385,10 +385,11 @@ proc mulberry32Next(): float =
   ## by Tommy Ettinger). Deterministic: the same rngState always produces
   ## the same next value and the same state transition.
   rngState = rngState + 0x6D2B79F5'u32
-  var t = rngState
-  t = jsImul(t xor (t shr 15), t or 1'u32)
-  t = t xor (t + jsImul(t xor (t shr 7), t or 61'u32))
-  float(t xor (t shr 14)) / 4294967296.0
+  var mixedBits = rngState
+  mixedBits = jsImul(mixedBits xor (mixedBits shr 15), mixedBits or 1'u32)
+  mixedBits = mixedBits xor
+    (mixedBits + jsImul(mixedBits xor (mixedBits shr 7), mixedBits or 61'u32))
+  float(mixedBits xor (mixedBits shr 14)) / 4294967296.0
 
 proc setRandomSeed*(seed: int) =
   ## Route jsRandom() (and anything built on it, e.g. gaussian()) through a
