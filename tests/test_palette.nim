@@ -178,3 +178,44 @@ suite "flattenPalette":
     check approxEq(flattened[3], 0.4)
     check approxEq(flattened[4], 0.5)
     check approxEq(flattened[5], 0.6)
+
+# ==============================================================================
+# OPEN COLOR SCHEME
+# ==============================================================================
+
+suite "generatePalette - Open Color Scheme":
+  # The user directed the default species colors to come from the Open Color
+  # palette (https://yeun.github.io/open-color/), picked bright and ordered to
+  # keep the classic species identities: red, green, blue, yellow, grape
+  # (magenta slot), cyan. Hex values verified against the canonical
+  # open-color.json (red-5 #ff6b6b, green-5 #51cf66, blue-5 #339af0,
+  # yellow-4 #ffd43b, grape-5 #cc5de8, cyan-4 #3bc9db).
+
+  test "psOpenColor returns the six verified Open Color swatches in species order":
+    let colors = generatePalette(6, psOpenColor)
+    check colors.len == 6
+    check approxEqRgb(colors[0], 255.0/255.0, 107.0/255.0, 107.0/255.0)  # red-5
+    check approxEqRgb(colors[1],  81.0/255.0, 207.0/255.0, 102.0/255.0)  # green-5
+    check approxEqRgb(colors[2],  51.0/255.0, 154.0/255.0, 240.0/255.0)  # blue-5
+    check approxEqRgb(colors[3], 255.0/255.0, 212.0/255.0,  59.0/255.0)  # yellow-4
+    check approxEqRgb(colors[4], 204.0/255.0,  93.0/255.0, 232.0/255.0)  # grape-5
+    check approxEqRgb(colors[5],  59.0/255.0, 201.0/255.0, 219.0/255.0)  # cyan-4
+
+  test "psOpenColor swatches are bright (every swatch peaks at or above 0.8)":
+    # WHY: "brighter colors" is the point of the directive; each swatch's
+    # dominant channel must carry real luminance against the dark canvas.
+    for color in generatePalette(6, psOpenColor):
+      check max(color.red, max(color.green, color.blue)) >= 0.8
+
+  test "psOpenColor ignores saturation and lightness arguments":
+    # The swatches are fixed picks, not HSL-generated; the knobs are documented
+    # as inert for this scheme.
+    check generatePalette(6, psOpenColor, saturation = 0.1, lightness = 0.9) ==
+      generatePalette(6, psOpenColor)
+
+  test "psOpenColor wraps around past six colors and truncates below":
+    let wrapped = generatePalette(8, psOpenColor)
+    check wrapped.len == 8
+    check wrapped[6] == wrapped[0]
+    check wrapped[7] == wrapped[1]
+    check generatePalette(2, psOpenColor).len == 2

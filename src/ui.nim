@@ -35,6 +35,7 @@ from bindings/dom_extensions import
 from bindings/typed_arrays import Float32Array, `[]`, `[]=`
 
 import config
+import config_ranges
 import buffers
 
 # New reactive state system
@@ -125,13 +126,15 @@ proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.}
 # ==============================================================================
 
 proc setupUI*() {.exportc.} =
-  ## Bind slider inputs to CONFIG values.
+  ## Bind slider inputs to CONFIG values. Every range comes from
+  ## config_ranges.nim — the same constants preset.nim clamps with, so the
+  ## UI and the preset schema cannot drift apart.
 
   # Simulation sliders
   configSlider("particleCount", "particleValue",
     get = proc(): float = CONFIG.particleCount.float,
     set = proc(v: float) = CONFIG.particleCount = v.int,
-    min = 100, max = MAX_PARTICLES.float,
+    min = PARTICLE_COUNT_MIN.float, max = PARTICLE_COUNT_MAX.float,
     onChange = proc() =
       if not onInitParticles.isNil: onInitParticles()
   )
@@ -139,7 +142,7 @@ proc setupUI*() {.exportc.} =
   configSlider("speciesCount", "speciesValue",
     get = proc(): float = CONFIG.speciesCount.float,
     set = proc(v: float) = CONFIG.speciesCount = v.int,
-    min = 1, max = MAX_SPECIES.float,
+    min = SPECIES_COUNT_MIN.float, max = SPECIES_COUNT_MAX.float,
     onChange = proc() =
       randomizeMatrix()
       if not onInitParticles.isNil: onInitParticles()
@@ -148,81 +151,105 @@ proc setupUI*() {.exportc.} =
   configSlider("interactionRadius", "radiusValue",
     get = proc(): float = CONFIG.interactionRadius.float,
     set = proc(v: float) = CONFIG.interactionRadius = v.int,
-    min = 10, max = 150
+    min = INTERACTION_RADIUS_MIN.float, max = INTERACTION_RADIUS_MAX.float
   )
 
   configSlider("forceStrength", "forceValue",
     get = proc(): float = CONFIG.forceStrength,
     set = proc(v: float) = CONFIG.forceStrength = v,
-    min = 0.1, max = 5.0, precision = 1
+    min = FORCE_STRENGTH_MIN, max = FORCE_STRENGTH_MAX, precision = 1
   )
 
   configSlider("friction", "frictionValue",
     get = proc(): float = CONFIG.friction,
     set = proc(v: float) = CONFIG.friction = v,
-    min = 0.0, max = 0.5, precision = 2
+    min = FRICTION_MIN, max = FRICTION_MAX, precision = 2
   )
 
   configSlider("timeScale", "timeScaleValue",
     get = proc(): float = CONFIG.timeScale,
     set = proc(v: float) = CONFIG.timeScale = v,
-    min = 0.1, max = 5.0, precision = 1
+    min = TIME_SCALE_MIN, max = TIME_SCALE_MAX, precision = 1
   )
 
   configSlider("ruleTemperature", "ruleTemperatureValue",
     get = proc(): float = CONFIG.ruleTemperature,
     set = proc(v: float) = CONFIG.ruleTemperature = v,
-    min = 0.1, max = 0.6, precision = 2
+    min = RULE_TEMPERATURE_MIN, max = RULE_TEMPERATURE_MAX, precision = 2
   )
 
   configSlider("maxVelocity", "velocityValue",
     get = proc(): float = CONFIG.maxVelocity,
     set = proc(v: float) = CONFIG.maxVelocity = v,
-    min = 0.0, max = 100.0
+    min = MAX_VELOCITY_MIN, max = MAX_VELOCITY_MAX
   )
 
   # Render sliders
+  configSlider("particleSize", "particleSizeValue",
+    get = proc(): float = CONFIG.particleSize.float,
+    set = proc(v: float) = CONFIG.particleSize = v.int,
+    min = PARTICLE_SIZE_MIN.float, max = PARTICLE_SIZE_MAX.float
+  )
+
   configSlider("trailLength", "trailValue",
     get = proc(): float = CONFIG.trailLength,
     set = proc(v: float) = CONFIG.trailLength = v,
-    min = 0.0, max = 200.0, precision = 0
+    min = TRAIL_LENGTH_MIN, max = TRAIL_LENGTH_MAX, precision = 0
   )
 
   configSlider("glowIntensity", "glowValue",
     get = proc(): float = CONFIG.glowIntensity,
     set = proc(v: float) = CONFIG.glowIntensity = v,
-    min = 0.0, max = 3.0, precision = 1
+    min = GLOW_INTENSITY_MIN, max = GLOW_INTENSITY_MAX, precision = 1
   )
 
   configSlider("velocityGlowScale", "velocityGlowValue",
     get = proc(): float = CONFIG.velocityGlowScale,
     set = proc(v: float) = CONFIG.velocityGlowScale = v,
-    min = 0.0, max = 5.0, precision = 1
+    min = VELOCITY_GLOW_SCALE_MIN, max = VELOCITY_GLOW_SCALE_MAX, precision = 1
+  )
+
+  configSlider("glowRadiusScale", "glowRadiusScaleValue",
+    get = proc(): float = CONFIG.glowRadiusScale,
+    set = proc(v: float) = CONFIG.glowRadiusScale = v,
+    min = GLOW_RADIUS_SCALE_MIN, max = GLOW_RADIUS_SCALE_MAX, precision = 1
+  )
+
+  configSlider("glowFalloff", "glowFalloffValue",
+    get = proc(): float = CONFIG.glowFalloff,
+    set = proc(v: float) = CONFIG.glowFalloff = v,
+    min = GLOW_FALLOFF_MIN, max = GLOW_FALLOFF_MAX, precision = 1
+  )
+
+  configSlider("glowWarmth", "glowWarmthValue",
+    get = proc(): float = CONFIG.glowWarmth,
+    set = proc(v: float) = CONFIG.glowWarmth = v,
+    min = GLOW_WARMTH_MIN, max = GLOW_WARMTH_MAX, precision = 2
   )
 
   # Force Model sliders
   configSlider("repulsionEnd", "repulsionEndValue",
     get = proc(): float = CONFIG.repulsionEnd,
     set = proc(v: float) = CONFIG.repulsionEnd = v,
-    min = 0.1, max = 0.9, precision = 2
+    min = REPULSION_END_MIN, max = REPULSION_END_MAX, precision = 2
   )
 
   configSlider("attractionPeak", "attractionPeakValue",
     get = proc(): float = CONFIG.attractionPeak,
     set = proc(v: float) = CONFIG.attractionPeak = v,
-    min = 0.5, max = 0.95, precision = 2
+    min = ATTRACTION_PEAK_MIN, max = ATTRACTION_PEAK_MAX, precision = 2
   )
 
   configSlider("expRepulsionAlpha", "expRepulsionAlphaValue",
     get = proc(): float = CONFIG.expRepulsionAlpha,
     set = proc(v: float) = CONFIG.expRepulsionAlpha = v,
-    min = 1.0, max = 15.0, precision = 2
+    min = EXP_REPULSION_ALPHA_MIN, max = EXP_REPULSION_ALPHA_MAX, precision = 2
   )
 
   configSlider("expAttractionBeta", "expAttractionBetaValue",
     get = proc(): float = CONFIG.expAttractionBeta,
     set = proc(v: float) = CONFIG.expAttractionBeta = v,
-    min = 1.0, max = 10.0, precision = 2
+    min = EXP_ATTRACTION_BETA_MIN, max = EXP_ATTRACTION_BETA_MAX, precision = 2
   )
 
 # ==============================================================================

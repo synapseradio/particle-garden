@@ -398,9 +398,9 @@ const
   RENDER_VELOCITY_GLOW_SCALE* = 6
   RENDER_MAX_VELOCITY* = 7
   RENDER_TRAIL_LENGTH_SCALE* = 8  # Motion blur elongation factor
-  RENDER_PAD1* = 9                # Padding to 16-byte alignment
-  RENDER_PAD2* = 10
-  RENDER_PAD3* = 11
+  RENDER_GLOW_RADIUS_SCALE* = 9   # Glow halo radius = baseSize * this
+  RENDER_GLOW_FALLOFF* = 10       # Gaussian falloff exponent (higher = tighter halo)
+  RENDER_GLOW_WARMTH* = 11        # Density-driven warm shift, [0,1] mix fraction
   RENDER_PARAMS_F32_COUNT* = 12   # 48 bytes (3 vec4s)
 
 # =============================================================================

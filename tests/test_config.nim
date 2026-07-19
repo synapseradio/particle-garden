@@ -41,8 +41,15 @@ const
   DEFAULT_TIME_SCALE = 0.5
   DEFAULT_PARTICLE_SIZE = 3
   DEFAULT_TRAIL_ALPHA = 0.96
-  DEFAULT_GLOW_INTENSITY = 1.0
+  DEFAULT_GLOW_INTENSITY = 0.8
   DEFAULT_MAX_VELOCITY = 50.0
+  # Glow knobs (S1): mirror config.nim createConfig() exactly.
+  DEFAULT_GLOW_RADIUS_SCALE = 3.0
+  DEFAULT_GLOW_FALLOFF = 6.0
+  DEFAULT_GLOW_WARMTH = 0.4
+  # The glow radius glow.wgsl hard-coded before the knobs existed. The default
+  # knob values must reproduce it so S1 preserves the default appearance.
+  LEGACY_GLOW_BASE_RADIUS = 12.0
   # World dimensions (from config.nim)
   WORLD_W = 3840.0
   WORLD_H = 2160.0
@@ -121,6 +128,22 @@ suite "Configuration Invariants":
     ## CONTRACT: particleSize must be > 0
     ## WHY: Particles must be visible - zero size renders nothing
     check DEFAULT_PARTICLE_SIZE > 0
+
+  test "glow knob defaults reproduce the legacy hard-coded glow radius":
+    ## CONTRACT: baseRadius in glow.wgsl is params.baseSize * params.glowRadiusScale,
+    ## where baseSize = particleSize + 1 (webgpu_render.nim). At the defaults this
+    ## product must equal the 12.0 the shader hard-coded before S1, so shipping
+    ## the knobs does not change the default look.
+    check (DEFAULT_PARTICLE_SIZE + 1).float * DEFAULT_GLOW_RADIUS_SCALE ==
+      LEGACY_GLOW_BASE_RADIUS
+
+  test "glow knob defaults are physically sensible":
+    ## WHY: glowFalloff is an exponent scale (must be > 0 or the gaussian
+    ## flattens/inverts); glowWarmth is a [0,1] mix fraction.
+    check DEFAULT_GLOW_RADIUS_SCALE > 0.0
+    check DEFAULT_GLOW_FALLOFF > 0.0
+    check DEFAULT_GLOW_WARMTH >= 0.0
+    check DEFAULT_GLOW_WARMTH <= 1.0
 
 # ==============================================================================
 # CONFIGURATION RELATIONSHIPS

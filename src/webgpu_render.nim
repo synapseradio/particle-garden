@@ -753,9 +753,9 @@ proc render*(particleCount: int): RenderTiming =
   # At trailLength=0: no elongation. At trailLength=100: significant elongation
   let trailLengthScale = config.CONFIG.trailLength * 0.02  # Scale factor for motion blur
   paramsData[RENDER_TRAIL_LENGTH_SCALE] = float32(trailLengthScale)
-  paramsData[RENDER_PAD1] = 0.0
-  paramsData[RENDER_PAD2] = 0.0
-  paramsData[RENDER_PAD3] = 0.0
+  paramsData[RENDER_GLOW_RADIUS_SCALE] = float32(config.CONFIG.glowRadiusScale)
+  paramsData[RENDER_GLOW_FALLOFF] = float32(config.CONFIG.glowFalloff)
+  paramsData[RENDER_GLOW_WARMTH] = float32(config.CONFIG.glowWarmth)
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
   # Update species colors uniform (pack RGB as vec4f for 16-byte alignment)

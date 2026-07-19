@@ -392,6 +392,24 @@
           />
         </div>
 
+        <!-- NOTE: slider min/max/step/value attributes here are placeholders.
+             ui.nim's configSlider registrations (backed by config_ranges.nim)
+             overwrite them at bind time and are the authoritative ranges. -->
+        <div class="control-group">
+          <label
+            >Particle Size
+            <span class="value-display" id="particleSizeValue">3</span></label
+          >
+          <input
+            type="range"
+            id="particleSize"
+            min="1"
+            max="8"
+            value="3"
+            step="1"
+          />
+        </div>
+
         <!-- Glow Section (collapsible) -->
         <div class="control-section" id="glowSection">
           <button class="section-header" onclick="toggleGlowSection()">
@@ -401,14 +419,14 @@
             <div class="control-group">
               <label
                 >Intensity
-                <span class="value-display" id="glowValue">1.15</span></label
+                <span class="value-display" id="glowValue">0.8</span></label
               >
               <input
                 type="range"
                 id="glowIntensity"
                 min="0"
                 max="3"
-                value="1.15"
+                value="0.8"
                 step="0.1"
               />
             </div>
@@ -422,9 +440,54 @@
                 type="range"
                 id="velocityGlowScale"
                 min="0"
-                max="3"
+                max="5"
                 value="1"
                 step="0.1"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Halo Radius
+                <span class="value-display" id="glowRadiusScaleValue">3.0</span></label
+              >
+              <input
+                type="range"
+                id="glowRadiusScale"
+                min="0.5"
+                max="8"
+                value="3"
+                step="0.1"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Halo Falloff
+                <span class="value-display" id="glowFalloffValue">6.0</span></label
+              >
+              <input
+                type="range"
+                id="glowFalloff"
+                min="2"
+                max="12"
+                value="6"
+                step="0.1"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Warmth
+                <span class="value-display" id="glowWarmthValue">0.40</span></label
+              >
+              <input
+                type="range"
+                id="glowWarmth"
+                min="0"
+                max="1"
+                value="0.4"
+                step="0.01"
               />
             </div>
           </div>

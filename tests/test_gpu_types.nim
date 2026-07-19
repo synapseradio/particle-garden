@@ -136,6 +136,20 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
 
+suite "RenderParams Glow Knob Indices":
+  # S1 promotes the three RenderParams pad slots into glow knobs. The struct
+  # size must not change: the pads were free f32 slots, so the knob indices
+  # take their exact positions and the 48-byte buffer stays 48 bytes.
+
+  test "the three former pad slots are the glow knob indices":
+    check RENDER_GLOW_RADIUS_SCALE == 9
+    check RENDER_GLOW_FALLOFF == 10
+    check RENDER_GLOW_WARMTH == 11
+
+  test "RenderParams stays 12 floats (48 bytes) after the knob promotion":
+    check RENDER_PARAMS_F32_COUNT == 12
+
+
 suite "toUpperSnake Names Index Constants From Field Names":
   test "camelCase field names become UPPER_SNAKE":
     check toUpperSnake("dt") == "DT"

@@ -45,6 +45,17 @@ type
     # Fixed-point arithmetic (DO NOT CHANGE unless you know what you're doing)
     fixedPointScale*: float      ## Scale for atomic float accumulation (default 65536.0 = 2^16)
 
+    # Glow curve shaping (glow.wgsl). Defaults reproduce the constants the
+    # shader hard-coded before they became {{TUNABLE_GLOW_*}} placeholders.
+    glowVelocityLogScale*: float ## Log-curve compression of velocity->glow (default 5.0)
+    glowVelocityBase*: float     ## Glow floor for stationary particles (default 0.5)
+    glowDensityScale*: float     ## Density->glow gain (default 0.15)
+    glowDensityMin*: float       ## Sparse-particle glow floor (default 0.05)
+    glowDensityMax*: float       ## Density factor ceiling (default 1.0)
+    glowDivisor*: float          ## Overall halo intensity divisor (default 24.0)
+    glowWarmthGreen*: float      ## Green attenuation per unit warmth (default 0.3)
+    glowWarmthBlue*: float       ## Blue attenuation per unit warmth (default 0.6)
+
   ShaderConfig* = object
     ## Complete shader configuration
     profile*: ShaderProfile
@@ -74,6 +85,14 @@ const
     blastRangeSq: 40000.0,        # 200px blast radius
     densitySmoothFactor: 0.7,     # Smooth density transitions
     fixedPointScale: 65536.0,     # 2^16 for atomic accumulation
+    glowVelocityLogScale: 5.0,    # These eight reproduce glow.wgsl's former
+    glowVelocityBase: 0.5,        # hard-coded curve constants exactly, so the
+    glowDensityScale: 0.15,       # default appearance is unchanged.
+    glowDensityMin: 0.05,
+    glowDensityMax: 1.0,
+    glowDivisor: 24.0,
+    glowWarmthGreen: 0.3,
+    glowWarmthBlue: 0.6,
   )
 
   PRODUCTION_CONFIG* = ShaderConfig(
@@ -110,6 +129,14 @@ proc getTunableFloat*(name: string): float =
   of "BLAST_RANGE_SQ": activeConfig.tuning.blastRangeSq
   of "DENSITY_SMOOTH_FACTOR": activeConfig.tuning.densitySmoothFactor
   of "FIXED_POINT_SCALE": activeConfig.tuning.fixedPointScale
+  of "GLOW_VELOCITY_LOG_SCALE": activeConfig.tuning.glowVelocityLogScale
+  of "GLOW_VELOCITY_BASE": activeConfig.tuning.glowVelocityBase
+  of "GLOW_DENSITY_SCALE": activeConfig.tuning.glowDensityScale
+  of "GLOW_DENSITY_MIN": activeConfig.tuning.glowDensityMin
+  of "GLOW_DENSITY_MAX": activeConfig.tuning.glowDensityMax
+  of "GLOW_DIVISOR": activeConfig.tuning.glowDivisor
+  of "GLOW_WARMTH_GREEN": activeConfig.tuning.glowWarmthGreen
+  of "GLOW_WARMTH_BLUE": activeConfig.tuning.glowWarmthBlue
   else: 0.0
 
 # =============================================================================
@@ -139,3 +166,14 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["TUNABLE_BLAST_RANGE_SQ"] = fmt"{activeConfig.tuning.blastRangeSq:.1f}"
   result["TUNABLE_DENSITY_SMOOTH_FACTOR"] = fmt"{activeConfig.tuning.densitySmoothFactor:.2f}"
   result["TUNABLE_FIXED_POINT_SCALE"] = fmt"{activeConfig.tuning.fixedPointScale:.1f}"
+
+  # Glow curve constants (consumed by glow.wgsl). Two decimal places keep
+  # 0.15/0.05 exact while remaining unambiguous WGSL f32 literals.
+  result["TUNABLE_GLOW_VELOCITY_LOG_SCALE"] = fmt"{activeConfig.tuning.glowVelocityLogScale:.2f}"
+  result["TUNABLE_GLOW_VELOCITY_BASE"] = fmt"{activeConfig.tuning.glowVelocityBase:.2f}"
+  result["TUNABLE_GLOW_DENSITY_SCALE"] = fmt"{activeConfig.tuning.glowDensityScale:.2f}"
+  result["TUNABLE_GLOW_DENSITY_MIN"] = fmt"{activeConfig.tuning.glowDensityMin:.2f}"
+  result["TUNABLE_GLOW_DENSITY_MAX"] = fmt"{activeConfig.tuning.glowDensityMax:.2f}"
+  result["TUNABLE_GLOW_DIVISOR"] = fmt"{activeConfig.tuning.glowDivisor:.2f}"
+  result["TUNABLE_GLOW_WARMTH_GREEN"] = fmt"{activeConfig.tuning.glowWarmthGreen:.2f}"
+  result["TUNABLE_GLOW_WARMTH_BLUE"] = fmt"{activeConfig.tuning.glowWarmthBlue:.2f}"

@@ -27,9 +27,20 @@
 #   - a future src/ui/presets/preset_store.nim (storage/UI half, not this
 #     module's concern: see roadmap stage B2)
 #
+# Dependencies are restricted to pure, FFI-free leaf modules (config_ranges,
+# palette), so this module still compiles identically on the native and JS
+# backends and pulls no DOM/JsObject code in transitively.
+#
 # ==============================================================================
 
 import std/json
+import config_ranges
+import palette
+
+# The clamp bounds ARE the live slider ranges: ui.nim's configSlider
+# registrations read the same constants, so the preset schema and the UI
+# cannot disagree about what values are representable.
+export config_ranges
 
 # ==============================================================================
 # SECTION 1: SCHEMA VERSION
@@ -81,6 +92,9 @@ type
     forceModel*: int
     expRepulsionAlpha*: float
     expAttractionBeta*: float
+    glowRadiusScale*: float
+    glowFalloff*: float
+    glowWarmth*: float
 
   Preset* = object
     ## The full persisted shape: `{schemaVersion, name, createdAt, mode,
@@ -105,58 +119,15 @@ type
 # ==============================================================================
 # SECTION 3: CLAMP RANGES
 #
-# Derived from the live sliders in web/index.html (range) and the defaults
-# in src/config.nim's createConfig() (value). Exported so a future
-# preset_store/UI layer can reuse the same bounds instead of redefining
-# them. See the file-level note on `trailLength` below for the one place
-# these two sources disagreed and how it was resolved.
+# The slider-backed bounds live in config_ranges.nim (imported and
+# re-exported above) — the same constants ui.nim's configSlider
+# registrations read, so the preset schema clamps to exactly what the UI
+# can produce. Only bounds with no slider are defined here.
 # ==============================================================================
 
 const
-  PARTICLE_COUNT_MIN* = 1000
-  PARTICLE_COUNT_MAX* = 64000       ## web/index.html#particleCount slider.
-  SPECIES_COUNT_MIN* = 2
-  SPECIES_COUNT_MAX* = 6            ## web/index.html#speciesCount slider; matches MAX_SPECIES.
-  INTERACTION_RADIUS_MIN* = 20
-  INTERACTION_RADIUS_MAX* = 120     ## web/index.html#interactionRadius slider.
-  FORCE_STRENGTH_MIN* = 0.1
-  FORCE_STRENGTH_MAX* = 3.0         ## web/index.html#forceStrength slider.
-  FRICTION_MIN* = 0.01
-  FRICTION_MAX* = 0.2               ## web/index.html#friction slider.
-  RULE_TEMPERATURE_MIN* = 0.1
-  RULE_TEMPERATURE_MAX* = 0.6       ## web/index.html#ruleTemperature slider.
-  TIME_SCALE_MIN* = 0.0
-  TIME_SCALE_MAX* = 2.0             ## web/index.html#timeScale slider.
-  PARTICLE_SIZE_MIN* = 1
-  PARTICLE_SIZE_MAX* = 20
-    ## No HTML slider exposes particleSize today (default 3 comes from
-    ## config.nim and render_state.nim only). Range chosen to comfortably
-    ## bound the default with headroom; the only other constraint found
-    ## is webgpu_render.nim's `float32(particleSize + 1)` screen-space
-    ## quad half-size, which imposes no documented ceiling. Fork decision.
-  TRAIL_LENGTH_MIN* = 0.0
-    ## web/index.html#trailLength's own slider bounds are [0.5, 0.99], but
-    ## config.nim's default is 0.0 ("0 = no trails" per its comment) —
-    ## outside that slider's range. Rather than clamp the documented
-    ## default out of its own valid range, the minimum is widened to 0.0
-    ## so both sources' stated defaults stay valid. Fork decision.
-  TRAIL_LENGTH_MAX* = 0.99          ## web/index.html#trailLength slider.
-  GLOW_INTENSITY_MIN* = 0.0
-  GLOW_INTENSITY_MAX* = 3.0         ## web/index.html#glowIntensity slider.
-  VELOCITY_GLOW_SCALE_MIN* = 0.0
-  VELOCITY_GLOW_SCALE_MAX* = 3.0    ## web/index.html#velocityGlowScale slider.
-  MAX_VELOCITY_MIN* = 0.0
-  MAX_VELOCITY_MAX* = 100.0         ## web/index.html#maxVelocity slider.
-  REPULSION_END_MIN* = 0.1
-  REPULSION_END_MAX* = 0.9          ## web/index.html#repulsionEnd slider.
-  ATTRACTION_PEAK_MIN* = 0.5
-  ATTRACTION_PEAK_MAX* = 0.95       ## web/index.html#attractionPeak slider.
   FORCE_MODEL_MIN* = 0
   FORCE_MODEL_MAX* = 1              ## 0=polynomial, 1=exponential (config.nim comment).
-  EXP_REPULSION_ALPHA_MIN* = 1.0
-  EXP_REPULSION_ALPHA_MAX* = 15.0   ## web/index.html#expRepulsionAlpha slider.
-  EXP_ATTRACTION_BETA_MIN* = 1.0
-  EXP_ATTRACTION_BETA_MAX* = 10.0   ## web/index.html#expAttractionBeta slider.
   MATRIX_VALUE_MIN* = -1.0
   MATRIX_VALUE_MAX* = 1.0
     ## Matches src/ui/state/matrix_state.MATRIX_MIN_VALUE/MAX_VALUE.
@@ -165,20 +136,22 @@ const
   PALETTE_CHANNEL_MIN* = 0.0
   PALETTE_CHANNEL_MAX* = 1.0        ## Each RGB channel, matching config.nim's COLORS values.
 
+static:
+  doAssert MAX_SPECIES == SPECIES_COUNT_MAX,
+    "preset array sizing and the species slider ceiling must agree"
+
 const DEFAULT_MODE* = "particle-life"
 const DEFAULT_PRESET_NAME* = "Untitled Preset"
 
-const DEFAULT_PALETTE*: Palette = [
-  ## Verbatim copy of config.nim SECTION 7's COLORS, regrouped into
-  ## per-species triples. Duplicated rather than imported for the same
-  ## reason as MATRIX_VALUE_MIN/MAX above: config.nim depends on JsObject.
-  [1.0, 0.4, 0.4],   # Species 0: Red
-  [0.4, 1.0, 0.4],   # Species 1: Green
-  [0.4, 0.7, 1.0],   # Species 2: Blue
-  [1.0, 1.0, 0.4],   # Species 3: Yellow
-  [1.0, 0.4, 1.0],   # Species 4: Magenta
-  [0.4, 1.0, 1.0]    # Species 5: Cyan
-]
+func openColorDefaultPalette(): Palette =
+  ## The default palette is palette.nim's Open Color swatch set — the same
+  ## source config.nim initializes COLORS from — regrouped into the
+  ## per-species triples the preset schema stores.
+  for speciesIndex in 0 ..< MAX_SPECIES:
+    let swatch = OPEN_COLOR_SWATCHES[speciesIndex]
+    result[speciesIndex] = [swatch.red, swatch.green, swatch.blue]
+
+const DEFAULT_PALETTE*: Palette = openColorDefaultPalette()
 
 # ==============================================================================
 # SECTION 4: DEFAULTS
@@ -204,7 +177,10 @@ func defaultSettings*(): PresetSettings =
     attractionPeak: 0.75,
     forceModel: 0,
     expRepulsionAlpha: 6.0,
-    expAttractionBeta: 3.0
+    expAttractionBeta: 3.0,
+    glowRadiusScale: 3.0,
+    glowFalloff: 6.0,
+    glowWarmth: 0.4
   )
 
 func defaultMatrix*(): Matrix =
@@ -315,6 +291,12 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "expRepulsionAlpha").getFloat(defaults.expRepulsionAlpha), EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX)
   result.expAttractionBeta = clampFloat(
     field(node, "expAttractionBeta").getFloat(defaults.expAttractionBeta), EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX)
+  result.glowRadiusScale = clampFloat(
+    field(node, "glowRadiusScale").getFloat(defaults.glowRadiusScale), GLOW_RADIUS_SCALE_MIN, GLOW_RADIUS_SCALE_MAX)
+  result.glowFalloff = clampFloat(
+    field(node, "glowFalloff").getFloat(defaults.glowFalloff), GLOW_FALLOFF_MIN, GLOW_FALLOFF_MAX)
+  result.glowWarmth = clampFloat(
+    field(node, "glowWarmth").getFloat(defaults.glowWarmth), GLOW_WARMTH_MIN, GLOW_WARMTH_MAX)
 
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
@@ -445,6 +427,9 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["forceModel"] = %settings.forceModel
   result["expRepulsionAlpha"] = %settings.expRepulsionAlpha
   result["expAttractionBeta"] = %settings.expAttractionBeta
+  result["glowRadiusScale"] = %settings.glowRadiusScale
+  result["glowFalloff"] = %settings.glowFalloff
+  result["glowWarmth"] = %settings.glowWarmth
 
 proc toJson*(preset: Preset): JsonNode =
   result = newJObject()

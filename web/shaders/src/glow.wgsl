@@ -1,10 +1,11 @@
 // =============================================================================
-// GLOW SHADER - larger particles with Gaussian falloff (AoS layout)
+// GLOW SHADER - species-tinted halos with Gaussian falloff (AoS layout)
 // =============================================================================
 // Additive-blended halo pass, drawn in the present pass behind the trail
 // blit. Reads the same particles/RenderParams/colors bindings as render.wgsl
-// (colors is bound but unused here - required for the shared bind group
-// layout) so the two pipelines can share one bind group.
+// so the two pipelines can share one bind group. colors is read in the
+// vertex stage only (binding 2 has vertex-only visibility) and the species
+// tint is interpolated to the fragment.
 // =============================================================================
 
 //! import particle
@@ -22,13 +23,14 @@ const OFFSETS = array<vec2f, 6>(
 // AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
-@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Unused by glow, required for shared layout
+@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors (vertex-only visibility)
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) offset: vec2f,
   @location(1) densityVal: f32,
   @location(2) velocityNorm: f32,  // Normalized velocity magnitude [0,1]
+  @location(3) tint: vec3f,        // Species color, interpolated to the fragment
 };
 
 // ==========================================================================
@@ -47,23 +49,26 @@ struct VertexOutput {
 //
 // ==========================================================================
 
+// Curve constants are substituted by the bundler from shader_config.nim's
+// TuningConstants (the TUNABLE_GLOW_ placeholder family). The halo radius
+// scale, falloff exponent, and warmth ceiling are runtime uniforms instead
+// (params.glowRadiusScale / glowFalloff / glowWarmth - user-facing sliders).
+
 // VELOCITY → GLOW MAPPING
-const VELOCITY_LOG_SCALE: f32 = 5.0;  // Lower = more room for slow velocities
-const VELOCITY_BASE: f32 = 0.5;       // Floor for stationary particles (< 1 = dimmer)
+const VELOCITY_LOG_SCALE: f32 = {{TUNABLE_GLOW_VELOCITY_LOG_SCALE}};  // Lower = more room for slow velocities
+const VELOCITY_BASE: f32 = {{TUNABLE_GLOW_VELOCITY_BASE}};            // Floor for stationary particles (< 1 = dimmer)
 
 // DENSITY → GLOW MAPPING
-const DENSITY_SCALE: f32 = 0.15;
-const DENSITY_MIN: f32 = 0.05;        // Sparse particles dim but visible
-const DENSITY_MAX: f32 = 1.0;
+const DENSITY_SCALE: f32 = {{TUNABLE_GLOW_DENSITY_SCALE}};
+const DENSITY_MIN: f32 = {{TUNABLE_GLOW_DENSITY_MIN}};                // Sparse particles dim but visible
+const DENSITY_MAX: f32 = {{TUNABLE_GLOW_DENSITY_MAX}};
 
 // GAUSSIAN FALLOFF
-const GLOW_FALLOFF: f32 = 6.0;        // Higher = tighter halo
-const GLOW_DIVISOR: f32 = 24.0;       // Overall intensity scaling
+const GLOW_DIVISOR: f32 = {{TUNABLE_GLOW_DIVISOR}};                   // Overall intensity scaling
 
-// COLOR WARMTH (dense → warm orange, sparse → neutral)
-const WARMTH_MAX: f32 = 0.4;
-const WARMTH_GREEN: f32 = 0.3;
-const WARMTH_BLUE: f32 = 0.6;
+// COLOR WARMTH (dense → warm, sparse → neutral; ceiling is params.glowWarmth)
+const WARMTH_GREEN: f32 = {{TUNABLE_GLOW_WARMTH_GREEN}};
+const WARMTH_BLUE: f32 = {{TUNABLE_GLOW_WARMTH_BLUE}};
 
 @vertex
 fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
@@ -81,13 +86,17 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   output.velocityNorm = velocityNorm;
 
   // Glow radius coupled to velocity and sweep
-  // At sweep=0 or velocity=0: radius = 12.0
-  // At sweep=1 and max velocity: radius = 18.0 (50% boost)
+  // At sweep=0 or velocity=0: radius = baseSize * glowRadiusScale
+  // At sweep=1 and max velocity: 50% larger
   let scale = params.resolution / params.worldSize;
-  let baseRadius = 12.0;
+  let baseRadius = params.baseSize * params.glowRadiusScale;
   let velocityBoost = velocityNorm * params.velocityGlowScale * 0.5;
   let glowRadius = baseRadius * (1.0 + velocityBoost);
   let worldPos = p.pos + offset * glowRadius / scale;
+
+  // Species tint (colors has vertex-only visibility; interpolate to fragment)
+  let speciesIndex = min(p.species, MAX_SPECIES - 1u);
+  output.tint = colors[speciesIndex].rgb;
 
   let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
 
@@ -139,13 +148,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
   // Gaussian falloff gives the soft interior gradient; the circle mask gives the
   // crisp anti-aliased disc edge so nothing renders outside the circular boundary.
-  let gauss = exp(-GLOW_FALLOFF * l * l);
+  let gauss = exp(-params.glowFalloff * l * l);
   let alpha = gauss * circleMask * params.glowIntensity * densityFactor * velocityFactor / GLOW_DIVISOR;
 
-  // Color shift: dense particles glow warm, fast particles glow white
-  let warmth = densityFactor * WARMTH_MAX;
-  let r = alpha;
-  let g = alpha * (1.0 - warmth * WARMTH_GREEN);
-  let b = alpha * (1.0 - warmth * WARMTH_BLUE);
-  return vec4f(r, g, b, alpha);
+  // Color: the species tint carries the halo. Fast particles bleach toward
+  // white; dense particles warm-shift (attenuating green/blue) up to the
+  // params.glowWarmth ceiling.
+  let whitened = mix(input.tint, vec3f(1.0, 1.0, 1.0), input.velocityNorm);
+  let warmth = densityFactor * params.glowWarmth;
+  let warmShift = vec3f(1.0, 1.0 - warmth * WARMTH_GREEN, 1.0 - warmth * WARMTH_BLUE);
+  return vec4f(whitened * warmShift * alpha, alpha);
 }

@@ -12,9 +12,52 @@
 
 import std/unittest
 import std/json
+import ../src/memory_layout
 import ../src/preset
 
 const PRESET_TESTS_LOADED* = true
+
+# ==============================================================================
+# CLAMP BOUNDS TRACK THE LIVE SLIDER REGISTRATIONS
+# ==============================================================================
+
+suite "Clamp Bounds Are The Live Slider Ranges":
+  # STRUCTURE: preset.nim re-exports config_ranges.nim, the same module
+  # ui.nim's configSlider registrations read — so preset bounds and UI ranges
+  # agree by construction, not by mirrored literals. What remains testable
+  # here are the relations between independent sources.
+
+  test "the particle ceiling is the buffer allocation limit, not a stale UI copy":
+    # The bug this replaces: preset bounds pinned to dead web/index.html
+    # attributes (a 64000 ceiling against a live 128000 slider).
+    check PARTICLE_COUNT_MAX == memory_layout.MAX_PARTICLES
+
+  test "the species ceiling equals the preset's own array sizing":
+    check SPECIES_COUNT_MAX == preset.MAX_SPECIES
+
+  test "every documented default lies inside its own clamp range":
+    let defaults = defaultSettings()
+    check defaults.particleCount == clamp(defaults.particleCount, PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX)
+    check defaults.glowRadiusScale == clamp(defaults.glowRadiusScale, GLOW_RADIUS_SCALE_MIN, GLOW_RADIUS_SCALE_MAX)
+    check defaults.glowFalloff == clamp(defaults.glowFalloff, GLOW_FALLOFF_MIN, GLOW_FALLOFF_MAX)
+    check defaults.glowWarmth == clamp(defaults.glowWarmth, GLOW_WARMTH_MIN, GLOW_WARMTH_MAX)
+
+  test "glow knob defaults mirror config.nim's createConfig":
+    let defaults = defaultSettings()
+    check defaults.glowRadiusScale == 3.0
+    check defaults.glowFalloff == 6.0
+    check defaults.glowWarmth == 0.4
+
+  test "out-of-range glow knobs clamp instead of rejecting":
+    var node = toJson(defaultPreset())
+    node["settings"]["glowRadiusScale"] = %99.0
+    node["settings"]["glowFalloff"] = %(-1.0)
+    node["settings"]["glowWarmth"] = %2.0
+    let loaded = validate(node)
+    check loaded.isOk
+    check loaded.preset.settings.glowRadiusScale == GLOW_RADIUS_SCALE_MAX
+    check loaded.preset.settings.glowFalloff == GLOW_FALLOFF_MIN
+    check loaded.preset.settings.glowWarmth == GLOW_WARMTH_MAX
 
 # ==============================================================================
 # ROUND-TRIP CONTRACT
@@ -53,6 +96,9 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.forceModel = 1
     customPreset.settings.expRepulsionAlpha = 10.0
     customPreset.settings.expAttractionBeta = 7.5
+    customPreset.settings.glowRadiusScale = 5.0
+    customPreset.settings.glowFalloff = 9.0
+    customPreset.settings.glowWarmth = 0.7
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
         (if matrixIndex mod 2 == 0: 0.5 else: -0.5)
@@ -74,7 +120,7 @@ suite "Preset Round-Trip Contract":
     check node["matrix"].kind == JArray
     check node["matrix"].len == MATRIX_LEN
     check node["palette"].kind == JArray
-    check node["palette"].len == MAX_SPECIES
+    check node["palette"].len == preset.MAX_SPECIES
 
 # ==============================================================================
 # SCHEMA VERSION CONTRACT

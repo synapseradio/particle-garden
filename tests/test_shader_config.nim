@@ -11,7 +11,7 @@
 #
 # ==============================================================================
 
-import std/unittest
+import std/[strutils, tables, unittest]
 import ../src/shader_config
 
 const SHADER_CONFIG_TESTS_LOADED* = true
@@ -50,3 +50,34 @@ suite "Tunable Constants Stay In Physical Range":
     # Documents the fall-through: an unknown name yields 0.0, which callers must
     # not feed into a division. Pinned so the fall-through cannot change silently.
     check getTunableFloat("NOT_A_REAL_CONSTANT") == 0.0
+
+
+const glowTunables = [
+  ## The glow curve constants glow.wgsl consumes as {{TUNABLE_GLOW_*}}
+  ## placeholders, with the defaults that reproduce the shader's former
+  ## hard-coded values (glow.wgsl's retired const block).
+  ("GLOW_VELOCITY_LOG_SCALE", 5.0),
+  ("GLOW_VELOCITY_BASE", 0.5),
+  ("GLOW_DENSITY_SCALE", 0.15),
+  ("GLOW_DENSITY_MIN", 0.05),
+  ("GLOW_DENSITY_MAX", 1.0),
+  ("GLOW_DIVISOR", 24.0),
+  ("GLOW_WARMTH_GREEN", 0.3),
+  ("GLOW_WARMTH_BLUE", 0.6),
+]
+
+suite "Glow Tunables Feed The Bundler":
+  test "getTunableFloat resolves every glow curve constant to its appearance-preserving default":
+    # CONTRACT: these defaults must equal the constants glow.wgsl hard-coded
+    # before S1, or the default visuals change silently.
+    for (name, expected) in glowTunables:
+      check getTunableFloat(name) == expected
+
+  test "getPlaceholderMap emits a WGSL float literal for every TUNABLE_GLOW_ placeholder":
+    # WHY: a bare "24" substituted into WGSL where f32 is expected is an
+    # abstract-int that can fail type checking; the map must format floats.
+    let placeholders = getPlaceholderMap()
+    for (name, expected) in glowTunables:
+      let placeholderName = "TUNABLE_" & name
+      check placeholderName in placeholders
+      check "." in placeholders[placeholderName]

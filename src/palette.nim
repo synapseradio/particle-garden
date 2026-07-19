@@ -34,6 +34,9 @@ type
     psSpectrum  ## Hues evenly spaced across the full 360-degree wheel.
     psWarm      ## Hues confined to magenta-red-orange-yellow.
     psCool      ## Hues confined to green-cyan-blue-violet.
+    psOpenColor ## Fixed bright swatches from the Open Color palette
+                ## (https://yeun.github.io/open-color/); saturation and
+                ## lightness arguments are inert for this scheme.
 
   RgbColor* = tuple[red, green, blue: float]
     ## One color as RGB channels, each in [0, 1]. The palette serialization
@@ -61,6 +64,22 @@ const
   COOL_HUE_SPREAD* = 1.0 / 3.0    # 120 deg: covers green(150) through violet(270)
     ## Warm and cool are symmetric 120-degree arcs on opposite sides of the
     ## wheel; together they cover 240 of 360 degrees and never overlap.
+
+func rgbFrom8Bit(red8, green8, blue8: int): RgbColor =
+  ## An RGB tuple from 8-bit channel values, e.g. a hex swatch's bytes.
+  (red: red8.float / 255.0, green: green8.float / 255.0, blue: blue8.float / 255.0)
+
+const OPEN_COLOR_SWATCHES*: array[6, RgbColor] = [
+  ## Bright picks from the Open Color palette, verified against the canonical
+  ## open-color.json, ordered to keep the classic species identities
+  ## (red, green, blue, yellow, magenta-slot, cyan).
+  rgbFrom8Bit(0xff, 0x6b, 0x6b),  # red-5
+  rgbFrom8Bit(0x51, 0xcf, 0x66),  # green-5
+  rgbFrom8Bit(0x33, 0x9a, 0xf0),  # blue-5
+  rgbFrom8Bit(0xff, 0xd4, 0x3b),  # yellow-4
+  rgbFrom8Bit(0xcc, 0x5d, 0xe8),  # grape-5
+  rgbFrom8Bit(0x3b, 0xc9, 0xdb),  # cyan-4
+]
 
 # ==============================================================================
 # SECTION 3: HSL -> RGB CONVERSION
@@ -114,7 +133,7 @@ func hueRangeFor(scheme: PaletteScheme): tuple[start, spread: float] =
   case scheme
   of psWarm: (start: WARM_HUE_START, spread: WARM_HUE_SPREAD)
   of psCool: (start: COOL_HUE_START, spread: COOL_HUE_SPREAD)
-  of psGolden, psSpectrum: (start: 0.0, spread: 1.0)
+  of psGolden, psSpectrum, psOpenColor: (start: 0.0, spread: 1.0)
 
 func hueAt(scheme: PaletteScheme, index, count: int): float =
   ## The hue (wheel fraction) for the color at `index` of `count` under `scheme`.
@@ -130,6 +149,10 @@ func hueAt(scheme: PaletteScheme, index, count: int): float =
     let arcPosition = if count <= 1: 0.0 else: index.float / (count - 1).float
     result = start + arcPosition * spread
     result -= floor(result)
+  of psOpenColor:
+    # Fixed swatches, not hue-generated; generatePalette never consults
+    # hueAt for this scheme. Guarded here so a future call path fails loudly.
+    raise newException(ValueError, "psOpenColor has no hue sequence")
 
 # ==============================================================================
 # SECTION 5: PALETTE GENERATION
@@ -148,6 +171,13 @@ func generatePalette*(count: int, scheme: PaletteScheme = psGolden;
     return @[]
 
   result = newSeq[RgbColor](count)
+  if scheme == psOpenColor:
+    # Fixed swatch picks: truncate below six, wrap above. Saturation and
+    # lightness are inert (documented on the enum).
+    for colorIndex in 0 ..< count:
+      result[colorIndex] = OPEN_COLOR_SWATCHES[colorIndex mod OPEN_COLOR_SWATCHES.len]
+    return
+
   for colorIndex in 0 ..< count:
     let hue = hueAt(scheme, colorIndex, count)
     result[colorIndex] = hslToRgb(hue, saturation, lightness)

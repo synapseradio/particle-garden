@@ -18,7 +18,7 @@ struct RenderParams {
   velocityGlowScale: f32,  // 0=off, 1=full velocity influence
   maxVelocity: f32,        // For velocity normalization
   trailLengthScale: f32,   // Motion blur elongation factor (0 = no blur; unused by glow)
-  _pad1: f32,
-  _pad2: f32,
-  _pad3: f32,
+  glowRadiusScale: f32,    // Glow halo radius = baseSize * this (unused by render)
+  glowFalloff: f32,        // Gaussian falloff exponent, higher = tighter halo (unused by render)
+  glowWarmth: f32,         // Density-driven warm shift, [0,1] (unused by render)
 };
