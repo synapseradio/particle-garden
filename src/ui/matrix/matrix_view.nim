@@ -11,16 +11,16 @@
 
 when defined(js):
   from std/dom import
-    Element, Event, getElementById, querySelectorAll, forEach, addEventListener
+    Element, Event, getElementById, querySelectorAll
 
-  from std/jsffi import JsObject
+  from std/jsffi import `[]`
 
   from ../../bindings/dom_extensions import
-    HTMLElement, HTMLInputElement, dataset
+    HTMLElement, HTMLInputElement, dataset, forEach, addEventListener
 
   from ../../bindings/typed_arrays import Float32Array, `[]`, `[]=`
 
-  from ../../bindings/js_interop import jsRandom, jsAbs
+  from ../../bindings/js_interop import gaussian
 
   import ../state/matrix_state
 
@@ -28,10 +28,9 @@ when defined(js):
   # SECTION 1: JS FFI
   # ============================================================================
 
-  proc parseFloatJS(s: cstring): float {.importjs: "parseFloat(#)".}
-  proc parseIntJS(s: cstring, radix: int): int {.importjs: "parseInt(#, #)".}
-  proc isNaN(x: float): bool {.importjs: "isNaN(#)".}
-  proc toFixed(x: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
+  proc parseFloatJS(text: cstring): float {.importjs: "parseFloat(#)".}
+  proc parseIntJS(text: cstring, radix: int): int {.importjs: "parseInt(#, #)".}
+  proc isNaN(value: float): bool {.importjs: "isNaN(#)".}
 
   # ============================================================================
   # SECTION 2: MATRIX EDITOR
@@ -65,13 +64,14 @@ when defined(js):
   # SECTION 3: CELL UPDATE
   # ============================================================================
 
+  proc render*(editor: MatrixEditor)
+
   proc updateCell*(editor: MatrixEditor; row, col: int; inputEl: HTMLInputElement) =
     ## Update a single matrix cell from input value.
-    let v = parseFloatJS(inputEl.value)
-    if not isNaN(v):
-      let clamped = clampMatrixValue(v)
-      let idx = matrixIndex(row, col)
-      editor.matrix[idx] = clamped
+    let parsedValue = parseFloatJS(inputEl.value)
+    if not isNaN(parsedValue):
+      let clamped = clampMatrixValue(parsedValue)
+      editor.matrix[matrixIndex(row, col)] = clamped
 
       # Update cell background color
       let color = cellColorFromValue(clamped)
@@ -86,13 +86,14 @@ when defined(js):
   # SECTION 4: RANDOMIZE
   # ============================================================================
 
-  proc randomize*(editor: MatrixEditor) =
-    ## Randomize all matrix values.
-    let ns = editor.speciesCount[]
-    for i in 0 ..< ns:
-      for j in 0 ..< ns:
-        let idx = matrixIndex(i, j)
-        editor.matrix[idx] = jsRandom() * 2.0 - 1.0
+  proc randomize*(editor: MatrixEditor; sigma: float) =
+    ## Randomize all matrix values with the bell-curve rule sampler: gaussian
+    ## draws scaled by sigma (CONFIG.ruleTemperature), rejection-sampled into
+    ## [-1, 1] by matrix_state.sampleRuleValue.
+    let activeSpecies = editor.speciesCount[]
+    for row in 0 ..< activeSpecies:
+      for col in 0 ..< activeSpecies:
+        editor.matrix[matrixIndex(row, col)] = sampleRuleValue(sigma, gaussian)
 
     # Refresh display and trigger callback
     editor.render()
@@ -104,58 +105,35 @@ when defined(js):
   # ============================================================================
 
   proc render*(editor: MatrixEditor) =
-    ## Render the matrix grid to DOM.
+    ## Render the matrix grid to DOM. Markup comes from matrix_state's pure
+    ## builders; this proc only copies buffer views, sets innerHTML, and
+    ## attaches the change listeners.
     let container = cast[HTMLElement](getElementById(cstring(editor.containerId)))
     if container.isNil:
       return
 
-    let ns = editor.speciesCount[]
-    container.style.gridTemplateColumns = cstring("repeat(" & $(ns + 1) & ", 1fr)")
+    let activeSpecies = editor.speciesCount[]
+    container.style.gridTemplateColumns = cstring(gridTemplateColumns(activeSpecies))
 
-    # Build HTML
-    var html = "<div class=\"matrix-cell matrix-header\"></div>"
+    var values = newSeq[float](MATRIX_SIZE * MATRIX_SIZE)
+    for valueIndex in 0 ..< values.len:
+      values[valueIndex] = editor.matrix[valueIndex]
+    var colorChannels = newSeq[float](activeSpecies * 3)
+    for channelIndex in 0 ..< colorChannels.len:
+      colorChannels[channelIndex] = editor.colors[channelIndex]
 
-    # Column headers (species colors)
-    for j in 0 ..< ns:
-      let c = j * 3
-      let r = int(editor.colors[c] * 255.0)
-      let g = int(editor.colors[c + 1] * 255.0)
-      let b = int(editor.colors[c + 2] * 255.0)
-      html &= "<div class=\"matrix-cell matrix-header\" style=\"background:rgba(" &
-              $r & "," & $g & "," & $b & ",0.5)\"></div>"
-
-    # Matrix rows
-    for i in 0 ..< ns:
-      # Row header
-      let c = i * 3
-      let r = int(editor.colors[c] * 255.0)
-      let g = int(editor.colors[c + 1] * 255.0)
-      let b = int(editor.colors[c + 2] * 255.0)
-      html &= "<div class=\"matrix-cell matrix-header\" style=\"background:rgba(" &
-              $r & "," & $g & "," & $b & ",0.5)\"></div>"
-
-      # Matrix cells
-      for j in 0 ..< ns:
-        let idx = matrixIndex(i, j)
-        let v = editor.matrix[idx]
-        let color = cellColorFromValue(v)
-        html &= "<div class=\"matrix-cell\" style=\"background:" & toHslaString(color) & "\">" &
-                "<input type=\"number\" step=\"0.1\" value=\"" & $toFixed(v, 2) & "\" " &
-                "data-row=\"" & $i & "\" data-col=\"" & $j & "\">" &
-                "</div>"
-
-    container.innerHTML = cstring(html)
+    container.innerHTML = cstring(matrixGridHtml(values, colorChannels, activeSpecies))
 
     # Attach event listeners
     let inputs = container.querySelectorAll("input[type=\"number\"]")
     let editorRef = editor  # Capture for closure
     inputs.forEach(proc(input: Element) =
       let inputEl = cast[HTMLInputElement](input)
-      inputEl.addEventListener("change", proc(e: Event) =
-        let target = cast[HTMLElement](e.target)
-        let ds = target.dataset()
-        let row = parseIntJS(cast[cstring](ds["row"]), 10)
-        let col = parseIntJS(cast[cstring](ds["col"]), 10)
-        editorRef.updateCell(row, col, cast[HTMLInputElement](e.target))
+      inputEl.addEventListener("change", proc(changeEvent: Event) =
+        let target = cast[HTMLElement](changeEvent.target)
+        let coords = target.dataset()
+        let row = parseIntJS(cast[cstring](coords["row"]), 10)
+        let col = parseIntJS(cast[cstring](coords["col"]), 10)
+        editorRef.updateCell(row, col, cast[HTMLInputElement](changeEvent.target))
       )
     )

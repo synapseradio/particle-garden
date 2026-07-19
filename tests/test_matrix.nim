@@ -9,7 +9,7 @@
 #
 # ==============================================================================
 
-import std/unittest
+import std/[strutils, unittest]
 import ../src/ui/state/matrix_state
 
 # Exported symbol for test_all.nim to reference
@@ -192,3 +192,91 @@ suite "Species Color - String Conversion":
   test "toRgbaString format":
     let c = SpeciesColor(r: 255, g: 128, b: 0, alpha: 0.5)
     check toRgbaString(c) == "rgba(255,128,0,0.5)"
+
+# ==============================================================================
+# RULE RANDOMIZATION - REJECTION SAMPLING
+# ==============================================================================
+#
+# sampleRuleValue is the pure core of the matrix randomizer: it scales draws
+# from an injected standard-normal source by sigma (CONFIG.ruleTemperature)
+# and rejects any product outside [-1, 1], preserving the bell shape instead
+# of piling clamped mass onto the boundaries.
+
+proc scriptedSampler(draws: seq[float]): proc(): float =
+  ## Deterministic stand-in for gaussian(): yields the scripted draws in
+  ## order and fails the test if the code under test over-draws.
+  var cursor = 0
+  let captured = draws
+  result = proc(): float =
+    doAssert cursor < captured.len, "sampler over-drawn"
+    let draw = captured[cursor]
+    inc cursor
+    draw
+
+suite "Rule Randomization - Rejection Sampling":
+  test "sampleRuleValue scales the first in-range draw by sigma":
+    check sampleRuleValue(0.3, scriptedSampler(@[0.5])) == 0.5 * 0.3
+
+  test "sampleRuleValue rejects draws that scale outside the matrix range":
+    # 5.0 * 0.5 and -4.0 * 0.5 both leave [-1, 1]; the third draw lands.
+    check sampleRuleValue(0.5, scriptedSampler(@[5.0, -4.0, 0.2])) == 0.2 * 0.5
+
+  test "sampleRuleValue accepts the range boundaries inclusively":
+    # The ui.nim loop rejected only strictly-outside products; pin that.
+    check sampleRuleValue(1.0, scriptedSampler(@[1.0])) == 1.0
+    check sampleRuleValue(1.0, scriptedSampler(@[-1.0])) == -1.0
+
+  test "sampleRuleValue result always lies within the matrix range":
+    let pattern = @[3.2, -7.7, 0.9, -0.4, 1.4, 0.05]
+    var cursor = 0
+    let cycling = proc(): float =
+      result = pattern[cursor mod pattern.len]
+      inc cursor
+    for sampleIndex in 0 ..< 20:
+      let sampled = sampleRuleValue(0.7, cycling)
+      check sampled >= MATRIX_MIN_VALUE
+      check sampled <= MATRIX_MAX_VALUE
+
+# ==============================================================================
+# MATRIX GRID HTML - PURE BUILDERS
+# ==============================================================================
+#
+# The grid markup the matrix editor renders, built as plain strings so layout
+# and formatting are natively testable; matrix_view only sets innerHTML and
+# attaches listeners.
+
+suite "Matrix Grid HTML - Pure Builders":
+  test "gridTemplateColumns spans species plus one header column":
+    check gridTemplateColumns(5) == "repeat(6, 1fr)"
+
+  test "valueCellHtml formats the value to two decimals with cell coordinates":
+    let cell = valueCellHtml(0.5, 2, 4)
+    check "value=\"0.50\"" in cell
+    check "data-row=\"2\"" in cell
+    check "data-col=\"4\"" in cell
+    check "hsla(" in cell  # background from cellColorFromValue
+
+  test "valueCellHtml keeps the sign on negative values":
+    check "value=\"-0.25\"" in valueCellHtml(-0.25, 0, 0)
+
+  test "headerCellHtml carries the species swatch":
+    let colorChannels = [1.0, 0.5, 0.0]
+    let header = headerCellHtml(speciesColorFromIndex(0, colorChannels))
+    check "rgba(255,127,0,0.5)" in header
+    check "matrix-header" in header
+
+  test "matrixGridHtml lays out headers and cells for the species count":
+    var values: array[MATRIX_SIZE * MATRIX_SIZE, float]
+    values[matrixIndex(1, 2)] = 0.75
+    let colorChannels = [0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 0.4, 0.4, 0.4]
+    let grid = matrixGridHtml(values, colorChannels, 3)
+    check grid.count("matrix-header") == 7   # corner + 3 columns + 3 rows
+    check grid.count("<input") == 9          # 3 x 3 value cells
+    check grid.count("value=\"0.75\"") == 1  # addressed via matrixIndex
+
+  test "matrixGridHtml reads values through the six-wide stride":
+    # A value parked outside the active submatrix must not leak into the grid.
+    var values: array[MATRIX_SIZE * MATRIX_SIZE, float]
+    values[matrixIndex(5, 5)] = 0.99
+    let colorChannels = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    check "0.99" notin matrixGridHtml(values, colorChannels, 2)

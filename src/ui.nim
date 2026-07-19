@@ -24,8 +24,7 @@ from std/dom import
 from std/jsffi import JsObject, toJs, `[]`, `[]=`
 
 from bindings/js_interop import
-  Console, console, log, isUndefined, isJsFunction,
-  jsRandom, jsAbs, gaussian
+  Console, console, log, isUndefined, isJsFunction
 
 from bindings/dom_extensions import
   HTMLElement, HTMLInputElement, HTMLCanvasElement,
@@ -41,7 +40,7 @@ import buffers
 # New reactive state system
 import ui/core/observable
 import ui/state/input_state
-import ui/state/matrix_state
+import ui/matrix/matrix_view
 import ui/input/mouse_handler
 import ui/input/touch_handler
 import ui/controls/slider
@@ -52,11 +51,8 @@ import ui/dom_helpers
 # ==============================================================================
 # These supplement the bindings from dom.nim and js_interop.nim
 
-proc parseIntJS(s: cstring, radix: int): int {.importjs: "parseInt(#, #)".}
-proc parseFloatJS(s: cstring): float {.importjs: "parseFloat(#)".}
-proc isNaN(x: float): bool {.importjs: "isNaN(#)".}
-proc toFixed(x: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
-proc toLocaleString(x: int): cstring {.importjs: "#.toLocaleString()".}
+proc toFixed(value: float, digits: int): cstring {.importjs: "#.toFixed(#)".}
+proc toLocaleString(value: int): cstring {.importjs: "#.toLocaleString()".}
 
 # ==============================================================================
 # SECTION 3: INPUT STATE (reactive + legacy shims)
@@ -119,7 +115,21 @@ proc setResizeCallback*(callback: proc()) {.exportc.} =
 # Forward declarations for procs used before they are defined
 proc randomizeMatrix*() {.exportc.}
 proc updateMatrixDisplay*() {.exportc.}
-proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.}
+
+# The matrix editor instance (delegates live in Section 10). The exportc
+# name forces the JS backend to assign the global its generated name up
+# front; without it, codegen of the forward-declared delegates dies with
+# "symbol has no generated name".
+var matrixEditor {.exportc: "pgMatrixEditor".}: MatrixEditor = nil
+
+proc initMatrixEditor() =
+  ## Create the matrix editor over the shared buffers. Runs first in setupUI,
+  ## so the editor exists before any slider callback can randomize or render.
+  matrixEditor = newMatrixEditor(
+    "matrixDisplay", matrix, COLORS, addr CONFIG.speciesCount)
+  matrixEditor.onUpdate = proc() =
+    if not onMatrixUpdate.isNil:
+      onMatrixUpdate()
 
 # ==============================================================================
 # SECTION 7: UI SETUP
@@ -129,6 +139,8 @@ proc setupUI*() {.exportc.} =
   ## Bind slider inputs to CONFIG values. Every range comes from
   ## config_ranges.nim — the same constants preset.nim clamps with, so the
   ## UI and the preset schema cannot drift apart.
+
+  initMatrixEditor()
 
   # Simulation sliders
   configSlider("particleCount", "particleValue",
@@ -380,109 +392,26 @@ proc setForceModel*(model: int) {.exportc.} =
 # ==============================================================================
 # SECTION 10: MATRIX UI
 # ==============================================================================
+#
+# The matrix editor lives in ui/matrix/matrix_view (DOM glue) on top of
+# ui/state/matrix_state (pure grid markup + rule sampling). The exported
+# procs below are the stable entry points app.nim and index.html call.
 
 proc setMatrixUpdateCallback*(callback: proc()) {.exportc.} =
   ## Set callback for matrix updates.
-  ## Called after randomizeMatrix() or updateMatrixRule().
+  ## Called after randomizeMatrix() or an in-grid cell edit.
   ##
   ## @param callback - Called when matrix values change
   onMatrixUpdate = callback
 
-proc updateMatrixRule*(i: int, j: int, el: JsObject) {.exportc.} =
-  ## Update a single matrix rule value.
-  ##
-  ## @param i - Row index (species that feels the force)
-  ## @param j - Column index (species that exerts the force)
-  ## @param el - The input element containing the new value
-
-  let inputEl = cast[HTMLInputElement](el)
-  let v = parseFloatJS(inputEl.value)
-  if not isNaN(v):
-    let clamped = clampMatrixValue(v)
-    matrix[matrixIndex(i, j)] = clamped
-    if not onMatrixUpdate.isNil:
-      onMatrixUpdate()
-    # Update background color using extracted function
-    let color = cellColorFromValue(clamped)
-    let parent = cast[HTMLElement](inputEl.parentElement)
-    parent.style.background = cstring(toHslaString(color))
-
 proc updateMatrixDisplay*() {.exportc.} =
-  ## Update the matrix display grid to reflect current values.
-  ## Creates editable input cells with color-coded backgrounds.
-  ## Uses pure functions from matrix_state for color calculations.
-
-  let el = cast[HTMLElement](getElementById("matrixDisplay"))
-  let ns = CONFIG.speciesCount
-  el.style.gridTemplateColumns = cstring("repeat(" & $(ns + 1) & ", 1fr)")
-
-  var html = "<div class=\"matrix-cell matrix-header\"></div>"
-
-  # Column headers (species colors)
-  for j in 0 ..< ns:
-    let c = j * 3
-    let speciesColor = SpeciesColor(
-      r: int(COLORS[c] * 255.0),
-      g: int(COLORS[c + 1] * 255.0),
-      b: int(COLORS[c + 2] * 255.0),
-      alpha: 0.5
-    )
-    html &= "<div class=\"matrix-cell matrix-header\" style=\"background:" &
-            toRgbaString(speciesColor) & "\"></div>"
-
-  # Matrix rows
-  for i in 0 ..< ns:
-    # Row header (species color)
-    let c = i * 3
-    let speciesColor = SpeciesColor(
-      r: int(COLORS[c] * 255.0),
-      g: int(COLORS[c + 1] * 255.0),
-      b: int(COLORS[c + 2] * 255.0),
-      alpha: 0.5
-    )
-    html &= "<div class=\"matrix-cell matrix-header\" style=\"background:" &
-            toRgbaString(speciesColor) & "\"></div>"
-
-    # Matrix cells
-    for j in 0 ..< ns:
-      let v = matrix[matrixIndex(i, j)]
-      let color = cellColorFromValue(v)
-      html &= "<div class=\"matrix-cell\" style=\"background:" & toHslaString(color) & "\">" &
-              "<input type=\"number\" step=\"0.1\" value=\"" & $toFixed(v, 2) & "\" " &
-              "data-row=\"" & $i & "\" data-col=\"" & $j & "\">" &
-              "</div>"
-
-  el.innerHTML = cstring(html)
-
-  # Attach event listeners to inputs
-  let inputs = el.querySelectorAll("input[type=\"number\"]")
-  inputs.forEach(proc(input: Element) =
-    let inputEl = cast[HTMLInputElement](input)
-    inputEl.addEventListener("change", proc(e: Event) =
-      let target = cast[HTMLElement](e.target)
-      let ds = target.dataset()
-      let row = parseIntJS(cast[cstring](ds["row"]), 10)
-      let col = parseIntJS(cast[cstring](ds["col"]), 10)
-      updateMatrixRule(row, col, cast[JsObject](e.target))
-    )
-  )
+  ## Re-render the matrix editor grid from current values and colors.
+  matrixEditor.render()
 
 proc randomizeMatrix*() {.exportc.} =
   ## Randomize all values in the attraction matrix.
   ## Values range from -1 (repulsion) to +1 (attraction).
-
-  let ns = CONFIG.speciesCount
-  let sigma = CONFIG.ruleTemperature
-  for i in 0 ..< ns:
-    for j in 0 ..< ns:
-      var v = gaussian() * sigma
-      while v < -1.0 or v > 1.0:   # reject to keep the true bell shape
-        v = gaussian() * sigma
-      matrix[matrixIndex(i, j)] = v
-
-  updateMatrixDisplay()
-  if not onMatrixUpdate.isNil:
-    onMatrixUpdate()
+  matrixEditor.randomize(CONFIG.ruleTemperature)
   console.log("Matrix randomized - sample values:".toJs, matrix[0].toJs, matrix[1].toJs, matrix[6].toJs, matrix[7].toJs)
 
 # ==============================================================================

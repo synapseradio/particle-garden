@@ -7,6 +7,8 @@
 #
 # ==============================================================================
 
+import std/strutils
+
 # ==============================================================================
 # SECTION 1: CONSTANTS
 # ==============================================================================
@@ -117,3 +119,56 @@ func speciesColorFromIndex*(index: int, colors: openArray[float]): SpeciesColor 
 func toRgbaString*(c: SpeciesColor): string =
   ## Convert to CSS rgba() string.
   "rgba(" & $c.r & "," & $c.g & "," & $c.b & "," & $c.alpha & ")"
+
+# ==============================================================================
+# SECTION 6: RULE RANDOMIZATION (pure core)
+# ==============================================================================
+
+proc sampleRuleValue*(sigma: float, nextGaussian: proc(): float): float =
+  ## One matrix rule value: standard-normal draws from nextGaussian scaled by
+  ## sigma, rejecting any product outside [MATRIX_MIN_VALUE, MATRIX_MAX_VALUE]
+  ## (boundaries accepted). Rejection keeps the true bell shape instead of
+  ## piling clamped mass onto the boundaries.
+  result = nextGaussian() * sigma
+  while result < MATRIX_MIN_VALUE or result > MATRIX_MAX_VALUE:
+    result = nextGaussian() * sigma
+
+# ==============================================================================
+# SECTION 7: GRID HTML (pure builders)
+# ==============================================================================
+#
+# The matrix editor's grid markup as plain strings, so layout and formatting
+# are natively testable. matrix_view sets innerHTML and attaches listeners.
+
+const CORNER_CELL_HTML* = "<div class=\"matrix-cell matrix-header\"></div>"
+
+func gridTemplateColumns*(speciesCount: int): string =
+  ## CSS grid-template-columns for speciesCount species plus the header column.
+  "repeat(" & $(speciesCount + 1) & ", 1fr)"
+
+func headerCellHtml*(swatch: SpeciesColor): string =
+  ## A header cell carrying a species color swatch.
+  "<div class=\"matrix-cell matrix-header\" style=\"background:" &
+    toRgbaString(swatch) & "\"></div>"
+
+func valueCellHtml*(value: float; row, col: int): string =
+  ## An editable value cell: two-decimal value, color-coded background,
+  ## data-row/data-col coordinates for the change listener.
+  let background = toHslaString(cellColorFromValue(value))
+  "<div class=\"matrix-cell\" style=\"background:" & background & "\">" &
+    "<input type=\"number\" step=\"0.1\" value=\"" &
+    formatFloat(value, ffDecimal, 2) & "\" " &
+    "data-row=\"" & $row & "\" data-col=\"" & $col & "\">" &
+    "</div>"
+
+func matrixGridHtml*(values, colors: openArray[float]; speciesCount: int): string =
+  ## The full grid: corner, column headers, then one header + speciesCount
+  ## value cells per row. values uses the six-wide matrixIndex stride; colors
+  ## is interleaved RGB, three floats per species.
+  result = CORNER_CELL_HTML
+  for headerCol in 0 ..< speciesCount:
+    result &= headerCellHtml(speciesColorFromIndex(headerCol, colors))
+  for row in 0 ..< speciesCount:
+    result &= headerCellHtml(speciesColorFromIndex(row, colors))
+    for col in 0 ..< speciesCount:
+      result &= valueCellHtml(values[matrixIndex(row, col)], row, col)
