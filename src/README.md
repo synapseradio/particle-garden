@@ -117,8 +117,7 @@ Runs in Browser (nim js → web/app.js):
 ┌────────────────────────────────────────────────┐
 │  Browser Integration                           │
 │  ├─ ui.nim          Sliders, mouse, matrix UI  │
-│  ├─ grid.nim        Spatial grid dimensions    │
-│  └─ renderer.nim    WebGL fallback             │
+│  └─ grid.nim        Spatial grid dimensions    │
 └────────────────────────────────────────────────┘
 
 bindings/           Nim wrappers for browser APIs
@@ -126,8 +125,7 @@ bindings/           Nim wrappers for browser APIs
 ├─ typed_arrays.nim Float32Array, Uint32Array, etc.
 ├─ dom_extensions.nim Canvas, element utilities
 ├─ js_interop.nim   Console, random, JS helpers
-├─ window.nim       requestAnimationFrame, timing
-└─ webgl.nim        WebGL API (fallback renderer)
+└─ window.nim       requestAnimationFrame, timing
 ```
 
 ## Where to Start

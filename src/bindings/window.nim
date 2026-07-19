@@ -72,7 +72,7 @@ proc outerWidth*(w: Window): int {.importjs: "#.outerWidth".}
 proc outerHeight*(w: Window): int {.importjs: "#.outerHeight".}
   ## Get the exterior height of the window including title bar.
 
-# Convenience procs for direct access (match renderer.nim pattern)
+# Convenience procs for direct access without going through a Window handle
 proc windowInnerWidth*(): int {.importjs: "(window.innerWidth)".}
   ## Get window inner width directly (convenience).
 

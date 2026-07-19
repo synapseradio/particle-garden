@@ -307,6 +307,11 @@ proc toggleTrails*() {.exportc.} =
   setActive("trailBtn", CONFIG.trails)
   setVisible("trailSettings", CONFIG.trails)
 
+proc showWebGPURequiredOverlay*() {.exportc.} =
+  ## Show the "WebGPU required" overlay. Called when WebGPU init or the
+  ## render/compute pipeline setup fails; WebGPU is the only pipeline.
+  show("webgpu-required")
+
 proc toggleControls*() {.exportc.} =
   ## Toggle controls panel visibility.
   ## Updates collapse button text.

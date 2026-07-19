@@ -23,7 +23,7 @@ from std/dom import Window, requestAnimationFrame
 # IMPORTANT: These imports MUST remain in layer order. Each layer depends on
 # the previous layers. Reordering (e.g., alphabetizing) will break compilation.
 #
-# Dependency chain: config → buffers → {renderer, grid, ui} → webgpu_*
+# Dependency chain: config → buffers → {grid, ui} → webgpu_*
 #
 
 # Layer 1: Configuration (no dependencies)
@@ -33,7 +33,6 @@ import config
 import buffers
 
 # Layer 3: Browser integration modules
-import renderer
 import grid
 import ui
 
@@ -75,20 +74,13 @@ proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new U
 var particleCount* {.exportc.}: int = 0
 var isRunning* {.exportc.}: bool = false
 var useWebGPU* {.exportc.}: bool = false
-var useWebGPURender* {.exportc.}: bool = false  # WebGPU rendering (no readback)
 
-# Canvas dimension helpers - use correct canvas based on active renderer
+# Canvas dimension helpers
 proc canvasWidth*(): int =
-  if useWebGPURender:
-    webgpu_render.canvas.width
-  else:
-    renderer.canvas["width"].to(int)
+  webgpu_render.canvas.width
 
 proc canvasHeight*(): int =
-  if useWebGPURender:
-    webgpu_render.canvas.height
-  else:
-    renderer.canvas["height"].to(int)
+  webgpu_render.canvas.height
 
 # Timing and stats
 var lastTime {.exportc.}: float = 0
@@ -232,15 +224,10 @@ proc loop(now: float): Future[void] {.async.} =
 
   await physics(dt)
 
-  # Render using WebGPU (zero readback) or WebGL (requires readback)
-  var renderTiming: JsObject
-  if useWebGPURender:
-    # WebGPU render path - data stays on GPU, no readback needed
-    webgpu_render.updateBindGroup()
-    renderTiming = webgpu_render.render(particleCount).toJs
-  else:
-    # WebGL render path - requires CPU data
-    renderTiming = renderer.render(particleCount)
+  # Render using WebGPU - data stays on GPU, no readback needed. Render/glow
+  # bind groups are built once at init (webgpu_render.initWebGPURender);
+  # nothing about them varies per frame, so they are never rebuilt here.
+  let renderTiming = webgpu_render.render(particleCount).toJs
   currentTiming.renderPackTimeMs = renderTiming["packTimeMs"].to(float)
   currentTiming.renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
 
@@ -296,6 +283,7 @@ proc init(): Future[void] {.async, exportc.} =
   if not webgpuResult["success"].to(bool):
     consoleError(toJs("WebGPU initialization failed:"), webgpuResult["error"])
     consoleError(toJs("This application requires WebGPU. Please use a browser with WebGPU support."))
+    ui.showWebGPURequiredOverlay()
     return
 
   consoleLog(toJs("WebGPU device acquired:"), webgpuResult["info"])
@@ -307,6 +295,7 @@ proc init(): Future[void] {.async, exportc.} =
   let pipelineResult = await webgpu_compute.initPipelines()
   if not pipelineResult["success"].to(bool):
     consoleError(toJs("WebGPU pipeline initialization failed:"), pipelineResult["error"])
+    ui.showWebGPURequiredOverlay()
     return
 
   consoleLog(toJs("WebGPU compute pipelines ready:"), pipelineResult["info"])
@@ -315,25 +304,16 @@ proc init(): Future[void] {.async, exportc.} =
 
   # Initialize WebGPU render pipeline (zero-readback rendering)
   consoleLog(toJs("Initializing WebGPU render pipeline..."))
-  if webgpu_render.initWebGPURender():
-    useWebGPURender = true
-    consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
-  else:
-    # Fall back to WebGL for rendering only (physics still on GPU)
-    consoleLog(toJs("WebGPU rendering: DISABLED (will use WebGL fallback)"))
-    if not renderer.initGL():
-      return
+  if not webgpu_render.initWebGPURender():
+    consoleError(toJs("WebGPU render pipeline initialization failed."))
+    ui.showWebGPURequiredOverlay()
+    return
+  consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
 
   # Set up callbacks for UI events
   ui.setInitParticlesCallback(initParticles)
-
-  # Use appropriate resize callback and canvas
-  if useWebGPURender:
-    ui.setResizeCallback(webgpu_render.resize)
-    ui.setupEvents(cast[JsObject](webgpu_render.canvas))
-  else:
-    ui.setResizeCallback(renderer.resize)
-    ui.setupEvents(renderer.canvas)
+  ui.setResizeCallback(webgpu_render.resize)
+  ui.setupEvents(cast[JsObject](webgpu_render.canvas))
 
   # Set up UI bindings
   ui.setupUI()

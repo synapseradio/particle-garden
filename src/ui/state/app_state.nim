@@ -94,14 +94,9 @@ func averageTotalTime*(state: ProfilingState): float =
 # ==============================================================================
 
 type
-  RenderMode* = enum
-    rmWebGL,       ## Legacy WebGL renderer
-    rmWebGPU       ## WebGPU compute + render
-
   AppState* = object
     ## Full application runtime state.
     isRunning*: bool
-    renderMode*: RenderMode
     particleCount*: int
     fps*: int
     timing*: TimingState
@@ -110,7 +105,6 @@ type
 func initAppState*(): AppState =
   AppState(
     isRunning: false,
-    renderMode: rmWebGL,
     particleCount: 0,
     fps: 0,
     timing: initTimingState(),
@@ -124,10 +118,6 @@ func initAppState*(): AppState =
 func withRunning*(state: AppState; running: bool): AppState =
   result = state
   result.isRunning = running
-
-func withRenderMode*(state: AppState; mode: RenderMode): AppState =
-  result = state
-  result.renderMode = mode
 
 func withParticleCount*(state: AppState; count: int): AppState =
   result = state

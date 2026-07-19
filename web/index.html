@@ -218,10 +218,45 @@
       .model-btn:hover:not(.active) {
         background: rgba(255, 255, 255, 0.15);
       }
+      #webgpu-required {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        padding: 20px;
+        padding-top: 30vh;
+        background: rgba(10, 10, 15, 0.94);
+        text-align: center;
+      }
+      #webgpu-required .webgpu-required-box {
+        max-width: 420px;
+        margin: 0 auto;
+      }
+      #webgpu-required h2 {
+        font-size: 1.3em;
+        margin-bottom: 10px;
+        color: #e0e0e0;
+      }
+      #webgpu-required p {
+        font-size: 0.9em;
+        color: #aaa;
+        line-height: 1.5;
+      }
     </style>
   </head>
   <body>
     <canvas id="canvas"></canvas>
+
+    <div id="webgpu-required">
+      <div class="webgpu-required-box">
+        <h2>WebGPU Required</h2>
+        <p>
+          Particle Garden needs a browser with WebGPU support to run. Try
+          the latest Chrome or Edge, and make sure hardware acceleration is
+          enabled in your browser settings.
+        </p>
+      </div>
+    </div>
 
     <div class="controls" id="controls">
       <button class="collapse-btn" onclick="toggleControls()">−</button>

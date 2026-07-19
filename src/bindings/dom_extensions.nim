@@ -41,7 +41,7 @@ type
     height* {.importjs: "height".}: int
 
 proc getContext*(canvas: HTMLCanvasElement, contextType: cstring): JsObject {.importjs: "#.getContext(#)".}
-  ## Get a rendering context from canvas (e.g., "2d", "webgl", "webgl2")
+  ## Get a rendering context from canvas (e.g., "2d")
 
 proc getContext*(canvas: HTMLCanvasElement, contextType: cstring, options: JsObject): JsObject {.importjs: "#.getContext(#, #)".}
   ## Get a rendering context with options
