@@ -53,33 +53,10 @@
 
 //! import particle
 //! import fixed_point
+//! import sim_params
 
-struct SimParams {
-  dt: f32,
-  worldWidth: f32,
-  worldHeight: f32,
-  interactionRadius: f32,
-  forceMultiplier: f32,
-  gridCellsX: u32,
-  gridCellsY: u32,
-  mouseX: f32,
-  mouseY: f32,
-  mouseLeftDown: f32,
-  mouseRightDown: f32,
-  particleCount: u32,
-  blastX: f32,
-  blastY: f32,
-  blastStrength: f32,
-  _pad: f32,
-  attractionMatrix: array<vec4<f32>, 9>,
-  repulsionEnd: f32,      // Where repulsion zone ends (0-1)
-  attractionPeak: f32,    // Where attraction peaks (0-1)
-  forceModel: u32,        // 0=polynomial, 1=exponential
-  expAlpha: f32,          // Exponential repulsion steepness
-  expBeta: f32,           // Exponential attraction range
-  _pad2: f32,             // Padding for 16-byte alignment
-};
-
+// SimParams is generated from src/gpu_types.nim (SimParamsLayout) and provided
+// by the sim_params module imported above.
 @group(0) @binding(0) var<uniform> params: SimParams;
 
 // SORTED buffer: particles reordered by spatial grid position for sequential memory access

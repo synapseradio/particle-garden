@@ -63,9 +63,6 @@ type
     matrix* {.importjs: "matrix".}: GPUBuffer
     sync* {.importjs: "sync".}: GPUBuffer
 
-    # Cell statistics for LOD
-    cellStats* {.importjs: "cellStats".}: GPUBuffer
-
   InitResult* = ref object of JsObject
     success* {.importjs: "success".}: bool
     error* {.importjs: "error".}: cstring
@@ -86,7 +83,6 @@ type
     gridOffsets* {.importjs: "gridOffsets".}: int
     matrix* {.importjs: "matrix".}: int
     sync* {.importjs: "sync".}: int
-    cellStats* {.importjs: "cellStats".}: int
 
 # ==============================================================================
 # SECTION 2: HELPER BINDINGS
@@ -143,9 +139,6 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 
   # Sync: 256 i32s
   result.sync = 256 * 4
-
-  # Cell statistics: 8 floats per cell
-  result.cellStats = gridCells * 8 * 4
 
 # ==============================================================================
 # SECTION 5: FEATURE DETECTION
@@ -209,7 +202,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   # Find max buffer size (particlesA is largest at 64K * 32 = 2MB)
   var maxBufferSize = sizes.particlesA
   if sizes.particlesSorted > maxBufferSize: maxBufferSize = sizes.particlesSorted
-  if sizes.cellStats > maxBufferSize: maxBufferSize = sizes.cellStats
 
   let requiredLimits = makeJsObject()
   requiredLimits["maxBufferSize".cstring] = toJs(maxBufferSize * 2)  # 2x headroom
@@ -296,9 +288,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   # Shared state
   buffers.matrix = createBuf(sizes.matrix, bufferUsageWithUniform, "Attraction Matrix")
   buffers.sync = createBuf(sizes.sync, bufferUsage, "Synchronization Buffer")
-
-  # Cell statistics for LOD
-  buffers.cellStats = createBuf(sizes.cellStats, bufferUsage, "Cell Statistics (LOD)")
 
   let bufferCount = jsObjectLength(cast[JsObject](buffers))
   {.emit: "console.log('WebGPU AoS buffers created:', `bufferCount`, 'buffers');".}

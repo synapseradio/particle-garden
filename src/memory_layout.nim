@@ -224,10 +224,10 @@ static:
   # Verify total size fits
   assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated memory"
 
-  # MAX_SPECIES is a cross-language contract: the WGSL compute shaders hardcode
-  # `const MAX_SPECIES: u32 = 6u` (forces.wgsl, bin-count.wgsl, bin-scatter.wgsl,
-  # integrate.wgsl, cell-stats.wgsl) and must match this value, and the SimParams
+  # MAX_SPECIES is a cross-language contract: the WGSL side defines it once in
+  # web/shaders/modules/particle.wgsl (`const MAX_SPECIES: u32 = 6u`), imported
+  # by every compute and render shader, and must match this value; the SimParams
   # attraction matrix is sized MAX_SPECIES * MAX_SPECIES floats. Changing it here
-  # without updating the shaders silently corrupts force lookups. This lives at
+  # without updating that module silently corrupts force lookups. This lives at
   # compile time beside the constant so it cannot drift out of a forgotten import.
-  assert MAX_SPECIES == 6, "WGSL shaders hardcode MAX_SPECIES = 6u; both sides must agree"
+  assert MAX_SPECIES == 6, "web/shaders/modules/particle.wgsl hardcodes MAX_SPECIES = 6u; both sides must agree"

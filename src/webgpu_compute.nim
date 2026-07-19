@@ -546,9 +546,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[SIM_BLAST_Y] = blastY
   simParamsData[SIM_BLAST_STRENGTH] = blastStrength
   simParamsData[SIM_PAD] = 0.0  # padding for vec4 alignment
-  # Copy attraction matrix (36 floats starting at SIM_MATRIX_START)
-  for i in 0..<36:
-    simParamsData[SIM_MATRIX_START + i] = cast[JsObject](matrix[i]).to(float)
+  # Copy attraction matrix (36 floats starting at SIM_ATTRACTION_MATRIX_START)
+  for matrixSlot in 0..<36:
+    simParamsData[SIM_ATTRACTION_MATRIX_START + matrixSlot] = cast[JsObject](matrix[matrixSlot]).to(float)
   # Zone boundary params
   simParamsData[SIM_REPULSION_END] = float32(config.CONFIG.repulsionEnd)
   simParamsData[SIM_ATTRACTION_PEAK] = float32(config.CONFIG.attractionPeak)

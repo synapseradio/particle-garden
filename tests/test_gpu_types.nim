@@ -12,6 +12,7 @@
 # ==============================================================================
 
 import std/unittest
+import std/strutils
 import ../src/gpu_types
 
 const GPU_TYPES_TESTS_LOADED* = true
@@ -70,3 +71,78 @@ suite "GPU Field Accessors":
       discard ParticleLayout.fieldIndex("pos")            # vec2<f32>
     expect ValueError:
       discard SimParamsLayout.fieldIndex("attractionMatrix")  # array
+
+
+suite "WGSL Struct Codegen Matches The Layout Table":
+  # toWgslStruct is the single source the SimParams WGSL module is generated
+  # from, and the SIM_* indices below drive the Nim uniform-writer. These lock
+  # both to the same byte layout: a drift between them corrupts physics silently,
+  # so it must fail here (and the mirrored static asserts fail the build).
+
+  test "wgslComputedOffsets equals every declared field offset for SimParams":
+    # The offset WGSL's own layout algorithm assigns must match what we declared,
+    # or a uniform write lands on the wrong field.
+    let computedOffsets = wgslComputedOffsets(SimParamsLayout)
+    check computedOffsets.len == SimParamsLayout.fields.len
+    for fieldIndex in 0 ..< SimParamsLayout.fields.len:
+      check computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset
+
+  test "SimParams is 232 bytes written and 240 bytes allocated (16-byte round-up)":
+    check SimParamsLayout.totalSize == 232
+    check wgslUniformSize(SimParamsLayout) == 240
+
+  test "toWgslStruct renders the SimParams fields with WGSL types in order":
+    let generated = toWgslStruct(SimParamsLayout)
+    check generated.startsWith("struct SimParams {")
+    check "dt: f32," in generated
+    check "gridCellsX: u32," in generated
+    check "attractionMatrix: array<vec4<f32>, 9>," in generated
+    check "forceModel: u32," in generated
+    check "_pad2: f32," in generated
+    check generated.strip.endsWith("}")
+
+  test "toWgslType spells arrays and scalars the way WGSL expects":
+    check toWgslType(SimParamsLayout.fieldByName("dt")) == "f32"
+    check toWgslType(SimParamsLayout.fieldByName("gridCellsX")) == "u32"
+    check toWgslType(SimParamsLayout.fieldByName("attractionMatrix")) ==
+      "array<vec4<f32>, 9>"
+
+
+suite "Generated SIM_ Indices Match The SimParams Byte Layout":
+  # genFieldIndices emits these from SimParamsLayout. webgpu_compute.nim writes
+  # simParamsData[SIM_*]; a wrong index writes the wrong float into the uniform.
+
+  test "each SIM_ index equals its field's byte offset divided by four":
+    check SIM_DT == SimParamsLayout.fieldOffset("dt") div 4
+    check SIM_FORCE_MULTIPLIER == SimParamsLayout.fieldOffset("forceMultiplier") div 4
+    check SIM_PARTICLE_COUNT == SimParamsLayout.fieldOffset("particleCount") div 4
+    check SIM_ATTRACTION_MATRIX_START == SimParamsLayout.fieldOffset("attractionMatrix") div 4
+    check SIM_REPULSION_END == SimParamsLayout.fieldOffset("repulsionEnd") div 4
+    check SIM_EXP_BETA == SimParamsLayout.fieldOffset("expBeta") div 4
+
+  test "the generated indices reproduce the values the hand-written block held":
+    check SIM_DT == 0
+    check SIM_PAD == 15
+    check SIM_ATTRACTION_MATRIX_START == 16
+    check SIM_ATTRACTION_MATRIX_END == 51
+    check SIM_REPULSION_END == 52
+    check SIM_PAD2 == 57
+    check SIM_PARAMS_F32_COUNT == 58
+
+  test "the attraction matrix spans exactly its 36 float slots":
+    check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 == 36
+
+  test "SIM_PARAMS_F32_COUNT covers the whole 232-byte struct":
+    check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
+
+
+suite "toUpperSnake Names Index Constants From Field Names":
+  test "camelCase field names become UPPER_SNAKE":
+    check toUpperSnake("dt") == "DT"
+    check toUpperSnake("worldWidth") == "WORLD_WIDTH"
+    check toUpperSnake("gridCellsX") == "GRID_CELLS_X"
+    check toUpperSnake("attractionMatrix") == "ATTRACTION_MATRIX"
+
+  test "leading underscores are dropped and trailing digits kept":
+    check toUpperSnake("_pad") == "PAD"
+    check toUpperSnake("_pad2") == "PAD2"

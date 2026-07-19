@@ -5,6 +5,8 @@ tools/wgsl_bundle
 
 # Generated shaders (bundled from web/shaders/src/)
 web/shaders/*.wgsl
+# Generated WGSL struct module (emitted from src/gpu_types.nim by the bundler)
+web/shaders/modules/sim_params.wgsl
 Particle Garden.app/
 .DS_Store
 

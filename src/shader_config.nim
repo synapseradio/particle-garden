@@ -28,7 +28,6 @@ type
     prefixSumLocal*: int  ## prefix-sum-local.wgsl: cells per workgroup (must match BLOCK_SIZE)
     prefixSumBlocks*: int ## prefix-sum-blocks.wgsl: blocks per workgroup
     prefixSumFinal*: int  ## prefix-sum-final.wgsl: cells per workgroup
-    cellStats*: int       ## cell-stats.wgsl: threads per cell
     render*: int          ## render.wgsl: vertices per workgroup
 
   TuningConstants* = object
@@ -66,7 +65,6 @@ const
     prefixSumLocal: 256,  # Must match BLOCK_SIZE in shader
     prefixSumBlocks: 256, # Single workgroup processes all blocks
     prefixSumFinal: 256,  # Matches local for consistency
-    cellStats: 64,        # Per-cell statistics (smaller due to shared memory)
     render: 128,          # Vertex generation
   )
 
@@ -101,7 +99,6 @@ proc getWorkgroupSize*(name: string): int =
   of "prefix-sum-local": activeConfig.workgroups.prefixSumLocal
   of "prefix-sum-blocks": activeConfig.workgroups.prefixSumBlocks
   of "prefix-sum-final": activeConfig.workgroups.prefixSumFinal
-  of "cell-stats": activeConfig.workgroups.cellStats
   of "render": activeConfig.workgroups.render
   else: 128  # Safe default
 
@@ -134,7 +131,6 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_PREFIX_SUM_LOCAL"] = $activeConfig.workgroups.prefixSumLocal
   result["WORKGROUP_SIZE_PREFIX_SUM_BLOCKS"] = $activeConfig.workgroups.prefixSumBlocks
   result["WORKGROUP_SIZE_PREFIX_SUM_FINAL"] = $activeConfig.workgroups.prefixSumFinal
-  result["WORKGROUP_SIZE_CELL_STATS"] = $activeConfig.workgroups.cellStats
   result["WORKGROUP_SIZE_RENDER"] = $activeConfig.workgroups.render
 
   # Tunable constants (formatted as WGSL float literals)
