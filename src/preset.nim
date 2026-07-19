@@ -245,8 +245,8 @@ type
     errorKind*: PresetErrorKind
     errorMessage*: string
 
-func isOk*(r: PresetLoadResult): bool =
-  r.errorKind == pekNone
+func isOk*(loadResult: PresetLoadResult): bool =
+  loadResult.errorKind == pekNone
 
 # ==============================================================================
 # SECTION 6: SAFE JSON ACCESS
@@ -260,16 +260,16 @@ proc field(node: JsonNode; key: string): JsonNode =
   ## safe to build on directly.
   node.getOrDefault(key)
 
-proc elemAt(node: JsonNode; i: int): JsonNode =
+proc elemAt(node: JsonNode; index: int): JsonNode =
   ## Nil-safe array indexing, built on std/json's `{}` operator for the
-  ## same reason as `field`. Only ever called with `i >= 0` in this module.
-  node{i}
+  ## same reason as `field`. Only ever called with `index >= 0` in this module.
+  node{index}
 
-func clampInt(v, lo, hi: int): int =
-  max(lo, min(hi, v))
+func clampInt(value, lowBound, highBound: int): int =
+  max(lowBound, min(highBound, value))
 
-func clampFloat(v, lo, hi: float): float =
-  max(lo, min(hi, v))
+func clampFloat(value, lowBound, highBound: float): float =
+  max(lowBound, min(highBound, value))
 
 # ==============================================================================
 # SECTION 7: FIELD VALIDATION
@@ -279,49 +279,50 @@ proc validateSettings(node: JsonNode): PresetSettings =
   ## Every field independently defaults (missing or wrong JSON type) or
   ## clamps (present, right type, out of range). One bad field never
   ## invalidates the rest.
-  let d = defaultSettings()
+  let defaults = defaultSettings()
   result.particleCount = clampInt(
-    field(node, "particleCount").getInt(d.particleCount), PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX)
+    field(node, "particleCount").getInt(defaults.particleCount), PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX)
   result.speciesCount = clampInt(
-    field(node, "speciesCount").getInt(d.speciesCount), SPECIES_COUNT_MIN, SPECIES_COUNT_MAX)
+    field(node, "speciesCount").getInt(defaults.speciesCount), SPECIES_COUNT_MIN, SPECIES_COUNT_MAX)
   result.interactionRadius = clampInt(
-    field(node, "interactionRadius").getInt(d.interactionRadius), INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX)
+    field(node, "interactionRadius").getInt(defaults.interactionRadius), INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX)
   result.forceStrength = clampFloat(
-    field(node, "forceStrength").getFloat(d.forceStrength), FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX)
+    field(node, "forceStrength").getFloat(defaults.forceStrength), FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX)
   result.friction = clampFloat(
-    field(node, "friction").getFloat(d.friction), FRICTION_MIN, FRICTION_MAX)
+    field(node, "friction").getFloat(defaults.friction), FRICTION_MIN, FRICTION_MAX)
   result.ruleTemperature = clampFloat(
-    field(node, "ruleTemperature").getFloat(d.ruleTemperature), RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX)
+    field(node, "ruleTemperature").getFloat(defaults.ruleTemperature), RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX)
   result.timeScale = clampFloat(
-    field(node, "timeScale").getFloat(d.timeScale), TIME_SCALE_MIN, TIME_SCALE_MAX)
+    field(node, "timeScale").getFloat(defaults.timeScale), TIME_SCALE_MIN, TIME_SCALE_MAX)
   result.particleSize = clampInt(
-    field(node, "particleSize").getInt(d.particleSize), PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX)
-  result.trails = field(node, "trails").getBool(d.trails)
+    field(node, "particleSize").getInt(defaults.particleSize), PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX)
+  result.trails = field(node, "trails").getBool(defaults.trails)
   result.trailLength = clampFloat(
-    field(node, "trailLength").getFloat(d.trailLength), TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX)
+    field(node, "trailLength").getFloat(defaults.trailLength), TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX)
   result.glowIntensity = clampFloat(
-    field(node, "glowIntensity").getFloat(d.glowIntensity), GLOW_INTENSITY_MIN, GLOW_INTENSITY_MAX)
+    field(node, "glowIntensity").getFloat(defaults.glowIntensity), GLOW_INTENSITY_MIN, GLOW_INTENSITY_MAX)
   result.velocityGlowScale = clampFloat(
-    field(node, "velocityGlowScale").getFloat(d.velocityGlowScale), VELOCITY_GLOW_SCALE_MIN, VELOCITY_GLOW_SCALE_MAX)
+    field(node, "velocityGlowScale").getFloat(defaults.velocityGlowScale), VELOCITY_GLOW_SCALE_MIN, VELOCITY_GLOW_SCALE_MAX)
   result.maxVelocity = clampFloat(
-    field(node, "maxVelocity").getFloat(d.maxVelocity), MAX_VELOCITY_MIN, MAX_VELOCITY_MAX)
+    field(node, "maxVelocity").getFloat(defaults.maxVelocity), MAX_VELOCITY_MIN, MAX_VELOCITY_MAX)
   result.repulsionEnd = clampFloat(
-    field(node, "repulsionEnd").getFloat(d.repulsionEnd), REPULSION_END_MIN, REPULSION_END_MAX)
+    field(node, "repulsionEnd").getFloat(defaults.repulsionEnd), REPULSION_END_MIN, REPULSION_END_MAX)
   result.attractionPeak = clampFloat(
-    field(node, "attractionPeak").getFloat(d.attractionPeak), ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX)
+    field(node, "attractionPeak").getFloat(defaults.attractionPeak), ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX)
   result.forceModel = clampInt(
-    field(node, "forceModel").getInt(d.forceModel), FORCE_MODEL_MIN, FORCE_MODEL_MAX)
+    field(node, "forceModel").getInt(defaults.forceModel), FORCE_MODEL_MIN, FORCE_MODEL_MAX)
   result.expRepulsionAlpha = clampFloat(
-    field(node, "expRepulsionAlpha").getFloat(d.expRepulsionAlpha), EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX)
+    field(node, "expRepulsionAlpha").getFloat(defaults.expRepulsionAlpha), EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX)
   result.expAttractionBeta = clampFloat(
-    field(node, "expAttractionBeta").getFloat(d.expAttractionBeta), EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX)
+    field(node, "expAttractionBeta").getFloat(defaults.expAttractionBeta), EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX)
 
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
   ## entries clamp to [-1, 1]. Repaired per-index, so one bad slot in an
   ## otherwise-good 36-element array does not discard the other 35.
-  for i in 0 ..< MATRIX_LEN:
-    result[i] = clampFloat(elemAt(node, i).getFloat(0.0), MATRIX_VALUE_MIN, MATRIX_VALUE_MAX)
+  for matrixIndex in 0 ..< MATRIX_LEN:
+    result[matrixIndex] = clampFloat(
+      elemAt(node, matrixIndex).getFloat(0.0), MATRIX_VALUE_MIN, MATRIX_VALUE_MAX)
 
 proc validateColor(node: JsonNode; fallback: PaletteColor): PaletteColor =
   ## A color is valid only as a whole 3-element numeric triple; a
@@ -341,12 +342,13 @@ proc validateColor(node: JsonNode; fallback: PaletteColor): PaletteColor =
 proc validatePalette(node: JsonNode): Palette =
   ## Repaired per-species-slot: one malformed color falls back to that
   ## slot's default without discarding the other five.
-  for i in 0 ..< MAX_SPECIES:
-    result[i] = validateColor(elemAt(node, i), DEFAULT_PALETTE[i])
+  for speciesIndex in 0 ..< MAX_SPECIES:
+    result[speciesIndex] = validateColor(
+      elemAt(node, speciesIndex), DEFAULT_PALETTE[speciesIndex])
 
 proc validateMode(node: JsonNode): string =
-  let s = node.getStr("")
-  if s.len > 0: s else: DEFAULT_MODE
+  let modeName = node.getStr("")
+  if modeName.len > 0: modeName else: DEFAULT_MODE
 
 # ==============================================================================
 # SECTION 8: MIGRATE + VALIDATE + PARSE
@@ -453,8 +455,8 @@ proc toJson*(preset: Preset): JsonNode =
   result["settings"] = toJson(preset.settings)
 
   var matrixArr = newJArray()
-  for v in preset.matrix:
-    matrixArr.add(%v)
+  for matrixValue in preset.matrix:
+    matrixArr.add(%matrixValue)
   result["matrix"] = matrixArr
 
   var paletteArr = newJArray()

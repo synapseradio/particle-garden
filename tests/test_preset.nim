@@ -31,38 +31,39 @@ suite "Preset Round-Trip Contract":
 
   test "a fully custom preset survives round-trip unchanged":
     ## CONTRACT: Non-default values for every field round-trip exactly
-    var p = defaultPreset()
-    p.name = "My Garden"
-    p.createdAt = "2026-07-19T12:00:00Z"
-    p.mode = "particle-life"
-    p.settings.particleCount = 32000
-    p.settings.speciesCount = 6
-    p.settings.interactionRadius = 80
-    p.settings.forceStrength = 2.5
-    p.settings.friction = 0.12
-    p.settings.ruleTemperature = 0.45
-    p.settings.timeScale = 1.5
-    p.settings.particleSize = 5
-    p.settings.trails = true
-    p.settings.trailLength = 0.8
-    p.settings.glowIntensity = 2.0
-    p.settings.velocityGlowScale = 2.5
-    p.settings.maxVelocity = 75.0
-    p.settings.repulsionEnd = 0.3
-    p.settings.attractionPeak = 0.9
-    p.settings.forceModel = 1
-    p.settings.expRepulsionAlpha = 10.0
-    p.settings.expAttractionBeta = 7.5
-    for i in 0 ..< MATRIX_LEN:
-      p.matrix[i] = (if i mod 2 == 0: 0.5 else: -0.5)
-    p.palette = [
+    var customPreset = defaultPreset()
+    customPreset.name = "My Garden"
+    customPreset.createdAt = "2026-07-19T12:00:00Z"
+    customPreset.mode = "particle-life"
+    customPreset.settings.particleCount = 32000
+    customPreset.settings.speciesCount = 6
+    customPreset.settings.interactionRadius = 80
+    customPreset.settings.forceStrength = 2.5
+    customPreset.settings.friction = 0.12
+    customPreset.settings.ruleTemperature = 0.45
+    customPreset.settings.timeScale = 1.5
+    customPreset.settings.particleSize = 5
+    customPreset.settings.trails = true
+    customPreset.settings.trailLength = 0.8
+    customPreset.settings.glowIntensity = 2.0
+    customPreset.settings.velocityGlowScale = 2.5
+    customPreset.settings.maxVelocity = 75.0
+    customPreset.settings.repulsionEnd = 0.3
+    customPreset.settings.attractionPeak = 0.9
+    customPreset.settings.forceModel = 1
+    customPreset.settings.expRepulsionAlpha = 10.0
+    customPreset.settings.expAttractionBeta = 7.5
+    for matrixIndex in 0 ..< MATRIX_LEN:
+      customPreset.matrix[matrixIndex] =
+        (if matrixIndex mod 2 == 0: 0.5 else: -0.5)
+    customPreset.palette = [
       [0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9],
       [0.15, 0.25, 0.35], [0.45, 0.55, 0.65], [0.75, 0.85, 0.95]
     ]
 
-    let loaded = parsePreset(toJsonString(p))
+    let loaded = parsePreset(toJsonString(customPreset))
     check loaded.isOk
-    check loaded.preset == p
+    check loaded.preset == customPreset
 
   test "serialized preset is valid JSON carrying the documented top-level keys":
     ## CONTRACT: the wire shape is {schemaVersion, name, createdAt, mode, settings, matrix, palette}
@@ -256,24 +257,24 @@ suite "Preset Clamp Behavior Contract":
   test "the default preset's own settings already fall inside every clamp range":
     ## DEFENSIVE: validating the defaults must be a no-op; otherwise
     ## defaultPreset() and validate(toJson(defaultPreset())) would diverge
-    let d = defaultSettings()
-    check d.particleCount == clamp(d.particleCount, PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX)
-    check d.speciesCount == clamp(d.speciesCount, SPECIES_COUNT_MIN, SPECIES_COUNT_MAX)
-    check d.interactionRadius == clamp(d.interactionRadius, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX)
-    check d.forceStrength == clamp(d.forceStrength, FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX)
-    check d.friction == clamp(d.friction, FRICTION_MIN, FRICTION_MAX)
-    check d.ruleTemperature == clamp(d.ruleTemperature, RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX)
-    check d.timeScale == clamp(d.timeScale, TIME_SCALE_MIN, TIME_SCALE_MAX)
-    check d.particleSize == clamp(d.particleSize, PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX)
-    check d.trailLength == clamp(d.trailLength, TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX)
-    check d.glowIntensity == clamp(d.glowIntensity, GLOW_INTENSITY_MIN, GLOW_INTENSITY_MAX)
-    check d.velocityGlowScale == clamp(d.velocityGlowScale, VELOCITY_GLOW_SCALE_MIN, VELOCITY_GLOW_SCALE_MAX)
-    check d.maxVelocity == clamp(d.maxVelocity, MAX_VELOCITY_MIN, MAX_VELOCITY_MAX)
-    check d.repulsionEnd == clamp(d.repulsionEnd, REPULSION_END_MIN, REPULSION_END_MAX)
-    check d.attractionPeak == clamp(d.attractionPeak, ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX)
-    check d.forceModel == clamp(d.forceModel, FORCE_MODEL_MIN, FORCE_MODEL_MAX)
-    check d.expRepulsionAlpha == clamp(d.expRepulsionAlpha, EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX)
-    check d.expAttractionBeta == clamp(d.expAttractionBeta, EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX)
+    let defaults = defaultSettings()
+    check defaults.particleCount == clamp(defaults.particleCount, PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX)
+    check defaults.speciesCount == clamp(defaults.speciesCount, SPECIES_COUNT_MIN, SPECIES_COUNT_MAX)
+    check defaults.interactionRadius == clamp(defaults.interactionRadius, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX)
+    check defaults.forceStrength == clamp(defaults.forceStrength, FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX)
+    check defaults.friction == clamp(defaults.friction, FRICTION_MIN, FRICTION_MAX)
+    check defaults.ruleTemperature == clamp(defaults.ruleTemperature, RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX)
+    check defaults.timeScale == clamp(defaults.timeScale, TIME_SCALE_MIN, TIME_SCALE_MAX)
+    check defaults.particleSize == clamp(defaults.particleSize, PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX)
+    check defaults.trailLength == clamp(defaults.trailLength, TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX)
+    check defaults.glowIntensity == clamp(defaults.glowIntensity, GLOW_INTENSITY_MIN, GLOW_INTENSITY_MAX)
+    check defaults.velocityGlowScale == clamp(defaults.velocityGlowScale, VELOCITY_GLOW_SCALE_MIN, VELOCITY_GLOW_SCALE_MAX)
+    check defaults.maxVelocity == clamp(defaults.maxVelocity, MAX_VELOCITY_MIN, MAX_VELOCITY_MAX)
+    check defaults.repulsionEnd == clamp(defaults.repulsionEnd, REPULSION_END_MIN, REPULSION_END_MAX)
+    check defaults.attractionPeak == clamp(defaults.attractionPeak, ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX)
+    check defaults.forceModel == clamp(defaults.forceModel, FORCE_MODEL_MIN, FORCE_MODEL_MAX)
+    check defaults.expRepulsionAlpha == clamp(defaults.expRepulsionAlpha, EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX)
+    check defaults.expAttractionBeta == clamp(defaults.expAttractionBeta, EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX)
 
 # ==============================================================================
 # MIGRATION HOOK CONTRACT
