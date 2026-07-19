@@ -23,6 +23,7 @@ import test_shader_config
 import test_stats
 import test_app_state
 import test_palette
+import test_preset
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -40,3 +41,4 @@ static:
   discard test_stats.STATS_TESTS_LOADED
   discard test_app_state.APP_STATE_TESTS_LOADED
   discard test_palette.PALETTE_TESTS_LOADED
+  discard test_preset.PRESET_TESTS_LOADED
