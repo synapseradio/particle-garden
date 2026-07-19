@@ -58,6 +58,15 @@ suite "Simulation Defaults Lie Inside Their Slider Ranges":
     # ends before the attraction peak.
     check defaults.repulsionEnd < defaults.attractionPeak
 
+  test "SPH defaults are inside their clamp ranges":
+    check defaults.sphRestDensity >= SPH_REST_DENSITY_MIN
+    check defaults.sphRestDensity <= SPH_REST_DENSITY_MAX
+    check defaults.sphStiffness >= SPH_STIFFNESS_MIN
+    check defaults.sphStiffness <= SPH_STIFFNESS_MAX
+    check defaults.sphViscosity >= SPH_VISCOSITY_MIN
+    check defaults.sphViscosity <= SPH_VISCOSITY_MAX
+    check defaults.sphSubsteps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX
+
 
 suite "Render Defaults Lie Inside Their Slider Ranges":
   let defaults = initRenderState()

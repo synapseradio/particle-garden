@@ -44,6 +44,8 @@ import config
 import shader_config
 import gpu_types
 import sim_registry
+import shader_manifest
+import sph_core
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -91,8 +93,27 @@ var isPipelineReady* {.exportc.}: bool = false
 var activeFrame: FrameDescription = @[]
 var activeSimKind*: SimKind = skParticleLife
 
+const prewarmedKinds = {skParticleLife}
+  ## Kinds whose compute shaders exist on disk this build and can safely
+  ## pre-warm at init. skSph's frame is registered (sim_registry) and its
+  ## manifest lists forces-sph.wgsl, but that shader lands with the SPH shader
+  ## stage; pre-warming skSph now would fetch a 404 and fail init. SPH's other
+  ## pipelines (grid triad, bin-scatter, integrate) are shared with
+  ## particle-life and pre-warm through it. Add skSph here when forces-sph.wgsl
+  ## exists. skReactionDiffusion registers no shaders yet (roadmap S8).
+
 proc setActiveSimKind*(kind: SimKind) =
-  ## Switch the executor to another simulation's frame description.
+  ## Switch the executor to another simulation's frame description. A kind whose
+  ## pipelines were not pre-warmed (its shaders do not exist on disk yet — see
+  ## prewarmedKinds) is refused: the executor keeps its current frame rather
+  ## than dispatching a pipeline that was never created. This keeps an imported
+  ## preset that carries a not-yet-runnable mode (e.g. "sph" from a future
+  ## build) from crashing the render loop; the mode becomes live once its
+  ## shaders land and it joins prewarmedKinds.
+  if kind notin prewarmedKinds:
+    consoleWarn(("[sim] mode \"" & simKindId(kind) &
+      "\" is not runnable in this build yet - keeping the current mode").toJs)
+    return
   activeSimKind = kind
   activeFrame = buildFrame(kind)
 
@@ -357,41 +378,6 @@ proc createPipelineWithValidation(name: cstring, shaderModule: GPUShaderModule, 
 # SECTION 8: PIPELINE INITIALIZATION
 # ==============================================================================
 
-type
-  ShaderSpec = object
-    ## One compute shader a simulation kind needs: its dictionary key (used
-    ## by pipelines/bindGroups/frame dispatches), the URL main.nim serves it
-    ## at, its debug label, and its entry point.
-    key: string
-    path: string
-    label: string
-    entryPoint: string
-
-proc shaderSpecsFor(kind: SimKind): seq[ShaderSpec] =
-  ## The compute shaders a simulation kind's frame dispatches. initPipelines
-  ## pre-warms every kind's pipelines at init, so a later mode switch is a
-  ## frame-description swap with no load hitch.
-  case kind
-  of skParticleLife: @[
-    ShaderSpec(key: "binCount", path: "./shaders/bin-count.wgsl",
-      label: "Bin Count Shader (AoS)", entryPoint: "main"),
-    ShaderSpec(key: "prefixLocal", path: "./shaders/prefix-sum-local.wgsl",
-      label: "Prefix Sum Local Shader", entryPoint: "main"),
-    ShaderSpec(key: "prefixBlocks", path: "./shaders/prefix-sum-blocks.wgsl",
-      label: "Prefix Sum Blocks Shader", entryPoint: "main"),
-    ShaderSpec(key: "prefixFinal", path: "./shaders/prefix-sum-final.wgsl",
-      label: "Prefix Sum Final Shader", entryPoint: "main"),
-    ShaderSpec(key: "binScatter", path: "./shaders/bin-scatter.wgsl",
-      label: "Bin Scatter Shader (AoS)", entryPoint: "main"),
-    ShaderSpec(key: "forces", path: "./shaders/forces.wgsl",
-      label: "Forces Shader (AoS)", entryPoint: "computeForces"),
-    ShaderSpec(key: "integrate", path: "./shaders/integrate.wgsl",
-      label: "Integrate Shader (AoS)", entryPoint: "integrate"),
-  ]
-  of skSph, skReactionDiffusion:
-    # Pipelines land with their stages (roadmap S7/S8).
-    @[]
-
 proc initPipelines*(): Future[JsObject] {.async, exportc.} =
   ## Initialize the compute pipelines for every simulation kind and arm the
   ## particle-life frame description.
@@ -407,6 +393,8 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     # =========================================================================
     var specs: seq[ShaderSpec]
     for kind in SimKind:
+      if kind notin prewarmedKinds:
+        continue
       for spec in shaderSpecsFor(kind):
         var alreadyCollected = false
         for existing in specs:
@@ -577,6 +565,12 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[SIM_EXP_ALPHA] = float32(config.CONFIG.expRepulsionAlpha)
   simParamsData[SIM_EXP_BETA] = float32(config.CONFIG.expAttractionBeta)
   simParamsData[SIM_PAD2] = 0.0  # padding for 16-byte alignment
+  # SPH fluid-mode params (read by forces-sph.wgsl; ignored by forces.wgsl).
+  # gamma is the fixed Tait exponent from sph_core, not a live CONFIG value.
+  simParamsData[SIM_SPH_REST_DENSITY] = float32(config.CONFIG.sphRestDensity)
+  simParamsData[SIM_SPH_STIFFNESS] = float32(config.CONFIG.sphStiffness)
+  simParamsData[SIM_SPH_GAMMA] = float32(SPH_DEFAULT_GAMMA)
+  simParamsData[SIM_SPH_VISCOSITY] = float32(config.CONFIG.sphViscosity)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Integration parameters

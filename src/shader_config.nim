@@ -56,6 +56,11 @@ type
     glowWarmthGreen*: float      ## Green attenuation per unit warmth (default 0.3)
     glowWarmthBlue*: float       ## Blue attenuation per unit warmth (default 0.6)
 
+    # SPH fluid mode (forces-sph.wgsl). Defaults mirror sph_core's authoritative
+    # constants; test_shader_config relates them so there is one source.
+    sphXsphEpsilon*: float       ## XSPH velocity-smoothing weight (default 0.5)
+    sphGamma*: float             ## Tait equation-of-state exponent (default 7.0)
+
   ShaderConfig* = object
     ## Complete shader configuration
     profile*: ShaderProfile
@@ -93,6 +98,8 @@ const
     glowDivisor: 24.0,
     glowWarmthGreen: 0.3,
     glowWarmthBlue: 0.6,
+    sphXsphEpsilon: 0.5,          # Mirrors sph_core.SPH_XSPH_EPSILON.
+    sphGamma: 7.0,                # Mirrors sph_core.SPH_DEFAULT_GAMMA.
   )
 
   PRODUCTION_CONFIG* = ShaderConfig(
@@ -137,6 +144,8 @@ proc getTunableFloat*(name: string): float =
   of "GLOW_DIVISOR": activeConfig.tuning.glowDivisor
   of "GLOW_WARMTH_GREEN": activeConfig.tuning.glowWarmthGreen
   of "GLOW_WARMTH_BLUE": activeConfig.tuning.glowWarmthBlue
+  of "SPH_XSPH_EPSILON": activeConfig.tuning.sphXsphEpsilon
+  of "SPH_GAMMA": activeConfig.tuning.sphGamma
   else: 0.0
 
 # =============================================================================
@@ -177,3 +186,7 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["TUNABLE_GLOW_DIVISOR"] = fmt"{activeConfig.tuning.glowDivisor:.2f}"
   result["TUNABLE_GLOW_WARMTH_GREEN"] = fmt"{activeConfig.tuning.glowWarmthGreen:.2f}"
   result["TUNABLE_GLOW_WARMTH_BLUE"] = fmt"{activeConfig.tuning.glowWarmthBlue:.2f}"
+
+  # SPH fluid-mode constants (consumed by forces-sph.wgsl).
+  result["TUNABLE_SPH_XSPH_EPSILON"] = fmt"{activeConfig.tuning.sphXsphEpsilon:.2f}"
+  result["TUNABLE_SPH_GAMMA"] = fmt"{activeConfig.tuning.sphGamma:.2f}"

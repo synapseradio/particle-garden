@@ -13,6 +13,7 @@
 
 import std/[strutils, tables, unittest]
 import ../src/shader_config
+import ../src/sph_core
 
 const SHADER_CONFIG_TESTS_LOADED* = true
 
@@ -79,5 +80,22 @@ suite "Glow Tunables Feed The Bundler":
     let placeholders = getPlaceholderMap()
     for (name, expected) in glowTunables:
       let placeholderName = "TUNABLE_" & name
+      check placeholderName in placeholders
+      check "." in placeholders[placeholderName]
+
+
+suite "SPH Tunables Mirror sph_core's Authoritative Constants":
+  # The SPH shader constants have two homes by necessity: sph_core.nim (the
+  # native-tested authority) and shader_config's placeholder map (what the
+  # bundler substitutes into forces-sph.wgsl). These tests relate the two so
+  # they cannot silently disagree — a single source, checked.
+
+  test "getTunableFloat resolves each SPH constant to sph_core's value":
+    check getTunableFloat("SPH_XSPH_EPSILON") == SPH_XSPH_EPSILON
+    check getTunableFloat("SPH_GAMMA") == SPH_DEFAULT_GAMMA
+
+  test "getPlaceholderMap emits a WGSL float literal for every SPH placeholder":
+    let placeholders = getPlaceholderMap()
+    for placeholderName in ["TUNABLE_SPH_XSPH_EPSILON", "TUNABLE_SPH_GAMMA"]:
       check placeholderName in placeholders
       check "." in placeholders[placeholderName]

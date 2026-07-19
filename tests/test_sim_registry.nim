@@ -88,9 +88,55 @@ suite "Particle-Life Frame Description":
           check dispatch.pipelineKey != "prefixSum"
 
 
+suite "SPH Frame Description":
+  # SPH reuses particle-life's grid-build structure verbatim, then runs an SPH
+  # physics pass. The only differences from particle-life are the physics pass
+  # label ("Physics (SPH)") and its force dispatch ("forcesSph" for "forces").
+  # Substepping is an executor loop, not frame nodes, so the description holds
+  # exactly one substep's work — the same four-node shape as particle-life.
+
+  let frame = buildFrame(skSph)
+
+  test "the frame has exactly four nodes in the same shape as particle-life":
+    check frame.len == 4
+    check frame[0].kind == fnkClearBuffer
+    check frame[1].kind == fnkComputePass
+    check frame[2].kind == fnkCopyBuffer
+    check frame[3].kind == fnkComputePass
+
+  test "node 0 clears gridCounts":
+    check frame[0].clearTarget == sbGridCounts
+
+  test "node 1 is the shared Grid Build pass":
+    check frame[1].label == "Grid Build"
+    check frame[1].profilerSlot == PROFILER_SLOT_GRID_BUILD
+    check frame[1].dispatches.len == 4
+    check frame[1].dispatches[0] == Dispatch(pipelineKey: "binCount", size: dsParticleWorkgroups)
+    check frame[1].dispatches[1] == Dispatch(pipelineKey: "prefixLocal", size: dsScanBlocks)
+    check frame[1].dispatches[2] == Dispatch(pipelineKey: "prefixBlocks", size: dsOne)
+    check frame[1].dispatches[3] == Dispatch(pipelineKey: "prefixFinal", size: dsScanBlocks)
+
+  test "node 2 copies gridOffsets into fillPointers":
+    check frame[2].copySource == sbGridOffsets
+    check frame[2].copyDest == sbFillPointers
+
+  test "node 3 is the SPH physics pass dispatching forcesSph in the physics slot":
+    check frame[3].label == "Physics (SPH)"
+    check frame[3].profilerSlot == PROFILER_SLOT_PHYSICS
+    check frame[3].dispatches.len == 3
+    check frame[3].dispatches[0] == Dispatch(pipelineKey: "binScatter", size: dsParticleWorkgroups)
+    check frame[3].dispatches[1] == Dispatch(pipelineKey: "forcesSph", size: dsParticleWorkgroups)
+    check frame[3].dispatches[2] == Dispatch(pipelineKey: "integrate", size: dsParticleWorkgroups)
+
+  test "no node clears a delta buffer":
+    # forcesSph self-resets velocityDelta/densityDelta via atomicStore, the same
+    # binding contract as forces; an encoder-level clear here would race them.
+    for node in frame:
+      if node.kind == fnkClearBuffer:
+        check node.clearTarget == sbGridCounts
+
+
 suite "Unimplemented Modes Fail Loudly":
   test "buildFrame raises for modes that have no frame yet":
-    expect ValueError:
-      discard buildFrame(skSph)
     expect ValueError:
       discard buildFrame(skReactionDiffusion)

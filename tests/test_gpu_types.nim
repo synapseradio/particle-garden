@@ -87,9 +87,9 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       check computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset
 
-  test "SimParams is 232 bytes written and 240 bytes allocated (16-byte round-up)":
-    check SimParamsLayout.totalSize == 232
-    check wgslUniformSize(SimParamsLayout) == 240
+  test "SimParams is 248 bytes written and 256 bytes allocated (16-byte round-up)":
+    check SimParamsLayout.totalSize == 248
+    check wgslUniformSize(SimParamsLayout) == 256
 
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
     let generated = toWgslStruct(SimParamsLayout)
@@ -127,13 +127,33 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_ATTRACTION_MATRIX_END == 51
     check SIM_REPULSION_END == 52
     check SIM_PAD2 == 57
-    check SIM_PARAMS_F32_COUNT == 58
+    check SIM_PARAMS_F32_COUNT == 62
 
   test "the attraction matrix spans exactly its 36 float slots":
     check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 == 36
 
-  test "SIM_PARAMS_F32_COUNT covers the whole 232-byte struct":
+  test "SIM_PARAMS_F32_COUNT covers the whole 248-byte struct":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
+
+
+suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
+  # S7 appends four SPH f32 fields after the force-model block. Their write
+  # indices must equal their byte offset / 4, and sit immediately after
+  # SIM_PAD2, or webgpu_compute's SPH uniform writes land on the wrong slot.
+
+  test "each SPH index equals its field's byte offset divided by four":
+    check SIM_SPH_REST_DENSITY == SimParamsLayout.fieldOffset("sphRestDensity") div 4
+    check SIM_SPH_STIFFNESS == SimParamsLayout.fieldOffset("sphStiffness") div 4
+    check SIM_SPH_GAMMA == SimParamsLayout.fieldOffset("sphGamma") div 4
+    check SIM_SPH_VISCOSITY == SimParamsLayout.fieldOffset("sphViscosity") div 4
+
+  test "the four SPH slots are contiguous and follow SIM_PAD2":
+    check SIM_SPH_REST_DENSITY == SIM_PAD2 + 1
+    check SIM_SPH_STIFFNESS == SIM_SPH_REST_DENSITY + 1
+    check SIM_SPH_GAMMA == SIM_SPH_STIFFNESS + 1
+    check SIM_SPH_VISCOSITY == SIM_SPH_GAMMA + 1
+    # The last SPH slot is the final f32 in the struct.
+    check SIM_SPH_VISCOSITY == SIM_PARAMS_F32_COUNT - 1
 
 
 suite "Generated Render Struct Layouts":

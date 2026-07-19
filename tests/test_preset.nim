@@ -99,6 +99,10 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.glowRadiusScale = 5.0
     customPreset.settings.glowFalloff = 9.0
     customPreset.settings.glowWarmth = 0.7
+    customPreset.settings.sphRestDensity = 2.0
+    customPreset.settings.sphStiffness = 20.0
+    customPreset.settings.sphViscosity = 0.5
+    customPreset.settings.sphSubsteps = 2
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
         (if matrixIndex mod 2 == 0: 0.5 else: -0.5)
@@ -296,6 +300,24 @@ suite "Preset Clamp Behavior Contract":
     let node = %*{"settings": {"forceStrength": 1.7}}
     let result = validate(node)
     check result.preset.settings.forceStrength == 1.7
+
+  test "SPH settings clamp into their ranges and substeps cap at SPH_SUBSTEPS_MAX":
+    let node = %*{"settings": {
+      "sphRestDensity": 99.0,
+      "sphStiffness": -5.0,
+      "sphViscosity": 3.0,
+      "sphSubsteps": 99
+    }}
+    let result = validate(node)
+    check result.preset.settings.sphRestDensity == SPH_REST_DENSITY_MAX
+    check result.preset.settings.sphStiffness == SPH_STIFFNESS_MIN
+    check result.preset.settings.sphViscosity == SPH_VISCOSITY_MAX
+    check result.preset.settings.sphSubsteps == SPH_SUBSTEPS_MAX
+
+  test "a missing SPH field defaults rather than crashing":
+    let result = validate(%*{"settings": {}})
+    check result.preset.settings.sphRestDensity == defaultSettings().sphRestDensity
+    check result.preset.settings.sphSubsteps == defaultSettings().sphSubsteps
 
   test "matrix values clamp into [-1, 1]":
     var arr = newSeq[float](MATRIX_LEN)

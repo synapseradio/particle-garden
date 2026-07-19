@@ -118,8 +118,9 @@ const
     totalSize: 16
   )
 
-  # SimParams struct (232 bytes, matches forces.wgsl)
-  # Layout: 16 scalar fields (64 bytes) + 9 vec4 matrix (144 bytes) + 6 fields (24 bytes)
+  # SimParams struct (248 bytes, matches forces.wgsl / forces-sph.wgsl)
+  # Layout: 16 scalar fields (64 bytes) + 9 vec4 matrix (144 bytes) + 6 force-model
+  # fields (24 bytes) + 4 SPH fields (16 bytes)
   SimParamsLayout* = GpuStruct(
     name: "SimParams",
     fields: @[
@@ -149,8 +150,14 @@ const
       GpuField(name: "expAlpha",        kind: gtF32, offset: 220, size: 4, count: 1),
       GpuField(name: "expBeta",         kind: gtF32, offset: 224, size: 4, count: 1),
       GpuField(name: "_pad2",           kind: gtF32, offset: 228, size: 4, count: 1),
+      # SPH fluid-mode parameters (232-248). forces-sph.wgsl reads these; the
+      # particle-life force shader ignores them.
+      GpuField(name: "sphRestDensity",  kind: gtF32, offset: 232, size: 4, count: 1),
+      GpuField(name: "sphStiffness",    kind: gtF32, offset: 236, size: 4, count: 1),
+      GpuField(name: "sphGamma",        kind: gtF32, offset: 240, size: 4, count: 1),
+      GpuField(name: "sphViscosity",    kind: gtF32, offset: 244, size: 4, count: 1),
     ],
-    totalSize: 232
+    totalSize: 248
   )
 
   # RenderParams struct (48 bytes, generated into web/shaders/modules/render_params.wgsl)
@@ -259,7 +266,7 @@ func wgslComputedOffsets*(layout: GpuStruct): seq[int] =
 
 func wgslUniformSize*(layout: GpuStruct): int =
   ## Bytes a uniform buffer must allocate: struct size rounded up to 16.
-  ## SimParams is 232 bytes written, 240 allocated.
+  ## SimParams is 248 bytes written, 256 allocated.
   roundUpTo(layout.totalSize, 16)
 
 func toWgslStruct*(layout: GpuStruct): string =
@@ -374,7 +381,7 @@ static:
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
         "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
-    assert SimParamsLayout.wgslUniformSize == 240, "SimParams allocates 240 bytes"
+    assert SimParamsLayout.wgslUniformSize == 256, "SimParams allocates 256 bytes"
 
 # =============================================================================
 # SIMPARAMS FIELD INDICES (for type-safe buffer writes)

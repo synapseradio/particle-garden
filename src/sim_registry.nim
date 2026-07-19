@@ -153,7 +153,32 @@ func buildFrame*(kind: SimKind): FrameDescription =
       ]),
     ]
   of skSph:
-    raise newException(ValueError, "SPH frame not implemented yet (roadmap S7)")
+    # Same grid-build structure as particle-life — SPH reuses the spatial hash
+    # verbatim — then an SPH physics pass. Substepping (running the whole frame
+    # N times per rendered frame for stability at high stiffness) is an EXECUTOR
+    # loop, not frame nodes: the executor encodes this description N times in one
+    # command encoder. The description stays one substep's worth of work.
+    @[
+      # gridCounts must start at zero for bin-count's atomic increments.
+      clearBufferNode(sbGridCounts),
+      computePassNode("Grid Build", PROFILER_SLOT_GRID_BUILD, @[
+        dispatch("binCount", dsParticleWorkgroups),
+        dispatch("prefixLocal", dsScanBlocks),
+        dispatch("prefixBlocks", dsOne),
+        dispatch("prefixFinal", dsScanBlocks),
+      ]),
+      # bin-scatter consumes fillPointers as its running write cursors, which
+      # must start at each cell's exclusive-scan offset.
+      copyBufferNode(sbGridOffsets, sbFillPointers),
+      # Deliberately NO delta-buffer clears: forcesSph self-resets
+      # velocityDelta/densityDelta via atomicStore, the same binding contract as
+      # forces, so an encoder-level clear here would race those atomics.
+      computePassNode("Physics (SPH)", PROFILER_SLOT_PHYSICS, @[
+        dispatch("binScatter", dsParticleWorkgroups),
+        dispatch("forcesSph", dsParticleWorkgroups),
+        dispatch("integrate", dsParticleWorkgroups),
+      ]),
+    ]
   of skReactionDiffusion:
     raise newException(ValueError,
       "reaction-diffusion frame not implemented yet (roadmap S8)")

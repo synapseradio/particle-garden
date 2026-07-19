@@ -95,6 +95,10 @@ type
     glowRadiusScale*: float
     glowFalloff*: float
     glowWarmth*: float
+    sphRestDensity*: float
+    sphStiffness*: float
+    sphViscosity*: float
+    sphSubsteps*: int
 
   Preset* = object
     ## The full persisted shape: `{schemaVersion, name, createdAt, mode,
@@ -180,7 +184,11 @@ func defaultSettings*(): PresetSettings =
     expAttractionBeta: 3.0,
     glowRadiusScale: 3.0,
     glowFalloff: 6.0,
-    glowWarmth: 0.4
+    glowWarmth: 0.4,
+    sphRestDensity: 1.0,
+    sphStiffness: 8.0,
+    sphViscosity: 0.1,
+    sphSubsteps: 1
   )
 
 func defaultMatrix*(): Matrix =
@@ -297,6 +305,14 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "glowFalloff").getFloat(defaults.glowFalloff), GLOW_FALLOFF_MIN, GLOW_FALLOFF_MAX)
   result.glowWarmth = clampFloat(
     field(node, "glowWarmth").getFloat(defaults.glowWarmth), GLOW_WARMTH_MIN, GLOW_WARMTH_MAX)
+  result.sphRestDensity = clampFloat(
+    field(node, "sphRestDensity").getFloat(defaults.sphRestDensity), SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX)
+  result.sphStiffness = clampFloat(
+    field(node, "sphStiffness").getFloat(defaults.sphStiffness), SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX)
+  result.sphViscosity = clampFloat(
+    field(node, "sphViscosity").getFloat(defaults.sphViscosity), SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX)
+  result.sphSubsteps = clampInt(
+    field(node, "sphSubsteps").getInt(defaults.sphSubsteps), SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX)
 
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
@@ -430,6 +446,10 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["glowRadiusScale"] = %settings.glowRadiusScale
   result["glowFalloff"] = %settings.glowFalloff
   result["glowWarmth"] = %settings.glowWarmth
+  result["sphRestDensity"] = %settings.sphRestDensity
+  result["sphStiffness"] = %settings.sphStiffness
+  result["sphViscosity"] = %settings.sphViscosity
+  result["sphSubsteps"] = %settings.sphSubsteps
 
 proc toJson*(preset: Preset): JsonNode =
   result = newJObject()

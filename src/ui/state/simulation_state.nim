@@ -2,7 +2,7 @@
 # SIMULATION STATE - Physics simulation parameters
 # ==============================================================================
 #
-# The typed record for every physics-side tunable: the thirteen ConfigObject
+# The typed record for every physics-side tunable: the seventeen ConfigObject
 # fields the compute pipeline and force model read. ui.nim holds this in an
 # Observable and mirrors each change synchronously into the flat CONFIG the
 # hot paths consume; config.nim's createConfig copies these defaults, so the
@@ -29,6 +29,10 @@ type
     forceModel*: int          ## 0=polynomial, 1=exponential
     expRepulsionAlpha*: float ## Exponential repulsion steepness
     expAttractionBeta*: float ## Exponential attraction range
+    sphRestDensity*: float    ## SPH target density the Tait EOS drives toward
+    sphStiffness*: float      ## SPH pressure gain (Tait stiffness)
+    sphViscosity*: float      ## SPH XSPH viscosity strength
+    sphSubsteps*: int         ## SPH physics substeps per rendered frame
 
 func initSimulationState*(): SimulationState =
   ## The authoritative physics defaults (copied into CONFIG by createConfig).
@@ -45,5 +49,9 @@ func initSimulationState*(): SimulationState =
     attractionPeak: 0.75,  # Attraction peaks at 75% of radius
     forceModel: 0,         # Polynomial (smooth curves)
     expRepulsionAlpha: 6.0,
-    expAttractionBeta: 3.0
+    expAttractionBeta: 3.0,
+    sphRestDensity: 1.0,
+    sphStiffness: 8.0,
+    sphViscosity: 0.1,
+    sphSubsteps: 1
   )

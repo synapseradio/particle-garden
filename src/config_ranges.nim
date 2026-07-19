@@ -21,6 +21,7 @@
 # ==============================================================================
 
 import memory_layout
+import sph_core
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -68,6 +69,16 @@ const
   PALETTE_SATURATION_MAX* = 1.0
   PALETTE_LIGHTNESS_MIN* = 0.0
   PALETTE_LIGHTNESS_MAX* = 1.0
+  SPH_REST_DENSITY_MIN* = 0.2
+  SPH_REST_DENSITY_MAX* = 4.0
+  SPH_STIFFNESS_MIN* = 1.0
+  SPH_STIFFNESS_MAX* = 40.0
+  SPH_VISCOSITY_MIN* = 0.0
+  SPH_VISCOSITY_MAX* = 1.0
+  SPH_SUBSTEPS_MIN* = 1
+  SPH_SUBSTEPS_MAX* = SPH_MAX_SUBSTEPS
+    ## The substep ceiling is sph_core's SPH_MAX_SUBSTEPS, not a bare literal —
+    ## the executor loop and the slider bound stay one value.
 
 static:
   # Every range must be non-empty, or clamping inverts.
@@ -77,3 +88,7 @@ static:
   doAssert GLOW_RADIUS_SCALE_MIN < GLOW_RADIUS_SCALE_MAX
   doAssert GLOW_FALLOFF_MIN < GLOW_FALLOFF_MAX
   doAssert GLOW_WARMTH_MIN < GLOW_WARMTH_MAX
+  doAssert SPH_REST_DENSITY_MIN < SPH_REST_DENSITY_MAX
+  doAssert SPH_STIFFNESS_MIN < SPH_STIFFNESS_MAX
+  doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
+  doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX

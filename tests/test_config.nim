@@ -50,6 +50,11 @@ const
   # The glow radius glow.wgsl hard-coded before the knobs existed. The default
   # knob values must reproduce it so S1 preserves the default appearance.
   LEGACY_GLOW_BASE_RADIUS = 12.0
+  # SPH fluid mode (S7): mirror config.nim createConfig() / initSimulationState().
+  DEFAULT_SPH_REST_DENSITY = 1.0
+  DEFAULT_SPH_STIFFNESS = 8.0
+  DEFAULT_SPH_VISCOSITY = 0.1
+  DEFAULT_SPH_SUBSTEPS = 1
   # World dimensions (from config.nim)
   WORLD_W = 3840.0
   WORLD_H = 2160.0
@@ -128,6 +133,16 @@ suite "Configuration Invariants":
     ## CONTRACT: particleSize must be > 0
     ## WHY: Particles must be visible - zero size renders nothing
     check DEFAULT_PARTICLE_SIZE > 0
+
+  test "SPH defaults are physically sensible":
+    ## CONTRACT: rest density and stiffness drive the Tait EOS and must be
+    ## positive; viscosity is an XSPH blend fraction in [0,1]; substeps is a
+    ## positive per-frame loop count.
+    check DEFAULT_SPH_REST_DENSITY > 0.0
+    check DEFAULT_SPH_STIFFNESS > 0.0
+    check DEFAULT_SPH_VISCOSITY >= 0.0
+    check DEFAULT_SPH_VISCOSITY <= 1.0
+    check DEFAULT_SPH_SUBSTEPS >= 1
 
   test "glow knob defaults reproduce the legacy hard-coded glow radius":
     ## CONTRACT: baseRadius in glow.wgsl is params.baseSize * params.glowRadiusScale,

@@ -51,6 +51,10 @@ type
     glowRadiusScale* {.exportc.}: float   # Glow halo radius = (particleSize+1) * this
     glowFalloff* {.exportc.}: float       # Gaussian falloff exponent (higher = tighter halo)
     glowWarmth* {.exportc.}: float        # Density-driven warm shift, [0,1]
+    sphRestDensity* {.exportc.}: float    # SPH target density (Tait EOS rest density)
+    sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
+    sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
+    sphSubsteps* {.exportc.}: int         # SPH physics substeps per rendered frame
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -172,6 +176,10 @@ proc createConfig(): ConfigObject =
   result.forceModel = sim.forceModel
   result.expRepulsionAlpha = sim.expRepulsionAlpha
   result.expAttractionBeta = sim.expAttractionBeta
+  result.sphRestDensity = sim.sphRestDensity
+  result.sphStiffness = sim.sphStiffness
+  result.sphViscosity = sim.sphViscosity
+  result.sphSubsteps = sim.sphSubsteps
   result.particleSize = visual.particleSize
   result.trails = visual.trails
   result.trailLength = visual.trailLength
