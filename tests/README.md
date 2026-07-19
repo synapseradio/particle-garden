@@ -48,6 +48,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_matrix.nim` | Attraction matrix state plus cell and species colors | Native |
 | `test_stats.nim` | Performance stats formatters and immutable updates | Native |
 | `test_app_state.nim` | App runtime and profiling-average accumulators | Native |
+| `test_preset.nim` | Versioned preset schema: round-trip, version rejection, clamp/default degradation, migration hook | Native |
 
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself.
 
@@ -67,7 +68,8 @@ test_all.nim (runner)
     ├── test_slider.nim         → ui/controls/slider.nim, ui/state (sim/render)
     ├── test_matrix.nim         → ui/state/matrix_state.nim (matrix, colors)
     ├── test_stats.nim          → ui/stats/stats_view.nim (formatters, updates)
-    └── test_app_state.nim      → ui/state/app_state.nim (profiling averages)
+    ├── test_app_state.nim      → ui/state/app_state.nim (profiling averages)
+    └── test_preset.nim         → preset.nim (versioned schema, validate/migrate)
 ```
 
 ## Running Tests
@@ -442,6 +444,6 @@ The browser-dependent modules have no separate test target. Their correctness is
 
 ## Coverage Summary
 
-The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, GPU struct layouts and field accessors, shader workgroup and tuning configuration, the reactive `Observable` primitive, and the UI state models (simulation, render, matrix and its colors, slider, stats formatting, and profiling averages). Run `nimble test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
+The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, GPU struct layouts and field accessors, shader workgroup and tuning configuration, the reactive `Observable` primitive, the UI state models (simulation, render, matrix and its colors, slider, stats formatting, and profiling averages), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook). Run `nimble test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
 
 Browser integration (WebGPU, DOM, the FFI bindings) is not covered by this suite. It is exercised by the application build and by manual testing in the browser.
