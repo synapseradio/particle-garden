@@ -26,6 +26,7 @@ import test_app_state
 import test_palette
 import test_preset
 import test_sim_registry
+import test_sim_config
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -46,3 +47,4 @@ static:
   discard test_palette.PALETTE_TESTS_LOADED
   discard test_preset.PRESET_TESTS_LOADED
   discard test_sim_registry.SIM_REGISTRY_TESTS_LOADED
+  discard test_sim_config.SIM_CONFIG_TESTS_LOADED

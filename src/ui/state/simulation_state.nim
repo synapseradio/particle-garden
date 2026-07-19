@@ -2,86 +2,48 @@
 # SIMULATION STATE - Physics simulation parameters
 # ==============================================================================
 #
-# Pure state type for simulation parameters (particle count, forces, etc.)
-# Can be wrapped in Observable[SimulationState] for reactive updates.
+# The typed record for every physics-side tunable: the thirteen ConfigObject
+# fields the compute pipeline and force model read. ui.nim holds this in an
+# Observable and mirrors each change synchronously into the flat CONFIG the
+# hot paths consume; config.nim's createConfig copies these defaults, so the
+# values below are the single authoritative defaults.
 #
-# ==============================================================================
-
-# ==============================================================================
-# SECTION 1: STATE TYPE
+# Pure module: compiles on both the native (nimble test) and JS backends.
+#
 # ==============================================================================
 
 type
   SimulationState* = object
     ## Physics simulation parameters.
-    ## Pure immutable data - updates return new state.
+    ## Pure immutable data - updates go through a copied var and re-set.
     particleCount*: int
     speciesCount*: int
     interactionRadius*: int
     forceStrength*: float
     friction*: float
+    ruleTemperature*: float   ## Std dev sigma for the bell-curve rule randomizer
     timeScale*: float
     maxVelocity*: float
-
-# ==============================================================================
-# SECTION 2: CONSTRUCTORS
-# ==============================================================================
+    repulsionEnd*: float      ## Where the repulsion zone ends (0-1)
+    attractionPeak*: float    ## Where attraction peaks (0-1)
+    forceModel*: int          ## 0=polynomial, 1=exponential
+    expRepulsionAlpha*: float ## Exponential repulsion steepness
+    expAttractionBeta*: float ## Exponential attraction range
 
 func initSimulationState*(): SimulationState =
-  ## Create default simulation state.
+  ## The authoritative physics defaults (copied into CONFIG by createConfig).
   SimulationState(
     particleCount: 16000,
     speciesCount: 4,
     interactionRadius: 50,
     forceStrength: 1.0,
     friction: 0.05,
+    ruleTemperature: 0.3,  # Tight bell curve: +/-0.99 is ~3.3 sigma out
     timeScale: 0.5,
-    maxVelocity: 50.0
+    maxVelocity: 50.0,
+    repulsionEnd: 0.5,     # Inner 50% is repulsion zone
+    attractionPeak: 0.75,  # Attraction peaks at 75% of radius
+    forceModel: 0,         # Polynomial (smooth curves)
+    expRepulsionAlpha: 6.0,
+    expAttractionBeta: 3.0
   )
-
-func initSimulationState*(
-  particleCount, speciesCount, interactionRadius: int;
-  forceStrength, friction, timeScale, maxVelocity: float
-): SimulationState =
-  ## Create simulation state with specific values.
-  SimulationState(
-    particleCount: particleCount,
-    speciesCount: speciesCount,
-    interactionRadius: interactionRadius,
-    forceStrength: forceStrength,
-    friction: friction,
-    timeScale: timeScale,
-    maxVelocity: maxVelocity
-  )
-
-# ==============================================================================
-# SECTION 3: IMMUTABLE UPDATES
-# ==============================================================================
-
-func withParticleCount*(state: SimulationState; count: int): SimulationState =
-  result = state
-  result.particleCount = count
-
-func withSpeciesCount*(state: SimulationState; count: int): SimulationState =
-  result = state
-  result.speciesCount = count
-
-func withInteractionRadius*(state: SimulationState; radius: int): SimulationState =
-  result = state
-  result.interactionRadius = radius
-
-func withForceStrength*(state: SimulationState; strength: float): SimulationState =
-  result = state
-  result.forceStrength = strength
-
-func withFriction*(state: SimulationState; friction: float): SimulationState =
-  result = state
-  result.friction = friction
-
-func withTimeScale*(state: SimulationState; scale: float): SimulationState =
-  result = state
-  result.timeScale = scale
-
-func withMaxVelocity*(state: SimulationState; velocity: float): SimulationState =
-  result = state
-  result.maxVelocity = velocity

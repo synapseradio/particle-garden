@@ -44,6 +44,7 @@ import webgpu_render
 
 # Layer 5: UI state types
 import ui/state/app_state
+import ui/state/sim_config
 
 # ==============================================================================
 # BINDINGS - Helper procs
@@ -329,6 +330,11 @@ proc init(): Future[void] {.async, exportc.} =
 
   # Set up UI bindings
   ui.setupUI()
+
+  # Mode selector drives the compute executor's frame description
+  # (qualified: webgpu_compute also exports a var named activeSimKind)
+  subscribeSimple(sim_config.activeSimKind, proc(kind: SimKind) =
+    webgpu_compute.setActiveSimKind(kind))
 
   # Set matrix update callback (no-op since matrix is in shared GPU buffer)
   ui.setMatrixUpdateCallback(proc() = discard)

@@ -2,80 +2,44 @@
 # RENDER STATE - Visual rendering parameters
 # ==============================================================================
 #
-# Pure state type for render settings (trails, glow, particle size, etc.)
-# Can be wrapped in Observable[RenderState] for reactive updates.
+# The typed record for every visual-side tunable: the eight ConfigObject
+# fields the render/glow pipeline reads. ui.nim holds this in an Observable
+# and mirrors each change synchronously into the flat CONFIG the hot paths
+# consume; config.nim's createConfig copies these defaults, so the values
+# below are the single authoritative defaults.
 #
-# ==============================================================================
-
-# ==============================================================================
-# SECTION 1: STATE TYPE
+# Pure module: compiles on both the native (nimble test) and JS backends.
+#
 # ==============================================================================
 
 type
   RenderState* = object
     ## Visual rendering parameters.
-    ## Pure immutable data - updates return new state.
+    ## Pure immutable data - updates go through a copied var and re-set.
     particleSize*: int
     trails*: bool
-    trailAlpha*: float
+    trailLength*: float       ## 0-100 particle diameters (0 = no trails)
     glowIntensity*: float
     velocityGlowScale*: float
-
-# ==============================================================================
-# SECTION 2: CONSTRUCTORS
-# ==============================================================================
+    glowRadiusScale*: float   ## Glow halo radius = (particleSize+1) * this
+    glowFalloff*: float       ## Gaussian falloff exponent (higher = tighter)
+    glowWarmth*: float        ## Density-driven warm shift, [0,1]
 
 func initRenderState*(): RenderState =
-  ## Create default render state.
+  ## The authoritative render defaults (copied into CONFIG by createConfig).
+  ## (particleSize + 1) * glowRadiusScale must stay 12.0 to reproduce the
+  ## radius glow.wgsl hard-coded before the knobs existed (pinned by
+  ## tests/test_sim_config.nim).
   RenderState(
     particleSize: 3,
     trails: false,
-    trailAlpha: 0.96,
-    glowIntensity: 0.8,
-    velocityGlowScale: 1.0
+    trailLength: 0.0,
+    glowIntensity: 0.8,      # Subtle glow
+    velocityGlowScale: 1.0,  # Full velocity-to-glow influence
+    glowRadiusScale: 3.0,
+    glowFalloff: 6.0,
+    glowWarmth: 0.4
   )
-
-func initRenderState*(
-  particleSize: int;
-  trails: bool;
-  trailAlpha, glowIntensity, velocityGlowScale: float
-): RenderState =
-  ## Create render state with specific values.
-  RenderState(
-    particleSize: particleSize,
-    trails: trails,
-    trailAlpha: trailAlpha,
-    glowIntensity: glowIntensity,
-    velocityGlowScale: velocityGlowScale
-  )
-
-# ==============================================================================
-# SECTION 3: IMMUTABLE UPDATES
-# ==============================================================================
-
-func withParticleSize*(state: RenderState; size: int): RenderState =
-  result = state
-  result.particleSize = size
-
-func withTrails*(state: RenderState; enabled: bool): RenderState =
-  result = state
-  result.trails = enabled
-
-func withTrailAlpha*(state: RenderState; alpha: float): RenderState =
-  result = state
-  result.trailAlpha = alpha
-
-func withGlowIntensity*(state: RenderState; intensity: float): RenderState =
-  result = state
-  result.glowIntensity = intensity
-
-func withVelocityGlowScale*(state: RenderState; scale: float): RenderState =
-  result = state
-  result.velocityGlowScale = scale
-
-# ==============================================================================
-# SECTION 4: QUERIES
-# ==============================================================================
 
 func hasTrails*(state: RenderState): bool =
   state.trails

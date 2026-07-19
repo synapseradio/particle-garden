@@ -40,6 +40,7 @@ import buffers
 # New reactive state system
 import ui/core/observable
 import ui/state/input_state
+import ui/state/sim_config
 import ui/matrix/matrix_view
 import ui/input/mouse_handler
 import ui/input/touch_handler
@@ -80,6 +81,61 @@ proc updateInputState*() =
   let current = currentInput.get()
   if current.hasActiveBlast():
     currentInput.set(current.withBlastDecay(BLAST_DECAY_FACTOR))
+
+# ==============================================================================
+# SECTION 3b: TYPED CONFIG STATE
+# ==============================================================================
+#
+# The typed tunable records are the mutation surface; CONFIG stays the flat
+# GPU-facing mirror the hot paths read. Every mutation goes through the
+# update helpers below, which write the observable AND the mirror in the
+# same tick — a subscription-based mirror would flush on a microtask, and
+# programmatic setValue calls onChange synchronously, which would then read
+# a stale CONFIG.
+
+var currentSimulation* = newObservable(initSimulationState())
+var currentRender* = newObservable(initRenderState())
+
+proc applySimulationToConfig(simState: SimulationState) =
+  CONFIG.particleCount = simState.particleCount
+  CONFIG.speciesCount = simState.speciesCount
+  CONFIG.interactionRadius = simState.interactionRadius
+  CONFIG.forceStrength = simState.forceStrength
+  CONFIG.friction = simState.friction
+  CONFIG.ruleTemperature = simState.ruleTemperature
+  CONFIG.timeScale = simState.timeScale
+  CONFIG.maxVelocity = simState.maxVelocity
+  CONFIG.repulsionEnd = simState.repulsionEnd
+  CONFIG.attractionPeak = simState.attractionPeak
+  CONFIG.forceModel = simState.forceModel
+  CONFIG.expRepulsionAlpha = simState.expRepulsionAlpha
+  CONFIG.expAttractionBeta = simState.expAttractionBeta
+
+proc applyRenderToConfig(renderState: RenderState) =
+  CONFIG.particleSize = renderState.particleSize
+  CONFIG.trails = renderState.trails
+  CONFIG.trailLength = renderState.trailLength
+  CONFIG.glowIntensity = renderState.glowIntensity
+  CONFIG.velocityGlowScale = renderState.velocityGlowScale
+  CONFIG.glowRadiusScale = renderState.glowRadiusScale
+  CONFIG.glowFalloff = renderState.glowFalloff
+  CONFIG.glowWarmth = renderState.glowWarmth
+
+proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
+  ## Mutate a copy of the simulation state, publish it, and mirror it into
+  ## CONFIG synchronously.
+  var simState = currentSimulation.get()
+  mutate(simState)
+  currentSimulation.set(simState)
+  applySimulationToConfig(simState)
+
+proc updateRender*(mutate: proc(renderState: var RenderState)) =
+  ## Mutate a copy of the render state, publish it, and mirror it into
+  ## CONFIG synchronously.
+  var renderState = currentRender.get()
+  mutate(renderState)
+  currentRender.set(renderState)
+  applyRenderToConfig(renderState)
 
 # ==============================================================================
 # SECTION 4: CALLBACK REFERENCES
@@ -145,7 +201,8 @@ proc setupUI*() {.exportc.} =
   # Simulation sliders
   configSlider("particleCount", "particleValue",
     get = proc(): float = CONFIG.particleCount.float,
-    set = proc(v: float) = CONFIG.particleCount = v.int,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.particleCount = value.int),
     min = PARTICLE_COUNT_MIN.float, max = PARTICLE_COUNT_MAX.float,
     onChange = proc() =
       if not onInitParticles.isNil: onInitParticles()
@@ -153,7 +210,8 @@ proc setupUI*() {.exportc.} =
 
   configSlider("speciesCount", "speciesValue",
     get = proc(): float = CONFIG.speciesCount.float,
-    set = proc(v: float) = CONFIG.speciesCount = v.int,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.speciesCount = value.int),
     min = SPECIES_COUNT_MIN.float, max = SPECIES_COUNT_MAX.float,
     onChange = proc() =
       randomizeMatrix()
@@ -162,105 +220,122 @@ proc setupUI*() {.exportc.} =
 
   configSlider("interactionRadius", "radiusValue",
     get = proc(): float = CONFIG.interactionRadius.float,
-    set = proc(v: float) = CONFIG.interactionRadius = v.int,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.interactionRadius = value.int),
     min = INTERACTION_RADIUS_MIN.float, max = INTERACTION_RADIUS_MAX.float
   )
 
   configSlider("forceStrength", "forceValue",
     get = proc(): float = CONFIG.forceStrength,
-    set = proc(v: float) = CONFIG.forceStrength = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.forceStrength = value),
     min = FORCE_STRENGTH_MIN, max = FORCE_STRENGTH_MAX, precision = 1
   )
 
   configSlider("friction", "frictionValue",
     get = proc(): float = CONFIG.friction,
-    set = proc(v: float) = CONFIG.friction = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.friction = value),
     min = FRICTION_MIN, max = FRICTION_MAX, precision = 2
   )
 
   configSlider("timeScale", "timeScaleValue",
     get = proc(): float = CONFIG.timeScale,
-    set = proc(v: float) = CONFIG.timeScale = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.timeScale = value),
     min = TIME_SCALE_MIN, max = TIME_SCALE_MAX, precision = 1
   )
 
   configSlider("ruleTemperature", "ruleTemperatureValue",
     get = proc(): float = CONFIG.ruleTemperature,
-    set = proc(v: float) = CONFIG.ruleTemperature = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.ruleTemperature = value),
     min = RULE_TEMPERATURE_MIN, max = RULE_TEMPERATURE_MAX, precision = 2
   )
 
   configSlider("maxVelocity", "velocityValue",
     get = proc(): float = CONFIG.maxVelocity,
-    set = proc(v: float) = CONFIG.maxVelocity = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.maxVelocity = value),
     min = MAX_VELOCITY_MIN, max = MAX_VELOCITY_MAX
   )
 
   # Render sliders
   configSlider("particleSize", "particleSizeValue",
     get = proc(): float = CONFIG.particleSize.float,
-    set = proc(v: float) = CONFIG.particleSize = v.int,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.particleSize = value.int),
     min = PARTICLE_SIZE_MIN.float, max = PARTICLE_SIZE_MAX.float
   )
 
   configSlider("trailLength", "trailValue",
     get = proc(): float = CONFIG.trailLength,
-    set = proc(v: float) = CONFIG.trailLength = v,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.trailLength = value),
     min = TRAIL_LENGTH_MIN, max = TRAIL_LENGTH_MAX, precision = 0
   )
 
   configSlider("glowIntensity", "glowValue",
     get = proc(): float = CONFIG.glowIntensity,
-    set = proc(v: float) = CONFIG.glowIntensity = v,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.glowIntensity = value),
     min = GLOW_INTENSITY_MIN, max = GLOW_INTENSITY_MAX, precision = 1
   )
 
   configSlider("velocityGlowScale", "velocityGlowValue",
     get = proc(): float = CONFIG.velocityGlowScale,
-    set = proc(v: float) = CONFIG.velocityGlowScale = v,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.velocityGlowScale = value),
     min = VELOCITY_GLOW_SCALE_MIN, max = VELOCITY_GLOW_SCALE_MAX, precision = 1
   )
 
   configSlider("glowRadiusScale", "glowRadiusScaleValue",
     get = proc(): float = CONFIG.glowRadiusScale,
-    set = proc(v: float) = CONFIG.glowRadiusScale = v,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.glowRadiusScale = value),
     min = GLOW_RADIUS_SCALE_MIN, max = GLOW_RADIUS_SCALE_MAX, precision = 1
   )
 
   configSlider("glowFalloff", "glowFalloffValue",
     get = proc(): float = CONFIG.glowFalloff,
-    set = proc(v: float) = CONFIG.glowFalloff = v,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.glowFalloff = value),
     min = GLOW_FALLOFF_MIN, max = GLOW_FALLOFF_MAX, precision = 1
   )
 
   configSlider("glowWarmth", "glowWarmthValue",
     get = proc(): float = CONFIG.glowWarmth,
-    set = proc(v: float) = CONFIG.glowWarmth = v,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.glowWarmth = value),
     min = GLOW_WARMTH_MIN, max = GLOW_WARMTH_MAX, precision = 2
   )
 
   # Force Model sliders
   configSlider("repulsionEnd", "repulsionEndValue",
     get = proc(): float = CONFIG.repulsionEnd,
-    set = proc(v: float) = CONFIG.repulsionEnd = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.repulsionEnd = value),
     min = REPULSION_END_MIN, max = REPULSION_END_MAX, precision = 2
   )
 
   configSlider("attractionPeak", "attractionPeakValue",
     get = proc(): float = CONFIG.attractionPeak,
-    set = proc(v: float) = CONFIG.attractionPeak = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.attractionPeak = value),
     min = ATTRACTION_PEAK_MIN, max = ATTRACTION_PEAK_MAX, precision = 2
   )
 
   configSlider("expRepulsionAlpha", "expRepulsionAlphaValue",
     get = proc(): float = CONFIG.expRepulsionAlpha,
-    set = proc(v: float) = CONFIG.expRepulsionAlpha = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.expRepulsionAlpha = value),
     min = EXP_REPULSION_ALPHA_MIN, max = EXP_REPULSION_ALPHA_MAX, precision = 2
   )
 
   configSlider("expAttractionBeta", "expAttractionBetaValue",
     get = proc(): float = CONFIG.expAttractionBeta,
-    set = proc(v: float) = CONFIG.expAttractionBeta = v,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.expAttractionBeta = value),
     min = EXP_ATTRACTION_BETA_MIN, max = EXP_ATTRACTION_BETA_MAX, precision = 2
   )
 
@@ -347,9 +422,10 @@ proc toggleTrails*() {.exportc.} =
   ## Toggle trail rendering mode.
   ## Updates button state and shows/hides trail length slider.
   panelState = control_panel.toggleTrails(panelState)
-  CONFIG.trails = panelState.hasTrails()
-  setActive("trailBtn", CONFIG.trails)
-  setVisible("trailSettings", CONFIG.trails)
+  let trailsOn = control_panel.hasTrails(panelState)
+  updateRender(proc(renderState: var RenderState) = renderState.trails = trailsOn)
+  setActive("trailBtn", trailsOn)
+  setVisible("trailSettings", trailsOn)
 
 proc showWebGPURequiredOverlay*() {.exportc.} =
   ## Show the "WebGPU required" overlay. Called when WebGPU init or the
@@ -386,11 +462,19 @@ proc toggleGlowSection*() {.exportc.} =
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
   ## @param model - 0 for polynomial, 1 for exponential
-  CONFIG.forceModel = model
+  updateSimulation(proc(simState: var SimulationState) = simState.forceModel = model)
   setActive("polyModelBtn", model == 0)
   setActive("expModelBtn", model == 1)
   setVisible("polynomialParams", model == 0)
   setVisible("exponentialParams", model == 1)
+
+proc setSimMode*(modeId: cstring) {.exportc.} =
+  ## Switch the active simulation mode (mode-selector buttons). Modes are
+  ## addressed by sim_registry's stable string ids, never enum ordinals;
+  ## app.nim subscribes activeSimKind to the compute executor.
+  let kind = parseSimKind($modeId)
+  activeSimKind.set(kind)
+  setActive("modeParticleLifeBtn", kind == skParticleLife)
 
 # ==============================================================================
 # SECTION 10: MATRIX UI
@@ -460,4 +544,5 @@ window.randomizeMatrix = randomizeMatrix;
 window.toggleForceModelSection = toggleForceModelSection;
 window.toggleGlowSection = toggleGlowSection;
 window.setForceModel = setForceModel;
+window.setSimMode = setSimMode;
 """.}

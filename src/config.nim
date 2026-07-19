@@ -20,6 +20,8 @@ from std/jsffi import JsObject
 import bindings/typed_arrays
 import memory_layout
 import palette
+import ui/state/simulation_state
+import ui/state/render_state
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -150,31 +152,34 @@ var MEMORY_LAYOUT* {.exportc.}: MemoryLayoutObject = createMemoryLayout()
 # ==============================================================================
 
 proc createConfig(): ConfigObject =
+  ## Copy the authoritative defaults from the pure typed records (natively
+  ## tested in tests/test_sim_config.nim) into the flat GPU-facing mirror.
+  ## Never write a default literal here; it belongs in simulation_state or
+  ## render_state.
+  let sim = initSimulationState()
+  let visual = initRenderState()
   result = ConfigObject()
-  result.particleCount = 16000
-  result.speciesCount = 4
-  result.interactionRadius = 50
-  result.forceStrength = 1.0
-  result.friction = 0.05
-  result.ruleTemperature = 0.3  # Tight bell curve: +/-0.99 is ~3.3 sigma out
-  result.timeScale = 0.5
-  result.particleSize = 3
-  result.trails = false
-  result.trailLength = 0.0  # 0-100 particle diameters (0 = no trails)
-  result.glowIntensity = 0.8  # Subtle glow, reduced 30% from 1.15
-  result.velocityGlowScale = 1.0  # Full velocity-to-glow influence
-  result.maxVelocity = 50.0
-  result.repulsionEnd = 0.5      # Inner 50% is repulsion zone
-  result.attractionPeak = 0.75   # Attraction peaks at 75% of radius
-  result.forceModel = 0          # Default: polynomial (smooth curves)
-  result.expRepulsionAlpha = 6.0 # Exponential repulsion steepness
-  result.expAttractionBeta = 3.0 # Exponential attraction range
-  # Glow knobs. (particleSize + 1) * glowRadiusScale must equal 12.0 at these
-  # defaults to reproduce the radius glow.wgsl hard-coded before the knobs
-  # existed (pinned by tests/test_config.nim).
-  result.glowRadiusScale = 3.0
-  result.glowFalloff = 6.0
-  result.glowWarmth = 0.4
+  result.particleCount = sim.particleCount
+  result.speciesCount = sim.speciesCount
+  result.interactionRadius = sim.interactionRadius
+  result.forceStrength = sim.forceStrength
+  result.friction = sim.friction
+  result.ruleTemperature = sim.ruleTemperature
+  result.timeScale = sim.timeScale
+  result.maxVelocity = sim.maxVelocity
+  result.repulsionEnd = sim.repulsionEnd
+  result.attractionPeak = sim.attractionPeak
+  result.forceModel = sim.forceModel
+  result.expRepulsionAlpha = sim.expRepulsionAlpha
+  result.expAttractionBeta = sim.expAttractionBeta
+  result.particleSize = visual.particleSize
+  result.trails = visual.trails
+  result.trailLength = visual.trailLength
+  result.glowIntensity = visual.glowIntensity
+  result.velocityGlowScale = visual.velocityGlowScale
+  result.glowRadiusScale = visual.glowRadiusScale
+  result.glowFalloff = visual.glowFalloff
+  result.glowWarmth = visual.glowWarmth
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 
