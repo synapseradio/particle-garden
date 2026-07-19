@@ -21,6 +21,7 @@ import test_config
 import test_gpu_types
 import test_shader_config
 import test_stats
+import test_control_panel
 import test_app_state
 import test_palette
 import test_preset
@@ -40,6 +41,7 @@ static:
   discard test_gpu_types.GPU_TYPES_TESTS_LOADED
   discard test_shader_config.SHADER_CONFIG_TESTS_LOADED
   discard test_stats.STATS_TESTS_LOADED
+  discard test_control_panel.CONTROL_PANEL_TESTS_LOADED
   discard test_app_state.APP_STATE_TESTS_LOADED
   discard test_palette.PALETTE_TESTS_LOADED
   discard test_preset.PRESET_TESTS_LOADED

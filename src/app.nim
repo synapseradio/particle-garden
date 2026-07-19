@@ -72,8 +72,11 @@ proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location
 # APPLICATION STATE
 # ==============================================================================
 
-var particleCount* {.exportc.}: int = 0
-var isRunning* {.exportc.}: bool = false
+# Runtime state aggregate (isRunning, particleCount, fps, timing, profiling).
+# The exportc name keeps the JS backend from losing the global's generated
+# name when it emits the forward-declared loop body at its call site.
+var runtimeState {.exportc: "pgAppState".}: AppState = initAppState()
+
 var useWebGPU* {.exportc.}: bool = false
 
 # Canvas dimension helpers
@@ -83,17 +86,15 @@ proc canvasWidth*(): int =
 proc canvasHeight*(): int =
   webgpu_render.canvas.height
 
-# Timing and stats
+# Loop-local timing accumulators (not part of the AppState model)
 var lastTime {.exportc.}: float = 0
 var frameCount {.exportc.}: int = 0
-var fps {.exportc.}: int = 0
 var lastFpsTime {.exportc.}: float = 0
 var computeTimeMs {.exportc.}: float = 0
 var gpuLogCounter {.exportc.}: int = 0
 
-# Performance profiling using pure state types
+# Per-frame timing staging; folded into runtimeState via withTiming each frame
 var currentTiming* = initTimingState()
-var profiling* = initProfilingState()
 
 # ==============================================================================
 # PARTICLE INITIALIZATION
@@ -106,7 +107,7 @@ proc initParticles*() {.exportc.} =
 
   # Get config values - direct access via imported module
   let newCount = config.CONFIG.particleCount
-  particleCount = newCount
+  runtimeState = runtimeState.withParticleCount(newCount)
   let ns = config.CONFIG.speciesCount
 
   # Use WORLD dimensions for particle positions (physics domain)
@@ -115,7 +116,7 @@ proc initParticles*() {.exportc.} =
 
   # Initialize particlesA buffer using AoS layout
   # Struct: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5), pad(6-7)
-  for i in 0 ..< particleCount:
+  for i in 0 ..< newCount:
     let base = i * buffers.FLOATS_PER_PARTICLE  # 8 floats per particle
     buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * W
     buffers.particlesA[base + buffers.FIELD_POS_Y] = jsRandom() * H
@@ -126,7 +127,7 @@ proc initParticles*() {.exportc.} =
 
   # Fisher-Yates shuffle for even species distribution
   # Swap species values within AoS layout
-  for i in countdown(particleCount - 1, 1):
+  for i in countdown(newCount - 1, 1):
     let j = bitwiseOr(jsRandom() * float(i + 1), 0)
     let iBase = i * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
     let jBase = j * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
@@ -134,11 +135,11 @@ proc initParticles*() {.exportc.} =
     buffers.particlesA[iBase] = buffers.particlesA[jBase]
     buffers.particlesA[jBase] = t
 
-  ui.updateParticleStats(particleCount)
+  ui.updateParticleStats(newCount)
 
   # Upload to GPU if using WebGPU (ensures GPU has current particle data)
   if useWebGPU:
-    discard webgpu_compute.uploadInitialData(particleCount)
+    discard webgpu_compute.uploadInitialData(newCount)
 
 proc resetParticles*() {.exportc.} =
   ## Reset particles to initial random state.
@@ -173,7 +174,7 @@ proc physics(dt: float): Future[void] {.async.} =
   # NOTE: Physics uses WORLD dimensions, not canvas dimensions
   let params = makeJsObject()
   params["dt"] = toJs(dt)
-  params["particleCount"] = toJs(particleCount)
+  params["particleCount"] = toJs(runtimeState.particleCount)
   params["width"] = toJs(config.WORLD_W)
   params["height"] = toJs(config.WORLD_H)
   params["gridW"] = gridResult["gridW"]
@@ -213,7 +214,7 @@ proc loop(now: float): Future[void] {.async.}
 proc loop(now: float): Future[void] {.async.} =
   ## Main animation loop.
 
-  if not isRunning: return
+  if not runtimeState.isRunning: return
 
   let frameStart = performanceNow()
 
@@ -228,23 +229,24 @@ proc loop(now: float): Future[void] {.async.} =
   # Render using WebGPU - data stays on GPU, no readback needed. Render/glow
   # bind groups are built once at init (webgpu_render.initWebGPURender);
   # nothing about them varies per frame, so they are never rebuilt here.
-  let renderTiming = webgpu_render.render(particleCount).toJs
+  let renderTiming = webgpu_render.render(runtimeState.particleCount).toJs
   currentTiming.renderPackTimeMs = renderTiming["packTimeMs"].to(float)
   currentTiming.renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
 
   currentTiming.frameTimeMs = performanceNow() - frameStart
   currentTiming.computeTimeMs = computeTimeMs
 
-  # Accumulate profiling data using pure state update
-  profiling = profiling.accumulate(currentTiming)
+  # Fold this frame's timing into the aggregate and accumulate profiling
+  runtimeState = runtimeState.withTiming(currentTiming).accumulateProfiling()
 
   # Update FPS and stats every 500ms
   frameCount = frameCount + 1
   if now - lastFpsTime > 500.0:
-    fps = bitwiseOr(float(frameCount * 1000) / (now - lastFpsTime), 0)
+    runtimeState = runtimeState.withFps(
+      bitwiseOr(float(frameCount * 1000) / (now - lastFpsTime), 0))
     frameCount = 0
     lastFpsTime = now
-    ui.updateStats(fps, 0, computeTimeMs)
+    ui.updateStats(runtimeState.fps, 0, computeTimeMs)
     if gpu_profiler.isActive():
       let gridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
       let physicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
@@ -255,11 +257,11 @@ proc loop(now: float): Future[void] {.async.} =
       gpuLogCounter = gpuLogCounter + 1
       if gpuLogCounter >= 10:
         gpuLogCounter = 0
-        logGpuProfile(particleCount, gridMs, physicsMs, drawMs, presentMs)
+        logGpuProfile(runtimeState.particleCount, gridMs, physicsMs, drawMs, presentMs)
 
   # Reset profiling accumulators every 60 frames
-  if profiling.frameCount >= 60:
-    profiling = profiling.reset()
+  if runtimeState.profiling.frameCount >= 60:
+    runtimeState = runtimeState.resetProfiling()
 
   discard domWindow.requestAnimationFrame(proc(t: float) = discard loop(t))
 
@@ -339,7 +341,7 @@ proc init(): Future[void] {.async, exportc.} =
 
   # Upload particle data to GPU
   consoleLog(toJs("Uploading initial particle data to GPU..."))
-  let uploadResult = await webgpu_compute.uploadInitialData(particleCount)
+  let uploadResult = await webgpu_compute.uploadInitialData(runtimeState.particleCount)
   if not uploadResult["success"].to(bool):
     consoleError(toJs("Failed to upload initial data:"), uploadResult["error"])
     return
@@ -352,7 +354,7 @@ proc init(): Future[void] {.async, exportc.} =
   # Start animation loop
   lastTime = performanceNow()
   lastFpsTime = lastTime
-  isRunning = true
+  runtimeState = runtimeState.withRunning(true)
   discard domWindow.requestAnimationFrame(proc(t: float) = discard loop(t))
 
 # ==============================================================================

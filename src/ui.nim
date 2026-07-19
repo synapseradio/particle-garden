@@ -44,6 +44,7 @@ import ui/matrix/matrix_view
 import ui/input/mouse_handler
 import ui/input/touch_handler
 import ui/controls/slider
+import ui/controls/control_panel
 import ui/stats/stats_view
 import ui/dom_helpers
 
@@ -338,10 +339,15 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
 # SECTION 9: UI TOGGLE FUNCTIONS
 # ==============================================================================
 
+# Panel visibility/toggle state; transitions live in control_panel and are
+# natively tested. CONFIG.trails mirrors panelState for the GPU-facing path.
+var panelState {.exportc: "pgPanelState".}: PanelState = initPanelState()
+
 proc toggleTrails*() {.exportc.} =
   ## Toggle trail rendering mode.
   ## Updates button state and shows/hides trail length slider.
-  CONFIG.trails = not CONFIG.trails
+  panelState = control_panel.toggleTrails(panelState)
+  CONFIG.trails = panelState.hasTrails()
   setActive("trailBtn", CONFIG.trails)
   setVisible("trailSettings", CONFIG.trails)
 
@@ -354,13 +360,11 @@ proc toggleControls*() {.exportc.} =
   ## Toggle controls panel visibility.
   ## Updates collapse button text.
 
+  panelState = toggleCollapsed(panelState)
   let controls = cast[HTMLElement](getElementById("controls"))
-  controls.classList.toggle("collapsed")
+  discard controls.classList.setClass("collapsed", panelState.isCollapsed())
   let btn = controls.querySelector(".collapse-btn")
-  if controls.classList.contains("collapsed"):
-    btn.textContent = "+"
-  else:
-    btn.textContent = "-"
+  btn.textContent = cstring(collapseButtonText(panelState))
 
 proc toggleSection(sectionId: string) =
   ## Toggle a collapsible section's visibility.
