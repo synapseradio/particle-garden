@@ -136,6 +136,53 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
 
+suite "Generated Render Struct Layouts":
+  # S2: RenderParams and FadeParams join SimParams as layout-table-generated
+  # structs. The generated indices must reproduce the values the hand-written
+  # const blocks held, or every uniform write in webgpu_render.nim shifts.
+
+  test "RenderParamsLayout is 12 floats, 48 bytes written and allocated":
+    check RenderParamsLayout.totalSize == 48
+    check wgslUniformSize(RenderParamsLayout) == 48
+
+  test "RenderParamsLayout offsets match WGSL's own layout algorithm":
+    let computedOffsets = wgslComputedOffsets(RenderParamsLayout)
+    for fieldIndex in 0 ..< RenderParamsLayout.fields.len:
+      check computedOffsets[fieldIndex] == RenderParamsLayout.fields[fieldIndex].offset
+
+  test "vec2 fields generate _X and _Y indices at offset/4 and offset/4 + 1":
+    check RENDER_RESOLUTION_X == 0
+    check RENDER_RESOLUTION_Y == 1
+    check RENDER_WORLD_SIZE_X == 2
+    check RENDER_WORLD_SIZE_Y == 3
+
+  test "the generated RENDER_ indices reproduce the hand-written block":
+    check RENDER_BASE_SIZE == 4
+    check RENDER_GLOW_INTENSITY == 5
+    check RENDER_VELOCITY_GLOW_SCALE == 6
+    check RENDER_MAX_VELOCITY == 7
+    check RENDER_TRAIL_LENGTH_SCALE == 8
+
+  test "FadeParamsLayout is 4 floats and generates FADE_ indices":
+    check FadeParamsLayout.totalSize == 16
+    check wgslUniformSize(FadeParamsLayout) == 16
+    check FADE_AMOUNT == 0
+    check FADE_PARAMS_F32_COUNT == 4
+
+  test "a field name that begins with the prefix does not double the prefix":
+    # fadeAmount under prefix FADE must emit FADE_AMOUNT, not FADE_FADE_AMOUNT.
+    check FadeParamsLayout.fields[0].name == "fadeAmount"
+
+  test "toWgslStruct renders both layouts with WGSL vector types":
+    let renderStruct = toWgslStruct(RenderParamsLayout)
+    check renderStruct.startsWith("struct RenderParams {")
+    check "resolution: vec2<f32>," in renderStruct
+    check "glowWarmth: f32," in renderStruct
+    let fadeStruct = toWgslStruct(FadeParamsLayout)
+    check fadeStruct.startsWith("struct FadeParams {")
+    check "fadeAmount: f32," in fadeStruct
+
+
 suite "RenderParams Glow Knob Indices":
   # S1 promotes the three RenderParams pad slots into glow knobs. The struct
   # size must not change: the pads were free f32 slots, so the knob indices

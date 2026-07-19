@@ -4,14 +4,12 @@
 // Drawn first in the offscreen pass, before the current frame's particles, so
 // the persistent trail texture decays by fadeAmount each frame instead of
 // being cleared outright.
+//
+// FadeParams comes from the generated fade_params module (FadeParamsLayout in
+// src/gpu_types.nim); fadeAmount is 0.0 = instant clear, 1.0 = keep previous.
 // =============================================================================
 
-struct FadeParams {
-  fadeAmount: f32,  // 0.0 = no fade (keep previous), 1.0 = instant clear
-  pad0: f32,
-  pad1: f32,
-  pad2: f32,
-};
+//! import fade_params
 
 @group(0) @binding(0) var prevFrame: texture_2d<f32>;
 @group(0) @binding(1) var prevSampler: sampler;

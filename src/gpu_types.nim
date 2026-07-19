@@ -10,9 +10,11 @@
 # The WGSL modules in web/shaders/modules/ should match these definitions.
 # =============================================================================
 
-# std/macros powers genFieldIndices, which emits the SIM_* buffer-write indices
-# from SimParamsLayout. Compile-time only; the JS backend never ships it.
+# std/macros powers genFieldIndices, which emits the SIM_*/RENDER_*/FADE_*
+# buffer-write indices from the layout tables. std/strutils feeds the macro's
+# name mangling. Compile-time only; the JS backend never ships either.
 import std/macros
+import std/strutils
 
 # =============================================================================
 # GPU TYPE SYSTEM
@@ -149,6 +151,36 @@ const
       GpuField(name: "_pad2",           kind: gtF32, offset: 228, size: 4, count: 1),
     ],
     totalSize: 232
+  )
+
+  # RenderParams struct (48 bytes, generated into web/shaders/modules/render_params.wgsl)
+  RenderParamsLayout* = GpuStruct(
+    name: "RenderParams",
+    fields: @[
+      GpuField(name: "resolution",        kind: gtVec2F32, offset: 0,  size: 8, count: 1),
+      GpuField(name: "worldSize",         kind: gtVec2F32, offset: 8,  size: 8, count: 1),
+      GpuField(name: "baseSize",          kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "glowIntensity",     kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "velocityGlowScale", kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "maxVelocity",       kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "trailLengthScale",  kind: gtF32, offset: 32, size: 4, count: 1),
+      GpuField(name: "glowRadiusScale",   kind: gtF32, offset: 36, size: 4, count: 1),
+      GpuField(name: "glowFalloff",       kind: gtF32, offset: 40, size: 4, count: 1),
+      GpuField(name: "glowWarmth",        kind: gtF32, offset: 44, size: 4, count: 1),
+    ],
+    totalSize: 48
+  )
+
+  # FadeParams struct (16 bytes, generated into web/shaders/modules/fade_params.wgsl)
+  FadeParamsLayout* = GpuStruct(
+    name: "FadeParams",
+    fields: @[
+      GpuField(name: "fadeAmount", kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "pad0",       kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "pad1",       kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "pad2",       kind: gtF32, offset: 12, size: 4, count: 1),
+    ],
+    totalSize: 16
   )
 
 # =============================================================================
@@ -288,15 +320,26 @@ proc newExportedIntConst(constName: string, constValue: int): NimNode =
 macro genFieldIndices*(layout: static GpuStruct, prefix: static string): untyped =
   ## Emit an exported const per field of `layout`, named `<prefix>_<FIELD>` and
   ## valued at the field's f32-array index (byte offset div 4). An array field
-  ## emits `<prefix>_<FIELD>_START` and `_END`; a trailing
-  ## `<prefix>_PARAMS_F32_COUNT` gives the total f32 count. Replaces the hand
-  ## SIM_* block so the write indices can never drift from the layout table.
+  ## emits `<prefix>_<FIELD>_START` and `_END`; a vec2 field emits the two
+  ## write slots `<prefix>_<FIELD>_X` and `_Y`; a trailing
+  ## `<prefix>_PARAMS_F32_COUNT` gives the total f32 count. A field whose
+  ## upper-snake name already begins with the prefix keeps a single prefix
+  ## ("fadeAmount" under "FADE" -> FADE_AMOUNT, not FADE_FADE_AMOUNT).
+  ## Replaces the hand SIM_*/RENDER_*/FADE_* blocks so the write indices can
+  ## never drift from the layout tables.
   result = nnkConstSection.newTree()
   for field in layout.fields:
-    let constBase = prefix & "_" & toUpperSnake(field.name)
-    if field.kind == gtArray:
+    let upperName = toUpperSnake(field.name)
+    let constBase =
+      if upperName.startsWith(prefix & "_"): upperName
+      else: prefix & "_" & upperName
+    case field.kind
+    of gtArray:
       result.add newExportedIntConst(constBase & "_START", field.offset div 4)
       result.add newExportedIntConst(constBase & "_END", (field.offset + field.size) div 4 - 1)
+    of gtVec2F32, gtVec2U32:
+      result.add newExportedIntConst(constBase & "_X", field.offset div 4)
+      result.add newExportedIntConst(constBase & "_Y", field.offset div 4 + 1)
     else:
       result.add newExportedIntConst(constBase, field.offset div 4)
   result.add newExportedIntConst(prefix & "_PARAMS_F32_COUNT", layout.totalSize div 4)
@@ -385,31 +428,22 @@ const
   INTEG_PARAMS_F32_COUNT* = 8
 
 # =============================================================================
-# RENDERPARAMS FIELD INDICES (webgpu_render.nim)
+# RENDERPARAMS / FADEPARAMS FIELD INDICES (webgpu_render.nim)
 # =============================================================================
+# Generated from the layout tables by genFieldIndices, like SIM_* above.
+# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_WARMTH=11, RENDER_PARAMS_F32_COUNT=12;
+# FADE_AMOUNT=0 ... FADE_PAD2=3, FADE_PARAMS_F32_COUNT=4.
 
-const
-  RENDER_RESOLUTION_X* = 0
-  RENDER_RESOLUTION_Y* = 1
-  RENDER_WORLD_SIZE_X* = 2
-  RENDER_WORLD_SIZE_Y* = 3
-  RENDER_BASE_SIZE* = 4
-  RENDER_GLOW_INTENSITY* = 5
-  RENDER_VELOCITY_GLOW_SCALE* = 6
-  RENDER_MAX_VELOCITY* = 7
-  RENDER_TRAIL_LENGTH_SCALE* = 8  # Motion blur elongation factor
-  RENDER_GLOW_RADIUS_SCALE* = 9   # Glow halo radius = baseSize * this
-  RENDER_GLOW_FALLOFF* = 10       # Gaussian falloff exponent (higher = tighter halo)
-  RENDER_GLOW_WARMTH* = 11        # Density-driven warm shift, [0,1] mix fraction
-  RENDER_PARAMS_F32_COUNT* = 12   # 48 bytes (3 vec4s)
+genFieldIndices(RenderParamsLayout, "RENDER")
+genFieldIndices(FadeParamsLayout, "FADE")
 
-# =============================================================================
-# FADEPARAMS FIELD INDICES (webgpu_render.nim)
-# =============================================================================
-
-const
-  FADE_AMOUNT* = 0
-  FADE_PAD1* = 1
-  FADE_PAD2* = 2
-  FADE_PAD3* = 3
-  FADE_PARAMS_F32_COUNT* = 4
+static:
+  # The generated WGSL and the Nim writer must agree on every offset for the
+  # render-path structs, exactly as asserted for SimParams above.
+  for layout in [RenderParamsLayout, FadeParamsLayout]:
+    let computedOffsets = layout.wgslComputedOffsets
+    for fieldIndex in 0 ..< layout.fields.len:
+      assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
+        layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
+  assert RenderParamsLayout.wgslUniformSize == 48, "RenderParams allocates 48 bytes"
+  assert FadeParamsLayout.wgslUniformSize == 16, "FadeParams allocates 16 bytes"

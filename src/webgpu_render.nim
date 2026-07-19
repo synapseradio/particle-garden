@@ -139,7 +139,7 @@ proc initWebGPURender*(): bool =
   let shaderModule = webgpu_init.device.createShaderModule(shaderDesc)
 
   # Create render params uniform buffer (resolution, worldSize, baseSize, glowIntensity, etc.)
-  let paramsSize = 48  # 12 floats × 4 bytes = 48 bytes (RENDER_PARAMS_F32_COUNT)
+  let paramsSize = wgslUniformSize(RenderParamsLayout)
   let paramsDesc = newJsObject()
   paramsDesc["size"] = paramsSize.toJs
   paramsDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
@@ -321,8 +321,8 @@ proc initWebGPURender*(): bool =
   samplerDesc["label"] = "Linear Sampler".cstring.toJs
   linearSampler = webgpu_init.device.createSampler(samplerDesc)
 
-  # Create fade params uniform buffer (fadeAmount + 3 padding floats = 16 bytes)
-  let fadeParamsSize = 16
+  # Create fade params uniform buffer (fadeAmount + 3 padding floats)
+  let fadeParamsSize = wgslUniformSize(FadeParamsLayout)
   let fadeParamsDesc = newJsObject()
   fadeParamsDesc["size"] = fadeParamsSize.toJs
   fadeParamsDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
@@ -781,9 +781,9 @@ proc render*(particleCount: int): RenderTiming =
     pow(0.05, 1.0 / framesVisible)
   let fadeData = newFloat32Array(FADE_PARAMS_F32_COUNT)
   fadeData[FADE_AMOUNT] = float32(fadeAmount)
+  fadeData[FADE_PAD0] = 0.0
   fadeData[FADE_PAD1] = 0.0
   fadeData[FADE_PAD2] = 0.0
-  fadeData[FADE_PAD3] = 0.0
   webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
   # Select pre-created resources based on trail parity (ZERO allocations)
