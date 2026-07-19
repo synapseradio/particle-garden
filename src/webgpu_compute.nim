@@ -43,6 +43,7 @@ import buffers as cpuBuffers
 import config
 import shader_config
 import gpu_types
+import sim_registry
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -53,7 +54,6 @@ template gpuBuffers*(): untyped = webgpu_init.buffers
 
 # Expected entry counts for each pass (from shader binding manifests).
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_COUNT* = 3          # AoS: uniform + particles + gridCounts
-const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_SUM* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL* = 4
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
@@ -65,7 +65,6 @@ proc getExpectedEntryCount(passName: cstring): int =
   ## Get expected bind group entry count for a pass name.
   case $passName
   of "binCount": result = EXPECTED_BIND_GROUP_ENTRIES_BIN_COUNT
-  of "prefixSum": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_SUM
   of "prefixLocal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL
   of "prefixBlocks": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS
   of "prefixFinal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL
@@ -86,6 +85,16 @@ var bindGroups* {.exportc.}: JsObject = createJsObject()
 var cachedBindGroupGridW: int = -1
 var cachedBindGroupGridH: int = -1
 var isPipelineReady* {.exportc.}: bool = false
+
+# The frame description the executor walks. Built once per structural change
+# (mode switch), never per frame — see sim_registry.nim.
+var activeFrame: FrameDescription = @[]
+var activeSimKind*: SimKind = skParticleLife
+
+proc setActiveSimKind*(kind: SimKind) =
+  ## Switch the executor to another simulation's frame description.
+  activeSimKind = kind
+  activeFrame = buildFrame(kind)
 
 # ==============================================================================
 # SECTION 4: SHADER VALIDATION
@@ -194,20 +203,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     cast[GPUBindGroupLayout](bindGroupLayouts["binCount"]),
     binCountEntries,
     "Bin Count Bind Group"
-  )
-
-  # Pass 2: Prefix Sum
-  let prefixSumEntries = createJsArray()
-  discard prefixSumEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
-  discard prefixSumEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.gridCounts)))
-  discard prefixSumEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.gridOffsets)))
-
-  validateBindGroupEntryCount(prefixSumEntries, "prefixSum", "bind group creation")
-  bindGroups["prefixSum"] = await createBindGroupWithValidation(
-    "Prefix Sum",
-    cast[GPUBindGroupLayout](bindGroupLayouts["prefixSum"]),
-    prefixSumEntries,
-    "Prefix Sum Bind Group"
   )
 
   # Pass 2a: Prefix Local
@@ -362,8 +357,44 @@ proc createPipelineWithValidation(name: cstring, shaderModule: GPUShaderModule, 
 # SECTION 8: PIPELINE INITIALIZATION
 # ==============================================================================
 
+type
+  ShaderSpec = object
+    ## One compute shader a simulation kind needs: its dictionary key (used
+    ## by pipelines/bindGroups/frame dispatches), the URL main.nim serves it
+    ## at, its debug label, and its entry point.
+    key: string
+    path: string
+    label: string
+    entryPoint: string
+
+proc shaderSpecsFor(kind: SimKind): seq[ShaderSpec] =
+  ## The compute shaders a simulation kind's frame dispatches. initPipelines
+  ## pre-warms every kind's pipelines at init, so a later mode switch is a
+  ## frame-description swap with no load hitch.
+  case kind
+  of skParticleLife: @[
+    ShaderSpec(key: "binCount", path: "./shaders/bin-count.wgsl",
+      label: "Bin Count Shader (AoS)", entryPoint: "main"),
+    ShaderSpec(key: "prefixLocal", path: "./shaders/prefix-sum-local.wgsl",
+      label: "Prefix Sum Local Shader", entryPoint: "main"),
+    ShaderSpec(key: "prefixBlocks", path: "./shaders/prefix-sum-blocks.wgsl",
+      label: "Prefix Sum Blocks Shader", entryPoint: "main"),
+    ShaderSpec(key: "prefixFinal", path: "./shaders/prefix-sum-final.wgsl",
+      label: "Prefix Sum Final Shader", entryPoint: "main"),
+    ShaderSpec(key: "binScatter", path: "./shaders/bin-scatter.wgsl",
+      label: "Bin Scatter Shader (AoS)", entryPoint: "main"),
+    ShaderSpec(key: "forces", path: "./shaders/forces.wgsl",
+      label: "Forces Shader (AoS)", entryPoint: "computeForces"),
+    ShaderSpec(key: "integrate", path: "./shaders/integrate.wgsl",
+      label: "Integrate Shader (AoS)", entryPoint: "integrate"),
+  ]
+  of skSph, skReactionDiffusion:
+    # Pipelines land with their stages (roadmap S7/S8).
+    @[]
+
 proc initPipelines*(): Future[JsObject] {.async, exportc.} =
-  ## Initialize all compute pipelines for AoS layout.
+  ## Initialize the compute pipelines for every simulation kind and arm the
+  ## particle-life frame description.
   if not isWebGPUAvailable or device.isNil:
     let resultObj = createJsObject()
     resultObj["success"] = false.toJs
@@ -372,97 +403,77 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
   try:
     # =========================================================================
-    # PHASE: SHADER LOADING (AoS versions)
+    # PHASE: SHADER SPEC COLLECTION (deduplicated across sim kinds)
     # =========================================================================
-    consoleLog("[PHASE: SHADER LOADING] Loading AoS compute shaders...".toJs)
+    var specs: seq[ShaderSpec]
+    for kind in SimKind:
+      for spec in shaderSpecsFor(kind):
+        var alreadyCollected = false
+        for existing in specs:
+          if existing.key == spec.key:
+            alreadyCollected = true
+            break
+        if not alreadyCollected:
+          specs.add(spec)
 
-    let binCountModule = await loadShader("./shaders/bin-count.wgsl", "Bin Count Shader (AoS)")
-    let prefixSumModule = await loadShader("./shaders/prefix-sum.wgsl", "Prefix Sum Shader")
-    let prefixLocalModule = await loadShader("./shaders/prefix-sum-local.wgsl", "Prefix Sum Local Shader")
-    let prefixBlocksModule = await loadShader("./shaders/prefix-sum-blocks.wgsl", "Prefix Sum Blocks Shader")
-    let prefixFinalModule = await loadShader("./shaders/prefix-sum-final.wgsl", "Prefix Sum Final Shader")
-    let binScatterModule = await loadShader("./shaders/bin-scatter.wgsl", "Bin Scatter Shader (AoS)")
-    let forcesModule = await loadShader("./shaders/forces.wgsl", "Forces Shader (AoS)")
-    let integrateModule = await loadShader("./shaders/integrate.wgsl", "Integrate Shader (AoS)")
-
-    shaderModules["binCount"] = cast[JsObject](binCountModule)
-    shaderModules["prefixSum"] = cast[JsObject](prefixSumModule)
-    shaderModules["prefixLocal"] = cast[JsObject](prefixLocalModule)
-    shaderModules["prefixBlocks"] = cast[JsObject](prefixBlocksModule)
-    shaderModules["prefixFinal"] = cast[JsObject](prefixFinalModule)
-    shaderModules["binScatter"] = cast[JsObject](binScatterModule)
-    shaderModules["forces"] = cast[JsObject](forcesModule)
-    shaderModules["integrate"] = cast[JsObject](integrateModule)
-
-    consoleLog("[PHASE: SHADER LOADING] Success - 8 AoS shaders loaded".toJs)
+    # =========================================================================
+    # PHASE: SHADER LOADING
+    # =========================================================================
+    consoleLog("[PHASE: SHADER LOADING] Loading compute shaders...".toJs)
+    for spec in specs:
+      let shaderModule = await loadShader(spec.path.cstring, spec.label.cstring)
+      shaderModules[spec.key.cstring] = cast[JsObject](shaderModule)
+    consoleLog(("[PHASE: SHADER LOADING] Success - " & $specs.len & " compute shaders loaded").toJs)
 
     # =========================================================================
     # PHASE: UNIFORM BUFFER CREATION
     # =========================================================================
     let uniformUsage = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst)
 
-    uniformBuffers["gridParams"] = device.createBufferLabeled(32, uniformUsage, "Grid Parameters Uniform")
-    uniformBuffers["scanParams"] = device.createBufferLabeled(16, uniformUsage, "Scan Parameters Uniform")
-    uniformBuffers["simParams"] = device.createBufferLabeled(240, uniformUsage, "Simulation Parameters Uniform (with matrix + force model)")
+    uniformBuffers["gridParams"] = device.createBufferLabeled(
+      wgslUniformSize(GridParamsLayout), uniformUsage, "Grid Parameters Uniform")
+    uniformBuffers["scanParams"] = device.createBufferLabeled(
+      wgslUniformSize(ScanParamsLayout), uniformUsage, "Scan Parameters Uniform")
+    uniformBuffers["simParams"] = device.createBufferLabeled(
+      wgslUniformSize(SimParamsLayout), uniformUsage, "Simulation Parameters Uniform (with matrix + force model)")
     uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
 
     consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created".toJs)
 
     # =========================================================================
-    # PHASE: PIPELINE CREATION
+    # PHASE: PIPELINE CREATION + LAYOUT EXTRACTION
     # =========================================================================
-    consoleLog("[PHASE: PIPELINE CREATION] Creating AoS compute pipelines...".toJs)
+    consoleLog("[PHASE: PIPELINE CREATION] Creating compute pipelines...".toJs)
 
-    pipelines["binCount"] = await createPipelineWithValidation("Bin Count", binCountModule, "main")
-    pipelines["prefixSum"] = await createPipelineWithValidation("Prefix Sum", prefixSumModule, "main")
-    pipelines["prefixLocal"] = await createPipelineWithValidation("Prefix Local", prefixLocalModule, "main")
-    pipelines["prefixBlocks"] = await createPipelineWithValidation("Prefix Blocks", prefixBlocksModule, "main")
-    pipelines["prefixFinal"] = await createPipelineWithValidation("Prefix Final", prefixFinalModule, "main")
-    pipelines["binScatter"] = await createPipelineWithValidation("Bin Scatter", binScatterModule, "main")
-    pipelines["forces"] = await createPipelineWithValidation("Forces", forcesModule, "computeForces")
-    pipelines["integrate"] = await createPipelineWithValidation("Integrate", integrateModule, "integrate")
-
-    # Extract bind group layouts
-    consoleLog("[PHASE: LAYOUT EXTRACTION] Extracting bind group layouts...".toJs)
+    for spec in specs:
+      pipelines[spec.key.cstring] = await createPipelineWithValidation(
+        spec.label.cstring,
+        cast[GPUShaderModule](shaderModules[spec.key.cstring]),
+        spec.entryPoint.cstring)
 
     device.pushErrorScope("validation")
-    bindGroupLayouts["binCount"] = cast[JsObject](cast[GPUComputePipeline](pipelines["binCount"]).getBindGroupLayout(0))
-    bindGroupLayouts["prefixSum"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixSum"]).getBindGroupLayout(0))
-    bindGroupLayouts["prefixLocal"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixLocal"]).getBindGroupLayout(0))
-    bindGroupLayouts["prefixBlocks"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixBlocks"]).getBindGroupLayout(0))
-    bindGroupLayouts["prefixFinal"] = cast[JsObject](cast[GPUComputePipeline](pipelines["prefixFinal"]).getBindGroupLayout(0))
-    bindGroupLayouts["binScatter"] = cast[JsObject](cast[GPUComputePipeline](pipelines["binScatter"]).getBindGroupLayout(0))
-    bindGroupLayouts["forces"] = cast[JsObject](cast[GPUComputePipeline](pipelines["forces"]).getBindGroupLayout(0))
-
-    # DIAGNOSTIC: Log integrate layout extraction
-    consoleLog("[DIAGNOSTIC] Extracting integrate layout from pipeline...".toJs)
-    bindGroupLayouts["integrate"] = cast[JsObject](cast[GPUComputePipeline](pipelines["integrate"]).getBindGroupLayout(0))
-    consoleLog(("[DIAGNOSTIC] Integrate layout extracted: " & $typeofJs(bindGroupLayouts["integrate"])).toJs)
-
+    for spec in specs:
+      bindGroupLayouts[spec.key.cstring] = cast[JsObject](
+        cast[GPUComputePipeline](pipelines[spec.key.cstring]).getBindGroupLayout(0))
     let layoutError = await device.popErrorScope()
 
     if not layoutError.isNullOrUndefined:
       raise newException(CatchableError, "Bind group layout extraction failed: " & $layoutError.message)
 
-    # Validate all layouts
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["binCount"]), "binCount")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixSum"]), "prefixSum")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixLocal"]), "prefixLocal")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixBlocks"]), "prefixBlocks")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["prefixFinal"]), "prefixFinal")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["binScatter"]), "binScatter")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["forces"]), "forces")
-    validateBindGroupLayout(cast[GPUBindGroupLayout](bindGroupLayouts["integrate"]), "integrate")
+    for spec in specs:
+      validateBindGroupLayout(
+        cast[GPUBindGroupLayout](bindGroupLayouts[spec.key.cstring]), spec.key.cstring)
 
-    consoleLog("[PHASE: PIPELINE CREATION] Success - 8 AoS pipelines and layouts validated".toJs)
+    consoleLog(("[PHASE: PIPELINE CREATION] Success - " & $specs.len & " pipelines and layouts validated").toJs)
 
+    setActiveSimKind(skParticleLife)
     isPipelineReady = true
 
     let resultObj = createJsObject()
     resultObj["success"] = true.toJs
     let infoObj = createJsObject()
-    infoObj["shaderCount"] = 8.toJs
-    infoObj["pipelineCount"] = 8.toJs
+    infoObj["shaderCount"] = specs.len.toJs
+    infoObj["pipelineCount"] = specs.len.toJs
     resultObj["info"] = infoObj
     return resultObj
 
@@ -503,12 +514,16 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
 
   let numCells = gridW * gridH
   # bin-count, bin-scatter, forces, and integrate all dispatch per-particle
-  # and share one workgroup-size-derived divisor here. They're independently
+  # and share one workgroup-size-derived divisor. They're independently
   # tunable in shader_config.nim's WorkgroupConfig but all sit at the same
-  # production value today; if that ever diverges, this single divisor needs
-  # splitting per pass (pass-registry rewrite territory, not this stage's).
+  # production value today; if that ever diverges, dsParticleWorkgroups needs
+  # splitting into per-pass dispatch kinds in sim_registry.
   let workgroupSize = shader_config.getWorkgroupSize("bin-count")
   let particleWorkgroups = jsCeil(particleCount.float / workgroupSize.float)
+  # The scan block size is the prefix-sum-local workgroup size; the WGSL side
+  # receives the same value via its WORKGROUP_SIZE placeholder.
+  let scanBlockSize = shader_config.getWorkgroupSize("prefix-sum-local")
+  let scanBlocks = jsCeil(numCells.float / scanBlockSize.float)
 
   # =========================================================================
   # PHASE: PER-FRAME UNIFORM UPDATE
@@ -525,11 +540,10 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   gridParamsFloat[GRID_CANVAS_HEIGHT] = height
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["gridParams"]), 0, gridParamsData)
 
-  # Scan parameters (used by prefix-sum)
-  let numBlocksForScan = jsCeil(numCells.float / 256.0)
+  # Scan parameters (used by the prefix-sum passes)
   let scanParamsData = newUint32Array(SCAN_PARAMS_U32_COUNT)
   scanParamsData[SCAN_NUM_CELLS] = numCells
-  scanParamsData[SCAN_NUM_BLOCKS] = numBlocksForScan
+  scanParamsData[SCAN_NUM_BLOCKS] = scanBlocks
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
   # Simulation parameters (used by forces)
@@ -585,77 +599,51 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     cachedBindGroupGridH = gridH
 
   # =========================================================================
-  # PHASE: COMMAND ENCODING
+  # PHASE: COMMAND ENCODING (walk the active frame description)
   # =========================================================================
+  # The sequence lives in sim_registry.buildFrame — data, not code. Only the
+  # dispatch sizes and buffer byte lengths are resolved here, per frame.
+
+  proc gpuBufferFor(simBuffer: SimBuffer): GPUBuffer =
+    case simBuffer
+    of sbGridCounts: cast[GPUBuffer](gpuBuffers.gridCounts)
+    of sbGridOffsets: cast[GPUBuffer](gpuBuffers.gridOffsets)
+    of sbFillPointers: cast[GPUBuffer](gpuBuffers.fillPointers)
+    of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
+
+  proc byteLengthFor(simBuffer: SimBuffer): int =
+    case simBuffer
+    of sbGridCounts, sbGridOffsets, sbFillPointers: numCells * 4
+    of sbDensityDelta: particleCount * 4  # i32 per particle
+
+  proc resolveDispatchSize(size: DispatchSize): int =
+    case size
+    of dsParticleWorkgroups: particleWorkgroups
+    of dsScanBlocks: scanBlocks
+    of dsOne: 1
+
   let commandEncoder = device.createCommandEncoderLabeled("Physics Frame Command Encoder")
 
-  # Clear gridCounts before bin-count
-  let gridCountBytes = numCells * 4
-  commandEncoder.clearBuffer(cast[GPUBuffer](gpuBuffers.gridCounts), 0, gridCountBytes)
-
-  # Compute Pass 1: Grid building
-  let gridBuildPassDesc = createJsObject()
-  gridBuildPassDesc["label"] = "Grid Build Compute Pass".cstring.toJs
-  gpu_profiler.attachTimestamps(gridBuildPassDesc, gpu_profiler.passGridBuild)
-  let gridBuildPass = commandEncoder.beginComputePass(gridBuildPassDesc)
-
-  # Pass 1: Bin Count
-  gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["binCount"]))
-  gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["binCount"]))
-  gridBuildPass.dispatchWorkgroups(particleWorkgroups)
-
-  # Pass 2: Prefix Sum (parallel Blelloch algorithm)
-  let prefixBlockSize = 256
-  let numBlocks = jsCeil(numCells.float / prefixBlockSize.float)
-
-  gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixLocal"]))
-  gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixLocal"]))
-  gridBuildPass.dispatchWorkgroups(numBlocks)
-
-  gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixBlocks"]))
-  gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixBlocks"]))
-  gridBuildPass.dispatchWorkgroups(1)
-
-  gridBuildPass.setPipeline(cast[GPUComputePipeline](pipelines["prefixFinal"]))
-  gridBuildPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["prefixFinal"]))
-  gridBuildPass.dispatchWorkgroups(numBlocks)
-
-  gridBuildPass.endPass()
-
-  # Buffer Copy: Initialize fillPointers from gridOffsets
-  let fillPointerBytes = numCells * 4
-  commandEncoder.copyBufferToBuffer(
-    cast[GPUBuffer](gpuBuffers.gridOffsets), 0,
-    cast[GPUBuffer](gpuBuffers.fillPointers), 0,
-    fillPointerBytes
-  )
-
-  # NOTE: Delta buffers are now initialized via atomicStore in forces.wgsl
-  # This avoids race conditions between clearBuffer and atomic writes.
-  # Each thread atomically resets its own particle's velocity and density deltas.
-
-  # Compute Pass 2: Physics (AoS Pipeline)
-  let physicsPassDesc = createJsObject()
-  physicsPassDesc["label"] = "Physics Compute Pass (AoS)".cstring.toJs
-  gpu_profiler.attachTimestamps(physicsPassDesc, gpu_profiler.passPhysics)
-  let physicsPass = commandEncoder.beginComputePass(physicsPassDesc)
-
-  # Pass 3: Bin Scatter (unified AoS scatter)
-  physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["binScatter"]))
-  physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["binScatter"]))
-  physicsPass.dispatchWorkgroups(particleWorkgroups)
-
-  # Pass 4: Forces (reads from particlesSorted, writes density to particles)
-  physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["forces"]))
-  physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["forces"]))
-  physicsPass.dispatchWorkgroups(particleWorkgroups)
-
-  # Pass 5: Integrate (unified velocity + position update)
-  physicsPass.setPipeline(cast[GPUComputePipeline](pipelines["integrate"]))
-  physicsPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["integrate"]))
-  physicsPass.dispatchWorkgroups(particleWorkgroups)
-
-  physicsPass.endPass()
+  for node in activeFrame:
+    case node.kind
+    of fnkClearBuffer:
+      commandEncoder.clearBuffer(gpuBufferFor(node.clearTarget), 0,
+        byteLengthFor(node.clearTarget))
+    of fnkCopyBuffer:
+      commandEncoder.copyBufferToBuffer(
+        gpuBufferFor(node.copySource), 0,
+        gpuBufferFor(node.copyDest), 0,
+        byteLengthFor(node.copySource))
+    of fnkComputePass:
+      let passDesc = createJsObject()
+      passDesc["label"] = (node.label & " Compute Pass").cstring.toJs
+      gpu_profiler.attachTimestamps(passDesc, node.profilerSlot)
+      let computePass = commandEncoder.beginComputePass(passDesc)
+      for dispatchStep in node.dispatches:
+        computePass.setPipeline(cast[GPUComputePipeline](pipelines[dispatchStep.pipelineKey.cstring]))
+        computePass.setBindGroup(0, cast[GPUBindGroup](bindGroups[dispatchStep.pipelineKey.cstring]))
+        computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
+      computePass.endPass()
 
   # Submit
   let commandBuffer = commandEncoder.finish()

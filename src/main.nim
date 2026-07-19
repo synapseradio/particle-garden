@@ -38,7 +38,6 @@ const StaticFiles = {
   "/app.js": staticRead("../web/app.js"),
   # AoS compute pipeline shaders
   "/shaders/bin-count.wgsl": staticRead("../web/shaders/bin-count.wgsl"),
-  "/shaders/prefix-sum.wgsl": staticRead("../web/shaders/prefix-sum.wgsl"),
   "/shaders/prefix-sum-local.wgsl": staticRead("../web/shaders/prefix-sum-local.wgsl"),
   "/shaders/prefix-sum-blocks.wgsl": staticRead("../web/shaders/prefix-sum-blocks.wgsl"),
   "/shaders/prefix-sum-final.wgsl": staticRead("../web/shaders/prefix-sum-final.wgsl"),
