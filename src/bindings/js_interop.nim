@@ -366,8 +366,44 @@ proc throwJs*(error: JsError) {.importjs: "throw #".}
 var jsMath* {.importjs: "Math".}: JsObject
   ## JavaScript Math object.
 
-proc jsRandom*(): float {.importjs: "Math.random()".}
-  ## Get random number [0, 1).
+proc mathRandom(): float {.importjs: "Math.random()".}
+  ## Get random number [0, 1). Non-deterministic; the default random source.
+
+proc jsImul(a, b: uint32): uint32 {.importjs: "(Math.imul(#, #) >>> 0)".}
+  ## 32-bit integer multiply with correct wraparound (JS `*` loses precision
+  ## past 2^53, so the mulberry32 PRNG below needs Math.imul specifically).
+
+var rngState: uint32 = 0
+  ## mulberry32 generator state. Only meaningful once rngSeeded is true.
+
+var rngSeeded = false
+  ## Set by setRandomSeed(); routes jsRandom() through the deterministic
+  ## generator instead of Math.random() once true.
+
+proc mulberry32Next(): float =
+  ## Next float in [0, 1) from the mulberry32 PRNG (public-domain algorithm
+  ## by Tommy Ettinger). Deterministic: the same rngState always produces
+  ## the same next value and the same state transition.
+  rngState = rngState + 0x6D2B79F5'u32
+  var t = rngState
+  t = jsImul(t xor (t shr 15), t or 1'u32)
+  t = t xor (t + jsImul(t xor (t shr 7), t or 61'u32))
+  float(t xor (t shr 14)) / 4294967296.0
+
+proc setRandomSeed*(seed: int) =
+  ## Route jsRandom() (and anything built on it, e.g. gaussian()) through a
+  ## seeded, deterministic PRNG instead of Math.random(). Call once, at
+  ## startup, before any randomness is drawn - see app.nim's ?seed= handling.
+  rngState = uint32(seed)
+  rngSeeded = true
+
+proc jsRandom*(): float =
+  ## Get random number [0, 1). Deterministic once setRandomSeed() has been
+  ## called; Math.random() otherwise (default, unseeded behavior).
+  if rngSeeded:
+    mulberry32Next()
+  else:
+    mathRandom()
 
 proc jsFloor*(x: float): int {.importjs: "Math.floor(#)".}
   ## Floor a number.

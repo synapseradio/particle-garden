@@ -50,7 +50,7 @@ import ui/state/app_state
 # ==============================================================================
 
 from bindings/js_interop import
-  console, jsRandom, newJsObject,
+  console, jsRandom, newJsObject, setRandomSeed,
   setGlobal, getGlobal, consoleLog, consoleWarn, consoleError, performanceNow
 
 from bindings/dom_extensions import
@@ -66,6 +66,7 @@ proc bitwiseOr(x: float, y: int): int {.importjs: "(#|#)".}
 proc logGpuProfile(n: int, gridMs: float, physicsMs: float, drawMs: float,
                    presentMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
+proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
 
 # ==============================================================================
 # APPLICATION STATE
@@ -273,6 +274,15 @@ proc init(): Future[void] {.async, exportc.} =
   # Optional ?n=<count> URL override for profiling runs at a chosen scale
   let requestedCount = urlParamInt("n", config.CONFIG.particleCount)
   config.CONFIG.particleCount = clamp(requestedCount, 1000, config.MAX_PARTICLES)
+
+  # Optional ?seed=<int> URL override for deterministic init: routes
+  # jsRandom() (matrix randomization, particle init/shuffle) through a
+  # seeded PRNG instead of Math.random(), so two loads with the same seed
+  # produce an identical matrix and identical initial particle state. Set
+  # before any randomness is drawn below. Absent: unchanged Math.random()
+  # behavior. This is a machine interface (test harness) - no UI surface.
+  if urlParamHas("seed"):
+    setRandomSeed(urlParamInt("seed", 0))
 
   # Allocate shared memory buffers
   buffers.allocateBuffers()
