@@ -64,6 +64,19 @@ const
     ## citation and the (F, k) range it names).
   RD_DEFAULT_KILL* = 0.062
     ## Kill rate k. See RD_DEFAULT_FEED.
+  RD_DEPOSIT_AMOUNT* = 0.1
+    ## Inhibitor concentration each particle folds into its field cell per frame.
+    ## field-deposit.wgsl splats this (fixed-point) into the deposit buffer;
+    ## field-resolve.wgsl adds the decoded sum onto the inhibitor channel. This
+    ## is what seeds Gray-Scott from the trivial (activator=1, inhibitor=0) start
+    ## the field textures are cleared to — a uniform-zero inhibitor field never
+    ## reacts. A first-cut magnitude; S10 calibrates it against particle count.
+  RD_FIELD_FORCE_SCALE* = 30.0
+    ## Converts the sampled field gradient into a per-frame velocity impulse.
+    ## field-force.wgsl multiplies the central-difference inhibitor gradient by
+    ## this and writes it to the velocity-delta buffer integrate.wgsl consumes.
+    ## Zero would leave particles blind to the field. A first-cut magnitude in
+    ## world velocity units; S10 calibrates it.
 
 # ==============================================================================
 # 5-POINT LAPLACIAN STENCIL

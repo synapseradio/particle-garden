@@ -282,6 +282,13 @@
           >
             SPH Fluid
           </button>
+          <button
+            id="modeReactionDiffusionBtn"
+            class="model-btn"
+            onclick="setSimMode('reaction-diffusion')"
+          >
+            Reaction-Diffusion
+          </button>
         </div>
 
         <!--
@@ -700,6 +707,49 @@
                 max="3"
                 value="1"
                 step="1"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Reaction-Diffusion Section (collapsible; active in RD mode) -->
+        <div class="control-section" id="rdSection">
+          <button class="section-header" onclick="toggleRdSection()">
+            Reaction-Diffusion <span class="section-toggle">+</span>
+          </button>
+          <div class="section-content" style="display: none">
+            <!-- Slider min/max/step/value attributes are placeholders; ui.nim's
+                 configSlider registrations (config_ranges.nim RD_* bounds)
+                 overwrite them at bind time and are authoritative. Pearson (F, k)
+                 regime hints: spots F .025-.034 / k .061-.065; stripes
+                 F .046-.058 / k .063-.065; movers F~.06 / k~.0609. -->
+            <div class="control-group">
+              <label
+                >Feed (F) — spots .025-.034, stripes .046-.058, movers ~.06
+                <span class="value-display" id="rdFeedValue">0.030</span></label
+              >
+              <input
+                type="range"
+                id="rdFeed"
+                min="0.01"
+                max="0.08"
+                value="0.03"
+                step="0.001"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Kill (k) — spots .061-.065, stripes .063-.065, movers ~.0609
+                <span class="value-display" id="rdKillValue">0.062</span></label
+              >
+              <input
+                type="range"
+                id="rdKill"
+                min="0.04"
+                max="0.075"
+                value="0.062"
+                step="0.001"
               />
             </div>
           </div>

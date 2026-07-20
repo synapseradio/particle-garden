@@ -46,6 +46,7 @@ import gpu_types
 import sim_registry
 import shader_manifest
 import sph_core
+import field_core
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -63,6 +64,11 @@ const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 6        # AoS: merged pass
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 7             # AoS: velocity + density deltas for symmetric accumulation
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: clones the forces layout exactly (7 entries)
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 4          # AoS: + densityDelta for temporal smoothing
+# Reaction-diffusion passes (S8). See the four field shaders' binding manifests.
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 4      # gridParams + particles + deposit + fieldParams
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 3      # srcField(sample) + dstField(storage) + deposit (deposit amount already applied in field-deposit)
+const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 3            # srcField(sample) + dstField(storage) + fieldParams
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 5        # gridParams + particles + field(sample) + velocityDelta + fieldParams
 
 proc getExpectedEntryCount(passName: cstring): int =
   ## Get expected bind group entry count for a pass name.
@@ -75,6 +81,12 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "forces": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES
   of "forcesSph": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH
   of "integrate": result = EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE
+  of "fieldDeposit": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT
+  of "fieldResolve": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE
+  # rdStepForward and rdStepReverse share one WGSL pipeline; each gets its own
+  # bind group (opposite ping-pong orientation) with the same three-entry shape.
+  of "rdStepForward", "rdStepReverse": result = EXPECTED_BIND_GROUP_ENTRIES_RD_STEP
+  of "fieldForce": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE
   else: result = -1
 
 # ==============================================================================
@@ -95,13 +107,16 @@ var isPipelineReady* {.exportc.}: bool = false
 var activeFrame: FrameDescription = @[]
 var activeSimKind*: SimKind = skParticleLife
 
-const prewarmedKinds = {skParticleLife, skSph}
+const prewarmedKinds = {skParticleLife, skSph, skReactionDiffusion}
   ## Kinds whose compute shaders exist on disk this build and pre-warm at init.
   ## skSph joins particle-life now that forces-sph.wgsl exists and main.nim
   ## serves it: its forcesSph pipeline is created here and its bind group in
   ## createBindGroups, so a switch to skSph finds a ready pipeline. SPH's other
   ## pipelines (grid triad, bin-scatter, integrate) are shared with
-  ## particle-life. skReactionDiffusion registers no shaders yet (roadmap S8).
+  ## particle-life. skReactionDiffusion joins now that its four field shaders
+  ## (field-deposit/resolve, rd-step, field-force) exist and main.nim serves
+  ## them: their pipelines and bind groups are built here, and the field
+  ## textures + deposit buffer live in webgpu_init.
 
 proc setActiveSimKind*(kind: SimKind) =
   ## Switch the executor to another simulation's frame description. A kind whose
@@ -197,6 +212,7 @@ proc createBindGroupWithValidation*(
       else:
         "unlabeled"
       entryDetails &= "    binding " & $binding.to(int) & ": buffer=" & bufferLabel & "\n"
+    consoleError(("Bind group creation failed for \"" & $passName & "\": " & $error.message).toJs)
     raise newException(CatchableError, "Bind group creation failed for \"" & $passName & "\":\n  Error: " & $error.message & "\n  Entries:\n" & entryDetails)
 
   return bindGroup
@@ -208,7 +224,14 @@ proc createBindGroupEntry(binding: int, buffer: JsObject): JsObject =
   resource["buffer"] = buffer
   result["resource"] = resource
 
-proc push*(arr: JsObject, item: JsObject): int {.importjs: "#.push(#)", discardable.}
+proc createBindGroupResourceEntry(binding: int, resource: JsObject): JsObject =
+  ## Bind-group entry whose resource is used directly (a texture view or a
+  ## sampler), rather than wrapped in a {buffer: ...} object.
+  result = createJsObject()
+  result["binding"] = binding.toJs
+  result["resource"] = resource
+
+proc push(arr: JsObject, item: JsObject): int {.importjs: "#.push(#)", discardable.}
 
 proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} =
   ## Create bind groups for all passes (AoS layout).
@@ -344,6 +367,86 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Integrate Bind Group"
   )
 
+  # ==========================================================================
+  # REACTION-DIFFUSION PASSES (S8)
+  # ==========================================================================
+  # Built unconditionally (RD pre-warms). The field textures and deposit buffer
+  # live in webgpu_init; fieldA is the fixed front (see field-resolve.wgsl for
+  # the ping-pong orientation). Texture views bind directly; the compute passes
+  # read via textureLoad, so no sampler is bound here.
+  let fieldViewFront = cast[JsObject](webgpu_init.fieldSampledViewA())
+  let fieldViewTrail = cast[JsObject](webgpu_init.fieldSampledViewB())
+  let fieldDepositBuf = cast[JsObject](webgpu_init.fieldDepositGpuBuffer())
+
+  # Field Deposit: particles splat inhibitor into the deposit buffer.
+  let fieldDepositEntries = createJsArray()
+  discard fieldDepositEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
+  discard fieldDepositEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
+  discard fieldDepositEntries.push(createBindGroupEntry(2, fieldDepositBuf))
+  discard fieldDepositEntries.push(createBindGroupEntry(3, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(fieldDepositEntries, "fieldDeposit", "bind group creation")
+  bindGroups["fieldDeposit"] = await createBindGroupWithValidation(
+    "Field Deposit",
+    cast[GPUBindGroupLayout](bindGroupLayouts["fieldDeposit"]),
+    fieldDepositEntries,
+    "Field Deposit Bind Group"
+  )
+
+  # Field Resolve: read trailing texture (B) + deposits, write front texture (A).
+  let fieldResolveEntries = createJsArray()
+  discard fieldResolveEntries.push(createBindGroupResourceEntry(0, fieldViewTrail))
+  discard fieldResolveEntries.push(createBindGroupResourceEntry(1, fieldViewFront))
+  discard fieldResolveEntries.push(createBindGroupEntry(2, fieldDepositBuf))
+  validateBindGroupEntryCount(fieldResolveEntries, "fieldResolve", "bind group creation")
+  bindGroups["fieldResolve"] = await createBindGroupWithValidation(
+    "Field Resolve",
+    cast[GPUBindGroupLayout](bindGroupLayouts["fieldResolve"]),
+    fieldResolveEntries,
+    "Field Resolve Bind Group"
+  )
+
+  # RD Step Forward: read A, write B. The 8-substep frame starts here; after the
+  # even count of alternating steps the live field lands back in A (the front).
+  let rdForwardEntries = createJsArray()
+  discard rdForwardEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
+  discard rdForwardEntries.push(createBindGroupResourceEntry(1, fieldViewTrail))
+  discard rdForwardEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(rdForwardEntries, "rdStepForward", "bind group creation")
+  bindGroups["rdStepForward"] = await createBindGroupWithValidation(
+    "RD Step Forward",
+    cast[GPUBindGroupLayout](bindGroupLayouts["rdStepForward"]),
+    rdForwardEntries,
+    "RD Step Forward Bind Group"
+  )
+
+  # RD Step Reverse: read B, write A (opposite orientation, same pipeline).
+  let rdReverseEntries = createJsArray()
+  discard rdReverseEntries.push(createBindGroupResourceEntry(0, fieldViewTrail))
+  discard rdReverseEntries.push(createBindGroupResourceEntry(1, fieldViewFront))
+  discard rdReverseEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(rdReverseEntries, "rdStepReverse", "bind group creation")
+  bindGroups["rdStepReverse"] = await createBindGroupWithValidation(
+    "RD Step Reverse",
+    cast[GPUBindGroupLayout](bindGroupLayouts["rdStepReverse"]),
+    rdReverseEntries,
+    "RD Step Reverse Bind Group"
+  )
+
+  # Field Force: sample front field (A), write velocity deltas integrate consumes.
+  let fieldForceEntries = createJsArray()
+  discard fieldForceEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
+  discard fieldForceEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
+  discard fieldForceEntries.push(createBindGroupResourceEntry(2, fieldViewFront))
+  discard fieldForceEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.velocityDelta)))
+  discard fieldForceEntries.push(createBindGroupEntry(4, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(fieldForceEntries, "fieldForce", "bind group creation")
+  bindGroups["fieldForce"] = await createBindGroupWithValidation(
+    "Field Force",
+    cast[GPUBindGroupLayout](bindGroupLayouts["fieldForce"]),
+    fieldForceEntries,
+    "Field Force Bind Group"
+  )
+
 # ==============================================================================
 # SECTION 6: SHADER LOADING
 # ==============================================================================
@@ -447,8 +550,11 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     uniformBuffers["simParams"] = device.createBufferLabeled(
       wgslUniformSize(SimParamsLayout), uniformUsage, "Simulation Parameters Uniform (with matrix + force model)")
     uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
+    # Reaction-diffusion field uniform (feed/kill/diffusion/deltaT/deposit/force).
+    uniformBuffers["fieldParams"] = device.createBufferLabeled(
+      wgslUniformSize(FieldParamsLayout), uniformUsage, "Field Parameters Uniform (RD)")
 
-    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 4 uniform buffers created".toJs)
+    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 5 uniform buffers created".toJs)
 
     # =========================================================================
     # PHASE: PIPELINE CREATION + LAYOUT EXTRACTION
@@ -615,6 +721,22 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
+  # Field parameters (reaction-diffusion mode only). feed/kill are the live UI
+  # knobs; the diffusion rates, timestep, and coupling magnitudes come from
+  # field_core (the natively-tested authority). Written each frame so a slider
+  # change lands next frame, matching the SPH per-frame uniform pattern.
+  if activeSimKind == skReactionDiffusion:
+    let fieldParamsData = newFloat32Array(FIELD_PARAMS_F32_COUNT)
+    fieldParamsData[FIELD_FEED] = float32(config.CONFIG.rdFeed)
+    fieldParamsData[FIELD_KILL] = float32(config.CONFIG.rdKill)
+    fieldParamsData[FIELD_DIFFUSION_A] = float32(RD_DIFFUSION_A)
+    fieldParamsData[FIELD_DIFFUSION_B] = float32(RD_DIFFUSION_B)
+    fieldParamsData[FIELD_DELTA_T] = float32(RD_DELTA_T)
+    fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(RD_DEPOSIT_AMOUNT)
+    fieldParamsData[FIELD_FORCE_SCALE] = float32(RD_FIELD_FORCE_SCALE)
+    fieldParamsData[FIELD_PADDING0] = 0.0
+    queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["fieldParams"]), 0, fieldParamsData)
+
   # =========================================================================
   # PHASE: BIND GROUP CREATION (cached by grid dimensions)
   # =========================================================================
@@ -635,17 +757,21 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbGridOffsets: cast[GPUBuffer](gpuBuffers.gridOffsets)
     of sbFillPointers: cast[GPUBuffer](gpuBuffers.fillPointers)
     of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
-    of sbFieldDeposit:
-      # RD lands with its shader stage; the mode is not pre-warmed, so no
-      # frame reaching this executor can name the buffer yet.
-      raise newException(CatchableError, "field deposit buffer not created yet (roadmap S8)")
+    of sbFieldDeposit: webgpu_init.fieldDepositGpuBuffer()
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
     case simBuffer
     of sbGridCounts, sbGridOffsets, sbFillPointers: numCells * 4
     of sbDensityDelta: particleCount * 4  # i32 per particle
-    of sbFieldDeposit:
-      raise newException(CatchableError, "field deposit buffer not created yet (roadmap S8)")
+    of sbFieldDeposit: FIELD_W * FIELD_H * 2 * 4  # 2 i32 channels per field cell
+
+  # The 2D field dispatch (dsFieldWorkgroups) covers FIELD_W x FIELD_H in
+  # fieldStepX x fieldStepY tiles. Every other DispatchSize is 1D; this one is
+  # dispatched via the (x, y) overload in the walk below.
+  let fieldStepX = shader_config.getWorkgroupSize("field-step-x")
+  let fieldStepY = shader_config.getWorkgroupSize("field-step-y")
+  let fieldGroupsX = jsCeil(FIELD_W.float / fieldStepX.float)
+  let fieldGroupsY = jsCeil(FIELD_H.float / fieldStepY.float)
 
   proc resolveDispatchSize(size: DispatchSize): int =
     case size
@@ -653,9 +779,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of dsScanBlocks: scanBlocks
     of dsOne: 1
     of dsFieldWorkgroups:
-      # The one 2D dispatch size; the executor grows real 2D handling when the
-      # RD shaders land. Unreachable until skReactionDiffusion pre-warms.
-      raise newException(CatchableError, "field dispatch not implemented yet (roadmap S8)")
+      # Resolved inline as a 2D dispatch in the walk below, never through this
+      # 1D path — see the dsFieldWorkgroups branch of the dispatch loop.
+      raise newException(CatchableError, "dsFieldWorkgroups is dispatched 2D, not via resolveDispatchSize")
 
   let commandEncoder = device.createCommandEncoderLabeled("Physics Frame Command Encoder")
 
@@ -687,7 +813,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
         for dispatchStep in node.dispatches:
           computePass.setPipeline(cast[GPUComputePipeline](pipelines[dispatchStep.pipelineKey.cstring]))
           computePass.setBindGroup(0, cast[GPUBindGroup](bindGroups[dispatchStep.pipelineKey.cstring]))
-          computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
+          if dispatchStep.size == dsFieldWorkgroups:
+            # The one 2D dispatch: one workgroup per fieldStepX x fieldStepY tile.
+            computePass.dispatchWorkgroups(fieldGroupsX, fieldGroupsY)
+          else:
+            computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
         computePass.endPass()
 
   # Submit

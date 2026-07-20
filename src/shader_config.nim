@@ -29,6 +29,13 @@ type
     prefixSumBlocks*: int ## prefix-sum-blocks.wgsl: blocks per workgroup
     prefixSumFinal*: int  ## prefix-sum-final.wgsl: cells per workgroup
     render*: int          ## render.wgsl: vertices per workgroup
+    # Reaction-diffusion field passes (S8). The deposit/force passes dispatch
+    # per particle (1D, like the physics passes); resolve/rd-step dispatch per
+    # field cell (2D), so their workgroup is a fieldStepX x fieldStepY tile.
+    fieldDeposit*: int    ## field-deposit.wgsl: particles per workgroup (1D)
+    fieldForce*: int      ## field-force.wgsl: particles per workgroup (1D)
+    fieldStepX*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, X
+    fieldStepY*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, Y
 
   TuningConstants* = object
     ## Physics and rendering constants that can be tuned without shader edits.
@@ -82,6 +89,10 @@ const
     prefixSumBlocks: 256, # Single workgroup processes all blocks
     prefixSumFinal: 256,  # Matches local for consistency
     render: 128,          # Vertex generation
+    fieldDeposit: 128,    # Per-particle splat; matches the particle passes' divisor
+    fieldForce: 128,      # Per-particle gradient sampling; matches fieldDeposit
+    fieldStepX: 16,       # 16x16 = 256 invocations per 2D field tile (warp multiple)
+    fieldStepY: 16,       # 512 field dim / 16 = 32 groups per axis (divides exactly)
   )
 
   PRODUCTION_TUNING* = TuningConstants(
@@ -126,6 +137,10 @@ proc getWorkgroupSize*(name: string): int =
   of "prefix-sum-blocks": activeConfig.workgroups.prefixSumBlocks
   of "prefix-sum-final": activeConfig.workgroups.prefixSumFinal
   of "render": activeConfig.workgroups.render
+  of "field-deposit": activeConfig.workgroups.fieldDeposit
+  of "field-force": activeConfig.workgroups.fieldForce
+  of "field-step-x": activeConfig.workgroups.fieldStepX
+  of "field-step-y": activeConfig.workgroups.fieldStepY
   else: 128  # Safe default
 
 proc getTunableFloat*(name: string): float =
@@ -154,6 +169,9 @@ proc getTunableFloat*(name: string): float =
 # This generates the substitution map used by tools/wgsl_bundle.nim
 
 import std/[strformat, tables]
+# field_core is pure (no FFI); importing it keeps FIELD_W/FIELD_H sourced from
+# the single reaction-diffusion authority rather than re-stated here.
+import field_core
 
 proc getPlaceholderMap*(): Table[string, string] =
   ## Generate placeholder substitutions for the shader bundler
@@ -171,6 +189,18 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_PREFIX_SUM_BLOCKS"] = $activeConfig.workgroups.prefixSumBlocks
   result["WORKGROUP_SIZE_PREFIX_SUM_FINAL"] = $activeConfig.workgroups.prefixSumFinal
   result["WORKGROUP_SIZE_RENDER"] = $activeConfig.workgroups.render
+
+  # Reaction-diffusion field passes. The 1D deposit/force passes resolve their
+  # {{WORKGROUP_SIZE}} shortcut through these keys (WORKGROUP_SIZE_FIELD_DEPOSIT /
+  # _FIELD_FORCE from the shader filename); the 2D resolve/rd-step passes read
+  # the explicit X/Y placeholders since one {{WORKGROUP_SIZE}} cannot carry two
+  # dimensions. FIELD_W/FIELD_H come from field_core, the single source of truth.
+  result["WORKGROUP_SIZE_FIELD_DEPOSIT"] = $activeConfig.workgroups.fieldDeposit
+  result["WORKGROUP_SIZE_FIELD_FORCE"] = $activeConfig.workgroups.fieldForce
+  result["WORKGROUP_SIZE_FIELD_X"] = $activeConfig.workgroups.fieldStepX
+  result["WORKGROUP_SIZE_FIELD_Y"] = $activeConfig.workgroups.fieldStepY
+  result["FIELD_W"] = $FIELD_W
+  result["FIELD_H"] = $FIELD_H
 
   # Tunable constants (formatted as WGSL float literals)
   result["TUNABLE_MIN_DISTANCE_SQ"] = fmt"{activeConfig.tuning.minDistanceSq:.1f}"

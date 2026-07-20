@@ -27,8 +27,11 @@ import std/asyncjs
 import bindings/js_interop
 import bindings/webgpu
 import memory_layout
+import field_core
 
 proc makeJsObject(): JsObject {.importjs: "({})".}
+proc makeJsArray(): JsObject {.importjs: "([])".}
+proc push(arr: JsObject, item: JsObject): int {.importjs: "#.push(#)", discardable.}
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -106,6 +109,29 @@ var isWebGPUAvailable* {.exportc.}: bool = false
 var hasTimestampQuery* {.exportc.}: bool = false
 
 # ==============================================================================
+# SECTION 3b: REACTION-DIFFUSION FIELD RESOURCES
+# ==============================================================================
+#
+# The field lives in two rgba16float ping-pong storage textures (.r = activator,
+# .g = inhibitor; .ba unused padding), FIELD_W x FIELD_H, spanning the full world
+# rect. rgba16float rather than rg16float because WebGPU does not permit rg16float
+# as a write-only storage texture — it is not in the storage-capable format list;
+# rgba16float is the nearest storage+sampled+filterable half-float format. This is the
+# app's first use of STORAGE_BINDING: the rd-step / resolve passes sample one
+# texture and write the other. fieldTextureA is the FIXED front the render and
+# force passes always read; fieldTextureB trails it by one substep (see
+# field-resolve.wgsl for why the half-float format forces this ping-pong
+# rather than an in-place update). fieldGenerationCounter bumps whenever the textures are
+# (re)created so the render side can cache its bind group and rebuild on change.
+var fieldTextureA {.exportc: "pgFieldTextureA".}: GPUTexture = nil
+var fieldTextureB {.exportc: "pgFieldTextureB".}: GPUTexture = nil
+var fieldViewA {.exportc: "pgFieldViewA".}: GPUTextureView = nil
+var fieldViewB {.exportc: "pgFieldViewB".}: GPUTextureView = nil
+var fieldLinearSampler {.exportc: "pgFieldSampler".}: GPUSampler = nil
+var fieldDepositBuffer {.exportc: "pgFieldDeposit".}: GPUBuffer = nil
+var fieldGenerationCounter {.exportc: "pgFieldGeneration".}: int = 0
+
+# ==============================================================================
 # SECTION 4: BUFFER SIZE CALCULATIONS
 # ==============================================================================
 
@@ -143,6 +169,108 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 # ==============================================================================
 # SECTION 5: FEATURE DETECTION
 # ==============================================================================
+
+proc createFieldResources() =
+  ## (Re)create the reaction-diffusion field textures, deposit buffer, and
+  ## sampler, then seed them. Called once from initWebGPU after the particle
+  ## buffers exist. Idempotent: destroys any prior resources first and bumps
+  ## the generation counter so cached bind groups downstream rebuild.
+  if not fieldTextureA.isNil: fieldTextureA.destroy()
+  if not fieldTextureB.isNil: fieldTextureB.destroy()
+  if not fieldDepositBuffer.isNil: fieldDepositBuffer.destroy()
+
+  let fieldUsage = bitwiseOr(bitwiseOr(
+    gpuTextureUsageStorageBinding, gpuTextureUsageTextureBinding),
+    gpuTextureUsageRenderAttachment)
+
+  proc createFieldTexture(label: cstring): GPUTexture =
+    let desc = makeJsObject()
+    let size = makeJsObject()
+    size["width".cstring] = FIELD_W.toJs
+    size["height".cstring] = FIELD_H.toJs
+    desc["size".cstring] = size
+    desc["format".cstring] = "rgba16float".cstring.toJs
+    desc["usage".cstring] = fieldUsage.toJs
+    desc["label".cstring] = label.toJs
+    return device.createTexture(desc)
+
+  fieldTextureA = createFieldTexture("RD Field A (front)")
+  fieldTextureB = createFieldTexture("RD Field B (trailing)")
+  fieldViewA = fieldTextureA.createView()
+  fieldViewB = fieldTextureB.createView()
+
+  # Linear sampler for the LDR composite (compute passes use textureLoad and
+  # need no sampler). rgba16float is filterable, so filtering is valid.
+  let samplerDesc = makeJsObject()
+  samplerDesc["magFilter".cstring] = "linear".cstring.toJs
+  samplerDesc["minFilter".cstring] = "linear".cstring.toJs
+  samplerDesc["label".cstring] = "RD Field Sampler".cstring.toJs
+  fieldLinearSampler = device.createSampler(samplerDesc)
+
+  # Deposit buffer: 2 i32 channels (activator, inhibitor) per field cell, for
+  # fixed-point atomic accumulation of per-particle splats.
+  let depositBytes = FIELD_W * FIELD_H * 2 * 4
+  let depositUsage = bitwiseOr(gpuBufferUsageStorage, gpuBufferUsageCopyDst)
+  fieldDepositBuffer = device.createBufferLabeled(
+    depositBytes, depositUsage, "RD Field Deposit (fixed-point i32, 2ch)")
+
+  # Seed: clear both field textures to (activator=1, inhibitor=0), the trivial
+  # Gray-Scott steady state, via a render-pass clear (rg16float is renderable).
+  # Particle deposits then perturb the inhibitor to ignite the pattern. Also
+  # zero the deposit buffer so frame 0 folds no garbage.
+  let seedEncoder = device.createCommandEncoderLabeled("RD Field Seed")
+
+  proc clearFieldTexture(view: GPUTextureView, label: cstring) =
+    let passDesc = makeJsObject()
+    passDesc["label".cstring] = label.toJs
+    let attachments = makeJsArray()
+    let attachment = makeJsObject()
+    attachment["view".cstring] = view.toJs
+    attachment["loadOp".cstring] = "clear".cstring.toJs
+    let seedColor = makeJsObject()
+    seedColor["r".cstring] = 1.0.toJs   # activator = 1
+    seedColor["g".cstring] = 0.0.toJs   # inhibitor = 0
+    seedColor["b".cstring] = 0.0.toJs
+    seedColor["a".cstring] = 1.0.toJs
+    attachment["clearValue".cstring] = seedColor
+    attachment["storeOp".cstring] = "store".cstring.toJs
+    discard attachments.push(attachment.toJs)
+    passDesc["colorAttachments".cstring] = attachments
+    let clearPass = seedEncoder.beginRenderPass(passDesc)
+    clearPass.endPass()
+
+  clearFieldTexture(fieldViewA, "Seed RD Field A")
+  clearFieldTexture(fieldViewB, "Seed RD Field B")
+  seedEncoder.clearBuffer(fieldDepositBuffer, 0, depositBytes)
+
+  let seedCommands = seedEncoder.finish()
+  let seedArray = makeJsArray()
+  discard seedArray.push(seedCommands.toJs)
+  queue.submit(seedArray)
+
+  inc fieldGenerationCounter
+
+proc activeFieldView*(): GPUTextureView =
+  ## The sampled view of the current front field texture (fieldA is the fixed
+  ## front). R = activator, G = inhibitor. Nil until createFieldResources runs.
+  fieldViewA
+
+proc fieldSampledViewA*(): GPUTextureView = fieldViewA
+proc fieldSampledViewB*(): GPUTextureView = fieldViewB
+  ## The two ping-pong views, for the compute executor's RD bind groups.
+
+proc fieldSampler*(): GPUSampler =
+  ## The linear sampler the LDR field composite reads the field with.
+  fieldLinearSampler
+
+proc fieldDepositGpuBuffer*(): GPUBuffer =
+  ## The fixed-point deposit buffer (2 i32 channels per field cell).
+  fieldDepositBuffer
+
+proc fieldGeneration*(): int =
+  ## Bumps on each (re)creation of the field textures, so the render side caches
+  ## its field-composite bind group and rebuilds only when this changes.
+  fieldGenerationCounter
 
 proc detectWebGPU*(): bool {.exportc.} =
   if not hasWebGPU():
@@ -292,6 +420,11 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   let bufferCount = jsObjectLength(cast[JsObject](buffers))
   {.emit: "console.log('WebGPU AoS buffers created:', `bufferCount`, 'buffers');".}
 
+  # Reaction-diffusion field textures + deposit buffer (created regardless of the
+  # active mode, like the SPH buffers, so a switch to RD finds them ready).
+  createFieldResources()
+  {.emit: "console.log('WebGPU RD field resources created (512x512 rgba16float ping-pong)');".}
+
   # ─────────────────────────────────────────────────────────────────────────
   # Success
   # ─────────────────────────────────────────────────────────────────────────
@@ -320,6 +453,16 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
 proc cleanup*() {.exportc.} =
   destroyAllBuffers(cast[JsObject](buffers))
   buffers = cast[GPUBuffersObject](makeJsObject())
+
+  # Reaction-diffusion field resources are separate from the buffers object.
+  if not fieldTextureA.isNil: fieldTextureA.destroy()
+  if not fieldTextureB.isNil: fieldTextureB.destroy()
+  if not fieldDepositBuffer.isNil: fieldDepositBuffer.destroy()
+  fieldTextureA = nil
+  fieldTextureB = nil
+  fieldViewA = nil
+  fieldViewB = nil
+  fieldDepositBuffer = nil
 
   if not device.isNil and not device.isNullOrUndefined:
     device.destroy()

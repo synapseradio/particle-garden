@@ -14,6 +14,7 @@
 import std/[strutils, tables, unittest]
 import ../src/shader_config
 import ../src/sph_core
+import ../src/field_core
 
 const SHADER_CONFIG_TESTS_LOADED* = true
 
@@ -21,6 +22,9 @@ const knownShaders = [
   "bin-count", "bin-scatter", "forces", "integrate",
   "prefix-sum-local", "prefix-sum-blocks", "prefix-sum-final",
   "render",
+  # RD per-particle passes dispatch dsParticleWorkgroups, so their 1D workgroup
+  # size follows the same warp-multiple contract as the particle passes.
+  "field-deposit", "field-force",
 ]
 
 suite "Workgroup Sizes Are Valid GPU Dispatch Sizes":
@@ -99,3 +103,32 @@ suite "SPH Tunables Mirror sph_core's Authoritative Constants":
     for placeholderName in ["TUNABLE_SPH_XSPH_EPSILON", "TUNABLE_SPH_GAMMA"]:
       check placeholderName in placeholders
       check "." in placeholders[placeholderName]
+
+
+suite "Reaction-Diffusion Field Dispatch Divides The Field Evenly":
+  # The RD field passes (field-resolve, rd-step) are the only 2D dispatches: a
+  # workgroup covers a fieldStepX x fieldStepY tile of the FIELD_W x FIELD_H field.
+  # The executor dispatches ceil(FIELD_W / fieldStepX) x ceil(FIELD_H / fieldStepY)
+  # groups; these must divide the field exactly, or edge tiles run past the field
+  # (guarded in-shader, but wasteful) or leave cells unprocessed.
+
+  test "the 2D field workgroup tile divides FIELD_W x FIELD_H exactly":
+    let fieldStepX = getWorkgroupSize("field-step-x")
+    let fieldStepY = getWorkgroupSize("field-step-y")
+    check fieldStepX > 0
+    check fieldStepY > 0
+    check FIELD_W mod fieldStepX == 0
+    check FIELD_H mod fieldStepY == 0
+    # Total invocations per workgroup stays a warp multiple even though each
+    # dimension (16) is not, so 2D occupancy matches the 1D passes.
+    check (fieldStepX * fieldStepY) mod 32 == 0
+
+  test "getPlaceholderMap exposes the field dimensions and workgroup placeholders":
+    let placeholders = getPlaceholderMap()
+    for placeholderName in ["FIELD_W", "FIELD_H",
+                            "WORKGROUP_SIZE_FIELD_X", "WORKGROUP_SIZE_FIELD_Y",
+                            "WORKGROUP_SIZE_FIELD_DEPOSIT", "WORKGROUP_SIZE_FIELD_FORCE"]:
+      check placeholderName in placeholders
+    # Field dimensions must match field_core's single source of truth.
+    check placeholders["FIELD_W"] == $FIELD_W
+    check placeholders["FIELD_H"] == $FIELD_H

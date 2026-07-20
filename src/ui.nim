@@ -36,6 +36,7 @@ from bindings/typed_arrays import Float32Array, `[]`, `[]=`
 import config
 import config_ranges
 import sph_core
+import field_core
 import preset
 import buffers
 
@@ -122,6 +123,8 @@ proc applySimulationToConfig(simState: SimulationState) =
   CONFIG.sphStiffness = simState.sphStiffness
   CONFIG.sphViscosity = simState.sphViscosity
   CONFIG.sphSubsteps = simState.sphSubsteps
+  CONFIG.rdFeed = simState.rdFeed
+  CONFIG.rdKill = simState.rdKill
 
 proc applyRenderToConfig(renderState: RenderState) =
   CONFIG.particleSize = renderState.particleSize
@@ -420,6 +423,22 @@ proc setupUI*() {.exportc.} =
     min = SPH_SUBSTEPS_MIN.float, max = SPH_SUBSTEPS_MAX.float
   )
 
+  # Reaction-diffusion Gray-Scott sliders. The feed/kill pair selects the Pearson
+  # pattern regime; webgpu_compute writes them into FieldParams each frame in RD mode.
+  configSlider("rdFeed", "rdFeedValue",
+    get = proc(): float = CONFIG.rdFeed,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.rdFeed = value),
+    min = RD_FEED_MIN, max = RD_FEED_MAX, precision = 3
+  )
+
+  configSlider("rdKill", "rdKillValue",
+    get = proc(): float = CONFIG.rdKill,
+    set = proc(value: float) = updateSimulation(
+      proc(simState: var SimulationState) = simState.rdKill = value),
+    min = RD_KILL_MIN, max = RD_KILL_MAX, precision = 3
+  )
+
   setupPresetStoreHooks()
 
 # ==============================================================================
@@ -563,6 +582,10 @@ proc toggleSphSection*() {.exportc.} =
   ## Toggle SPH Fluid section visibility.
   toggleSection("sphSection")
 
+proc toggleRdSection*() {.exportc.} =
+  ## Toggle Reaction-Diffusion section visibility.
+  toggleSection("rdSection")
+
 proc setForceModel*(model: int) {.exportc.} =
   ## Set the force model and update UI visibility.
   ## @param model - 0 for polynomial, 1 for exponential
@@ -586,10 +609,18 @@ proc setSimMode*(modeId: cstring) {.exportc.} =
   activeSimKind.set(kind)
   setActive("modeParticleLifeBtn", kind == skParticleLife)
   setActive("modeSphBtn", kind == skSph)
+  setActive("modeReactionDiffusionBtn", kind == skReactionDiffusion)
 
-  if kind == skSph and CONFIG.particleCount > SPH_PARTICLE_CEILING:
+  # Both SPH and reaction-diffusion are field/neighbor heavy; each caps the
+  # particle count on entry through the same update + re-init path the
+  # particleCount slider uses. RD's ceiling is field_core's RD_PARTICLE_CEILING.
+  let modeCeiling =
+    if kind == skSph: SPH_PARTICLE_CEILING
+    elif kind == skReactionDiffusion: RD_PARTICLE_CEILING
+    else: 0
+  if modeCeiling > 0 and CONFIG.particleCount > modeCeiling:
     updateSimulation(proc(simState: var SimulationState) =
-      simState.particleCount = SPH_PARTICLE_CEILING)
+      simState.particleCount = modeCeiling)
     refreshRegisteredSliders()
     if not onInitParticles.isNil: onInitParticles()
 
@@ -772,6 +803,7 @@ window.toggleGlowSection = toggleGlowSection;
 window.togglePaletteSection = togglePaletteSection;
 window.togglePresetsSection = togglePresetsSection;
 window.toggleSphSection = toggleSphSection;
+window.toggleRdSection = toggleRdSection;
 window.setForceModel = setForceModel;
 window.setSimMode = setSimMode;
 window.setPaletteScheme = setPaletteScheme;

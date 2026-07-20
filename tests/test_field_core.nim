@@ -147,3 +147,13 @@ suite "Reaction-Diffusion Tuning Constants":
     check RD_DEFAULT_FEED < 0.04
     check RD_DEFAULT_KILL > 0.05
     check RD_DEFAULT_KILL < 0.065
+
+  test "particle-field coupling constants are positive":
+    # RD_DEPOSIT_AMOUNT is the inhibitor concentration each particle folds into
+    # its field cell per frame (field-deposit.wgsl); a non-positive value would
+    # never seed the reaction from a uniform-zero inhibitor field. RD_FIELD_FORCE_SCALE
+    # converts the sampled field gradient into a velocity impulse (field-force.wgsl);
+    # zero would decouple particles from the field entirely. Both are the S8b GPU
+    # coupling knobs; S10 calibrates their magnitudes.
+    check RD_DEPOSIT_AMOUNT > 0.0
+    check RD_FIELD_FORCE_SCALE > 0.0

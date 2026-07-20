@@ -25,6 +25,10 @@ import config
 import webgpu_init
 import gpu_profiler
 import gpu_types
+# webgpu_compute is imported before webgpu_render in app.nim's dependency order,
+# so reading its active-mode flag here does not disturb the JS-backend hoisting.
+import webgpu_compute
+import sim_registry
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -80,6 +84,14 @@ var canvasFormat: cstring
 var fadeBindGroupLayout: GPUBindGroupLayout
 var blitBindGroupLayout: GPUBindGroupLayout
 
+# Reaction-diffusion field composite (LDR backdrop, present pass, RD mode only).
+# Reuses the blit bind-group layout (texture + sampler). The bind group is (re)built
+# lazily when webgpu_init.fieldGeneration() changes, mirroring the trail-texture
+# caching pattern; -1 forces a first build.
+var fieldCompositePipeline: GPURenderPipeline
+var fieldCompositeBindGroup: GPUBindGroup
+var cachedFieldGeneration: int = -1
+
 
 # ==============================================================================
 # SECTION 3: SHADER SOURCE
@@ -93,6 +105,7 @@ const RENDER_SHADER = staticRead("../web/shaders/render.wgsl")
 const GLOW_SHADER = staticRead("../web/shaders/glow.wgsl")
 const FADE_SHADER = staticRead("../web/shaders/fade.wgsl")
 const BLIT_SHADER = staticRead("../web/shaders/composite.wgsl")
+const FIELD_COMPOSITE_SHADER = staticRead("../web/shaders/field-composite.wgsl")
 
 # ==============================================================================
 # SECTION 4: INITIALIZATION
@@ -504,6 +517,50 @@ proc initWebGPURender*(): bool =
   blitPipeline = webgpu_init.device.createRenderPipeline(blitPipelineDesc)
 
   # ==========================================================================
+  # FIELD COMPOSITE PIPELINE (reaction-diffusion LDR backdrop)
+  # ==========================================================================
+  # Reuses the blit bind-group layout (texture + sampler) and pipeline layout;
+  # only the shader and blend differ. Opaque backdrop drawn first in the present
+  # pass under glow/trails, so no blending. Depth config matches the present pass.
+
+  let fieldShaderDesc = newJsObject()
+  fieldShaderDesc["label"] = "Field Composite Shader".cstring.toJs
+  fieldShaderDesc["code"] = FIELD_COMPOSITE_SHADER.cstring.toJs
+  let fieldShaderModule = webgpu_init.device.createShaderModule(fieldShaderDesc)
+
+  let fieldPipelineDesc = newJsObject()
+  fieldPipelineDesc["label"] = "Field Composite Pipeline".cstring.toJs
+  fieldPipelineDesc["layout"] = blitPipelineLayout.toJs
+
+  let fieldVertexStage = newJsObject()
+  fieldVertexStage["module"] = fieldShaderModule.toJs
+  fieldVertexStage["entryPoint"] = "vs_main".cstring.toJs
+  fieldPipelineDesc["vertex"] = fieldVertexStage
+
+  let fieldFragmentStage = newJsObject()
+  fieldFragmentStage["module"] = fieldShaderModule.toJs
+  fieldFragmentStage["entryPoint"] = "fs_main".cstring.toJs
+  let fieldTargets = newJsArray()
+  let fieldTarget0 = newJsObject()
+  fieldTarget0["format"] = canvasFormat.toJs
+  discard fieldTargets.push(fieldTarget0)
+  fieldFragmentStage["targets"] = fieldTargets
+  fieldPipelineDesc["fragment"] = fieldFragmentStage
+
+  let fieldPrimitive = newJsObject()
+  fieldPrimitive["topology"] = "triangle-list".cstring.toJs
+  fieldPrimitive["cullMode"] = "none".cstring.toJs
+  fieldPipelineDesc["primitive"] = fieldPrimitive
+
+  let fieldDepthStencil = newJsObject()
+  fieldDepthStencil["format"] = "depth24plus".cstring.toJs
+  fieldDepthStencil["depthWriteEnabled"] = false.toJs
+  fieldDepthStencil["depthCompare"] = "always".cstring.toJs
+  fieldPipelineDesc["depthStencil"] = fieldDepthStencil
+
+  fieldCompositePipeline = webgpu_init.device.createRenderPipeline(fieldPipelineDesc)
+
+  # ==========================================================================
   # PERSISTENT TRAIL TEXTURES (survive across frames for ping-pong)
   # ==========================================================================
 
@@ -719,6 +776,33 @@ proc updateBindGroup*() =
   glowBindGroupDesc["entries"] = entries  # Reuse same entries
   glowBindGroup = webgpu_init.device.createBindGroup(glowBindGroupDesc)
 
+proc ensureFieldCompositeBindGroup() =
+  ## (Re)build the field composite bind group when the field textures were
+  ## (re)created (fieldGeneration changed). Reuses the blit layout (texture +
+  ## sampler). No-op when the field view does not exist yet.
+  let generation = webgpu_init.fieldGeneration()
+  if generation == cachedFieldGeneration and not fieldCompositeBindGroup.isNil:
+    return
+  let fieldView = webgpu_init.activeFieldView()
+  if cast[JsObject](fieldView).isNil or cast[JsObject](fieldView).isNullOrUndefined:
+    return
+
+  let bindGroupDesc = newJsObject()
+  bindGroupDesc["label"] = "Field Composite Bind Group".cstring.toJs
+  bindGroupDesc["layout"] = blitBindGroupLayout.toJs
+  let entries = newJsArray()
+  let textureEntry = newJsObject()
+  textureEntry["binding"] = 0.toJs
+  textureEntry["resource"] = fieldView.toJs
+  discard entries.push(textureEntry)
+  let samplerEntry = newJsObject()
+  samplerEntry["binding"] = 1.toJs
+  samplerEntry["resource"] = webgpu_init.fieldSampler().toJs
+  discard entries.push(samplerEntry)
+  bindGroupDesc["entries"] = entries
+  fieldCompositeBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
+  cachedFieldGeneration = generation
+
 # ==============================================================================
 # SECTION 5: RENDER LOOP
 # ==============================================================================
@@ -878,6 +962,16 @@ proc render*(particleCount: int): RenderTiming =
   presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
 
   let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
+
+  # Step 0: In reaction-diffusion mode, draw the field as an opaque LDR backdrop
+  # under everything else. Gated on the active mode and nil-guarded before the
+  # field textures exist. S9/S10 replace this with HDR bloom + a calibrated colormap.
+  if webgpu_compute.activeSimKind == skReactionDiffusion:
+    ensureFieldCompositeBindGroup()
+    if not fieldCompositeBindGroup.isNil:
+      presentPass.setPipeline(fieldCompositePipeline)
+      presentPass.setBindGroup(0, fieldCompositeBindGroup)
+      presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
   # Step 1: Draw glow FIRST (additive blending on background)
   # GUARANTEE: Glow is ALWAYS behind particles because:
