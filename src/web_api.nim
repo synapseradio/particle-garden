@@ -33,7 +33,7 @@ when defined(js):
 
   from bindings/js_interop import newJsObject, newJsArray, push, setGlobal,
     consoleWarn
-  from bindings/typed_arrays import Float32Array
+  from bindings/typed_arrays import Float32Array, `[]`
 
   import config
   import buffers
@@ -390,6 +390,12 @@ when defined(js):
       cstring(toHslaString(cellColorFromValue(clampMatrixValue(value)))))
     result["clampMatrixValue"] = toJs(proc(value: float): float =
       clampMatrixValue(value))
+    result["matrixStride"] = toJs(proc(): int = MATRIX_SIZE)
+    result["speciesColor"] = toJs(proc(index: int): cstring =
+      var channels = newSeq[float](MAX_SPECIES * 3)
+      for channelIndex in 0 ..< channels.len:
+        channels[channelIndex] = config.COLORS[channelIndex]
+      cstring(toRgbaString(speciesColorFromIndex(index, channels))))
     result["speciesCount"] = toJs(proc(): int = CONFIG.speciesCount)
     result["setSpeciesCount"] = toJs(proc(count: int; randomizeNew: bool) =
       setSpeciesCountImpl(count, randomizeNew))

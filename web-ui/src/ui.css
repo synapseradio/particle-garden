@@ -1,4 +1,220 @@
-/* Solid control panel styles. Bundled by build.ts into web/ui-bundle.css. */
-.pg-panel-probe {
+/* Solid control panel styles — a 1:1 port of the old panel CSS from
+   web/index.html, scoped under #ui-root so the shell page stays in charge
+   of body/canvas/overlay styling. Bundled into web/ui-bundle.css. */
+
+#ui-root .controls {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  background: rgba(10, 10, 20, 0.85);
+  backdrop-filter: blur(10px);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 100;
+  max-width: 340px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  color: #e0e0e0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+#ui-root .controls h1 {
+  font-size: 1.4em;
+  margin-bottom: 5px;
+  color: #e0e0e0;
+}
+
+#ui-root .control-group {
+  margin-bottom: 15px;
+}
+#ui-root .control-group label {
+  display: block;
+  font-size: 0.85em;
+  color: #aaa;
+  margin-bottom: 5px;
+}
+#ui-root .control-group input[type="range"] {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+#ui-root .control-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #4d96ff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+#ui-root .value-display {
+  font-size: 0.75em;
+  color: #4d96ff;
+  float: right;
+}
+#ui-root .param-hint {
+  color: #777;
+}
+
+#ui-root button {
+  background: #4d96ff;
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9em;
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+#ui-root button:hover {
+  opacity: 0.9;
+}
+#ui-root button.secondary {
+  background: rgba(255, 255, 255, 0.1);
+}
+#ui-root button.active {
+  background: #6bcb77;
+}
+#ui-root .button-row {
+  margin-top: 15px;
+}
+#ui-root .trail-settings {
+  margin-top: 10px;
+}
+
+#ui-root .stats {
+  font-size: 0.75em;
+  color: #888;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+#ui-root .stats div {
+  margin-bottom: 2px;
+}
+#ui-root .stats .highlight {
+  color: #4ade80;
+}
+
+#ui-root .matrix-group {
+  margin-top: 15px;
+}
+#ui-root .matrix-display {
+  margin-top: 10px;
+  display: grid;
+  gap: 2px;
+  font-size: 0.65em;
+}
+#ui-root .matrix-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-weight: bold;
+  padding: 0;
+}
+#ui-root .matrix-cell input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  color: white;
+  font-weight: bold;
+  font-family: inherit;
+  padding: 0;
+  font-size: 1em;
+  -moz-appearance: textfield;
+}
+#ui-root .matrix-cell input::-webkit-outer-spin-button,
+#ui-root .matrix-cell input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#ui-root .matrix-cell input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.2);
+}
+#ui-root .matrix-header {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+#ui-root .collapse-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 5px;
+  font-size: 1.2em;
+}
+#ui-root .collapsed .controls-content {
   display: none;
+}
+
+#ui-root .control-section {
+  margin-bottom: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+#ui-root .section-header {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  color: #ccc;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 8px;
+  margin: 0;
+}
+#ui-root .section-header:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+#ui-root .section-toggle {
+  font-size: 14px;
+}
+#ui-root .section-content {
+  padding: 10px;
+}
+
+#ui-root .model-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+#ui-root .model-btn {
+  flex: 1;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #aaa;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0;
+}
+#ui-root .model-btn.active {
+  background: rgba(100, 200, 100, 0.3);
+  border-color: rgba(100, 200, 100, 0.5);
+  color: #fff;
+}
+#ui-root .model-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+#ui-root .preset-list {
+  width: 100%;
+}
+#ui-root .preset-json-area {
+  width: 100%;
+  font-family: monospace;
+  font-size: 11px;
 }
