@@ -154,7 +154,7 @@ Tight epsilon for float32 comparisons ensures accurate force calculations.
 **Not tested natively:**
 - `typed_arrays.nim` — Requires JavaScript runtime (TypedArray, ArrayBuffer APIs)
 - `webgpu_*.nim` — Requires WebGPU implementation
-- `ui.nim` — Requires DOM APIs
+- `web_api.nim`, `canvas_input.nim` — Require DOM APIs (the pure logic they wire — descriptors, input state, preset schema — is tested natively)
 
 **Why:**
 These modules are thin FFI bindings to browser APIs. Testing them requires:

@@ -6,7 +6,8 @@
 # (no FFI, no DOM): compiles on both the native and JS backends.
 #
 # Consumed by:
-#   - ui.nim's configSlider registrations (the live UI ranges)
+#   - ui/api/param_descriptor.nim (the descriptor table the Solid panel's
+#     sliders and web_api's setParam clamping are built from)
 #   - preset.nim's clamp bounds (what a loaded preset is coerced into)
 #   - tests (natively)
 #
@@ -14,9 +15,6 @@
 # cannot drift apart — the drift class that once let preset bounds track
 # dead web/index.html attributes (e.g. a 64000 particle ceiling against a
 # live 128000 slider) is structurally closed.
-#
-# web/index.html's authored min/max/step attributes are dead values:
-# slider.bindToDOM overwrites them from these registrations at bind time.
 #
 # ==============================================================================
 

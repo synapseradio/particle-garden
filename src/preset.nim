@@ -24,8 +24,8 @@
 #
 # Used by:
 #   - tests/test_preset.nim (native test compilation)
-#   - a future src/ui/presets/preset_store.nim (storage/UI half, not this
-#     module's concern: see roadmap stage B2)
+#   - src/web_api.nim (snapshot/apply behind gardenAPI; the storage half
+#     lives UI-side in web-ui/src/lib/presets.ts)
 #
 # Dependencies are restricted to pure, FFI-free leaf modules (config_ranges,
 # palette), so this module still compiles identically on the native and JS
@@ -37,9 +37,9 @@ import std/json
 import config_ranges
 import palette
 
-# The clamp bounds ARE the live slider ranges: ui.nim's configSlider
-# registrations read the same constants, so the preset schema and the UI
-# cannot disagree about what values are representable.
+# The clamp bounds ARE the live slider ranges: the param descriptor table
+# (ui/api/param_descriptor.nim) reads the same constants, so the preset
+# schema and the UI cannot disagree about what values are representable.
 export config_ranges
 
 # ==============================================================================
@@ -134,9 +134,9 @@ type
 # SECTION 3: CLAMP RANGES
 #
 # The slider-backed bounds live in config_ranges.nim (imported and
-# re-exported above) — the same constants ui.nim's configSlider
-# registrations read, so the preset schema clamps to exactly what the UI
-# can produce. Only bounds with no slider are defined here.
+# re-exported above) — the same constants the param descriptor table reads,
+# so the preset schema clamps to exactly what the UI can produce. Only
+# bounds with no slider are defined here.
 # ==============================================================================
 
 const

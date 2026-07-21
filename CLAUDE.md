@@ -1,32 +1,39 @@
 # CLAUDE.md
 
-Native desktop wrapper for a particle-life simulation with WebGPU compute physics. All source is Nim; WGSL shaders are the only non-Nim source.
+Native desktop wrapper for a particle-life simulation with WebGPU compute physics. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
 
 ## Golden rules
 
-- **Run `nimble all --verbose` after every change.** Always pass `--verbose` to nimble.
-- **All source is Nim.** No hand-written JavaScript. The frontend compiles from `src/*.nim` to `web/app.js`. Edit the `.nim` source, never the generated `.js`.
-- **Generated files are off-limits:** `web/app.js` and `web/shaders/*.wgsl` are build output. Do not edit them.
+- **Run `just happen` after every change.** It runs the shader bundle, the Nim frontend compile, the Bun/TS build (with the `tsc --noEmit` typecheck), and the native compile, in the order the staticReads require. Run `just check` (both test suites) before any release. `just be` = pull → build → run.
+- **The language boundary is `window.gardenAPI`** (`src/web_api.nim`). Nim owns the simulation: CONFIG, defaults, ranges, clamping, color math, preset schema/validation/apply order. TypeScript owns only the control panel and never restates a number the Nim side serves — ranges, defaults, steps, ceilings, and storage keys all come through `gardenAPI`. Canvas mouse/touch input stays Nim (`canvas_input.nim`).
+- **The CONFIG mirror is synchronous.** Every parameter write lands in the typed store AND the flat GPU-facing CONFIG in the same tick via `updateSimulation`/`updateRender` (`web_api.nim` documents the invariant). Never rebuild this on subscriptions or microtasks — the frame loop reads CONFIG fresh every frame.
+- **Generated files are off-limits:** `web/app.js`, `web/ui-bundle.js`, `web/ui-bundle.css`, and `web/shaders/*.wgsl` are build output. Edit `src/*.nim` and `web-ui/src/*`, never the outputs.
 - **`memory_layout.nim` is the single source of truth** for the Particle struct and all buffer offsets. Never hardcode offsets elsewhere.
 - **Do not alphabetize imports in `app.nim`.** Nim's JS backend hoists variables, so misordered imports cause undefined-reference errors at runtime. Keep the dependency order below.
 
 ## Build and test
 
 ```bash
-nimble install          # Install dependencies
+nimble install          # Install Nim dependencies
 nimble setup            # Generate nimble.paths; run after install or on "cannot open file: webui"
-nimble all --verbose    # Build everything (shaders + frontend JS + native binary)
-nimble test             # Run the native test suite (pure-logic modules)
-nimble release          # Optimized release build
+just happen             # Build everything (shaders + app.js + ui-bundle + native binary)
+just check              # Both test suites (native Nim + bun test)
+just test               # Native Nim suite only
+just test-ui            # TypeScript suite only
+just release            # Optimized release build
+just be                 # git pull + build + run
 ./main                  # Run
 ```
 
-`nimble all` runs three steps in order:
-1. `nimble shaders` — bundle WGSL shaders (resolve `//! import`, substitute config) via `tools/wgsl_bundle.nim`.
-2. `nimble app` — `nim js` compiles `src/app.nim` → `web/app.js` (browser frontend).
-3. `nim c` compiles `src/main.nim` → `./main` (native HTTP server).
+`just happen` runs four steps in order — the order matters because `main.nim` staticReads the earlier outputs:
+1. `shaders` — bundle WGSL shaders (resolve `//! import`, substitute config) via `tools/wgsl_bundle.nim`.
+2. `build-app` — `nim js` compiles `src/app.nim` → `web/app.js` (simulation frontend, creates `window.gardenAPI`).
+3. `build-ui` — Bun installs pinned deps, typechecks with TypeScript 7, and bundles `web-ui/src/main.tsx` → `web/ui-bundle.js` + `web/ui-bundle.css` (via `web-ui/build.ts`; the `bun build` CLI cannot load the Solid JSX plugin).
+4. `build-native` — `nim c` compiles `src/main.nim` → `./main` (native HTTP server; staticReads app.js and ui-bundle.*).
 
-Run `nimble test` after changing any pure-logic module (physics, grid, memory layout, gpu_types, UI state). The suite is native-only: it compiles `tests/test_all.nim` with `nim c` and exercises the pure modules. Browser, WebGPU, and FFI code is verified by the build itself, not by tests — a broken FFI binding fails `nimble app`. CI runs `nimble test` before any release, so a red suite blocks the release. See `tests/README.md` for layout and conventions.
+The just recipes invoke `nim` and `bun` directly instead of going through nimble tasks: nimble 0.22.x exits 0 even when a task's exec fails, which once left a stale `web/app.js` behind a "successful" build. The nimble tasks still exist for manual use, but only the just recipes are trusted to fail loudly. The flag constants in the justfile mirror `particle_garden.nimble` and must stay in sync.
+
+Run `just test` after changing any pure-logic Nim module (physics, grid, memory layout, gpu_types, UI state, param descriptor). The suite is native-only: it compiles `tests/test_all.nim` with `nim c` and exercises the pure modules. `just test-ui` covers the TypeScript pure logic (preset storage, formatting) with `bun test`. Browser, WebGPU, and FFI code is verified by the build itself — a broken FFI binding fails `build-app`, and a broken component fails the typecheck. CI runs `just check` before any release, so a red suite blocks the release. See `tests/README.md` for layout and conventions.
 
 ## Architecture
 
@@ -34,6 +41,10 @@ Two components, because browsers require Cross-Origin-Opener-Policy and Cross-Or
 
 - **Nim asynchttpserver** (port 8089) serves `web/index.html` with the COOP/COEP headers.
 - **webui** opens a native browser window pointing at localhost:8089 and manages its lifecycle.
+
+### The gardenAPI boundary
+
+`src/web_api.nim` installs a single `window.gardenAPI` object at `app.js` module-eval time — before the Solid bundle evaluates. The Solid panel (`web-ui/`) drives everything through it: descriptor-driven sliders (`descriptor()`/`setParam`/`commitParam`, clamped in Nim against `ui/api/param_descriptor.nim`), mode/palette/colormap catalogs, live `matrix()`/`colors()` Float32Array references gated behind `onReady` (buffers exist only after `init()`), a pushed stats stream (`onStats`, cadence set loop-side in `app.nim`), and hybrid presets (`exportPresetJson`/`applyPresetJson` keep schema, validation, and `presetApplySteps` order in Nim; the UI owns localStorage under `preset_store_core`'s `pg.presets.*` keys, so presets saved before the port keep loading). One JS-backend caveat lives at this boundary: `std/json.parseJson` delegates to `JSON.parse`, whose SyntaxError is a foreign exception Nim's `except ValueError` cannot catch — `applyPresetJson` pre-checks parseability instead.
 
 ### Particle buffer
 
@@ -85,7 +96,9 @@ Quality flags are enforced via nimble for every build:
 
 Can this build be reproduced on a fresh machine in six months? That is the test every dependency decision must pass.
 
-**Library dependencies are pinned exactly.** Use exact version pins or commit hashes (for example, `webui#552a3e3`, the 2.4.2 tag). `nimble.lock` is committed and updated deliberately. Floating references — `#head`, `>=`, `*`, or anything pointing at `head`/`main`/`master`/`latest` — are forbidden for libraries. A missing or uncommitted lock file is a red flag.
+**Library dependencies are pinned exactly.** Use exact version pins or commit hashes (for example, `webui#552a3e3`, the 2.4.2 tag). `nimble.lock` is committed and updated deliberately. Floating references — `#head`, `>=`, `*`, or anything pointing at `head`/`main`/`master`/`latest` — are forbidden for libraries. A missing or uncommitted lock file is a red flag. The same discipline covers `web-ui/`: Bun is pinned via `packageManager` in `web-ui/package.json`, every npm dependency is exact-pinned, `web-ui/bun.lock` is committed, and CI installs with `--frozen-lockfile`.
+
+**The UI bundle is a build artifact staticRead at Nim-compile time.** `web/ui-bundle.js`/`.css` are gitignored; `main.nim` embeds them during `nim c`. A missing bundle fails the native compile (good); a stale one silently ships an old UI (bad) — which is why `just happen` always rebuilds the bundle before the native step, and why builds must go through just rather than nimble (see Build and test).
 
 **The nim compiler is the deliberate exception, and must NOT be pinned in the lock.** It is system-provided, bounded only by `requires "nim >= 2.0.0 & < 3.0.0"` in `particle_garden.nimble`. Builds use whatever toolchain is installed: `--useSystemNim` locally, and `iffy/install-nim` with `version: binary:stable` in the release workflow. The `< 3.0.0` upper bound is the guardrail that keeps "track the installed stable toolchain" safe across a future nim major release. Do not add a nim entry back into the lock.
 
@@ -98,7 +111,7 @@ The lesson: pin libraries exactly, but let the compiler track the installed tool
 
 ## Releasing
 
-GitHub Actions (`.github/workflows/release.yml`) builds and publishes releases for macOS, Windows, and Linux. It triggers on tags matching `v*`: builds `nimble release` on all three platforms, packages platform artifacts (macOS .app bundle, Windows .exe, Linux binary), and creates a GitHub Release with auto-generated notes. Use `workflow_dispatch` in the Actions UI for draft releases without pushing tags.
+GitHub Actions (`.github/workflows/release.yml`) builds and publishes releases for macOS, Windows, and Linux. It triggers on tags matching `v*`: installs Nim (system stable), Bun 1.3.14, and just, runs `just check`, builds `just release` on all three platforms, packages platform artifacts (macOS .app bundle, Windows .exe, Linux binary), and creates a GitHub Release with auto-generated notes. Use `workflow_dispatch` in the Actions UI for draft releases without pushing tags.
 
 The version in `particle_garden.nimble` must match the git tag (without the `v` prefix). Semantic versioning:
 - **MAJOR** — breaking changes (user-visible behavior change, config format change, removed features).
@@ -109,14 +122,14 @@ When versions diverge, examine commits since the last tag to pick the bump — `
 
 ## Source map
 
-Two compilation targets: `nim js` builds `src/app.nim` → `web/app.js` (frontend, all modules merged); `nim c` builds `src/main.nim` → `./main` (native HTTP server + webui window).
+Three build targets: `nim js` builds `src/app.nim` → `web/app.js` (simulation frontend, all modules merged); Bun builds `web-ui/src/main.tsx` → `web/ui-bundle.js` + `.css` (Solid control panel); `nim c` builds `src/main.nim` → `./main` (native HTTP server + webui window, staticReads the other two).
 
 Import order in `app.nim` matters — each layer depends on the previous one, and the JS backend's hoisting makes misordering fatal at runtime:
 
 ```
 Layer 1: config                                  (no dependencies)
 Layer 2: buffers                                 (uses config)
-Layer 3: renderer, grid, ui                      (use buffers)
+Layer 3: renderer, grid, canvas_input, web_api   (use buffers)
 Layer 4: webgpu_init, webgpu_compute, webgpu_render  (use all above)
 ```
 
@@ -134,7 +147,11 @@ Module inventory:
 | `webgpu_init.nim` | GPU device init, feature detection, buffer allocation. |
 | `webgpu_compute.nim` | The 5-pass compute pipeline (bin-count, prefix-sum, bin-scatter, forces, integrate). |
 | `webgpu_render.nim` | GPU rendering: instanced quads, trail effects, glow pipeline. |
-| `ui/` and `ui.nim` | DOM bindings, sliders, mouse/touch events, attraction-matrix editing. `src/ui/` holds the state, controls, input, matrix, and stats submodules. |
+| `web_api.nim` | The `window.gardenAPI` boundary: typed-state → CONFIG bridge (synchronous mirror), descriptor-clamped parameter writes, palette/matrix/mode logic, preset snapshot/apply. |
+| `canvas_input.nim` | Canvas mouse/touch input → physics (currentInput observable), resize and particle-reinit callbacks. |
+| `ui/api/param_descriptor.nim` | Pure descriptor table for every tunable (id, range, step, precision, default, store routing); natively tested; served to TS via `gardenAPI.descriptor()`. |
+| `ui/` | Pure UI state modules (`state/`, `core/observable`, `input/` handlers, `presets/preset_store_core`); natively tested where pure. |
+| `web-ui/` | The Solid control panel (TypeScript): components over gardenAPI, localStorage preset I/O, formatting; built by Bun via `build.ts`. |
 | `renderer.nim` | Legacy WebGL renderer (fallback when WebGPU is unavailable). |
 | `grid.nim` | Spatial grid dimensions from world size + interaction radius. |
 | `grid_core.nim` | Pure grid arithmetic (cell calculations, neighbor iteration). |
