@@ -862,9 +862,6 @@ proc uploadInitialData*(particleCount: int): Future[JsObject] {.async, exportc.}
     let bytesTotal = particleCount * 32
     queue.writeBufferTyped(cast[GPUBuffer](gpuBuffers.particlesA), 0, particleData)
 
-    # Upload attraction matrix
-    queue.writeBufferFromView(cast[GPUBuffer](gpuBuffers.matrix), 0, cpuBuffers.matrix.buffer, cpuBuffers.matrix.byteOffset, cpuBuffers.matrix.byteLength)
-
     consoleLog(("Uploaded " & $particleCount & " particles to GPU (AoS, " & $bytesTotal & " bytes)").toJs)
 
     let resultObj = createJsObject()

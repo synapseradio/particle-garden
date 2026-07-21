@@ -63,7 +63,6 @@ type
     blockOffsets* {.importjs: "blockOffsets".}: GPUBuffer
 
     # Shared state
-    matrix* {.importjs: "matrix".}: GPUBuffer
     sync* {.importjs: "sync".}: GPUBuffer
 
   InitResult* = ref object of JsObject
@@ -84,7 +83,6 @@ type
     densityDelta* {.importjs: "densityDelta".}: int
     gridCounts* {.importjs: "gridCounts".}: int
     gridOffsets* {.importjs: "gridOffsets".}: int
-    matrix* {.importjs: "matrix".}: int
     sync* {.importjs: "sync".}: int
 
 # ==============================================================================
@@ -159,9 +157,6 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   # Grid: u32 per cell
   result.gridCounts = gridCells * 4
   result.gridOffsets = gridCells * 4
-
-  # Attraction matrix: 6x6 = 36 floats
-  result.matrix = memory_layout.MAX_SPECIES * memory_layout.MAX_SPECIES * 4
 
   # Sync: 256 i32s
   result.sync = 256 * 4
@@ -379,7 +374,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   # ─────────────────────────────────────────────────────────────────────────
 
   let bufferUsage = bitwiseOr(bitwiseOr(gpuBufferUsageStorage, gpuBufferUsageCopySrc), gpuBufferUsageCopyDst)
-  let bufferUsageWithUniform = bitwiseOr(bufferUsage, gpuBufferUsageUniform)
 
   proc createBuf(size: int, usage: int, label: cstring): GPUBuffer =
     let desc = makeJsObject()
@@ -414,7 +408,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   buffers.blockOffsets = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Offsets")
 
   # Shared state
-  buffers.matrix = createBuf(sizes.matrix, bufferUsageWithUniform, "Attraction Matrix")
   buffers.sync = createBuf(sizes.sync, bufferUsage, "Synchronization Buffer")
 
   let bufferCount = jsObjectLength(cast[JsObject](buffers))
