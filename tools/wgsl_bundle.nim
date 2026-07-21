@@ -215,6 +215,18 @@ proc bundle(srcPath: string): string =
 # INCREMENTAL BUILD SUPPORT
 # ==============================================================================
 
+const PlaceholderSources = [
+  "src/shader_config.nim",
+  "src/field_core.nim",
+  "src/bloom_core.nim",
+  "src/colormap_core.nim",
+]
+  ## The Nim modules whose constants feed {{PLACEHOLDER}} substitution
+  ## (shader_config.getPlaceholderMap and the pure modules it draws from).
+  ## An edit to any of them changes bundled output without touching a .wgsl
+  ## file, so needsRebuild must treat them as inputs — otherwise a tuning
+  ## edit ships silently stale shaders.
+
 proc needsRebuild(srcPath, outPath: string): bool =
   ## Check if shader needs rebuilding based on file modification times.
   if not fileExists(outPath):
@@ -231,6 +243,12 @@ proc needsRebuild(srcPath, outPath: string): bool =
   for name in parseImports(content):
     let modPath = ModulesDir / name & ".wgsl"
     if fileExists(modPath) and getLastModificationTime(modPath) > outMtime:
+      return true
+
+  # Check the Nim sources that feed placeholder substitution
+  for placeholderSource in PlaceholderSources:
+    if fileExists(placeholderSource) and
+        getLastModificationTime(placeholderSource) > outMtime:
       return true
 
   return false
