@@ -31,10 +31,16 @@ type
     forceModel*: int          ## 0=polynomial, 1=exponential
     expRepulsionAlpha*: float ## Exponential repulsion steepness
     expAttractionBeta*: float ## Exponential attraction range
-    sphRestDensity*: float    ## SPH target density the Tait EOS drives toward
+    sphRestDensity*: float    ## SPH target density the Tait EOS drives toward.
+                              ## Must exceed the isolated particle's normalized
+                              ## self-density of 1.0, or isolation becomes the
+                              ## zero-pressure state and the fluid disperses.
     sphStiffness*: float      ## SPH pressure gain (Tait stiffness)
     sphViscosity*: float      ## SPH XSPH viscosity strength
-    sphSubsteps*: int         ## SPH physics substeps per rendered frame
+    sphSubsteps*: int         ## SPH physics substeps per rendered frame.
+                              ## 2 halves the effective timestep the stiff
+                              ## gamma=7 EOS integrates at; capped by
+                              ## SPH_MAX_SUBSTEPS.
     rdFeed*: float            ## Gray-Scott feed rate F
     rdKill*: float            ## Gray-Scott kill rate k
 
@@ -54,10 +60,10 @@ func initSimulationState*(): SimulationState =
     forceModel: 0,         # Polynomial (smooth curves)
     expRepulsionAlpha: 6.0,
     expAttractionBeta: 3.0,
-    sphRestDensity: 1.0,
+    sphRestDensity: 3.0,  # ~6 neighbors at r=0.5-0.6h settle at density 2.6-3.5
     sphStiffness: 8.0,
     sphViscosity: 0.1,
-    sphSubsteps: 1,
+    sphSubsteps: 2,
     rdFeed: RD_DEFAULT_FEED,
     rdKill: RD_DEFAULT_KILL
   )

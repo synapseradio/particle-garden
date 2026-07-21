@@ -121,6 +121,33 @@ suite "Tait Equation Of State":
     check abs(doubled - 2.0 * base) < 1e-6
 
 
+suite "Floored Tait Pressure Mirrors The Shader's Purely-Repulsive EOS":
+  test "pressure is 0 both at rest density and everywhere below it":
+    # CONTRACT: forces-sph.wgsl floors density at restDensity before the EOS,
+    # so an isolated particle (self-density 1.0) and a resting one both feel
+    # zero pressure. With restDensity 3.0, isolation sits below rest and must
+    # not repel — the pre-fix restDensity of 1.0 made isolation the
+    # zero-pressure state, so every contact was repulsive and the fluid
+    # behaved as an expanding gas.
+    let restDensity = 3.0
+    check abs(flooredTaitPressure(
+      1.0, restDensity, 8.0, SPH_DEFAULT_GAMMA)) < EPSILON
+    check abs(flooredTaitPressure(
+      restDensity, restDensity, 8.0, SPH_DEFAULT_GAMMA)) < EPSILON
+
+  test "pressure is positive and strictly increasing above rest density":
+    # CONTRACT: only compression past rest pushes back, and harder the more
+    # compressed the neighborhood is.
+    let restDensity = 3.0
+    check flooredTaitPressure(4.0, restDensity, 8.0, SPH_DEFAULT_GAMMA) > 0.0
+    var previous = 0.0
+    for density in [3.5, 4.0, 5.0, 6.0]:
+      let current = flooredTaitPressure(
+        density, restDensity, 8.0, SPH_DEFAULT_GAMMA)
+      check current > previous
+      previous = current
+
+
 suite "XSPH Velocity Correction Is Bounded By Epsilon Times The Velocity Gap":
   test "the correction magnitude never exceeds epsilon * |velocity difference|":
     # CONTRACT: XSPH smooths velocity toward the neighborhood mean without ever

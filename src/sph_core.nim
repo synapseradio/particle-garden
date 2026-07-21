@@ -95,6 +95,18 @@ func taitPressure*(density, restDensity, stiffness, gamma: float): float =
   ## a fixed density ratio, which is what makes stiffness the pressure gain.
   stiffness * (pow(density / restDensity, gamma) - 1.0)
 
+func flooredTaitPressure*(density, restDensity, stiffness, gamma: float):
+    float =
+  ## The purely-repulsive Tait EOS the shader actually evaluates: density is
+  ## floored at restDensity before taitPressure, so pressure is 0 at and below
+  ## rest and strictly positive above it. Mirrors forces-sph.wgsl, which
+  ## applies max(laggedDensity, restDensity) before sphTaitPressure for both
+  ## the particle and its neighbor. The floor is why restDensity must sit
+  ## above the isolated particle's self-density (the density accumulator
+  ## starts at the normalized self-weight 1.0): if rest equals isolation,
+  ## every contact reads as compression and the fluid disperses as a gas.
+  taitPressure(max(density, restDensity), restDensity, stiffness, gamma)
+
 # ==============================================================================
 # XSPH VELOCITY SMOOTHING
 # ==============================================================================

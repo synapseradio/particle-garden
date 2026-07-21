@@ -195,10 +195,10 @@ func defaultSettings*(): PresetSettings =
     glowRadiusScale: 3.0,
     glowFalloff: 6.0,
     glowWarmth: 0.4,
-    sphRestDensity: 1.0,
+    sphRestDensity: 3.0,
     sphStiffness: 8.0,
     sphViscosity: 0.1,
-    sphSubsteps: 1,
+    sphSubsteps: 2,
     # Mirrors field_core.RD_DEFAULT_FEED/RD_DEFAULT_KILL as literals rather
     # than an import: this module's dependencies are intentionally restricted
     # to config_ranges and palette (see file header), the same reason
