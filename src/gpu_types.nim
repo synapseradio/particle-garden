@@ -212,6 +212,41 @@ const
     totalSize: 32
   )
 
+  # BloomParams struct (16 bytes, generated into web/shaders/modules/bloom_params.wgsl)
+  # The separable-blur pass uniform. `direction` selects the blur axis — (1,0)
+  # for the horizontal pass, (0,1) for the vertical — and `texelSize` is one
+  # over the half-resolution bloom target dimensions, so `direction * texelSize`
+  # is the per-tap UV step. Both are constant per frame (they change only on
+  # resize); the Gaussian weights themselves are compile-time placeholders from
+  # bloom_core.nim, not uniform data.
+  BloomParamsLayout* = GpuStruct(
+    name: "BloomParams",
+    fields: @[
+      GpuField(name: "direction", kind: gtVec2F32, offset: 0, size: 8, count: 1),
+      GpuField(name: "texelSize", kind: gtVec2F32, offset: 8, size: 8, count: 1),
+    ],
+    totalSize: 16
+  )
+
+  # TonemapParams struct (32 bytes, generated into web/shaders/modules/tonemap_params.wgsl)
+  # The bloom composite/tonemap pass uniform: HDR exposure, the bloom mix gain,
+  # and the three colour-grade knobs (saturation, contrast, signed temperature).
+  # Written every frame from CONFIG.
+  TonemapParamsLayout* = GpuStruct(
+    name: "TonemapParams",
+    fields: @[
+      GpuField(name: "exposure",       kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "bloomIntensity", kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "saturation",     kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "contrast",       kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "temperature",    kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "pad0",           kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "pad1",           kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "pad2",           kind: gtF32, offset: 28, size: 4, count: 1),
+    ],
+    totalSize: 32
+  )
+
 # =============================================================================
 # FIELD LOOKUP
 # =============================================================================
@@ -496,3 +531,25 @@ static:
         "FieldParams." & FieldParamsLayout.fields[fieldIndex].name & " offset drift"
   assert FieldParamsLayout.totalSize == 32, "FieldParams must be 32 bytes"
   assert FieldParamsLayout.wgslUniformSize == 32, "FieldParams allocates 32 bytes"
+
+# =============================================================================
+# BLOOMPARAMS / TONEMAPPARAMS FIELD INDICES (HDR bloom, webgpu_render.nim)
+# =============================================================================
+# Generated from the layout tables by genFieldIndices, like SIM_*/RENDER_*/
+# FADE_*/FIELD_* above. BLOOM_DIRECTION_X=0 ... BLOOM_TEXEL_SIZE_Y=3,
+# BLOOM_PARAMS_F32_COUNT=4; TONEMAP_EXPOSURE=0 ... TONEMAP_PAD2=7,
+# TONEMAP_PARAMS_F32_COUNT=8.
+
+genFieldIndices(BloomParamsLayout, "BLOOM")
+genFieldIndices(TonemapParamsLayout, "TONEMAP")
+
+static:
+  # Same offset-agreement invariant as the render structs above: a drift here
+  # would corrupt every bloom or tonemap uniform write.
+  for layout in [BloomParamsLayout, TonemapParamsLayout]:
+    let computedOffsets = layout.wgslComputedOffsets
+    for fieldIndex in 0 ..< layout.fields.len:
+      assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
+        layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
+  assert BloomParamsLayout.wgslUniformSize == 16, "BloomParams allocates 16 bytes"
+  assert TonemapParamsLayout.wgslUniformSize == 32, "TonemapParams allocates 32 bytes"

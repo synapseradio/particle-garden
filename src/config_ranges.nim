@@ -23,6 +23,7 @@
 import memory_layout
 import sph_core
 import field_core
+import bloom_core
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -84,6 +85,18 @@ const
   RD_FEED_MAX* = 0.080
   RD_KILL_MIN* = 0.040
   RD_KILL_MAX* = 0.075
+  # HDR bloom + colour grade (S9). bloomEnabled is a toggle, not a slider, so
+  # it has no range here. Temperature is signed (warm/cool), centred on 0.
+  BLOOM_INTENSITY_MIN* = 0.0
+  BLOOM_INTENSITY_MAX* = 3.0
+  EXPOSURE_MIN* = 0.2
+  EXPOSURE_MAX* = 3.0
+  SATURATION_MIN* = 0.0
+  SATURATION_MAX* = 2.0
+  CONTRAST_MIN* = 0.5
+  CONTRAST_MAX* = 2.0
+  TEMPERATURE_MIN* = -1.0
+  TEMPERATURE_MAX* = 1.0
 
 static:
   # Every range must be non-empty, or clamping inverts.
@@ -104,3 +117,21 @@ static:
   # range fails the build here rather than shipping an out-of-bounds slider.
   doAssert RD_DEFAULT_FEED >= RD_FEED_MIN and RD_DEFAULT_FEED <= RD_FEED_MAX
   doAssert RD_DEFAULT_KILL >= RD_KILL_MIN and RD_DEFAULT_KILL <= RD_KILL_MAX
+  # Bloom/grade ranges are non-empty and their bloom_core defaults sit inside
+  # the slider range they are the default of — the same guard as the RD pair,
+  # so a future default change that escapes its range fails the build here.
+  doAssert BLOOM_INTENSITY_MIN < BLOOM_INTENSITY_MAX
+  doAssert EXPOSURE_MIN < EXPOSURE_MAX
+  doAssert SATURATION_MIN < SATURATION_MAX
+  doAssert CONTRAST_MIN < CONTRAST_MAX
+  doAssert TEMPERATURE_MIN < TEMPERATURE_MAX
+  doAssert BLOOM_DEFAULT_INTENSITY >= BLOOM_INTENSITY_MIN and
+    BLOOM_DEFAULT_INTENSITY <= BLOOM_INTENSITY_MAX
+  doAssert BLOOM_DEFAULT_EXPOSURE >= EXPOSURE_MIN and
+    BLOOM_DEFAULT_EXPOSURE <= EXPOSURE_MAX
+  doAssert BLOOM_DEFAULT_SATURATION >= SATURATION_MIN and
+    BLOOM_DEFAULT_SATURATION <= SATURATION_MAX
+  doAssert BLOOM_DEFAULT_CONTRAST >= CONTRAST_MIN and
+    BLOOM_DEFAULT_CONTRAST <= CONTRAST_MAX
+  doAssert BLOOM_DEFAULT_TEMPERATURE >= TEMPERATURE_MIN and
+    BLOOM_DEFAULT_TEMPERATURE <= TEMPERATURE_MAX

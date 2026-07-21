@@ -101,6 +101,12 @@ type
     sphSubsteps*: int
     rdFeed*: float
     rdKill*: float
+    bloomEnabled*: bool
+    bloomIntensity*: float
+    exposure*: float
+    saturation*: float
+    contrast*: float
+    temperature*: float
 
   Preset* = object
     ## The full persisted shape: `{schemaVersion, name, createdAt, mode,
@@ -196,7 +202,15 @@ func defaultSettings*(): PresetSettings =
     # to config_ranges and palette (see file header), the same reason
     # sphRestDensity etc. above are literals rather than sph_core imports.
     rdFeed: 0.030,
-    rdKill: 0.062
+    rdKill: 0.062,
+    # Mirrors bloom_core.BLOOM_DEFAULT_* as literals rather than an import,
+    # for the same dependency-restriction reason as the sph/rd defaults above.
+    bloomEnabled: false,
+    bloomIntensity: 1.0,
+    exposure: 1.0,
+    saturation: 1.0,
+    contrast: 1.0,
+    temperature: 0.0
   )
 
 func defaultMatrix*(): Matrix =
@@ -325,6 +339,17 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "rdFeed").getFloat(defaults.rdFeed), RD_FEED_MIN, RD_FEED_MAX)
   result.rdKill = clampFloat(
     field(node, "rdKill").getFloat(defaults.rdKill), RD_KILL_MIN, RD_KILL_MAX)
+  result.bloomEnabled = field(node, "bloomEnabled").getBool(defaults.bloomEnabled)
+  result.bloomIntensity = clampFloat(
+    field(node, "bloomIntensity").getFloat(defaults.bloomIntensity), BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX)
+  result.exposure = clampFloat(
+    field(node, "exposure").getFloat(defaults.exposure), EXPOSURE_MIN, EXPOSURE_MAX)
+  result.saturation = clampFloat(
+    field(node, "saturation").getFloat(defaults.saturation), SATURATION_MIN, SATURATION_MAX)
+  result.contrast = clampFloat(
+    field(node, "contrast").getFloat(defaults.contrast), CONTRAST_MIN, CONTRAST_MAX)
+  result.temperature = clampFloat(
+    field(node, "temperature").getFloat(defaults.temperature), TEMPERATURE_MIN, TEMPERATURE_MAX)
 
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
@@ -464,6 +489,12 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["sphSubsteps"] = %settings.sphSubsteps
   result["rdFeed"] = %settings.rdFeed
   result["rdKill"] = %settings.rdKill
+  result["bloomEnabled"] = %settings.bloomEnabled
+  result["bloomIntensity"] = %settings.bloomIntensity
+  result["exposure"] = %settings.exposure
+  result["saturation"] = %settings.saturation
+  result["contrast"] = %settings.contrast
+  result["temperature"] = %settings.temperature
 
 proc toJson*(preset: Preset): JsonNode =
   result = newJObject()

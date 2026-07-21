@@ -149,6 +149,12 @@ when defined(js):
     settings.glowRadiusScale = config.CONFIG.glowRadiusScale
     settings.glowFalloff = config.CONFIG.glowFalloff
     settings.glowWarmth = config.CONFIG.glowWarmth
+    settings.bloomEnabled = config.CONFIG.bloomEnabled
+    settings.bloomIntensity = config.CONFIG.bloomIntensity
+    settings.exposure = config.CONFIG.exposure
+    settings.saturation = config.CONFIG.saturation
+    settings.contrast = config.CONFIG.contrast
+    settings.temperature = config.CONFIG.temperature
 
     var matrixSnapshot: Matrix
     for matrixIndex in 0 ..< preset.MATRIX_LEN:

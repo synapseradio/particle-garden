@@ -255,6 +255,56 @@ suite "Generated FieldParams Layout (Reaction-Diffusion)":
     check generated.strip.endsWith("}")
 
 
+suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
+  # S9: BloomParams and TonemapParams join the layout-table-generated structs.
+  # The blur pass writes bloomParamsData[BLOOM_*]; the tonemap pass writes
+  # tonemapParamsData[TONEMAP_*] — a wrong index writes the wrong uniform slot.
+
+  test "BloomParamsLayout is 4 floats, 16 bytes written and allocated":
+    check BloomParamsLayout.totalSize == 16
+    check wgslUniformSize(BloomParamsLayout) == 16
+
+  test "BloomParamsLayout offsets match WGSL's own layout algorithm":
+    let computedOffsets = wgslComputedOffsets(BloomParamsLayout)
+    for fieldIndex in 0 ..< BloomParamsLayout.fields.len:
+      check computedOffsets[fieldIndex] == BloomParamsLayout.fields[fieldIndex].offset
+
+  test "the two vec2 bloom fields generate _X and _Y write indices":
+    check BLOOM_DIRECTION_X == 0
+    check BLOOM_DIRECTION_Y == 1
+    check BLOOM_TEXEL_SIZE_X == 2
+    check BLOOM_TEXEL_SIZE_Y == 3
+    check BLOOM_PARAMS_F32_COUNT == 4
+
+  test "TonemapParamsLayout is 8 floats, 32 bytes written and allocated":
+    check TonemapParamsLayout.totalSize == 32
+    check wgslUniformSize(TonemapParamsLayout) == 32
+
+  test "TonemapParamsLayout offsets match WGSL's own layout algorithm":
+    let computedOffsets = wgslComputedOffsets(TonemapParamsLayout)
+    for fieldIndex in 0 ..< TonemapParamsLayout.fields.len:
+      check computedOffsets[fieldIndex] == TonemapParamsLayout.fields[fieldIndex].offset
+
+  test "the generated TONEMAP_ indices follow the declared field order":
+    check TONEMAP_EXPOSURE == 0
+    check TONEMAP_BLOOM_INTENSITY == 1
+    check TONEMAP_SATURATION == 2
+    check TONEMAP_CONTRAST == 3
+    check TONEMAP_TEMPERATURE == 4
+    check TONEMAP_PAD0 == 5
+    check TONEMAP_PARAMS_F32_COUNT == 8
+
+  test "toWgslStruct renders both layouts with WGSL types":
+    let bloomStruct = toWgslStruct(BloomParamsLayout)
+    check bloomStruct.startsWith("struct BloomParams {")
+    check "direction: vec2<f32>," in bloomStruct
+    check "texelSize: vec2<f32>," in bloomStruct
+    let tonemapStruct = toWgslStruct(TonemapParamsLayout)
+    check tonemapStruct.startsWith("struct TonemapParams {")
+    check "exposure: f32," in tonemapStruct
+    check "temperature: f32," in tonemapStruct
+
+
 suite "toUpperSnake Names Index Constants From Field Names":
   test "camelCase field names become UPPER_SNAKE":
     check toUpperSnake("dt") == "DT"

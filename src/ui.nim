@@ -135,6 +135,12 @@ proc applyRenderToConfig(renderState: RenderState) =
   CONFIG.glowRadiusScale = renderState.glowRadiusScale
   CONFIG.glowFalloff = renderState.glowFalloff
   CONFIG.glowWarmth = renderState.glowWarmth
+  CONFIG.bloomEnabled = renderState.bloomEnabled
+  CONFIG.bloomIntensity = renderState.bloomIntensity
+  CONFIG.exposure = renderState.exposure
+  CONFIG.saturation = renderState.saturation
+  CONFIG.contrast = renderState.contrast
+  CONFIG.temperature = renderState.temperature
 
 proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
   ## Mutate a copy of the simulation state, publish it, and mirror it into
@@ -342,6 +348,43 @@ proc setupUI*() {.exportc.} =
     min = GLOW_WARMTH_MIN, max = GLOW_WARMTH_MAX, precision = 2
   )
 
+  # Bloom & Grade sliders. Plain render-state fields the HDR bloom + tonemap
+  # pass reads; the bloom on/off toggle is a button (toggleBloom), not a slider.
+  configSlider("bloomIntensity", "bloomIntensityValue",
+    get = proc(): float = CONFIG.bloomIntensity,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.bloomIntensity = value),
+    min = BLOOM_INTENSITY_MIN, max = BLOOM_INTENSITY_MAX, precision = 2
+  )
+
+  configSlider("exposure", "exposureValue",
+    get = proc(): float = CONFIG.exposure,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.exposure = value),
+    min = EXPOSURE_MIN, max = EXPOSURE_MAX, precision = 2
+  )
+
+  configSlider("saturation", "saturationValue",
+    get = proc(): float = CONFIG.saturation,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.saturation = value),
+    min = SATURATION_MIN, max = SATURATION_MAX, precision = 2
+  )
+
+  configSlider("contrast", "contrastValue",
+    get = proc(): float = CONFIG.contrast,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.contrast = value),
+    min = CONTRAST_MIN, max = CONTRAST_MAX, precision = 2
+  )
+
+  configSlider("temperature", "temperatureValue",
+    get = proc(): float = CONFIG.temperature,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.temperature = value),
+    min = TEMPERATURE_MIN, max = TEMPERATURE_MAX, precision = 2
+  )
+
   # Force Model sliders
   configSlider("repulsionEnd", "repulsionEndValue",
     get = proc(): float = CONFIG.repulsionEnd,
@@ -538,6 +581,16 @@ proc setTrails*(enabled: bool) {.exportc.} =
   setActive("trailBtn", enabled)
   setVisible("trailSettings", enabled)
 
+proc setBloom*(enabled: bool) {.exportc.} =
+  ## Set the HDR bloom + tonemap path to an explicit value (preset apply and
+  ## the ?bloom= machine override). Off is the non-bloom quality floor.
+  updateRender(proc(renderState: var RenderState) = renderState.bloomEnabled = enabled)
+  setActive("bloomBtn", enabled)
+
+proc toggleBloom*() {.exportc.} =
+  ## Toggle the HDR bloom + tonemap path (bloomBtn), flipping the live value.
+  setBloom(not CONFIG.bloomEnabled)
+
 proc showWebGPURequiredOverlay*() {.exportc.} =
   ## Show the "WebGPU required" overlay. Called when WebGPU init or the
   ## render/compute pipeline setup fails; WebGPU is the only pipeline.
@@ -569,6 +622,10 @@ proc toggleForceModelSection*() {.exportc.} =
 proc toggleGlowSection*() {.exportc.} =
   ## Toggle Glow section visibility.
   toggleSection("glowSection")
+
+proc toggleBloomSection*() {.exportc.} =
+  ## Toggle Bloom & Grade section visibility.
+  toggleSection("bloomSection")
 
 proc togglePaletteSection*() {.exportc.} =
   ## Toggle Palette section visibility.
@@ -749,9 +806,15 @@ proc setupPresetStoreHooks*() {.exportc.} =
       renderState.glowRadiusScale = settings.glowRadiusScale
       renderState.glowFalloff = settings.glowFalloff
       renderState.glowWarmth = settings.glowWarmth
+      renderState.bloomIntensity = settings.bloomIntensity
+      renderState.exposure = settings.exposure
+      renderState.saturation = settings.saturation
+      renderState.contrast = settings.contrast
+      renderState.temperature = settings.temperature
     )
     setForceModel(settings.forceModel)
     setTrails(settings.trails)
+    setBloom(settings.bloomEnabled)
   )
 
   preset_store.onMatrixDisplayRefresh(proc() = updateMatrixDisplay())
@@ -800,6 +863,8 @@ window.toggleControls = toggleControls;
 window.randomizeMatrix = randomizeMatrix;
 window.toggleForceModelSection = toggleForceModelSection;
 window.toggleGlowSection = toggleGlowSection;
+window.toggleBloom = toggleBloom;
+window.toggleBloomSection = toggleBloomSection;
 window.togglePaletteSection = togglePaletteSection;
 window.togglePresetsSection = togglePresetsSection;
 window.toggleSphSection = toggleSphSection;

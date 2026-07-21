@@ -51,6 +51,12 @@ type
     glowRadiusScale* {.exportc.}: float   # Glow halo radius = (particleSize+1) * this
     glowFalloff* {.exportc.}: float       # Gaussian falloff exponent (higher = tighter halo)
     glowWarmth* {.exportc.}: float        # Density-driven warm shift, [0,1]
+    bloomEnabled* {.exportc.}: bool       # HDR bloom + tonemap path on/off (off = quality floor)
+    bloomIntensity* {.exportc.}: float    # Gain on the blurred bloom in the composite
+    exposure* {.exportc.}: float          # HDR exposure before the ACES tonemap
+    saturation* {.exportc.}: float        # Grade: 1 = unchanged, 0 = greyscale
+    contrast* {.exportc.}: float          # Grade: 1 = unchanged, around a 0.5 pivot
+    temperature* {.exportc.}: float       # Grade: signed warm/cool tint, 0 = neutral
     sphRestDensity* {.exportc.}: float    # SPH target density (Tait EOS rest density)
     sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
     sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
@@ -192,6 +198,12 @@ proc createConfig(): ConfigObject =
   result.glowRadiusScale = visual.glowRadiusScale
   result.glowFalloff = visual.glowFalloff
   result.glowWarmth = visual.glowWarmth
+  result.bloomEnabled = visual.bloomEnabled
+  result.bloomIntensity = visual.bloomIntensity
+  result.exposure = visual.exposure
+  result.saturation = visual.saturation
+  result.contrast = visual.contrast
+  result.temperature = visual.temperature
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 

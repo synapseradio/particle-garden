@@ -32,6 +32,7 @@ import test_sim_config
 import test_sph_core
 import test_shader_manifest
 import test_field_core
+import test_bloom_core
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -58,3 +59,4 @@ static:
   discard test_sph_core.SPH_CORE_TESTS_LOADED
   discard test_shader_manifest.SHADER_MANIFEST_TESTS_LOADED
   discard test_field_core.FIELD_CORE_TESTS_LOADED
+  discard test_bloom_core.BLOOM_CORE_TESTS_LOADED

@@ -273,6 +273,12 @@ proc generateStructModules() =
   generateStructModule("field_params",
     structModuleHeader("field_params", "FieldParamsLayout"),
     toWgslStruct(FieldParamsLayout))
+  generateStructModule("bloom_params",
+    structModuleHeader("bloom_params", "BloomParamsLayout"),
+    toWgslStruct(BloomParamsLayout))
+  generateStructModule("tonemap_params",
+    structModuleHeader("tonemap_params", "TonemapParamsLayout"),
+    toWgslStruct(TonemapParamsLayout))
 
 # ==============================================================================
 # MAIN

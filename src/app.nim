@@ -372,6 +372,12 @@ proc init(): Future[void] {.async, exportc.} =
     else:
       consoleWarn(toJs("[app] unknown ?mode= value, ignoring:"), toJs(requestedMode))
 
+  # Optional ?bloom=0|1 URL override for the HDR bloom path (machine interface,
+  # like ?n=/?seed=/?mode= — never a user-facing surface). Routes through
+  # ui.setBloom, the same path the bloom toggle button uses.
+  if urlParamHas("bloom"):
+    ui.setBloom(urlParamInt("bloom", 0) != 0)
+
   # Expose resetParticles globally for HTML onclick handler
   setGlobal("resetParticles", toJs(resetParticles))
 

@@ -92,6 +92,45 @@ var fieldCompositePipeline: GPURenderPipeline
 var fieldCompositeBindGroup: GPUBindGroup
 var cachedFieldGeneration: int = -1
 
+# ==============================================================================
+# HDR BLOOM RESOURCES (S9)
+# ==============================================================================
+# When CONFIG.bloomEnabled is on, the glow draw is retargeted from the present
+# pass into a half-resolution rgba16float HDR target, separably blurred (H then
+# V ping-pong between the two half-res targets), and composited over the trail
+# by the tonemap pass. Bloom off is the untouched quality floor: the glow draws
+# straight into the swap chain and the plain blit presents the trail.
+#
+# BLOOM_DOWNSCALE is the linear divisor for the half-res targets. The glow IS
+# the bloom source — there is no full-res HDR scene and no bright-pass.
+const BLOOM_DOWNSCALE = 2
+
+var glowHdrPipeline: GPURenderPipeline   # Glow -> half-res HDR target (additive, no depth)
+var blurPipeline: GPURenderPipeline      # Separable Gaussian blur, one axis per pass
+var tonemapPipeline: GPURenderPipeline   # HDR composite + ACES + grade -> swap chain
+
+# Half-res HDR ping-pong targets. Glow writes A; blur H does A->B; blur V does
+# B->A; tonemap samples the final blurred A.
+var bloomTargetA: GPUTexture
+var bloomTargetB: GPUTexture
+var bloomViewA: GPUTextureView
+var bloomViewB: GPUTextureView
+
+# BloomParams uniforms: one per blur axis. Direction is constant; texelSize is
+# rewritten on resize (it tracks the half-res dimensions).
+var bloomParamsBufferH: GPUBuffer
+var bloomParamsBufferV: GPUBuffer
+var tonemapParamsBuffer: GPUBuffer
+
+var blurBindGroupLayout: GPUBindGroupLayout
+var tonemapBindGroupLayout: GPUBindGroupLayout
+
+# Cached bloom bind groups (rebuilt on resize alongside the trail bind groups).
+var blurBindGroupH: GPUBindGroup    # samples bloom A, writes bloom B (horizontal)
+var blurBindGroupV: GPUBindGroup    # samples bloom B, writes bloom A (vertical)
+var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A
+var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A
+
 
 # ==============================================================================
 # SECTION 3: SHADER SOURCE
@@ -106,13 +145,24 @@ const GLOW_SHADER = staticRead("../web/shaders/glow.wgsl")
 const FADE_SHADER = staticRead("../web/shaders/fade.wgsl")
 const BLIT_SHADER = staticRead("../web/shaders/composite.wgsl")
 const FIELD_COMPOSITE_SHADER = staticRead("../web/shaders/field-composite.wgsl")
+# HDR bloom shaders (S9); staticRead-embedded like the render shaders above.
+const BLUR_SHADER = staticRead("../web/shaders/blur.wgsl")
+const TONEMAP_SHADER = staticRead("../web/shaders/tonemap.wgsl")
+
+const BLOOM_HDR_FORMAT = "rgba16float".cstring
+
+func halfDimension(fullSize: int): int =
+  ## Half-resolution size for the bloom targets, never below 1.
+  max(1, fullSize div BLOOM_DOWNSCALE)
 
 # ==============================================================================
 # SECTION 4: INITIALIZATION
 # ==============================================================================
 
-# Forward declaration
+# Forward declarations
 proc updateBindGroup*()
+proc createBloomTargets()
+proc createBloomBindGroups()
 
 proc initWebGPURender*(): bool =
   ## Initialize WebGPU render pipeline.
@@ -561,6 +611,216 @@ proc initWebGPURender*(): bool =
   fieldCompositePipeline = webgpu_init.device.createRenderPipeline(fieldPipelineDesc)
 
   # ==========================================================================
+  # HDR BLOOM PIPELINES (S9): glow-to-HDR, separable blur, tonemap composite
+  # ==========================================================================
+
+  # --- Glow-to-HDR pipeline: the glow shader, retargeted to the half-res
+  # rgba16float bloom source. Same layout/bindings/additive-blend as the
+  # present-pass glow, but no depth attachment (bloom needs no Z-ordering).
+  let glowHdrPipelineDesc = newJsObject()
+  glowHdrPipelineDesc["label"] = "Glow HDR Pipeline".cstring.toJs
+  glowHdrPipelineDesc["layout"] = pipelineLayout.toJs
+  let glowHdrVertex = newJsObject()
+  glowHdrVertex["module"] = glowShaderModule.toJs
+  glowHdrVertex["entryPoint"] = "vs_main".cstring.toJs
+  glowHdrPipelineDesc["vertex"] = glowHdrVertex
+  let glowHdrFragment = newJsObject()
+  glowHdrFragment["module"] = glowShaderModule.toJs
+  glowHdrFragment["entryPoint"] = "fs_main".cstring.toJs
+  let glowHdrTargets = newJsArray()
+  let glowHdrTarget0 = newJsObject()
+  glowHdrTarget0["format"] = BLOOM_HDR_FORMAT.toJs
+  let glowHdrBlend = newJsObject()
+  let glowHdrColorBlend = newJsObject()
+  glowHdrColorBlend["srcFactor"] = "one".cstring.toJs
+  glowHdrColorBlend["dstFactor"] = "one".cstring.toJs
+  glowHdrColorBlend["operation"] = "add".cstring.toJs
+  glowHdrBlend["color"] = glowHdrColorBlend
+  let glowHdrAlphaBlend = newJsObject()
+  glowHdrAlphaBlend["srcFactor"] = "one".cstring.toJs
+  glowHdrAlphaBlend["dstFactor"] = "one".cstring.toJs
+  glowHdrAlphaBlend["operation"] = "add".cstring.toJs
+  glowHdrBlend["alpha"] = glowHdrAlphaBlend
+  glowHdrTarget0["blend"] = glowHdrBlend
+  discard glowHdrTargets.push(glowHdrTarget0)
+  glowHdrFragment["targets"] = glowHdrTargets
+  glowHdrPipelineDesc["fragment"] = glowHdrFragment
+  let glowHdrPrimitive = newJsObject()
+  glowHdrPrimitive["topology"] = "triangle-list".cstring.toJs
+  glowHdrPrimitive["cullMode"] = "none".cstring.toJs
+  glowHdrPipelineDesc["primitive"] = glowHdrPrimitive
+  glowHdrPipeline = webgpu_init.device.createRenderPipeline(glowHdrPipelineDesc)
+
+  # --- Blur bind group layout: source texture + sampler + BloomParams uniform.
+  let blurLayoutDesc = newJsObject()
+  blurLayoutDesc["label"] = "Blur Bind Group Layout".cstring.toJs
+  let blurLayoutEntries = newJsArray()
+  let blurEntry0 = newJsObject()
+  blurEntry0["binding"] = 0.toJs
+  blurEntry0["visibility"] = gpuShaderStageFragment.toJs
+  let blurTexture0 = newJsObject()
+  blurTexture0["sampleType"] = "float".cstring.toJs
+  blurEntry0["texture"] = blurTexture0
+  discard blurLayoutEntries.push(blurEntry0)
+  let blurEntry1 = newJsObject()
+  blurEntry1["binding"] = 1.toJs
+  blurEntry1["visibility"] = gpuShaderStageFragment.toJs
+  let blurSampler1 = newJsObject()
+  blurSampler1["type"] = "filtering".cstring.toJs
+  blurEntry1["sampler"] = blurSampler1
+  discard blurLayoutEntries.push(blurEntry1)
+  let blurEntry2 = newJsObject()
+  blurEntry2["binding"] = 2.toJs
+  blurEntry2["visibility"] = gpuShaderStageFragment.toJs
+  let blurBuffer2 = newJsObject()
+  blurBuffer2["type"] = "uniform".cstring.toJs
+  blurEntry2["buffer"] = blurBuffer2
+  discard blurLayoutEntries.push(blurEntry2)
+  blurLayoutDesc["entries"] = blurLayoutEntries
+  blurBindGroupLayout = webgpu_init.device.createBindGroupLayout(blurLayoutDesc)
+
+  let blurPipelineLayoutDesc = newJsObject()
+  let blurLayouts = newJsArray()
+  discard blurLayouts.push(blurBindGroupLayout)
+  blurPipelineLayoutDesc["bindGroupLayouts"] = blurLayouts
+  let blurPipelineLayout = webgpu_init.device.createPipelineLayout(blurPipelineLayoutDesc)
+
+  let blurShaderDesc = newJsObject()
+  blurShaderDesc["label"] = "Blur Shader".cstring.toJs
+  blurShaderDesc["code"] = BLUR_SHADER.cstring.toJs
+  let blurShaderModule = webgpu_init.device.createShaderModule(blurShaderDesc)
+
+  let blurPipelineDesc = newJsObject()
+  blurPipelineDesc["label"] = "Blur Pipeline".cstring.toJs
+  blurPipelineDesc["layout"] = blurPipelineLayout.toJs
+  let blurVertex = newJsObject()
+  blurVertex["module"] = blurShaderModule.toJs
+  blurVertex["entryPoint"] = "vs_main".cstring.toJs
+  blurPipelineDesc["vertex"] = blurVertex
+  let blurFragment = newJsObject()
+  blurFragment["module"] = blurShaderModule.toJs
+  blurFragment["entryPoint"] = "fs_main".cstring.toJs
+  let blurTargets = newJsArray()
+  let blurTarget0 = newJsObject()
+  blurTarget0["format"] = BLOOM_HDR_FORMAT.toJs
+  discard blurTargets.push(blurTarget0)
+  blurFragment["targets"] = blurTargets
+  blurPipelineDesc["fragment"] = blurFragment
+  let blurPrimitive = newJsObject()
+  blurPrimitive["topology"] = "triangle-list".cstring.toJs
+  blurPrimitive["cullMode"] = "none".cstring.toJs
+  blurPipelineDesc["primitive"] = blurPrimitive
+  blurPipeline = webgpu_init.device.createRenderPipeline(blurPipelineDesc)
+
+  # --- Tonemap bind group layout: trail texture + bloom texture + sampler +
+  # TonemapParams uniform. Presents to the swap chain, alpha-blended over the
+  # backdrop (flat clear, or the RD field) already in it.
+  let tonemapLayoutDesc = newJsObject()
+  tonemapLayoutDesc["label"] = "Tonemap Bind Group Layout".cstring.toJs
+  let tonemapLayoutEntries = newJsArray()
+  let tonemapEntry0 = newJsObject()
+  tonemapEntry0["binding"] = 0.toJs
+  tonemapEntry0["visibility"] = gpuShaderStageFragment.toJs
+  let tonemapTexture0 = newJsObject()
+  tonemapTexture0["sampleType"] = "float".cstring.toJs
+  tonemapEntry0["texture"] = tonemapTexture0
+  discard tonemapLayoutEntries.push(tonemapEntry0)
+  let tonemapEntry1 = newJsObject()
+  tonemapEntry1["binding"] = 1.toJs
+  tonemapEntry1["visibility"] = gpuShaderStageFragment.toJs
+  let tonemapTexture1 = newJsObject()
+  tonemapTexture1["sampleType"] = "float".cstring.toJs
+  tonemapEntry1["texture"] = tonemapTexture1
+  discard tonemapLayoutEntries.push(tonemapEntry1)
+  let tonemapEntry2 = newJsObject()
+  tonemapEntry2["binding"] = 2.toJs
+  tonemapEntry2["visibility"] = gpuShaderStageFragment.toJs
+  let tonemapSampler2 = newJsObject()
+  tonemapSampler2["type"] = "filtering".cstring.toJs
+  tonemapEntry2["sampler"] = tonemapSampler2
+  discard tonemapLayoutEntries.push(tonemapEntry2)
+  let tonemapEntry3 = newJsObject()
+  tonemapEntry3["binding"] = 3.toJs
+  tonemapEntry3["visibility"] = gpuShaderStageFragment.toJs
+  let tonemapBuffer3 = newJsObject()
+  tonemapBuffer3["type"] = "uniform".cstring.toJs
+  tonemapEntry3["buffer"] = tonemapBuffer3
+  discard tonemapLayoutEntries.push(tonemapEntry3)
+  tonemapLayoutDesc["entries"] = tonemapLayoutEntries
+  tonemapBindGroupLayout = webgpu_init.device.createBindGroupLayout(tonemapLayoutDesc)
+
+  let tonemapPipelineLayoutDesc = newJsObject()
+  let tonemapLayouts = newJsArray()
+  discard tonemapLayouts.push(tonemapBindGroupLayout)
+  tonemapPipelineLayoutDesc["bindGroupLayouts"] = tonemapLayouts
+  let tonemapPipelineLayout = webgpu_init.device.createPipelineLayout(tonemapPipelineLayoutDesc)
+
+  let tonemapShaderDesc = newJsObject()
+  tonemapShaderDesc["label"] = "Tonemap Shader".cstring.toJs
+  tonemapShaderDesc["code"] = TONEMAP_SHADER.cstring.toJs
+  let tonemapShaderModule = webgpu_init.device.createShaderModule(tonemapShaderDesc)
+
+  let tonemapPipelineDesc = newJsObject()
+  tonemapPipelineDesc["label"] = "Tonemap Pipeline".cstring.toJs
+  tonemapPipelineDesc["layout"] = tonemapPipelineLayout.toJs
+  let tonemapVertex = newJsObject()
+  tonemapVertex["module"] = tonemapShaderModule.toJs
+  tonemapVertex["entryPoint"] = "vs_main".cstring.toJs
+  tonemapPipelineDesc["vertex"] = tonemapVertex
+  let tonemapFragment = newJsObject()
+  tonemapFragment["module"] = tonemapShaderModule.toJs
+  tonemapFragment["entryPoint"] = "fs_main".cstring.toJs
+  let tonemapTargets = newJsArray()
+  let tonemapTarget0 = newJsObject()
+  tonemapTarget0["format"] = canvasFormat.toJs
+  # Alpha blend so empty pixels keep the backdrop (flat clear / RD field).
+  let tonemapBlend = newJsObject()
+  let tonemapColorBlend = newJsObject()
+  tonemapColorBlend["srcFactor"] = "src-alpha".cstring.toJs
+  tonemapColorBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  tonemapColorBlend["operation"] = "add".cstring.toJs
+  tonemapBlend["color"] = tonemapColorBlend
+  let tonemapAlphaBlend = newJsObject()
+  tonemapAlphaBlend["srcFactor"] = "one".cstring.toJs
+  tonemapAlphaBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  tonemapAlphaBlend["operation"] = "add".cstring.toJs
+  tonemapBlend["alpha"] = tonemapAlphaBlend
+  tonemapTarget0["blend"] = tonemapBlend
+  discard tonemapTargets.push(tonemapTarget0)
+  tonemapFragment["targets"] = tonemapTargets
+  tonemapPipelineDesc["fragment"] = tonemapFragment
+  let tonemapPrimitive = newJsObject()
+  tonemapPrimitive["topology"] = "triangle-list".cstring.toJs
+  tonemapPrimitive["cullMode"] = "none".cstring.toJs
+  tonemapPipelineDesc["primitive"] = tonemapPrimitive
+  # The present pass carries a depth attachment (the RD field pipeline needs
+  # one); the tonemap draw ignores depth, matching the blit's config.
+  let tonemapDepthStencil = newJsObject()
+  tonemapDepthStencil["format"] = "depth24plus".cstring.toJs
+  tonemapDepthStencil["depthWriteEnabled"] = false.toJs
+  tonemapDepthStencil["depthCompare"] = "always".cstring.toJs
+  tonemapPipelineDesc["depthStencil"] = tonemapDepthStencil
+  tonemapPipeline = webgpu_init.device.createRenderPipeline(tonemapPipelineDesc)
+
+  # BloomParams uniforms (one per blur axis) + the per-frame TonemapParams.
+  let bloomParamsSize = wgslUniformSize(BloomParamsLayout)
+  let bloomParamsHDesc = newJsObject()
+  bloomParamsHDesc["size"] = bloomParamsSize.toJs
+  bloomParamsHDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  bloomParamsHDesc["label"] = "Bloom Params H".cstring.toJs
+  bloomParamsBufferH = webgpu_init.device.createBuffer(bloomParamsHDesc)
+  let bloomParamsVDesc = newJsObject()
+  bloomParamsVDesc["size"] = bloomParamsSize.toJs
+  bloomParamsVDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  bloomParamsVDesc["label"] = "Bloom Params V".cstring.toJs
+  bloomParamsBufferV = webgpu_init.device.createBuffer(bloomParamsVDesc)
+  let tonemapParamsDesc = newJsObject()
+  tonemapParamsDesc["size"] = wgslUniformSize(TonemapParamsLayout).toJs
+  tonemapParamsDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  tonemapParamsDesc["label"] = "Tonemap Params".cstring.toJs
+  tonemapParamsBuffer = webgpu_init.device.createBuffer(tonemapParamsDesc)
+
+  # ==========================================================================
   # PERSISTENT TRAIL TEXTURES (survive across frames for ping-pong)
   # ==========================================================================
 
@@ -725,8 +985,13 @@ proc initWebGPURender*(): bool =
   # Create initial bind group
   updateBindGroup()
 
+  # Half-res HDR bloom targets + their bind groups (mirrors the trail textures;
+  # rebuilt on resize by recreateTrailTextures).
+  createBloomTargets()
+  createBloomBindGroups()
+
   isInitialized = true
-  {.emit: "console.log('WebGPU render pipeline initialized with glow and trails');".}
+  {.emit: "console.log('WebGPU render pipeline initialized with glow, trails, and bloom');".}
   return true
 
 proc updateBindGroup*() =
@@ -802,6 +1067,113 @@ proc ensureFieldCompositeBindGroup() =
   bindGroupDesc["entries"] = entries
   fieldCompositeBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
   cachedFieldGeneration = generation
+
+proc createBloomTargets() =
+  ## (Re)create the two half-resolution rgba16float bloom targets at the current
+  ## canvas size and rewrite the per-axis BloomParams (their texelSize tracks
+  ## the half-res dimensions). Destroys any prior targets first. Called at init
+  ## and on resize, mirroring recreateTrailTextures.
+  if not bloomTargetA.isNil:
+    bloomTargetA.destroy()
+  if not bloomTargetB.isNil:
+    bloomTargetB.destroy()
+
+  let halfWidth = halfDimension(canvas.width)
+  let halfHeight = halfDimension(canvas.height)
+
+  proc createBloomTexture(label: cstring): GPUTexture =
+    let desc = newJsObject()
+    let size = newJsArray()
+    discard size.push(halfWidth.toJs)
+    discard size.push(halfHeight.toJs)
+    desc["size"] = size
+    desc["format"] = BLOOM_HDR_FORMAT.toJs
+    desc["usage"] = bitwiseOr(gpuTextureUsageRenderAttachment, gpuTextureUsageTextureBinding).toJs
+    desc["label"] = label.toJs
+    return webgpu_init.device.createTexture(desc)
+
+  bloomTargetA = createBloomTexture("Bloom Target A")
+  bloomTargetB = createBloomTexture("Bloom Target B")
+  bloomViewA = bloomTargetA.createView()
+  bloomViewB = bloomTargetB.createView()
+
+  # Per-tap UV step = direction * texelSize. Direction picks the blur axis;
+  # texelSize is one over the half-res dimensions.
+  let texelX = 1.0 / float32(halfWidth)
+  let texelY = 1.0 / float32(halfHeight)
+
+  let bloomH = newFloat32Array(BLOOM_PARAMS_F32_COUNT)
+  bloomH[BLOOM_DIRECTION_X] = 1.0
+  bloomH[BLOOM_DIRECTION_Y] = 0.0
+  bloomH[BLOOM_TEXEL_SIZE_X] = texelX
+  bloomH[BLOOM_TEXEL_SIZE_Y] = texelY
+  webgpu_init.queue.writeBuffer(bloomParamsBufferH, 0, bloomH)
+
+  let bloomV = newFloat32Array(BLOOM_PARAMS_F32_COUNT)
+  bloomV[BLOOM_DIRECTION_X] = 0.0
+  bloomV[BLOOM_DIRECTION_Y] = 1.0
+  bloomV[BLOOM_TEXEL_SIZE_X] = texelX
+  bloomV[BLOOM_TEXEL_SIZE_Y] = texelY
+  webgpu_init.queue.writeBuffer(bloomParamsBufferV, 0, bloomV)
+
+proc createBloomBindGroups() =
+  ## (Re)create the blur and tonemap bind groups. They reference the bloom and
+  ## trail texture views, so they are rebuilt whenever either is recreated.
+  proc makeBlurBindGroup(label: cstring, sourceView: GPUTextureView,
+                         paramsBuffer: GPUBuffer): GPUBindGroup =
+    let desc = newJsObject()
+    desc["label"] = label.toJs
+    desc["layout"] = blurBindGroupLayout.toJs
+    let entries = newJsArray()
+    let entry0 = newJsObject()
+    entry0["binding"] = 0.toJs
+    entry0["resource"] = sourceView.toJs
+    discard entries.push(entry0)
+    let entry1 = newJsObject()
+    entry1["binding"] = 1.toJs
+    entry1["resource"] = linearSampler.toJs
+    discard entries.push(entry1)
+    let entry2 = newJsObject()
+    entry2["binding"] = 2.toJs
+    let entry2Resource = newJsObject()
+    entry2Resource["buffer"] = paramsBuffer.toJs
+    entry2["resource"] = entry2Resource
+    discard entries.push(entry2)
+    desc["entries"] = entries
+    return webgpu_init.device.createBindGroup(desc)
+
+  # Horizontal pass samples A; vertical pass samples B (A->B->A ping-pong).
+  blurBindGroupH = makeBlurBindGroup("Blur Bind Group H", bloomViewA, bloomParamsBufferH)
+  blurBindGroupV = makeBlurBindGroup("Blur Bind Group V", bloomViewB, bloomParamsBufferV)
+
+  proc makeTonemapBindGroup(label: cstring, trailView: GPUTextureView): GPUBindGroup =
+    let desc = newJsObject()
+    desc["label"] = label.toJs
+    desc["layout"] = tonemapBindGroupLayout.toJs
+    let entries = newJsArray()
+    let entry0 = newJsObject()
+    entry0["binding"] = 0.toJs
+    entry0["resource"] = trailView.toJs
+    discard entries.push(entry0)
+    let entry1 = newJsObject()
+    entry1["binding"] = 1.toJs
+    entry1["resource"] = bloomViewA.toJs   # final blurred bloom lives in A
+    discard entries.push(entry1)
+    let entry2 = newJsObject()
+    entry2["binding"] = 2.toJs
+    entry2["resource"] = linearSampler.toJs
+    discard entries.push(entry2)
+    let entry3 = newJsObject()
+    entry3["binding"] = 3.toJs
+    let entry3Resource = newJsObject()
+    entry3Resource["buffer"] = tonemapParamsBuffer.toJs
+    entry3["resource"] = entry3Resource
+    discard entries.push(entry3)
+    desc["entries"] = entries
+    return webgpu_init.device.createBindGroup(desc)
+
+  tonemapBindGroupTrailA = makeTonemapBindGroup("Tonemap Bind Group Trail A", trailViewA)
+  tonemapBindGroupTrailB = makeTonemapBindGroup("Tonemap Bind Group Trail B", trailViewB)
 
 # ==============================================================================
 # SECTION 5: RENDER LOOP
@@ -928,67 +1300,168 @@ proc render*(particleCount: int): RenderTiming =
   offscreenPass.endPass()
 
   # ==========================================================================
-  # PASS 2: BLIT TO SWAP CHAIN (always use loadOp="clear" per WebGPU spec)
+  # PASS 2: PRESENT (BLIT, or HDR BLOOM + TONEMAP when bloom is enabled)
   # ==========================================================================
 
   let currentTexture = gpuContext.getCurrentTexture()
   let swapChainView = currentTexture.createView()
 
-  let presentPassDesc = newJsObject()
-  presentPassDesc["label"] = "Present Pass".cstring.toJs
-  gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
+  if config.CONFIG.bloomEnabled:
+    # ------------------------------------------------------------------------
+    # BLOOM PATH: glow -> half-res HDR -> separable blur (H,V) -> tonemap.
+    # The trail texture stays the crisp 8-bit particle layer; the tonemap
+    # composites it over the blurred glow.
+    # ------------------------------------------------------------------------
 
-  let presentAttachments = newJsArray()
-  let presentAttachment = newJsObject()
-  presentAttachment["view"] = swapChainView.toJs
-  presentAttachment["loadOp"] = "clear".cstring.toJs
-  # Clear to actual background color (opaque) - glow draws on this, then trail alpha-blends on top
-  let presentClearColor = newJsObject()
-  presentClearColor["r"] = 0.04.toJs
-  presentClearColor["g"] = 0.04.toJs
-  presentClearColor["b"] = 0.06.toJs
-  presentClearColor["a"] = 1.0.toJs
-  presentAttachment["clearValue"] = presentClearColor
-  presentAttachment["storeOp"] = "store".cstring.toJs
-  discard presentAttachments.push(presentAttachment)
-  presentPassDesc["colorAttachments"] = presentAttachments
+    # Per-frame tonemap grade uniforms.
+    let tonemapData = newFloat32Array(TONEMAP_PARAMS_F32_COUNT)
+    tonemapData[TONEMAP_EXPOSURE] = float32(config.CONFIG.exposure)
+    tonemapData[TONEMAP_BLOOM_INTENSITY] = float32(config.CONFIG.bloomIntensity)
+    tonemapData[TONEMAP_SATURATION] = float32(config.CONFIG.saturation)
+    tonemapData[TONEMAP_CONTRAST] = float32(config.CONFIG.contrast)
+    tonemapData[TONEMAP_TEMPERATURE] = float32(config.CONFIG.temperature)
+    webgpu_init.queue.writeBuffer(tonemapParamsBuffer, 0, tonemapData)
 
-  # Depth attachment required for glow pipeline (which has depth stencil config)
-  let presentDepthAttachment = newJsObject()
-  presentDepthAttachment["view"] = depthTextureView.toJs
-  presentDepthAttachment["depthLoadOp"] = "clear".cstring.toJs
-  presentDepthAttachment["depthClearValue"] = 1.0.toJs
-  presentDepthAttachment["depthStoreOp"] = "discard".cstring.toJs  # Don't need depth after this
-  presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
+    # Helper: a single-color-attachment render pass clearing to black.
+    proc beginBloomPass(view: GPUTextureView, label: cstring): GPURenderPassEncoder =
+      let passDesc = newJsObject()
+      passDesc["label"] = label.toJs
+      let attachments = newJsArray()
+      let attachment = newJsObject()
+      attachment["view"] = view.toJs
+      attachment["loadOp"] = "clear".cstring.toJs
+      let clear = newJsObject()
+      clear["r"] = 0.0.toJs
+      clear["g"] = 0.0.toJs
+      clear["b"] = 0.0.toJs
+      clear["a"] = 1.0.toJs
+      attachment["clearValue"] = clear
+      attachment["storeOp"] = "store".cstring.toJs
+      discard attachments.push(attachment)
+      passDesc["colorAttachments"] = attachments
+      return commandEncoder.beginRenderPass(passDesc)
 
-  let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
+    # Bloom pass A: glow additively into the half-res HDR target A.
+    let glowHdrPass = beginBloomPass(bloomViewA, "Glow HDR Pass")
+    glowHdrPass.setPipeline(glowHdrPipeline)
+    glowHdrPass.setBindGroup(0, glowBindGroup)
+    glowHdrPass.draw(6 * particleCount, 1, 0, 0)
+    glowHdrPass.endPass()
 
-  # Step 0: In reaction-diffusion mode, draw the field as an opaque LDR backdrop
-  # under everything else. Gated on the active mode and nil-guarded before the
-  # field textures exist. S9/S10 replace this with HDR bloom + a calibrated colormap.
-  if webgpu_compute.activeSimKind == skReactionDiffusion:
-    ensureFieldCompositeBindGroup()
-    if not fieldCompositeBindGroup.isNil:
-      presentPass.setPipeline(fieldCompositePipeline)
-      presentPass.setBindGroup(0, fieldCompositeBindGroup)
-      presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+    # Blur H: sample A, write B.
+    let blurHPass = beginBloomPass(bloomViewB, "Bloom Blur H")
+    blurHPass.setPipeline(blurPipeline)
+    blurHPass.setBindGroup(0, blurBindGroupH)
+    blurHPass.draw(3, 1, 0, 0)
+    blurHPass.endPass()
 
-  # Step 1: Draw glow FIRST (additive blending on background)
-  # GUARANTEE: Glow is ALWAYS behind particles because:
-  #   - Glow draws here with depthCompare="less" (but depth just cleared to 1.0)
-  #   - Trail blit uses depthCompare="always" — ignores depth entirely
-  #   - So particles in trail texture always alpha-blend on top of glow
-  presentPass.setPipeline(glowPipeline)
-  presentPass.setBindGroup(0, glowBindGroup)
-  presentPass.draw(6 * particleCount, 1, 0, 0)
+    # Blur V: sample B, write back into A (final blurred bloom).
+    let blurVPass = beginBloomPass(bloomViewA, "Bloom Blur V")
+    blurVPass.setPipeline(blurPipeline)
+    blurVPass.setBindGroup(0, blurBindGroupV)
+    blurVPass.draw(3, 1, 0, 0)
+    blurVPass.endPass()
 
-  # Step 2: Alpha-blit trail texture on top of glow
-  # Trail has transparent background where no particles, so glow shows through
-  presentPass.setPipeline(blitPipeline)
-  presentPass.setBindGroup(0, blitBG)
-  presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+    # Present: clear bg, draw the RD backdrop (RD mode only), then tonemap the
+    # trail + bloom over it. The tonemap output alpha is a coverage term, so the
+    # backdrop stays visible where nothing is lit.
+    let presentPassDesc = newJsObject()
+    presentPassDesc["label"] = "Tonemap Present Pass".cstring.toJs
+    gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
+    let presentAttachments = newJsArray()
+    let presentAttachment = newJsObject()
+    presentAttachment["view"] = swapChainView.toJs
+    presentAttachment["loadOp"] = "clear".cstring.toJs
+    let presentClearColor = newJsObject()
+    presentClearColor["r"] = 0.04.toJs
+    presentClearColor["g"] = 0.04.toJs
+    presentClearColor["b"] = 0.06.toJs
+    presentClearColor["a"] = 1.0.toJs
+    presentAttachment["clearValue"] = presentClearColor
+    presentAttachment["storeOp"] = "store".cstring.toJs
+    discard presentAttachments.push(presentAttachment)
+    presentPassDesc["colorAttachments"] = presentAttachments
+    let presentDepthAttachment = newJsObject()
+    presentDepthAttachment["view"] = depthTextureView.toJs
+    presentDepthAttachment["depthLoadOp"] = "clear".cstring.toJs
+    presentDepthAttachment["depthClearValue"] = 1.0.toJs
+    presentDepthAttachment["depthStoreOp"] = "discard".cstring.toJs
+    presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
+    let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
 
-  presentPass.endPass()
+    if webgpu_compute.activeSimKind == skReactionDiffusion:
+      ensureFieldCompositeBindGroup()
+      if not fieldCompositeBindGroup.isNil:
+        presentPass.setPipeline(fieldCompositePipeline)
+        presentPass.setBindGroup(0, fieldCompositeBindGroup)
+        presentPass.draw(3, 1, 0, 0)
+
+    let tonemapBG = if trailParity == 0: tonemapBindGroupTrailB else: tonemapBindGroupTrailA
+    presentPass.setPipeline(tonemapPipeline)
+    presentPass.setBindGroup(0, tonemapBG)
+    presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+    presentPass.endPass()
+
+  else:
+    # ------------------------------------------------------------------------
+    # QUALITY FLOOR (bloom off): the untouched present pass — RD backdrop,
+    # additive glow, then the plain alpha blit of the trail.
+    # ------------------------------------------------------------------------
+    let presentPassDesc = newJsObject()
+    presentPassDesc["label"] = "Present Pass".cstring.toJs
+    gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
+
+    let presentAttachments = newJsArray()
+    let presentAttachment = newJsObject()
+    presentAttachment["view"] = swapChainView.toJs
+    presentAttachment["loadOp"] = "clear".cstring.toJs
+    # Clear to actual background color (opaque) - glow draws on this, then trail alpha-blends on top
+    let presentClearColor = newJsObject()
+    presentClearColor["r"] = 0.04.toJs
+    presentClearColor["g"] = 0.04.toJs
+    presentClearColor["b"] = 0.06.toJs
+    presentClearColor["a"] = 1.0.toJs
+    presentAttachment["clearValue"] = presentClearColor
+    presentAttachment["storeOp"] = "store".cstring.toJs
+    discard presentAttachments.push(presentAttachment)
+    presentPassDesc["colorAttachments"] = presentAttachments
+
+    # Depth attachment required for glow pipeline (which has depth stencil config)
+    let presentDepthAttachment = newJsObject()
+    presentDepthAttachment["view"] = depthTextureView.toJs
+    presentDepthAttachment["depthLoadOp"] = "clear".cstring.toJs
+    presentDepthAttachment["depthClearValue"] = 1.0.toJs
+    presentDepthAttachment["depthStoreOp"] = "discard".cstring.toJs  # Don't need depth after this
+    presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
+
+    let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
+
+    # Step 0: In reaction-diffusion mode, draw the field as an opaque LDR backdrop
+    # under everything else. Gated on the active mode and nil-guarded before the
+    # field textures exist. S10 replaces this with a calibrated HDR colormap.
+    if webgpu_compute.activeSimKind == skReactionDiffusion:
+      ensureFieldCompositeBindGroup()
+      if not fieldCompositeBindGroup.isNil:
+        presentPass.setPipeline(fieldCompositePipeline)
+        presentPass.setBindGroup(0, fieldCompositeBindGroup)
+        presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+
+    # Step 1: Draw glow FIRST (additive blending on background)
+    # GUARANTEE: Glow is ALWAYS behind particles because:
+    #   - Glow draws here with depthCompare="less" (but depth just cleared to 1.0)
+    #   - Trail blit uses depthCompare="always" — ignores depth entirely
+    #   - So particles in trail texture always alpha-blend on top of glow
+    presentPass.setPipeline(glowPipeline)
+    presentPass.setBindGroup(0, glowBindGroup)
+    presentPass.draw(6 * particleCount, 1, 0, 0)
+
+    # Step 2: Alpha-blit trail texture on top of glow
+    # Trail has transparent background where no particles, so glow shows through
+    presentPass.setPipeline(blitPipeline)
+    presentPass.setBindGroup(0, blitBG)
+    presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+
+    presentPass.endPass()
 
   # Resolve pass timestamps (render encoder is the frame's final submit)
   gpu_profiler.encodeResolve(commandEncoder)
@@ -1161,6 +1634,11 @@ proc recreateTrailTextures() =
   discard fadeEntriesB.push(fadeBGBE2)
   fadeBGB["entries"] = fadeEntriesB
   fadeBindGroupReadB = webgpu_init.device.createBindGroup(fadeBGB)
+
+  # Recreate the half-res bloom targets at the new size and rebuild the bloom
+  # bind groups (they reference both the bloom and the just-rebuilt trail views).
+  createBloomTargets()
+  createBloomBindGroups()
 
   # Reset trail parity to start fresh
   trailParity = 0

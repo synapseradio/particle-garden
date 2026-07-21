@@ -15,6 +15,7 @@ import std/[strutils, tables, unittest]
 import ../src/shader_config
 import ../src/sph_core
 import ../src/field_core
+import ../src/bloom_core
 
 const SHADER_CONFIG_TESTS_LOADED* = true
 
@@ -103,6 +104,25 @@ suite "SPH Tunables Mirror sph_core's Authoritative Constants":
     for placeholderName in ["TUNABLE_SPH_XSPH_EPSILON", "TUNABLE_SPH_GAMMA"]:
       check placeholderName in placeholders
       check "." in placeholders[placeholderName]
+
+
+suite "HDR-Bloom Blur Kernel Feeds The Bundler":
+  # blur.wgsl declares `array<f32, {{BLOOM_WEIGHT_COUNT}}>({{BLOOM_WEIGHTS}})`.
+  # The count must match the number of emitted literals, or the WGSL array
+  # constructor is malformed and the shader fails to compile.
+
+  test "getPlaceholderMap exposes the bloom weight count and weight list":
+    let placeholders = getPlaceholderMap()
+    check "BLOOM_WEIGHT_COUNT" in placeholders
+    check "BLOOM_WEIGHTS" in placeholders
+    check placeholders["BLOOM_WEIGHT_COUNT"] == $bloomWeightCount()
+
+  test "the emitted weight list has exactly BLOOM_WEIGHT_COUNT f32 literals":
+    let placeholders = getPlaceholderMap()
+    let literals = placeholders["BLOOM_WEIGHTS"].split(", ")
+    check literals.len == bloomWeightCount()
+    for literal in literals:
+      check "." in literal
 
 
 suite "Reaction-Diffusion Field Dispatch Divides The Field Evenly":

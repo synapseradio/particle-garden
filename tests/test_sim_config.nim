@@ -100,6 +100,21 @@ suite "Render Defaults Lie Inside Their Slider Ranges":
     # so default visuals are unchanged.
     check float(defaults.particleSize + 1) * defaults.glowRadiusScale == 12.0
 
+  test "bloom and grade defaults are inside their clamp ranges":
+    check defaults.bloomIntensity >= BLOOM_INTENSITY_MIN
+    check defaults.bloomIntensity <= BLOOM_INTENSITY_MAX
+    check defaults.exposure >= EXPOSURE_MIN
+    check defaults.exposure <= EXPOSURE_MAX
+    check defaults.saturation >= SATURATION_MIN
+    check defaults.saturation <= SATURATION_MAX
+    check defaults.contrast >= CONTRAST_MIN
+    check defaults.contrast <= CONTRAST_MAX
+    check defaults.temperature >= TEMPERATURE_MIN
+    check defaults.temperature <= TEMPERATURE_MAX
+
+  test "bloom defaults off so the default look is the non-bloom quality floor":
+    check defaults.bloomEnabled == false
+
 
 suite "SimConfig Composition":
   test "defaultSimConfig starts in particle-life with the module defaults":

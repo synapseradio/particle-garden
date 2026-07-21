@@ -172,6 +172,9 @@ import std/[strformat, tables]
 # field_core is pure (no FFI); importing it keeps FIELD_W/FIELD_H sourced from
 # the single reaction-diffusion authority rather than re-stated here.
 import field_core
+# bloom_core is pure; it computes the separable Gaussian blur weights so the
+# HDR-bloom shader's kernel shape is native-tested, not hand-written in WGSL.
+import bloom_core
 
 proc getPlaceholderMap*(): Table[string, string] =
   ## Generate placeholder substitutions for the shader bundler
@@ -223,3 +226,9 @@ proc getPlaceholderMap*(): Table[string, string] =
   # SPH fluid-mode constants (consumed by forces-sph.wgsl).
   result["TUNABLE_SPH_XSPH_EPSILON"] = fmt"{activeConfig.tuning.sphXsphEpsilon:.2f}"
   result["TUNABLE_SPH_GAMMA"] = fmt"{activeConfig.tuning.sphGamma:.2f}"
+
+  # HDR-bloom separable-blur kernel (consumed by blur.wgsl). The half kernel
+  # (centre + one side) and its element count come from bloom_core, the single
+  # native-tested source of the Gaussian shape.
+  result["BLOOM_WEIGHT_COUNT"] = $bloomWeightCount()
+  result["BLOOM_WEIGHTS"] = bloomWeightsWgsl()

@@ -524,6 +524,104 @@
           </div>
         </div>
 
+        <!-- Bloom & Grade Section (collapsible) -->
+        <div class="control-section" id="bloomSection">
+          <button class="section-header" onclick="toggleBloomSection()">
+            Bloom &amp; Grade <span class="section-toggle">+</span>
+          </button>
+          <div class="section-content" style="display: none">
+            <div class="control-group">
+              <button id="bloomBtn" class="secondary" onclick="toggleBloom()">
+                Bloom
+              </button>
+            </div>
+
+            <!-- Slider min/max/step/value attributes are placeholders; ui.nim's
+                 configSlider registrations (config_ranges.nim bloom/grade
+                 bounds) overwrite them at bind time and are authoritative. -->
+            <div class="control-group">
+              <label
+                >Bloom Intensity
+                <span class="value-display" id="bloomIntensityValue"
+                  >1.00</span
+                ></label
+              >
+              <input
+                type="range"
+                id="bloomIntensity"
+                min="0"
+                max="3"
+                value="1"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Exposure
+                <span class="value-display" id="exposureValue">1.00</span></label
+              >
+              <input
+                type="range"
+                id="exposure"
+                min="0.2"
+                max="3"
+                value="1"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Saturation
+                <span class="value-display" id="saturationValue"
+                  >1.00</span
+                ></label
+              >
+              <input
+                type="range"
+                id="saturation"
+                min="0"
+                max="2"
+                value="1"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Contrast
+                <span class="value-display" id="contrastValue">1.00</span></label
+              >
+              <input
+                type="range"
+                id="contrast"
+                min="0.5"
+                max="2"
+                value="1"
+                step="0.01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label
+                >Temperature
+                <span class="value-display" id="temperatureValue"
+                  >0.00</span
+                ></label
+              >
+              <input
+                type="range"
+                id="temperature"
+                min="-1"
+                max="1"
+                value="0"
+                step="0.01"
+              />
+            </div>
+          </div>
+        </div>
+
         <div class="control-group">
           <label
             >Max Velocity

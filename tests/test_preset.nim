@@ -105,6 +105,12 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.sphSubsteps = 2
     customPreset.settings.rdFeed = 0.045
     customPreset.settings.rdKill = 0.058
+    customPreset.settings.bloomEnabled = true
+    customPreset.settings.bloomIntensity = 1.8
+    customPreset.settings.exposure = 1.4
+    customPreset.settings.saturation = 1.3
+    customPreset.settings.contrast = 1.2
+    customPreset.settings.temperature = -0.4
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
         (if matrixIndex mod 2 == 0: 0.5 else: -0.5)
@@ -334,6 +340,28 @@ suite "Preset Clamp Behavior Contract":
     let result = validate(%*{"settings": {}})
     check result.preset.settings.rdFeed == defaultSettings().rdFeed
     check result.preset.settings.rdKill == defaultSettings().rdKill
+
+  test "bloom and grade settings clamp into their ranges":
+    let node = %*{"settings": {
+      "bloomIntensity": 99.0,
+      "exposure": -5.0,
+      "saturation": 99.0,
+      "contrast": -5.0,
+      "temperature": 99.0
+    }}
+    let result = validate(node)
+    check result.preset.settings.bloomIntensity == BLOOM_INTENSITY_MAX
+    check result.preset.settings.exposure == EXPOSURE_MIN
+    check result.preset.settings.saturation == SATURATION_MAX
+    check result.preset.settings.contrast == CONTRAST_MIN
+    check result.preset.settings.temperature == TEMPERATURE_MAX
+
+  test "a missing bloom field defaults rather than crashing":
+    ## A pre-S9 preset carries no bloom fields; they must fall back to the
+    ## defaults on load without a schema bump (schema stays v1).
+    let result = validate(%*{"settings": {}})
+    check result.preset.settings.bloomEnabled == defaultSettings().bloomEnabled
+    check result.preset.settings.exposure == defaultSettings().exposure
 
   test "matrix values clamp into [-1, 1]":
     var arr = newSeq[float](MATRIX_LEN)

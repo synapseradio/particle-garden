@@ -10,6 +10,8 @@ web/shaders/modules/sim_params.wgsl
 web/shaders/modules/render_params.wgsl
 web/shaders/modules/fade_params.wgsl
 web/shaders/modules/field_params.wgsl
+web/shaders/modules/bloom_params.wgsl
+web/shaders/modules/tonemap_params.wgsl
 Particle Garden.app/
 .DS_Store
 
