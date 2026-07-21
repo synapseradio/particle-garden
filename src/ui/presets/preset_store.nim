@@ -41,8 +41,8 @@ when defined(js):
   import ../../preset
   import ./preset_store_core
   import ../state/sim_config
-  import ../dom_helpers
   import ../controls/slider
+  import ../controls/sim_mode_buttons
 
   # ============================================================================
   # SECTION 1: ISO TIMESTAMP
@@ -195,7 +195,7 @@ when defined(js):
         try:
           let kind = parseSimKind(sourcePreset.mode)
           activeSimKind.set(kind)
-          setActive("modeParticleLifeBtn", kind == skParticleLife)
+          syncSimModeButtons(kind)
         except ValueError:
           # Forward-compatible: a preset from a future build may carry a
           # mode this build cannot run yet (see preset.nim's "an

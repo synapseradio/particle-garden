@@ -50,6 +50,7 @@ import ui/input/mouse_handler
 import ui/input/touch_handler
 import ui/controls/slider
 import ui/controls/control_panel
+import ui/controls/sim_mode_buttons
 import ui/stats/stats_view
 import ui/dom_helpers
 # ui/presets depends on ui/state/sim_config, ui/dom_helpers, and
@@ -676,9 +677,7 @@ proc setSimMode*(modeId: cstring) {.exportc.} =
   ## clamped value stands until the user raises it again.
   let kind = parseSimKind($modeId)
   activeSimKind.set(kind)
-  setActive("modeParticleLifeBtn", kind == skParticleLife)
-  setActive("modeSphBtn", kind == skSph)
-  setActive("modeReactionDiffusionBtn", kind == skReactionDiffusion)
+  syncSimModeButtons(kind)
 
   # Both SPH and reaction-diffusion are field/neighbor heavy; each caps the
   # particle count on entry through the same update + re-init path the
