@@ -105,6 +105,22 @@ suite "PaletteEditorState - Defaults":
       state.lightness <= PALETTE_LIGHTNESS_MAX
 
 # ==============================================================================
+# CUSTOM FLAG (preset-loaded colors suspend the generated palette)
+# ==============================================================================
+
+suite "PaletteEditorState - Custom Flag":
+  test "the initial state is not custom":
+    check initPaletteEditorState().isCustom == false
+
+  test "withCustom marks the state custom":
+    check initPaletteEditorState().withCustom().isCustom == true
+
+  test "withScheme sets the scheme and clears the custom flag":
+    let state = initPaletteEditorState().withCustom().withScheme(psGolden)
+    check state.scheme == psGolden
+    check state.isCustom == false
+
+# ==============================================================================
 # CHANNEL RANGE
 # ==============================================================================
 

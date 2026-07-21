@@ -754,6 +754,11 @@ proc setSpeciesCount*(newCount: int, randomizeNew: bool = false) {.exportc.} =
 proc applyPaletteToColors() =
   ## Regenerate the six species colors from paletteEditorState and write
   ## them into COLORS in place, then re-render the matrix legend swatches.
+  ## Inert while the state is custom (a preset load set COLORS directly):
+  ## regenerating would clobber the loaded colors, so the saturation/
+  ## lightness sliders stay inert until a scheme is explicitly chosen.
+  if paletteEditorState.isCustom:
+    return
   let flatPalette = flatPaletteFor(paletteEditorState)
   for colorIndex in 0 ..< flatPalette.len:
     COLORS[colorIndex] = flatPalette[colorIndex]
@@ -762,9 +767,10 @@ proc applyPaletteToColors() =
 proc setPaletteScheme*(schemeIdValue: cstring) {.exportc.} =
   ## Switch the active palette scheme (palette-selector buttons). Schemes
   ## are addressed by palette_state's stable string ids, never enum
-  ## ordinals.
+  ## ordinals. An explicit scheme pick clears the custom flag — it is the
+  ## intended overwrite of preset-loaded colors.
   let scheme = parsePaletteScheme($schemeIdValue)
-  paletteEditorState.scheme = scheme
+  paletteEditorState = paletteEditorState.withScheme(scheme)
   applyPaletteToColors()
   setActive("paletteOpenColorBtn", scheme == psOpenColor)
   setActive("paletteGoldenBtn", scheme == psGolden)
@@ -839,6 +845,18 @@ proc setupPresetStoreHooks*() {.exportc.} =
     setTrails(settings.trails)
     setBloom(settings.bloomEnabled)
     setColormap(settings.colormapIndex)
+  )
+
+  preset_store.onPaletteApply(proc(loadedPalette: Palette) =
+    for speciesIndex in 0 ..< loadedPalette.len:
+      let color = loadedPalette[speciesIndex]
+      COLORS[speciesIndex * 3] = color[0]
+      COLORS[speciesIndex * 3 + 1] = color[1]
+      COLORS[speciesIndex * 3 + 2] = color[2]
+    # Mark COLORS externally set so the palette editor's next touch cannot
+    # regenerate over the loaded colors (see applyPaletteToColors).
+    paletteEditorState = paletteEditorState.withCustom()
+    updateMatrixDisplay()
   )
 
   preset_store.onMatrixDisplayRefresh(proc() = updateMatrixDisplay())

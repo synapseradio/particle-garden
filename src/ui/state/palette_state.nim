@@ -32,16 +32,36 @@ type
     scheme*: PaletteScheme
     saturation*: float
     lightness*: float
+    isCustom*: bool
+      ## True when config.COLORS was set externally (a preset load) rather
+      ## than generated from this state. While set, the generated palette is
+      ## suspended — regenerating from scheme/saturation/lightness would
+      ## clobber the loaded colors — until a scheme is explicitly chosen
+      ## (withScheme), which is the intended overwrite.
 
 func initPaletteEditorState*(): PaletteEditorState =
   ## Defaults: psOpenColor (the app-wide default scheme; see config.nim's
   ## COLORS initialization) plus palette.nim's DEFAULT_SATURATION/
-  ## DEFAULT_LIGHTNESS.
+  ## DEFAULT_LIGHTNESS. Not custom: COLORS starts as a generated palette.
   PaletteEditorState(
     scheme: psOpenColor,
     saturation: DEFAULT_SATURATION,
-    lightness: DEFAULT_LIGHTNESS
+    lightness: DEFAULT_LIGHTNESS,
+    isCustom: false
   )
+
+func withCustom*(state: PaletteEditorState): PaletteEditorState =
+  ## The same state with COLORS marked as externally set (preset load).
+  result = state
+  result.isCustom = true
+
+func withScheme*(state: PaletteEditorState,
+    scheme: PaletteScheme): PaletteEditorState =
+  ## The same state switched to `scheme`, resuming the generated palette —
+  ## an explicit scheme pick is the intended overwrite of custom colors.
+  result = state
+  result.scheme = scheme
+  result.isCustom = false
 
 # ==============================================================================
 # SECTION 2: SCHEME ID SERIALIZATION

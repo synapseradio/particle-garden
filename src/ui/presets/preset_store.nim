@@ -66,6 +66,15 @@ when defined(js):
   var particleCountApplyHook: proc(newCount: int) = nil
   var scalarsApplyHook: proc(settings: PresetSettings) = nil
   var matrixDisplayRefreshHook: proc() = nil
+  var paletteApplyHook: proc(loadedPalette: Palette) = nil
+
+  proc onPaletteApply*(callback: proc(loadedPalette: Palette)) {.exportc.} =
+    ## Registers how to apply a preset's palette (ui.nim writes the colors
+    ## into COLORS AND marks its palette editor state custom, so the editor's
+    ## generated palette cannot clobber the loaded colors on its next touch).
+    ## Without a registered hook, pasPalette falls back to writing COLORS
+    ## directly.
+    paletteApplyHook = callback
 
   proc onSpeciesCountApply*(callback: proc(newCount: int)) {.exportc.} =
     ## Registers how to apply a preset's speciesCount without re-initializing
@@ -213,11 +222,14 @@ when defined(js):
         for matrixIndex in 0 ..< sourcePreset.matrix.len:
           buffers.matrix[matrixIndex] = sourcePreset.matrix[matrixIndex]
       of pasPalette:
-        for speciesIndex in 0 ..< sourcePreset.palette.len:
-          let color = sourcePreset.palette[speciesIndex]
-          config.COLORS[speciesIndex * 3] = color[0]
-          config.COLORS[speciesIndex * 3 + 1] = color[1]
-          config.COLORS[speciesIndex * 3 + 2] = color[2]
+        if not paletteApplyHook.isNil:
+          paletteApplyHook(sourcePreset.palette)
+        else:
+          for speciesIndex in 0 ..< sourcePreset.palette.len:
+            let color = sourcePreset.palette[speciesIndex]
+            config.COLORS[speciesIndex * 3] = color[0]
+            config.COLORS[speciesIndex * 3 + 1] = color[1]
+            config.COLORS[speciesIndex * 3 + 2] = color[2]
       of pasScalars:
         if not scalarsApplyHook.isNil:
           scalarsApplyHook(sourcePreset.settings)
