@@ -98,13 +98,15 @@ proc updateInputState*() =
 #
 # The typed tunable records are the mutation surface; CONFIG stays the flat
 # GPU-facing mirror the hot paths read. Every mutation goes through the
-# update helpers below, which write the observable AND the mirror in the
-# same tick — a subscription-based mirror would flush on a microtask, and
-# programmatic setValue calls onChange synchronously, which would then read
-# a stale CONFIG.
+# update helpers below, which write the typed store AND the mirror in the
+# same tick — the mirror is deliberately synchronous, not subscription-based
+# (a subscription would flush on a microtask, and programmatic setValue
+# calls onChange synchronously, which would then read a stale CONFIG). The
+# stores are plain vars, not Observables: nothing subscribes to them, and
+# the synchronous-mirror design means nothing should.
 
-var currentSimulation* = newObservable(initSimulationState())
-var currentRender* = newObservable(initRenderState())
+var currentSimulation* = initSimulationState()
+var currentRender* = initRenderState()
 
 proc applySimulationToConfig(simState: SimulationState) =
   CONFIG.particleCount = simState.particleCount
@@ -146,19 +148,19 @@ proc applyRenderToConfig(renderState: RenderState) =
   CONFIG.fieldOpacity = renderState.fieldOpacity
 
 proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
-  ## Mutate a copy of the simulation state, publish it, and mirror it into
+  ## Mutate a copy of the simulation state, store it, and mirror it into
   ## CONFIG synchronously.
-  var simState = currentSimulation.get()
+  var simState = currentSimulation
   mutate(simState)
-  currentSimulation.set(simState)
+  currentSimulation = simState
   applySimulationToConfig(simState)
 
 proc updateRender*(mutate: proc(renderState: var RenderState)) =
-  ## Mutate a copy of the render state, publish it, and mirror it into
+  ## Mutate a copy of the render state, store it, and mirror it into
   ## CONFIG synchronously.
-  var renderState = currentRender.get()
+  var renderState = currentRender
   mutate(renderState)
-  currentRender.set(renderState)
+  currentRender = renderState
   applyRenderToConfig(renderState)
 
 # ==============================================================================
