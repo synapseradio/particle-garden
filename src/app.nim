@@ -23,7 +23,7 @@ from std/dom import Window, requestAnimationFrame
 # IMPORTANT: These imports MUST remain in layer order. Each layer depends on
 # the previous layers. Reordering (e.g., alphabetizing) will break compilation.
 #
-# Dependency chain: config → buffers → {grid, ui} → webgpu_*
+# Dependency chain: config → buffers → {grid, canvas_input, web_api} → webgpu_*
 #
 
 # Layer 1: Configuration (no dependencies)
@@ -34,7 +34,7 @@ import buffers
 
 # Layer 3: Browser integration modules
 import grid
-import ui
+import canvas_input
 import web_api
 
 # Layer 4: WebGPU modules
@@ -138,8 +138,6 @@ proc initParticles*() {.exportc.} =
     buffers.particlesA[shuffleBase] = buffers.particlesA[swapBase]
     buffers.particlesA[swapBase] = tempSpecies
 
-  ui.updateParticleStats(newCount)
-
   # Upload to GPU if using WebGPU (ensures GPU has current particle data)
   if useWebGPU:
     discard webgpu_compute.uploadInitialData(newCount)
@@ -188,19 +186,19 @@ proc physics(dt: float): Future[void] {.async.} =
   # Scale mouse from canvas to world coordinates
   let mouseScaleX = config.WORLD_W / float(canvasWidth())
   let mouseScaleY = config.WORLD_H / float(canvasHeight())
-  params["mouseX"] = toJs(ui.getMouseX() * mouseScaleX)
-  params["mouseY"] = toJs(ui.getMouseY() * mouseScaleY)
-  params["mouseDown"] = toJs(if ui.getMouseDown(): 1 else: 0)
-  params["mouseRightDown"] = toJs(if ui.getMouseRightDown(): 1 else: 0)
-  params["blastX"] = toJs(ui.getBlastX() * mouseScaleX)
-  params["blastY"] = toJs(ui.getBlastY() * mouseScaleY)
-  params["blastStrength"] = toJs(ui.getBlastStrength())
+  params["mouseX"] = toJs(canvas_input.getMouseX() * mouseScaleX)
+  params["mouseY"] = toJs(canvas_input.getMouseY() * mouseScaleY)
+  params["mouseDown"] = toJs(if canvas_input.getMouseDown(): 1 else: 0)
+  params["mouseRightDown"] = toJs(if canvas_input.getMouseRightDown(): 1 else: 0)
+  params["blastX"] = toJs(canvas_input.getBlastX() * mouseScaleX)
+  params["blastY"] = toJs(canvas_input.getBlastY() * mouseScaleY)
+  params["blastStrength"] = toJs(canvas_input.getBlastStrength())
   params["matrix"] = toJs(buffers.matrix)
 
   await webgpu_compute.runPhysicsFrame(params)
 
   # Decay blast effect in observable (single source of truth)
-  ui.updateInputState()
+  canvas_input.updateInputState()
 
   currentTiming.physicsTimeMs = performanceNow() - tPhysics0
   currentTiming.integrationTimeMs = 0  # Integration happens on GPU
@@ -249,7 +247,6 @@ proc loop(now: float): Future[void] {.async.} =
       bitwiseOr(float(frameCount * 1000) / (now - lastFpsTime), 0))
     frameCount = 0
     lastFpsTime = now
-    ui.updateStats(runtimeState.fps, 0, computeTimeMs)
     var gpuGridMs = 0.0
     var gpuPhysicsMs = 0.0
     var gpuDrawMs = 0.0
@@ -260,7 +257,6 @@ proc loop(now: float): Future[void] {.async.} =
       gpuDrawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
       gpuPresentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
       let bloomMs = gpu_profiler.passTimeMs(gpu_profiler.passBloom)
-      ui.updateGpuTimes(gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs)
       # Leave a capturable baseline record in the console every ~5s
       gpuLogCounter = gpuLogCounter + 1
       if gpuLogCounter >= 10:
@@ -306,7 +302,7 @@ proc init(): Future[void] {.async, exportc.} =
   if not webgpuResult["success"].to(bool):
     consoleError(toJs("WebGPU initialization failed:"), webgpuResult["error"])
     consoleError(toJs("This application requires WebGPU. Please use a browser with WebGPU support."))
-    ui.showWebGPURequiredOverlay()
+    web_api.showWebGpuRequiredOverlay()
     return
 
   consoleLog(toJs("WebGPU device acquired:"), webgpuResult["info"])
@@ -318,7 +314,7 @@ proc init(): Future[void] {.async, exportc.} =
   let pipelineResult = await webgpu_compute.initPipelines()
   if not pipelineResult["success"].to(bool):
     consoleError(toJs("WebGPU pipeline initialization failed:"), pipelineResult["error"])
-    ui.showWebGPURequiredOverlay()
+    web_api.showWebGpuRequiredOverlay()
     return
 
   consoleLog(toJs("WebGPU compute pipelines ready:"), pipelineResult["info"])
@@ -329,28 +325,22 @@ proc init(): Future[void] {.async, exportc.} =
   consoleLog(toJs("Initializing WebGPU render pipeline..."))
   if not webgpu_render.initWebGPURender():
     consoleError(toJs("WebGPU render pipeline initialization failed."))
-    ui.showWebGPURequiredOverlay()
+    web_api.showWebGpuRequiredOverlay()
     return
   consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
 
-  # Set up callbacks for UI events
-  ui.setInitParticlesCallback(initParticles)
-  ui.setResizeCallback(webgpu_render.resize)
-  ui.setupEvents(cast[JsObject](webgpu_render.canvas))
-
-  # Set up UI bindings
-  ui.setupUI()
+  # Set up canvas input and lifecycle callbacks
+  canvas_input.setInitParticlesCallback(initParticles)
+  canvas_input.setResizeCallback(webgpu_render.resize)
+  canvas_input.setupEvents(cast[JsObject](webgpu_render.canvas))
 
   # Mode selector drives the compute executor's frame description
   # (qualified: webgpu_compute also exports a var named activeSimKind)
   subscribeSimple(sim_config.activeSimKind, proc(kind: SimKind) =
     webgpu_compute.setActiveSimKind(kind))
 
-  # Set matrix update callback (no-op since matrix is in shared GPU buffer)
-  ui.setMatrixUpdateCallback(proc() = discard)
-
   # Initialize attraction matrix with random values
-  ui.randomizeMatrix()
+  web_api.randomizeMatrix()
 
   # Initialize particles
   initParticles()
@@ -365,10 +355,11 @@ proc init(): Future[void] {.async, exportc.} =
   consoleLog(toJs("Initial data uploaded to GPU"))
 
   # Optional ?mode=<sim-kind-id> URL override (machine interface, like ?n=/?seed=
-  # — never a user-facing surface). Routes through ui.setSimMode, the same path
-  # the mode buttons use, so the compute executor swaps to the requested frame.
-  # Runs after setup so the activeSimKind subscription and pipelines are live.
-  # An unknown id is ignored with a warning rather than crashing the loop.
+  # — never a user-facing surface). Routes through web_api.setSimModeImpl, the
+  # same path gardenAPI's mode buttons use, so the compute executor swaps to the
+  # requested frame. Runs after setup so the activeSimKind subscription and
+  # pipelines are live. An unknown id is ignored with a warning rather than
+  # crashing the loop.
   if urlParamHas("mode"):
     let requestedMode = urlParamStr("mode")
     var isKnownMode = false
@@ -377,18 +368,15 @@ proc init(): Future[void] {.async, exportc.} =
         isKnownMode = true
     if isKnownMode:
       consoleLog(toJs("[app] ?mode= override:"), toJs(requestedMode))
-      ui.setSimMode(requestedMode)
+      web_api.setSimModeImpl(parseSimKind($requestedMode))
     else:
       consoleWarn(toJs("[app] unknown ?mode= value, ignoring:"), toJs(requestedMode))
 
   # Optional ?bloom=0|1 URL override for the HDR bloom path (machine interface,
   # like ?n=/?seed=/?mode= — never a user-facing surface). Routes through
-  # ui.setBloom, the same path the bloom toggle button uses.
+  # web_api.setBloomImpl, the same path gardenAPI's bloom toggle uses.
   if urlParamHas("bloom"):
-    ui.setBloom(urlParamInt("bloom", 0) != 0)
-
-  # Expose resetParticles globally for HTML onclick handler
-  setGlobal("resetParticles", toJs(resetParticles))
+    web_api.setBloomImpl(urlParamInt("bloom", 0) != 0)
 
   # Start animation loop
   lastTime = performanceNow()
@@ -406,15 +394,3 @@ proc init(): Future[void] {.async, exportc.} =
 
 # Register DOMContentLoaded handler
 domDocument.addEventListener("DOMContentLoaded", proc() = discard init())
-
-# ==============================================================================
-# WINDOW GLOBALS FOR HTML ONCLICK HANDLERS
-# ==============================================================================
-
-# These must be exposed on window for HTML onclick attributes to work
-{.emit: """
-window.toggleTrails = toggleTrails;
-window.toggleControls = toggleControls;
-window.randomizeMatrix = randomizeMatrix;
-window.resetParticles = resetParticles;
-""".}

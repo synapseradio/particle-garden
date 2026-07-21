@@ -2,27 +2,33 @@
 # PARTICLE GARDEN - WEB API (window.gardenAPI)
 # ==============================================================================
 #
-# The one boundary the TypeScript UI talks through. A single `gardenAPI`
-# object is created at module-eval time (before the Solid bundle evaluates)
-# and installed on the global object; everything that mutates state routes
-# through the same typed update helpers the Nim UI uses.
+# The one boundary the TypeScript UI talks through, and the home of the
+# typed-state -> CONFIG bridge. A single `gardenAPI` object is created at
+# module-eval time (before the Solid bundle evaluates) and installed on the
+# global object.
 #
 # THE SYNCHRONOUS MIRROR INVARIANT (do not break this from the TS side):
-# every parameter write lands in the typed store AND the flat GPU-facing
-# CONFIG in the same tick, via ui.nim's updateSimulation/updateRender. The
-# mirroring must never become async (no subscriptions, no microtasks): the
-# frame loop reads CONFIG fresh every frame, and a deferred mirror would let
-# a frame run against a stale value. gardenAPI methods are synchronous for
-# exactly this reason.
+# the typed tunable records are the mutation surface; CONFIG stays the flat
+# GPU-facing mirror the hot paths read fresh every frame. Every mutation
+# goes through updateSimulation/updateRender below, which write the typed
+# store AND the mirror in the same tick — the mirror is deliberately
+# synchronous, not subscription-based (a subscription would flush on a
+# microtask, letting a frame run against a stale CONFIG). gardenAPI methods
+# are synchronous for exactly this reason; never rebuild this boundary on
+# deferred plumbing.
 #
 # Parameter writes clamp against the descriptor table
-# (ui/api/param_descriptor.nim) — the clamp authority that used to live in
-# slider.nim — so no out-of-range value can reach CONFIG regardless of what
-# the UI sends.
+# (ui/api/param_descriptor.nim) — the clamp authority — so no out-of-range
+# value can reach CONFIG regardless of what the UI sends.
+#
+# Presets are hybrid: this module owns snapshot -> JSON and JSON ->
+# validated preset -> apply (walking preset_store_core's presetApplySteps in
+# order); the UI owns localStorage I/O under preset_store_core's keys.
 #
 # JS-only: no native test imports this module. The descriptor table it
-# serves is natively tested in tests/test_param_descriptor.nim; the wiring
-# is verified by `nimble app`.
+# serves is natively tested in tests/test_param_descriptor.nim; preset
+# schema and apply order are natively tested via preset.nim and
+# preset_store_core.nim; the wiring is verified by `nimble app`.
 #
 # ==============================================================================
 
@@ -30,24 +36,24 @@ when defined(js):
   import std/tables
   from std/json import pretty
   from std/jsffi import JsObject, toJs, `[]=`
+  from std/dom import getElementById
 
   from bindings/js_interop import newJsObject, newJsArray, push, setGlobal,
-    consoleWarn
-  from bindings/typed_arrays import Float32Array, `[]`
+    consoleWarn, gaussian
+  from bindings/typed_arrays import Float32Array, `[]`, `[]=`
+  from bindings/dom_extensions import HTMLElement
 
   import config
   import buffers
   import sph_core
   import field_core
   import preset
+  import canvas_input
   import ui/api/param_descriptor
   import ui/state/matrix_state
   import ui/state/palette_state
   import ui/state/sim_config
-  import ui/controls/slider
   import ui/presets/preset_store_core
-  import ui/presets/preset_store
-  import ui
 
   proc jsonParseable(text: cstring): bool {.importjs:
     "(() => { try { JSON.parse(#); return true; } catch { return false; } })()".}
@@ -56,8 +62,75 @@ when defined(js):
     ## catch (and the build bans bare except). Pre-checking here keeps
     ## applyPresetJson's {ok, error} contract instead of leaking a throw.
 
+  proc isoTimestampNow(): cstring {.importjs: "new Date().toISOString()".}
+    ## Wall-clock ISO-8601 timestamp for a preset's createdAt. preset.nim has
+    ## no clock access (pure, no FFI) by design; this is the one place a
+    ## real value gets stamped in.
+
   # ============================================================================
-  # SECTION 1: DESCRIPTOR TABLE
+  # SECTION 1: TYPED CONFIG STATE (the synchronous mirror)
+  # ============================================================================
+
+  var currentSimulation* = initSimulationState()
+  var currentRender* = initRenderState()
+
+  proc applySimulationToConfig(simState: SimulationState) =
+    CONFIG.particleCount = simState.particleCount
+    CONFIG.speciesCount = simState.speciesCount
+    CONFIG.interactionRadius = simState.interactionRadius
+    CONFIG.forceStrength = simState.forceStrength
+    CONFIG.friction = simState.friction
+    CONFIG.ruleTemperature = simState.ruleTemperature
+    CONFIG.timeScale = simState.timeScale
+    CONFIG.maxVelocity = simState.maxVelocity
+    CONFIG.repulsionEnd = simState.repulsionEnd
+    CONFIG.attractionPeak = simState.attractionPeak
+    CONFIG.forceModel = simState.forceModel
+    CONFIG.expRepulsionAlpha = simState.expRepulsionAlpha
+    CONFIG.expAttractionBeta = simState.expAttractionBeta
+    CONFIG.sphRestDensity = simState.sphRestDensity
+    CONFIG.sphStiffness = simState.sphStiffness
+    CONFIG.sphViscosity = simState.sphViscosity
+    CONFIG.sphSubsteps = simState.sphSubsteps
+    CONFIG.rdFeed = simState.rdFeed
+    CONFIG.rdKill = simState.rdKill
+
+  proc applyRenderToConfig(renderState: RenderState) =
+    CONFIG.particleSize = renderState.particleSize
+    CONFIG.trails = renderState.trails
+    CONFIG.trailLength = renderState.trailLength
+    CONFIG.glowIntensity = renderState.glowIntensity
+    CONFIG.velocityGlowScale = renderState.velocityGlowScale
+    CONFIG.glowRadiusScale = renderState.glowRadiusScale
+    CONFIG.glowFalloff = renderState.glowFalloff
+    CONFIG.glowWarmth = renderState.glowWarmth
+    CONFIG.bloomEnabled = renderState.bloomEnabled
+    CONFIG.bloomIntensity = renderState.bloomIntensity
+    CONFIG.exposure = renderState.exposure
+    CONFIG.saturation = renderState.saturation
+    CONFIG.contrast = renderState.contrast
+    CONFIG.temperature = renderState.temperature
+    CONFIG.colormapIndex = renderState.colormapIndex
+    CONFIG.fieldOpacity = renderState.fieldOpacity
+
+  proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
+    ## Mutate a copy of the simulation state, store it, and mirror it into
+    ## CONFIG synchronously.
+    var simState = currentSimulation
+    mutate(simState)
+    currentSimulation = simState
+    applySimulationToConfig(simState)
+
+  proc updateRender*(mutate: proc(renderState: var RenderState)) =
+    ## Mutate a copy of the render state, store it, and mirror it into
+    ## CONFIG synchronously.
+    var renderState = currentRender
+    mutate(renderState)
+    currentRender = renderState
+    applyRenderToConfig(renderState)
+
+  # ============================================================================
+  # SECTION 2: DESCRIPTOR TABLE
   # ============================================================================
 
   let paramDescriptors = buildParamDescriptors()
@@ -96,12 +169,128 @@ when defined(js):
     jsArray
 
   # ============================================================================
-  # SECTION 2: PARAMETER GET / SET / COMMIT
+  # SECTION 3: PALETTE EDITOR STATE
+  # ============================================================================
+  #
+  # Session-only UI state, deliberately not part of SimConfig or the preset
+  # store (see palette_state.nim). Changing any knob regenerates the six
+  # species colors into COLORS in place; webgpu_render repacks COLORS into
+  # the GPU colors uniform every frame, so no explicit upload is needed.
+
+  var paletteEditorState = initPaletteEditorState()
+
+  proc applyPaletteToColors() =
+    ## Regenerate species colors from paletteEditorState into COLORS.
+    ## Inert while the state is custom (a preset load set COLORS directly):
+    ## regenerating would clobber the loaded colors, so the saturation/
+    ## lightness knobs stay inert until a scheme is explicitly chosen.
+    if paletteEditorState.isCustom:
+      return
+    let flatPalette = flatPaletteFor(paletteEditorState)
+    for colorIndex in 0 ..< flatPalette.len:
+      COLORS[colorIndex] = flatPalette[colorIndex]
+
+  proc setPaletteSchemeImpl(scheme: PaletteScheme) =
+    ## An explicit scheme pick clears the custom flag — it is the intended
+    ## overwrite of preset-loaded colors.
+    paletteEditorState = paletteEditorState.withScheme(scheme)
+    applyPaletteToColors()
+
+  # ============================================================================
+  # SECTION 4: MATRIX STATE
+  # ============================================================================
+
+  # The species count the matrix bookkeeping last saw; lets a grow
+  # distinguish newly exposed cells from established ones.
+  var lastSpeciesCount = CONFIG.speciesCount
+
+  proc randomizeMatrix*() =
+    ## Randomize all active matrix cells with the bell-curve rule sampler
+    ## (gaussian draws scaled by CONFIG.ruleTemperature, rejection-sampled
+    ## into [-1, 1] by matrix_state.sampleRuleValue).
+    let activeSpecies = CONFIG.speciesCount
+    for row in 0 ..< activeSpecies:
+      for col in 0 ..< activeSpecies:
+        buffers.matrix[matrixIndex(row, col)] =
+          sampleRuleValue(CONFIG.ruleTemperature, gaussian)
+
+  proc applySpeciesCountChange(newCount: int; randomizeNew: bool) =
+    ## React to a species-count change: a grow randomizes only the newly
+    ## exposed matrix band (when randomizeNew); hidden values persist in the
+    ## buffer through a shrink and reappear on re-grow.
+    let exposed = newlyExposedCells(lastSpeciesCount, newCount)
+    lastSpeciesCount = newCount
+    if randomizeNew:
+      for cell in exposed:
+        buffers.matrix[matrixIndex(cell.row, cell.col)] =
+          sampleRuleValue(CONFIG.ruleTemperature, gaussian)
+
+  # ============================================================================
+  # SECTION 5: MUTATION IMPLS (mode, toggles, counts)
   # ============================================================================
 
   proc triggerParticleReinit() =
-    if not ui.onInitParticles.isNil:
-      ui.onInitParticles()
+    if not canvas_input.onInitParticles.isNil:
+      canvas_input.onInitParticles()
+
+  proc setTrailsImpl(enabled: bool) =
+    updateRender(proc(renderState: var RenderState) =
+      renderState.trails = enabled)
+
+  proc setBloomImpl*(enabled: bool) =
+    ## Exported for app.nim's ?bloom= machine override.
+    updateRender(proc(renderState: var RenderState) =
+      renderState.bloomEnabled = enabled)
+
+  proc setForceModelImpl(model: int) =
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.forceModel = clamp(model, 0, 1))
+
+  proc setColormapImpl(index: int) =
+    updateRender(proc(renderState: var RenderState) =
+      renderState.colormapIndex = clamp(index, 0, 2))
+
+  proc simKindCeiling(kind: SimKind): int =
+    ## The particle-count ceiling entering this mode clamps to (0 = none).
+    ## SPH's neighbor pressure loop and RD's field passes are heavier than
+    ## particle-life's forces, hence the caps.
+    case kind
+    of skParticleLife: 0
+    of skSph: SPH_PARTICLE_CEILING
+    of skReactionDiffusion: RD_PARTICLE_CEILING
+
+  proc setSimModeImpl*(kind: SimKind) =
+    ## Switch the active simulation mode. app.nim subscribes activeSimKind
+    ## to the compute executor, so the set swaps the frame description.
+    ## Entering a capped mode clamps the particle count through the same
+    ## update + re-init path the particleCount slider uses; leaving does not
+    ## restore the previous count.
+    activeSimKind.set(kind)
+    let modeCeiling = simKindCeiling(kind)
+    if modeCeiling > 0 and CONFIG.particleCount > modeCeiling:
+      updateSimulation(proc(simState: var SimulationState) =
+        simState.particleCount = modeCeiling)
+      triggerParticleReinit()
+
+  proc setSpeciesCountImpl(count: int; randomizeNew: bool) =
+    ## The species slider's full release behavior: clamp, update the typed
+    ## state, resize the matrix bookkeeping, then re-initialize particles.
+    let clamped = clampParamValue(paramsById["speciesCount"], count.float).int
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.speciesCount = clamped)
+    applySpeciesCountChange(clamped, randomizeNew)
+    triggerParticleReinit()
+
+  proc showWebGpuRequiredOverlay*() =
+    ## Show the "WebGPU required" overlay (the one panel-shaped DOM node the
+    ## shell page keeps). Called when WebGPU init or pipeline setup fails.
+    let overlay = cast[HTMLElement](getElementById(cstring("webgpu-required")))
+    if not overlay.isNil:
+      overlay.style.display = cstring"block"
+
+  # ============================================================================
+  # SECTION 6: PARAMETER GET / SET / COMMIT
+  # ============================================================================
 
   proc getParamImpl(id: string): float =
     case id
@@ -129,8 +318,8 @@ when defined(js):
     of "attractionPeak": CONFIG.attractionPeak
     of "expRepulsionAlpha": CONFIG.expRepulsionAlpha
     of "expAttractionBeta": CONFIG.expAttractionBeta
-    of "paletteSaturation": ui.getPaletteSaturation()
-    of "paletteLightness": ui.getPaletteLightness()
+    of "paletteSaturation": paletteEditorState.saturation
+    of "paletteLightness": paletteEditorState.lightness
     of "sphRestDensity": CONFIG.sphRestDensity
     of "sphStiffness": CONFIG.sphStiffness
     of "sphViscosity": CONFIG.sphViscosity
@@ -198,8 +387,12 @@ when defined(js):
       proc(simState: var SimulationState) = simState.expRepulsionAlpha = value)
     of "expAttractionBeta": updateSimulation(
       proc(simState: var SimulationState) = simState.expAttractionBeta = value)
-    of "paletteSaturation": ui.setPaletteSaturation(value)
-    of "paletteLightness": ui.setPaletteLightness(value)
+    of "paletteSaturation":
+      paletteEditorState.saturation = value
+      applyPaletteToColors()
+    of "paletteLightness":
+      paletteEditorState.lightness = value
+      applyPaletteToColors()
     of "sphRestDensity": updateSimulation(
       proc(simState: var SimulationState) = simState.sphRestDensity = value)
     of "sphStiffness": updateSimulation(
@@ -215,18 +408,6 @@ when defined(js):
     of "fieldOpacity": updateRender(
       proc(renderState: var RenderState) = renderState.fieldOpacity = value)
     else: discard
-    # Keep the legacy panel's slider displays honest while both UIs are
-    # served side by side. Removed with slider.nim at cutover.
-    refreshRegisteredSliders()
-
-  proc setSpeciesCountImpl(count: int; randomizeNew: bool) =
-    ## The species slider's full release behavior: clamp, update the typed
-    ## state, resize the matrix grid (randomizing only newly exposed cells
-    ## when asked), then re-initialize particles.
-    let clamped = clampParamValue(paramsById["speciesCount"], count.float).int
-    ui.setSpeciesCount(clamped, randomizeNew)
-    refreshRegisteredSliders()
-    triggerParticleReinit()
 
   proc commitParamImpl(id: string) =
     ## The slider-release side effect (the old "change" event): only the two
@@ -238,7 +419,7 @@ when defined(js):
     else: discard
 
   # ============================================================================
-  # SECTION 3: LIFECYCLE (ready gate + stats push)
+  # SECTION 7: LIFECYCLE (ready gate + stats push)
   # ============================================================================
   #
   # buffers.matrix exists only after init() has run allocateBuffers, so the
@@ -278,7 +459,150 @@ when defined(js):
       callback(stats)
 
   # ============================================================================
-  # SECTION 4: MODE / PALETTE / COLORMAP CATALOGS
+  # SECTION 8: PRESETS (snapshot / apply)
+  # ============================================================================
+
+  proc snapshotPreset(name: string): Preset =
+    ## Capture the CURRENT live CONFIG, attraction matrix, species palette,
+    ## and active mode as a Preset named `name`, stamped with the current
+    ## wall-clock time.
+    var settings: PresetSettings
+    settings.particleCount = CONFIG.particleCount
+    settings.speciesCount = CONFIG.speciesCount
+    settings.interactionRadius = CONFIG.interactionRadius
+    settings.forceStrength = CONFIG.forceStrength
+    settings.friction = CONFIG.friction
+    settings.ruleTemperature = CONFIG.ruleTemperature
+    settings.timeScale = CONFIG.timeScale
+    settings.particleSize = CONFIG.particleSize
+    settings.trails = CONFIG.trails
+    settings.trailLength = CONFIG.trailLength
+    settings.glowIntensity = CONFIG.glowIntensity
+    settings.velocityGlowScale = CONFIG.velocityGlowScale
+    settings.maxVelocity = CONFIG.maxVelocity
+    settings.repulsionEnd = CONFIG.repulsionEnd
+    settings.attractionPeak = CONFIG.attractionPeak
+    settings.forceModel = CONFIG.forceModel
+    settings.expRepulsionAlpha = CONFIG.expRepulsionAlpha
+    settings.expAttractionBeta = CONFIG.expAttractionBeta
+    settings.glowRadiusScale = CONFIG.glowRadiusScale
+    settings.glowFalloff = CONFIG.glowFalloff
+    settings.glowWarmth = CONFIG.glowWarmth
+    settings.bloomEnabled = CONFIG.bloomEnabled
+    settings.bloomIntensity = CONFIG.bloomIntensity
+    settings.exposure = CONFIG.exposure
+    settings.saturation = CONFIG.saturation
+    settings.contrast = CONFIG.contrast
+    settings.temperature = CONFIG.temperature
+    settings.colormapIndex = CONFIG.colormapIndex
+    settings.fieldOpacity = CONFIG.fieldOpacity
+
+    var matrixSnapshot: Matrix
+    for matrixIdx in 0 ..< preset.MATRIX_LEN:
+      matrixSnapshot[matrixIdx] = buffers.matrix[matrixIdx]
+
+    var paletteSnapshot: Palette
+    for speciesIndex in 0 ..< preset.MAX_SPECIES:
+      paletteSnapshot[speciesIndex] = [
+        COLORS[speciesIndex * 3],
+        COLORS[speciesIndex * 3 + 1],
+        COLORS[speciesIndex * 3 + 2]
+      ]
+
+    Preset(
+      schemaVersion: preset.CURRENT_SCHEMA_VERSION,
+      name: name,
+      createdAt: $isoTimestampNow(),
+      mode: simKindId(activeSimKind.get()),
+      settings: settings,
+      matrix: matrixSnapshot,
+      palette: paletteSnapshot
+    )
+
+  proc applyPresetImpl(sourcePreset: Preset) =
+    ## Apply every field of `sourcePreset` onto the live simulation, walking
+    ## presetApplySteps() in the fixed order that module documents and pins
+    ## natively. Never persists anything — storage belongs to the UI side.
+    for step in presetApplySteps():
+      case step
+      of pasMode:
+        try:
+          activeSimKind.set(parseSimKind(sourcePreset.mode))
+        except ValueError:
+          # Forward-compatible: a preset from a future build may carry a
+          # mode this build cannot run yet. Keep running the current mode
+          # rather than crashing the apply.
+          consoleWarn(("[preset] unknown mode id \"" & sourcePreset.mode &
+            "\" - keeping the current mode").toJs)
+      of pasSpeciesCount:
+        # No re-init here: particleCount is the one step that triggers it,
+        # after the matrix bookkeeping is already sized for the target.
+        updateSimulation(proc(simState: var SimulationState) =
+          simState.speciesCount = sourcePreset.settings.speciesCount)
+        applySpeciesCountChange(sourcePreset.settings.speciesCount,
+          randomizeNew = false)
+      of pasParticleCount:
+        updateSimulation(proc(simState: var SimulationState) =
+          simState.particleCount = sourcePreset.settings.particleCount)
+        triggerParticleReinit()
+      of pasMatrix:
+        for matrixIdx in 0 ..< sourcePreset.matrix.len:
+          buffers.matrix[matrixIdx] = sourcePreset.matrix[matrixIdx]
+      of pasPalette:
+        for speciesIndex in 0 ..< sourcePreset.palette.len:
+          let color = sourcePreset.palette[speciesIndex]
+          COLORS[speciesIndex * 3] = color[0]
+          COLORS[speciesIndex * 3 + 1] = color[1]
+          COLORS[speciesIndex * 3 + 2] = color[2]
+        # Mark COLORS externally set so the palette editor's next touch
+        # cannot regenerate over the loaded colors (see applyPaletteToColors).
+        paletteEditorState = paletteEditorState.withCustom()
+      of pasScalars:
+        let settings = sourcePreset.settings
+        updateSimulation(proc(simState: var SimulationState) =
+          simState.interactionRadius = settings.interactionRadius
+          simState.forceStrength = settings.forceStrength
+          simState.friction = settings.friction
+          simState.ruleTemperature = settings.ruleTemperature
+          simState.timeScale = settings.timeScale
+          simState.maxVelocity = settings.maxVelocity
+          simState.repulsionEnd = settings.repulsionEnd
+          simState.attractionPeak = settings.attractionPeak
+          simState.expRepulsionAlpha = settings.expRepulsionAlpha
+          simState.expAttractionBeta = settings.expAttractionBeta
+          simState.sphRestDensity = settings.sphRestDensity
+          simState.sphStiffness = settings.sphStiffness
+          simState.sphViscosity = settings.sphViscosity
+          simState.sphSubsteps = settings.sphSubsteps
+          simState.rdFeed = settings.rdFeed
+          simState.rdKill = settings.rdKill
+        )
+        updateRender(proc(renderState: var RenderState) =
+          renderState.particleSize = settings.particleSize
+          renderState.trailLength = settings.trailLength
+          renderState.glowIntensity = settings.glowIntensity
+          renderState.velocityGlowScale = settings.velocityGlowScale
+          renderState.glowRadiusScale = settings.glowRadiusScale
+          renderState.glowFalloff = settings.glowFalloff
+          renderState.glowWarmth = settings.glowWarmth
+          renderState.bloomIntensity = settings.bloomIntensity
+          renderState.exposure = settings.exposure
+          renderState.saturation = settings.saturation
+          renderState.contrast = settings.contrast
+          renderState.temperature = settings.temperature
+          renderState.fieldOpacity = settings.fieldOpacity
+        )
+        setForceModelImpl(settings.forceModel)
+        setTrailsImpl(settings.trails)
+        setBloomImpl(settings.bloomEnabled)
+        setColormapImpl(settings.colormapIndex)
+      of pasUiRefresh:
+        # Display refresh belongs to the Solid UI: the controller re-reads
+        # everything through gardenAPI after a successful apply.
+        discard
+
+  # ============================================================================
+  # SECTION 9: CATALOGS
   # ============================================================================
 
   proc simKindLabel(kind: SimKind): string =
@@ -286,13 +610,6 @@ when defined(js):
     of skParticleLife: "Particle Life"
     of skSph: "SPH Fluid"
     of skReactionDiffusion: "Reaction-Diffusion"
-
-  proc simKindCeiling(kind: SimKind): int =
-    ## The particle-count ceiling entering this mode clamps to (0 = none).
-    case kind
-    of skParticleLife: 0
-    of skSph: SPH_PARTICLE_CEILING
-    of skReactionDiffusion: RD_PARTICLE_CEILING
 
   let simModeArray = block:
     let jsArray = newJsArray()
@@ -331,7 +648,7 @@ when defined(js):
     jsArray
 
   # ============================================================================
-  # SECTION 5: THE gardenAPI OBJECT
+  # SECTION 10: THE gardenAPI OBJECT
   # ============================================================================
 
   proc buildGardenApi(): JsObject =
@@ -342,8 +659,7 @@ when defined(js):
     result["onReady"] = toJs(proc(callback: proc()) =
       if apiReady: callback()
       else: readyCallbacks.add(callback))
-    result["showWebGPURequired"] = toJs(proc() =
-      ui.showWebGPURequiredOverlay())
+    result["showWebGPURequired"] = toJs(proc() = showWebGpuRequiredOverlay())
 
     # Parameters
     result["descriptor"] = toJs(proc(): JsObject = descriptorArray)
@@ -354,9 +670,9 @@ when defined(js):
 
     # Toggles
     result["getTrails"] = toJs(proc(): bool = CONFIG.trails)
-    result["setTrails"] = toJs(proc(enabled: bool) = ui.setTrails(enabled))
+    result["setTrails"] = toJs(proc(enabled: bool) = setTrailsImpl(enabled))
     result["getBloom"] = toJs(proc(): bool = CONFIG.bloomEnabled)
-    result["setBloom"] = toJs(proc(enabled: bool) = ui.setBloom(enabled))
+    result["setBloom"] = toJs(proc(enabled: bool) = setBloomImpl(enabled))
 
     # Simulation mode
     result["simModes"] = toJs(proc(): JsObject = simModeArray)
@@ -364,35 +680,31 @@ when defined(js):
       cstring(simKindId(activeSimKind.get())))
     result["setSimMode"] = toJs(proc(id: cstring) =
       try:
-        discard parseSimKind($id)
-        ui.setSimMode(id)
+        setSimModeImpl(parseSimKind($id))
       except ValueError:
         consoleWarn(toJs("[gardenAPI] unknown sim mode id: " & $id)))
 
     # Force model
     result["getForceModel"] = toJs(proc(): int = CONFIG.forceModel)
-    result["setForceModel"] = toJs(proc(model: int) =
-      ui.setForceModel(clamp(model, 0, 1)))
+    result["setForceModel"] = toJs(proc(model: int) = setForceModelImpl(model))
 
     # Palette / colormap (color math stays in Nim)
     result["paletteSchemes"] = toJs(proc(): JsObject = paletteSchemeArray)
     result["getPaletteScheme"] = toJs(proc(): cstring =
-      cstring(ui.getPaletteSchemeId()))
-    result["isPaletteCustom"] = toJs(proc(): bool = ui.isPaletteCustom())
+      cstring(schemeId(paletteEditorState.scheme)))
+    result["isPaletteCustom"] = toJs(proc(): bool = paletteEditorState.isCustom)
     result["setPaletteScheme"] = toJs(proc(id: cstring) =
       try:
-        discard parsePaletteScheme($id)
-        ui.setPaletteScheme(id)
+        setPaletteSchemeImpl(parsePaletteScheme($id))
       except ValueError:
         consoleWarn(toJs("[gardenAPI] unknown palette scheme id: " & $id)))
     result["colormaps"] = toJs(proc(): JsObject = colormapArray)
     result["getColormap"] = toJs(proc(): int = CONFIG.colormapIndex)
-    result["setColormap"] = toJs(proc(index: int) =
-      ui.setColormap(clamp(index, 0, 2)))
+    result["setColormap"] = toJs(proc(index: int) = setColormapImpl(index))
 
     # Attraction matrix (live Float32Array references; valid after onReady)
     result["matrix"] = toJs(proc(): Float32Array = buffers.matrix)
-    result["colors"] = toJs(proc(): Float32Array = config.COLORS)
+    result["colors"] = toJs(proc(): Float32Array = COLORS)
     result["matrixCellColor"] = toJs(proc(value: float): cstring =
       cstring(toHslaString(cellColorFromValue(clampMatrixValue(value)))))
     result["clampMatrixValue"] = toJs(proc(value: float): float =
@@ -401,13 +713,12 @@ when defined(js):
     result["speciesColor"] = toJs(proc(index: int): cstring =
       var channels = newSeq[float](config.MAX_SPECIES * 3)
       for channelIndex in 0 ..< channels.len:
-        channels[channelIndex] = config.COLORS[channelIndex]
+        channels[channelIndex] = COLORS[channelIndex]
       cstring(toRgbaString(speciesColorFromIndex(index, channels))))
     result["speciesCount"] = toJs(proc(): int = CONFIG.speciesCount)
     result["setSpeciesCount"] = toJs(proc(count: int; randomizeNew: bool) =
       setSpeciesCountImpl(count, randomizeNew))
-    result["randomizeMatrix"] = toJs(proc() = ui.randomizeMatrix())
-    result["refreshMatrixDisplay"] = toJs(proc() = ui.updateMatrixDisplay())
+    result["randomizeMatrix"] = toJs(proc() = randomizeMatrix())
 
     # Particles
     result["resetParticles"] = toJs(proc() = triggerParticleReinit())
@@ -438,7 +749,7 @@ when defined(js):
         return outcome
       let loadResult = parsePreset($jsonText)
       if loadResult.isOk:
-        applyPreset(loadResult.preset)
+        applyPresetImpl(loadResult.preset)
         outcome["ok"] = toJs(true)
       else:
         outcome["ok"] = toJs(false)
