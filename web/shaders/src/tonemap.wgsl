@@ -18,6 +18,7 @@
 // =============================================================================
 
 //! import tonemap_params
+//! import tonemap_grade
 //! import colormap
 
 @group(0) @binding(0) var trailTexture: texture_2d<f32>;
@@ -36,21 +37,6 @@ struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
 };
-
-fn luminance(color: vec3f) -> f32 {
-  return dot(color, vec3f(0.2126, 0.7152, 0.0722));
-}
-
-// Narkowicz 2015 ACES filmic tonemap fit — maps unbounded HDR into [0,1].
-fn acesFilmic(hdr: vec3f) -> vec3f {
-  let a = 2.51;
-  let b = 0.03;
-  let c = 2.43;
-  let d = 0.59;
-  let e = 0.14;
-  return clamp((hdr * (a * hdr + b)) / (hdr * (c * hdr + d) + e),
-               vec3f(0.0), vec3f(1.0));
-}
 
 @vertex
 fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
@@ -81,22 +67,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
   // Emissive light: crisp particles plus the blurred glow plus the field.
   let light = trail.rgb + bloom * params.bloomIntensity + fieldLight;
-  let hdr = light * params.exposure;
-
-  var color = acesFilmic(hdr);
-
-  // Grade: saturation around the pixel's own luminance.
-  let lum = luminance(color);
-  color = mix(vec3f(lum), color, params.saturation);
-
-  // Grade: contrast around a mid-grey 0.5 pivot.
-  color = (color - 0.5) * params.contrast + 0.5;
-
-  // Grade: signed temperature — positive warms (more red, less blue).
-  color = color * vec3f(1.0 + params.temperature * 0.1, 1.0,
-                        1.0 - params.temperature * 0.1);
-
-  color = clamp(color, vec3f(0.0), vec3f(1.0));
+  // Exposure -> ACES -> grade, from the shared tonemap_grade module (the one
+  // authority field-composite.wgsl also runs, so bloom on/off stays in parity).
+  let color = tonemapGrade(light, params);
 
   // Coverage alpha: bright, particle-covered pixels paint over the background;
   // where the field contributes it fully covers, so it reads as the backdrop;
