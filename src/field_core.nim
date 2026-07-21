@@ -67,13 +67,16 @@ const
     ## citation and the (F, k) range it names).
   RD_DEFAULT_KILL* = 0.062
     ## Kill rate k. See RD_DEFAULT_FEED.
-  RD_DEPOSIT_AMOUNT* = 0.1
+  RD_DEPOSIT_AMOUNT* = 0.02
     ## Inhibitor concentration each particle folds into its field cell per frame.
     ## field-deposit.wgsl splats this (fixed-point) into the deposit buffer;
     ## field-resolve.wgsl adds the decoded sum onto the inhibitor channel. This
     ## is what seeds Gray-Scott from the trivial (activator=1, inhibitor=0) start
     ## the field textures are cleared to — a uniform-zero inhibitor field never
-    ## reacts. A first-cut magnitude; S10 calibrates it against particle count.
+    ## reacts. The magnitude is bounded by the seeding fixed point
+    ## rdSeedEquilibrium(deposit, feed, kill) = deposit/(feed+kill): 0.02 gives
+    ## ~0.217 at the Pearson defaults, inside the pattern band, where the old
+    ## 0.1 saturated seeded cells at ~1.09 and flooded the field.
   RD_FIELD_FORCE_SCALE* = 30.0
     ## Converts the sampled field gradient into a per-frame velocity impulse.
     ## field-force.wgsl multiplies the central-difference inhibitor gradient by
@@ -88,6 +91,20 @@ const
     ## along the field gradient) drive a legible glow. The density-driven modes
     ## pass 0 here, leaving their glow untouched. BLIND VISUAL PICK: the user's
     ## visual pass owns the final magnitude.
+
+# ==============================================================================
+# SEEDING EQUILIBRIUM
+# ==============================================================================
+
+func rdSeedEquilibrium*(depositAmount, feed, kill: float): float =
+  ## The inhibitor concentration at which per-frame particle deposit balances
+  ## the Gray-Scott depletion term — the fixed point of
+  ## B' = B + depositAmount - (feed + kill)*B, i.e. depositAmount/(feed+kill).
+  ## A stationary particle saturates its cell toward this value, so it must
+  ## sit inside the band where Pearson patterns form (below ~0.3); above it,
+  ## seeded cells pin the inhibitor past the pattern regime and the field
+  ## reads as a flat flood instead of structure.
+  depositAmount / (feed + kill)
 
 # ==============================================================================
 # 9-POINT LAPLACIAN STENCIL

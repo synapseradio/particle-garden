@@ -219,6 +219,21 @@ suite "Reaction-Diffusion Tuning Constants":
     check RD_DEFAULT_KILL > 0.05
     check RD_DEFAULT_KILL < 0.065
 
+  test "the deposit seeding equilibrium sits inside the pattern band":
+    # CONTRACT: a stationary particle saturates its cell's inhibitor toward
+    # rdSeedEquilibrium (deposit balancing the (feed+kill)*B depletion). That
+    # fixed point must stay below 0.3 — Pearson's pattern-forming inhibitor
+    # concentrations; above it, seeded cells flood past the pattern regime.
+    check rdSeedEquilibrium(
+      RD_DEPOSIT_AMOUNT, RD_DEFAULT_FEED, RD_DEFAULT_KILL) < 0.3
+
+  test "rdSeedEquilibrium is the fixed point of the deposit-depletion balance":
+    # CONTRACT: at the equilibrium value, one frame of deposit + depletion
+    # returns the same concentration.
+    let equilibrium = rdSeedEquilibrium(0.02, 0.030, 0.062)
+    let nextB = equilibrium + 0.02 - (0.030 + 0.062) * equilibrium
+    check abs(nextB - equilibrium) < EPSILON
+
   test "particle-field coupling constants are positive":
     # RD_DEPOSIT_AMOUNT is the inhibitor concentration each particle folds into
     # its field cell per frame (field-deposit.wgsl); a non-positive value would
