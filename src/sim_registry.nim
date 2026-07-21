@@ -85,12 +85,10 @@ type
     dsFieldWorkgroups
       ## ceil(FIELD_W / workgroup size X) x ceil(FIELD_H / workgroup size Y):
       ## the one 2D dispatch size in this enum. Every other DispatchSize
-      ## resolves to a single workgroup count (the executor's
-      ## dispatchWorkgroups call today takes one argument); a dispatch sized
-      ## dsFieldWorkgroups needs dispatchWorkgroups(x, y), so the executor
-      ## must special-case this value rather than resolving it through the
-      ## same one-int path as the others (executor wiring is out of scope
-      ## for this stage — see roadmap S8, next stage).
+      ## resolves to a single workgroup count; the executor special-cases
+      ## this value with a dispatchWorkgroups(x, y) call
+      ## (webgpu_compute.nim's frame walk) rather than resolving it through
+      ## the same one-int path as the others.
 
   Dispatch* = object
     ## One setPipeline/setBindGroup/dispatchWorkgroups triple. pipelineKey

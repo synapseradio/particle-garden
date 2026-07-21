@@ -507,7 +507,8 @@ const
 # RENDERPARAMS / FADEPARAMS FIELD INDICES (webgpu_render.nim)
 # =============================================================================
 # Generated from the layout tables by genFieldIndices, like SIM_* above.
-# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_WARMTH=11, RENDER_PARAMS_F32_COUNT=12;
+# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_DENSITY_FLOOR=12 (then three pad
+# slots through 15), RENDER_PARAMS_F32_COUNT=16 (totalSize 64);
 # FADE_AMOUNT=0 ... FADE_PAD2=3, FADE_PARAMS_F32_COUNT=4.
 
 genFieldIndices(RenderParamsLayout, "RENDER")

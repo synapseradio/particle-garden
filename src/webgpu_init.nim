@@ -210,7 +210,7 @@ proc createFieldResources() =
     depositBytes, depositUsage, "RD Field Deposit (fixed-point i32, 2ch)")
 
   # Seed: clear both field textures to (activator=1, inhibitor=0), the trivial
-  # Gray-Scott steady state, via a render-pass clear (rg16float is renderable).
+  # Gray-Scott steady state, via a render-pass clear (rgba16float is renderable).
   # Particle deposits then perturb the inhibitor to ignite the pattern. Also
   # zero the deposit buffer so frame 0 folds no garbage.
   let seedEncoder = device.createCommandEncoderLabeled("RD Field Seed")

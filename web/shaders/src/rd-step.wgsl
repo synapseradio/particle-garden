@@ -32,7 +32,7 @@
 // | Bind  | Shader Type                         | Resource    | Access |
 // +-------+-------------------------------------+-------------+--------+
 // |   0   | texture_2d<f32>                     | src view    | sample |
-// |   1   | texture_storage_2d<rg16float,write> | dst view    | write  |
+// |   1   | texture_storage_2d<rgba16float,write> | dst view  | write  |
 // |   2   | uniform FieldParams                 | fieldParams | read   |
 // +-------+-------------------------------------+-------------+--------+
 // =============================================================================
