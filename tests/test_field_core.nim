@@ -2,7 +2,7 @@
 # PARTICLE GARDEN - FIELD CORE TESTS
 # ==============================================================================
 #
-# Analytic tests for src/field_core.nim: the pure 5-point Laplacian stencil and
+# Analytic tests for src/field_core.nim: the pure 9-point Laplacian stencil and
 # Gray-Scott reaction-diffusion step that the rd-step.wgsl compute shader will
 # mirror (roadmap S8). Every function is a plain scalar-in/scalar-out math
 # function — the field grid itself lives only on the GPU (a storage texture),
@@ -20,40 +20,59 @@ const FIELD_CORE_TESTS_LOADED* = true
 const EPSILON = 1e-9
 
 
-suite "5-Point Laplacian Stencil":
+suite "9-Point Laplacian Stencil":
   test "the laplacian is zero on a constant field":
-    # CONTRACT: a cell surrounded by four neighbors at its own value has no
-    # curvature to diffuse away — the stencil must report exactly 0.
+    # CONTRACT: a cell surrounded by eight neighbors at its own value has no
+    # curvature to diffuse away — the weights sum to 0, so the stencil must
+    # report exactly 0.
     for value in [0.0, 0.5, 1.0, -3.0]:
-      check laplacian5(value, value, value, value, value) == 0.0
+      check laplacian9(
+        value, value, value, value, value, value, value, value, value) == 0.0
 
   test "the laplacian is linear: laplacian of a sum is the sum of laplacians":
-    # CONTRACT: the stencil is a fixed linear combination of its five inputs,
+    # CONTRACT: the stencil is a fixed linear combination of its nine inputs,
     # so superposition must hold exactly for any two neighborhoods.
-    let (centerA, northA, southA, eastA, westA) = (0.2, 0.5, 0.1, 0.4, 0.3)
-    let (centerB, northB, southB, eastB, westB) = (0.9, 0.1, 0.6, 0.2, 0.7)
-    let sumLaplacian = laplacian5(
-      centerA + centerB, northA + northB, southA + southB,
-      eastA + eastB, westA + westB)
+    let neighborhoodA = [0.2, 0.5, 0.1, 0.4, 0.3, 0.6, 0.8, 0.7, 0.9]
+    let neighborhoodB = [0.9, 0.1, 0.6, 0.2, 0.7, 0.3, 0.4, 0.5, 0.8]
+    var summed: array[9, float]
+    for i in 0 ..< 9:
+      summed[i] = neighborhoodA[i] + neighborhoodB[i]
+    let sumLaplacian = laplacian9(
+      summed[0], summed[1], summed[2], summed[3], summed[4],
+      summed[5], summed[6], summed[7], summed[8])
     let separateSum =
-      laplacian5(centerA, northA, southA, eastA, westA) +
-      laplacian5(centerB, northB, southB, eastB, westB)
+      laplacian9(
+        neighborhoodA[0], neighborhoodA[1], neighborhoodA[2], neighborhoodA[3],
+        neighborhoodA[4], neighborhoodA[5], neighborhoodA[6], neighborhoodA[7],
+        neighborhoodA[8]) +
+      laplacian9(
+        neighborhoodB[0], neighborhoodB[1], neighborhoodB[2], neighborhoodB[3],
+        neighborhoodB[4], neighborhoodB[5], neighborhoodB[6], neighborhoodB[7],
+        neighborhoodB[8])
     check abs(sumLaplacian - separateSum) < EPSILON
 
-  test "a single spike at the center produces -4 times the center value":
-    # CONTRACT: with all neighbors at 0, the stencil reduces to -4*center —
-    # the isolated-peak case that drives the peak's own decay.
-    check laplacian5(1.0, 0.0, 0.0, 0.0, 0.0) == -4.0
-    check laplacian5(2.5, 0.0, 0.0, 0.0, 0.0) == -10.0
+  test "a single spike at the center produces -1 times the center value":
+    # CONTRACT: with all neighbors at 0, the normalized stencil reduces to
+    # -center — the isolated-peak case that drives the peak's own decay.
+    check laplacian9(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) == -1.0
+    check laplacian9(2.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) == -2.5
 
-  test "a single spike in one neighbor contributes exactly its own value":
-    # CONTRACT: with center and three neighbors at 0, the stencil reduces to
-    # the fourth neighbor's own value — each neighbor's contribution is
-    # independent and unweighted relative to the others.
-    check laplacian5(0.0, 1.0, 0.0, 0.0, 0.0) == 1.0
-    check laplacian5(0.0, 0.0, 1.0, 0.0, 0.0) == 1.0
-    check laplacian5(0.0, 0.0, 0.0, 1.0, 0.0) == 1.0
-    check laplacian5(0.0, 0.0, 0.0, 0.0, 1.0) == 1.0
+  test "a single spike in one axis neighbor contributes 0.2 times its value":
+    # CONTRACT: with center and the other neighbors at 0, each axis neighbor
+    # contributes exactly its own value times the 0.2 axis weight.
+    check laplacian9(0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) == 0.2
+    check laplacian9(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) == 0.2
+    check laplacian9(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0) == 0.2
+    check laplacian9(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0) == 0.2
+
+  test "a single spike in one diagonal neighbor contributes 0.05 times its value":
+    # CONTRACT: with center and the other neighbors at 0, each diagonal
+    # neighbor contributes exactly its own value times the 0.05 diagonal
+    # weight.
+    check laplacian9(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0) == 0.05
+    check laplacian9(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0) == 0.05
+    check laplacian9(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0) == 0.05
+    check laplacian9(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0) == 0.05
 
 
 suite "Gray-Scott Reaction Fixed Point":
@@ -125,6 +144,58 @@ suite "Gray-Scott Step Stays Finite And Bounded":
             check nextB == nextB
             check abs(nextA) < BOUND
             check abs(nextB) < BOUND
+
+
+suite "Gray-Scott Scheme Stability":
+  test "200 steps on a seeded toroidal grid stay finite and bounded at the module constants":
+    # CONTRACT: the explicit-Euler scheme with the module's stencil, diffusion
+    # rates, and dt must be numerically stable — a seeded field must never
+    # diverge. 24x24 toroidal grid, A=1 everywhere, B=0 except a central 4x4
+    # block at 0.5, stepped 200 times with the module constants. Every cell
+    # must stay finite and inside (-0.1, 1.5) — Gray-Scott concentrations
+    # live in [0, 1]; the margin allows transient over/undershoot only.
+    const GRID = 24
+    var fieldA, fieldB: array[GRID, array[GRID, float]]
+    for y in 0 ..< GRID:
+      for x in 0 ..< GRID:
+        fieldA[y][x] = 1.0
+        fieldB[y][x] = 0.0
+    for y in 10 ..< 14:
+      for x in 10 ..< 14:
+        fieldB[y][x] = 0.5
+
+    proc wrap(i: int): int = (i + GRID) mod GRID
+    proc stencil(field: array[GRID, array[GRID, float]], x, y: int): float =
+      laplacian9(
+        center = field[y][x],
+        north = field[wrap(y - 1)][x], south = field[wrap(y + 1)][x],
+        east = field[y][wrap(x + 1)], west = field[y][wrap(x - 1)],
+        ne = field[wrap(y - 1)][wrap(x + 1)], nw = field[wrap(y - 1)][wrap(x - 1)],
+        se = field[wrap(y + 1)][wrap(x + 1)], sw = field[wrap(y + 1)][wrap(x - 1)])
+
+    for step in 0 ..< 200:
+      var nextA, nextB: array[GRID, array[GRID, float]]
+      for y in 0 ..< GRID:
+        for x in 0 ..< GRID:
+          let (a, b) = grayScottStep(
+            activator = fieldA[y][x], inhibitor = fieldB[y][x],
+            laplacianA = stencil(fieldA, x, y),
+            laplacianB = stencil(fieldB, x, y),
+            diffusionA = RD_DIFFUSION_A, diffusionB = RD_DIFFUSION_B,
+            feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL,
+            deltaT = RD_DELTA_T)
+          nextA[y][x] = a
+          nextB[y][x] = b
+      fieldA = nextA
+      fieldB = nextB
+
+    var allBounded = true
+    for y in 0 ..< GRID:
+      for x in 0 ..< GRID:
+        for value in [fieldA[y][x], fieldB[y][x]]:
+          if value != value or value <= -0.1 or value >= 1.5:
+            allBounded = false
+    check allBounded
 
 
 suite "Reaction-Diffusion Tuning Constants":

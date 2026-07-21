@@ -14,8 +14,10 @@
 //   reaction = A * B^2
 //   A' = A + dt*(Da*lapA - reaction + feed*(1 - A))
 //   B' = B + dt*(Db*lapB + reaction - (feed + kill)*B)
-// with the 5-point Laplacian from field_core.laplacian5:
-//   lap = north + south + east + west - 4*center
+// with the normalized 9-point Laplacian from field_core.laplacian9:
+//   lap = 0.2*(north + south + east + west) + 0.05*(ne + nw + se + sw) - center
+// The -1 center weight keeps explicit Euler stable at Da=1, dt=1; the -4-center
+// 5-point form diverges at these rates.
 // Neighbor reads wrap toroidally, matching the wrapping particle world.
 //
 // REACTION SEAM: reactionKind is a pipeline-override constant (default 0 =
@@ -69,10 +71,15 @@ fn rdStep(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let south = loadCell(vec2<i32>(cellX, cellY + 1));
   let east = loadCell(vec2<i32>(cellX + 1, cellY));
   let west = loadCell(vec2<i32>(cellX - 1, cellY));
+  let ne = loadCell(vec2<i32>(cellX + 1, cellY - 1));
+  let nw = loadCell(vec2<i32>(cellX - 1, cellY - 1));
+  let se = loadCell(vec2<i32>(cellX + 1, cellY + 1));
+  let sw = loadCell(vec2<i32>(cellX - 1, cellY + 1));
 
-  // 5-point Laplacian per channel (field_core.laplacian5), computed for both
-  // activator (.x) and inhibitor (.y) at once.
-  let laplacian = north + south + east + west - 4.0 * center;
+  // Normalized 9-point Laplacian per channel (field_core.laplacian9), computed
+  // for both activator (.x) and inhibitor (.y) at once.
+  let laplacian = 0.2 * (north + south + east + west)
+    + 0.05 * (ne + nw + se + sw) - center;
 
   let activator = center.x;
   let inhibitor = center.y;

@@ -2,7 +2,7 @@
 # PARTICLE GARDEN - FIELD CORE (Pure Reaction-Diffusion Math)
 # ==============================================================================
 #
-# Pure functions for the Gray-Scott reaction-diffusion mode: the 5-point
+# Pure functions for the Gray-Scott reaction-diffusion mode: the 9-point
 # discrete Laplacian and one Gray-Scott step for a single grid cell. No side
 # effects, no FFI — compiles on both the native (nimble test) and JS backends,
 # and is the analytic mirror the rd-step.wgsl compute shader is written
@@ -11,7 +11,7 @@
 #
 # The field itself (the two concentration channels, activator and inhibitor)
 # lives only on the GPU as a storage texture — there is no CPU-side grid here.
-# These functions take one cell's neighborhood as five scalars and return the
+# These functions take one cell's neighborhood as nine scalars and return the
 # next step's two scalars, exactly the shape the shader's per-invocation body
 # needs.
 #
@@ -48,7 +48,10 @@ const
     ## that simply smooths itself flat.
   RD_DELTA_T* = 1.0
     ## Per-substep timestep. Gray-Scott's explicit-Euler update is stable at
-    ## dt=1 for these diffusion rates and the Pearson feed/kill range below.
+    ## dt=1 for these diffusion rates because the Laplacian is the normalized
+    ## (center weight -1) 9-point stencil, laplacian9 — its worst-mode
+    ## amplification factor stays inside the unit circle at Da=1, dt=1. The
+    ## -4-center 5-point form would need dt <= 0.25 at these rates.
   RD_STEPS_PER_FRAME* = 8
     ## Reaction-diffusion substeps run per rendered frame. The pattern
     ## evolves slowly relative to a video frame, so multiple steps per frame
@@ -87,17 +90,17 @@ const
     ## visual pass owns the final magnitude.
 
 # ==============================================================================
-# 5-POINT LAPLACIAN STENCIL
+# 9-POINT LAPLACIAN STENCIL
 # ==============================================================================
 
-func laplacian5*(center, north, south, east, west: float): float =
-  ## The discrete 2D Laplacian at one grid cell via the standard 5-point
-  ## stencil: the sum of the four axis-neighbors minus 4 times the center.
-  ## Zero on a constant field (no curvature to diffuse), linear in its five
-  ## inputs, and reduces to -4*center when all neighbors are 0 (an isolated
-  ## peak's own decay) or to a single neighbor's value when the other three
-  ## neighbors and the center are 0.
-  north + south + east + west - 4.0 * center
+func laplacian9*(center, north, south, east, west, ne, nw, se, sw: float):
+    float =
+  ## The discrete 2D Laplacian at one grid cell via the normalized 9-point
+  ## stencil: 0.2 per axis-neighbor, 0.05 per diagonal, -1 for the center.
+  ## The weights sum to 0, so the stencil is zero on a constant field (no
+  ## curvature to diffuse), linear in its nine inputs, and reduces to -center
+  ## when all neighbors are 0 (an isolated peak's own decay).
+  0.2 * (north + south + east + west) + 0.05 * (ne + nw + se + sw) - center
 
 # ==============================================================================
 # GRAY-SCOTT REACTION-DIFFUSION STEP
@@ -108,7 +111,7 @@ func grayScottStep*(activator, inhibitor, laplacianA, laplacianB,
     tuple[activator, inhibitor: float] =
   ## One explicit-Euler Gray-Scott step for a single cell, given its current
   ## activator/inhibitor concentrations and their precomputed Laplacians (see
-  ## laplacian5). The classic two-channel reaction-diffusion system:
+  ## laplacian9). The classic two-channel reaction-diffusion system:
   ##   reaction = activator * inhibitor^2
   ##   activator' = activator + dt*(Da*lapA - reaction + feed*(1-activator))
   ##   inhibitor' = inhibitor + dt*(Db*lapB + reaction - (feed+kill)*inhibitor)
