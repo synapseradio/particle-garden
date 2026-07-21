@@ -1,7 +1,10 @@
 # Build artifacts
 main
 web/app.js
+web/ui-bundle.js
+web/ui-bundle.css
 tools/wgsl_bundle
+web-ui/node_modules/
 
 # Generated shaders (bundled from web/shaders/src/)
 web/shaders/*.wgsl

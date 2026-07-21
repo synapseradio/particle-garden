@@ -28,6 +28,7 @@ const ServerPort = 8089
 const MimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript",
+  ".css": "text/css; charset=utf-8",
   ".wgsl": "text/plain",
 }.toTable
 
@@ -36,6 +37,11 @@ const MimeTypes = {
 const StaticFiles = {
   "/index.html": staticRead("../web/index.html"),
   "/app.js": staticRead("../web/app.js"),
+  # Solid control panel, bundled by web-ui/build.ts (Bun). Build artifacts,
+  # not checked in: `just happen` rebuilds them before this compile, so a
+  # missing file fails here instead of shipping a stale UI.
+  "/ui-bundle.js": staticRead("../web/ui-bundle.js"),
+  "/ui-bundle.css": staticRead("../web/ui-bundle.css"),
   # AoS compute pipeline shaders
   "/shaders/bin-count.wgsl": staticRead("../web/shaders/bin-count.wgsl"),
   "/shaders/prefix-sum-local.wgsl": staticRead("../web/shaders/prefix-sum-local.wgsl"),

@@ -1,0 +1,4 @@
+/* Solid control panel styles. Bundled by build.ts into web/ui-bundle.css. */
+.pg-panel-probe {
+  display: none;
+}
