@@ -780,6 +780,35 @@ proc setPaletteScheme*(schemeIdValue: cstring) {.exportc.} =
   setActive("paletteWarmBtn", scheme == psWarm)
   setActive("paletteCoolBtn", scheme == psCool)
 
+proc getPaletteSaturation*(): float =
+  ## The palette editor's live saturation knob (read by web_api's getParam).
+  paletteEditorState.saturation
+
+proc getPaletteLightness*(): float =
+  ## The palette editor's live lightness knob (read by web_api's getParam).
+  paletteEditorState.lightness
+
+proc getPaletteSchemeId*(): string =
+  ## The active palette scheme's stable id (read by web_api).
+  schemeId(paletteEditorState.scheme)
+
+proc isPaletteCustom*(): bool =
+  ## Whether COLORS was set externally (preset load) — while true, the
+  ## generated palette is suspended (see applyPaletteToColors).
+  paletteEditorState.isCustom
+
+proc setPaletteSaturation*(value: float) =
+  ## Set the palette saturation knob and regenerate COLORS live — the same
+  ## per-drag-tick behavior the paletteSaturation slider applies.
+  paletteEditorState.saturation = value
+  applyPaletteToColors()
+
+proc setPaletteLightness*(value: float) =
+  ## Set the palette lightness knob and regenerate COLORS live — the same
+  ## per-drag-tick behavior the paletteLightness slider applies.
+  paletteEditorState.lightness = value
+  applyPaletteToColors()
+
 proc setColormap*(indexValue: int) {.exportc.} =
   ## Switch the reaction-diffusion field colormap (colormap-selector buttons).
   ## Ramps are addressed by their integer index (0=inferno, 1=viridis,

@@ -35,6 +35,7 @@ import buffers
 # Layer 3: Browser integration modules
 import grid
 import ui
+import web_api
 
 # Layer 4: WebGPU modules
 import webgpu_init
@@ -249,19 +250,25 @@ proc loop(now: float): Future[void] {.async.} =
     frameCount = 0
     lastFpsTime = now
     ui.updateStats(runtimeState.fps, 0, computeTimeMs)
+    var gpuGridMs = 0.0
+    var gpuPhysicsMs = 0.0
+    var gpuDrawMs = 0.0
+    var gpuPresentMs = 0.0
     if gpu_profiler.isActive():
-      let gridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
-      let physicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
-      let drawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
-      let presentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
+      gpuGridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
+      gpuPhysicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
+      gpuDrawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
+      gpuPresentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
       let bloomMs = gpu_profiler.passTimeMs(gpu_profiler.passBloom)
-      ui.updateGpuTimes(gridMs, physicsMs, drawMs, presentMs)
+      ui.updateGpuTimes(gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs)
       # Leave a capturable baseline record in the console every ~5s
       gpuLogCounter = gpuLogCounter + 1
       if gpuLogCounter >= 10:
         gpuLogCounter = 0
-        logGpuProfile(runtimeState.particleCount, gridMs, physicsMs, drawMs,
-          presentMs, bloomMs)
+        logGpuProfile(runtimeState.particleCount, gpuGridMs, gpuPhysicsMs,
+          gpuDrawMs, gpuPresentMs, bloomMs)
+    web_api.pushStats(runtimeState.fps, runtimeState.particleCount, 0,
+      computeTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs)
 
   # Reset profiling accumulators every 60 frames
   if runtimeState.profiling.frameCount >= 60:
@@ -388,6 +395,10 @@ proc init(): Future[void] {.async, exportc.} =
   lastFpsTime = lastTime
   runtimeState = runtimeState.withRunning(true)
   discard domWindow.requestAnimationFrame(proc(timestamp: float) = discard loop(timestamp))
+
+  # Buffers and pipelines exist now; release gardenAPI consumers waiting on
+  # matrix/COLORS/stats access.
+  web_api.signalReady()
 
 # ==============================================================================
 # ENTRY POINT

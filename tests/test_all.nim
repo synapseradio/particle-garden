@@ -34,6 +34,7 @@ import test_shader_manifest
 import test_field_core
 import test_bloom_core
 import test_colormap_core
+import test_param_descriptor
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -62,3 +63,4 @@ static:
   discard test_field_core.FIELD_CORE_TESTS_LOADED
   discard test_bloom_core.BLOOM_CORE_TESTS_LOADED
   discard test_colormap_core.COLORMAP_CORE_TESTS_LOADED
+  discard test_param_descriptor.PARAM_DESCRIPTOR_TESTS_LOADED
