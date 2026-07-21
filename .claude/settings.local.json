@@ -17,7 +17,10 @@
       "WebFetch(domain:manifest.googlevideo.com)",
       "WebFetch(domain:rr3---sn-4g5lznly.googlevideo.com)",
       "mcp__tavily__tavily_search",
-      "mcp__tavily__tavily_extract"
+      "mcp__tavily__tavily_extract",
+      "Bash(python3 coop_server.py 8891 web)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8891/index.html)",
+      "Bash(mkdir -p /Users/nick/projects/ai/particle-garden/web-ui/src /Users/nick/projects/ai/particle-garden/web-ui/test)"
     ]
   },
   "sandbox": {
