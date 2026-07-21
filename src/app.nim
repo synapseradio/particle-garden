@@ -65,7 +65,7 @@ proc makeJsObject(): JsObject {.importjs: "({})".}
 # Bitwise OR for int truncation
 proc bitwiseOr(value: float, mask: int): int {.importjs: "(#|#)".}
 proc logGpuProfile(particleCount: int, gridMs: float, physicsMs: float, drawMs: float,
-                   presentMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms')".}
+                   presentMs: float, bloomMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms bloom=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
 proc urlParamStr(name: cstring): cstring {.importjs: "(new URLSearchParams(location.search).get(#) || '')".}
@@ -254,12 +254,14 @@ proc loop(now: float): Future[void] {.async.} =
       let physicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
       let drawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
       let presentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
+      let bloomMs = gpu_profiler.passTimeMs(gpu_profiler.passBloom)
       ui.updateGpuTimes(gridMs, physicsMs, drawMs, presentMs)
       # Leave a capturable baseline record in the console every ~5s
       gpuLogCounter = gpuLogCounter + 1
       if gpuLogCounter >= 10:
         gpuLogCounter = 0
-        logGpuProfile(runtimeState.particleCount, gridMs, physicsMs, drawMs, presentMs)
+        logGpuProfile(runtimeState.particleCount, gridMs, physicsMs, drawMs,
+          presentMs, bloomMs)
 
   # Reset profiling accumulators every 60 frames
   if runtimeState.profiling.frameCount >= 60:

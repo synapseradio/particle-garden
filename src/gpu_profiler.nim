@@ -25,7 +25,13 @@ const
   passPhysics* = 1
   passDraw* = 2
   passPresent* = 3
-  numPasses* = 4
+  passBloom* = 4
+    ## One span bucket across the three bloom passes (glow-HDR, blur-H,
+    ## blur-V): the begin edge is written by the first pass, the end edge by
+    ## the last (attachBeginTimestamp/attachEndTimestamp), so the delta is
+    ## the whole bloom chain including any inter-pass gap. Only written when
+    ## bloom is enabled.
+  numPasses* = 5
   numQueries = numPasses * 2
 
 proc createJsObject(): JsObject {.importjs: "({})".}
@@ -72,6 +78,27 @@ proc attachTimestamps*(passDesc: JsObject, pass: int) =
   let tw = createJsObject()
   tw["querySet"] = querySet.toJs
   tw["beginningOfPassWriteIndex"] = (pass * 2).toJs
+  tw["endOfPassWriteIndex"] = (pass * 2 + 1).toJs
+  passDesc["timestampWrites"] = tw
+
+proc attachBeginTimestamp*(passDesc: JsObject, pass: int) =
+  ## Attach only the beginning-of-pass timestamp write for a pass slot.
+  ## Opens a span that a later pass closes with attachEndTimestamp, so one
+  ## slot can bucket a chain of passes.
+  if not active:
+    return
+  let tw = createJsObject()
+  tw["querySet"] = querySet.toJs
+  tw["beginningOfPassWriteIndex"] = (pass * 2).toJs
+  passDesc["timestampWrites"] = tw
+
+proc attachEndTimestamp*(passDesc: JsObject, pass: int) =
+  ## Attach only the end-of-pass timestamp write for a pass slot — the
+  ## closing edge of a span opened by attachBeginTimestamp.
+  if not active:
+    return
+  let tw = createJsObject()
+  tw["querySet"] = querySet.toJs
   tw["endOfPassWriteIndex"] = (pass * 2 + 1).toJs
   passDesc["timestampWrites"] = tw
 

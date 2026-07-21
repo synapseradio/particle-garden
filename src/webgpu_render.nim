@@ -1429,9 +1429,16 @@ proc render*(particleCount: int): RenderTiming =
     ensureTonemapBindGroups()
 
     # Helper: a single-color-attachment render pass clearing to black.
-    proc beginBloomPass(view: GPUTextureView, label: cstring): GPURenderPassEncoder =
+    # spanBegin/spanEnd mark the edges of the single passBloom profiling span
+    # across the three bloom passes (first pass opens, last pass closes).
+    proc beginBloomPass(view: GPUTextureView, label: cstring,
+        spanBegin = false, spanEnd = false): GPURenderPassEncoder =
       let passDesc = newJsObject()
       passDesc["label"] = label.toJs
+      if spanBegin:
+        gpu_profiler.attachBeginTimestamp(passDesc, gpu_profiler.passBloom)
+      if spanEnd:
+        gpu_profiler.attachEndTimestamp(passDesc, gpu_profiler.passBloom)
       let attachments = newJsArray()
       let attachment = newJsObject()
       attachment["view"] = view.toJs
@@ -1448,7 +1455,8 @@ proc render*(particleCount: int): RenderTiming =
       return commandEncoder.beginRenderPass(passDesc)
 
     # Bloom pass A: glow additively into the half-res HDR target A.
-    let glowHdrPass = beginBloomPass(bloomViewA, "Glow HDR Pass")
+    let glowHdrPass = beginBloomPass(bloomViewA, "Glow HDR Pass",
+      spanBegin = true)
     glowHdrPass.setPipeline(glowHdrPipeline)
     glowHdrPass.setBindGroup(0, glowBindGroup)
     glowHdrPass.draw(6 * particleCount, 1, 0, 0)
@@ -1462,7 +1470,8 @@ proc render*(particleCount: int): RenderTiming =
     blurHPass.endPass()
 
     # Blur V: sample B, write back into A (final blurred bloom).
-    let blurVPass = beginBloomPass(bloomViewA, "Bloom Blur V")
+    let blurVPass = beginBloomPass(bloomViewA, "Bloom Blur V",
+      spanEnd = true)
     blurVPass.setPipeline(blurPipeline)
     blurVPass.setBindGroup(0, blurBindGroupV)
     blurVPass.draw(3, 1, 0, 0)
