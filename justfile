@@ -1,20 +1,30 @@
 # Particle Garden — cross-language build orchestration.
-# nimble owns the Nim-side tasks; Bun owns web-ui/. This file owns the order:
+# Bun owns web-ui/; nim owns everything else. This file owns the order:
 # main.nim staticReads web/app.js AND web/ui-bundle.* at compile time, so the
 # shader bundle, the frontend, and the UI bundle must all exist before nim c.
+#
+# Recipes invoke `nim` DIRECTLY rather than through the nimble tasks: nimble
+# 0.22.2 exits 0 even when a task's exec fails (observed: a broken `nimble
+# app` reported success and left a stale web/app.js), so a nimble-based
+# recipe cannot fail the build. The nimble tasks remain for manual use; the
+# flag constants below mirror particle_garden.nimble and must stay in sync.
 
-# Nim quality flags mirror particle_garden.nimble's nativeFlags.
-native_flags := "-d:release --opt:speed --styleCheck:error --styleCheck:usages --warningAsError:Deprecated --warningAsError:BareExcept --warningAsError:CStringConv --warningAsError:EnumConv --warningAsError:HoleEnumConv --warningAsError:SmallLshouldNotBeUsed --warningAsError:ProveInit --warningAsError:UnusedImport --warningAsError:Effect --hint:XDeclaredButNotUsed:on"
+quality_flags := "--styleCheck:error --styleCheck:usages --warningAsError:Deprecated --warningAsError:BareExcept --warningAsError:CStringConv --warningAsError:EnumConv --warningAsError:HoleEnumConv --warningAsError:SmallLshouldNotBeUsed --warningAsError:ProveInit --warningAsError:UnusedImport --warningAsError:Effect --hint:XDeclaredButNotUsed:on"
+js_flags := "-d:release " + quality_flags
+native_flags := "-d:release --opt:speed " + quality_flags
+# MinGW static linking on Windows (no VCRUNTIME140.dll dependency), matching
+# particle_garden.nimble's release task.
+windows_static_flags := if os() == "windows" { "--passL:-static --passL:-static-libgcc --passL:-static-libstdc++" } else { "" }
 
 default: happen
 
 # Bundle WGSL shaders (resolve //! import, substitute config)
 shaders:
-    nimble shaders --verbose
+    nim c -r --path:src {{quality_flags}} tools/wgsl_bundle.nim
 
 # Compile the Nim frontend: src/app.nim -> web/app.js
 build-app:
-    nimble app --verbose
+    nim js {{js_flags}} --out:web/app.js src/app.nim
 
 # Typecheck (tsc --noEmit, TS 7) and bundle the Solid UI -> web/ui-bundle.*
 build-ui:
@@ -30,7 +40,7 @@ happen: shaders build-app build-ui build-native
 
 # Native Nim test suite (pure-logic modules)
 test:
-    nimble test --verbose
+    nim c -r {{quality_flags}} tests/test_all.nim
 
 # TypeScript pure-logic tests
 test-ui:
@@ -45,7 +55,7 @@ be:
     just happen
     ./main
 
-# Optimized release build. build-ui first: nimble release's nim c step
-# staticReads web/ui-bundle.*; nimble release itself covers shaders + app + native.
-release: build-ui
-    nimble release --verbose
+# Optimized release build (same order and flags as the nimble release task,
+# with the UI bundle built first for build-native's staticRead)
+release: shaders build-app build-ui
+    nim c {{native_flags}} {{windows_static_flags}} --out:main src/main.nim

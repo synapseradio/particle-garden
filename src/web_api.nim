@@ -49,6 +49,13 @@ when defined(js):
   import ui/presets/preset_store
   import ui
 
+  proc jsonParseable(text: cstring): bool {.importjs:
+    "(() => { try { JSON.parse(#); return true; } catch { return false; } })()".}
+    ## On the JS backend std/json's parseJson delegates to JSON.parse, whose
+    ## SyntaxError is a foreign exception Nim's `except ValueError` cannot
+    ## catch (and the build bans bare except). Pre-checking here keeps
+    ## applyPresetJson's {ok, error} contract instead of leaking a throw.
+
   # ============================================================================
   # SECTION 1: DESCRIPTOR TABLE
   # ============================================================================
@@ -392,7 +399,7 @@ when defined(js):
       clampMatrixValue(value))
     result["matrixStride"] = toJs(proc(): int = MATRIX_SIZE)
     result["speciesColor"] = toJs(proc(index: int): cstring =
-      var channels = newSeq[float](MAX_SPECIES * 3)
+      var channels = newSeq[float](config.MAX_SPECIES * 3)
       for channelIndex in 0 ..< channels.len:
         channels[channelIndex] = config.COLORS[channelIndex]
       cstring(toRgbaString(speciesColorFromIndex(index, channels))))
@@ -425,6 +432,10 @@ when defined(js):
       cstring(pretty(toJson(snapshotPreset($name)))))
     result["applyPresetJson"] = toJs(proc(jsonText: cstring): JsObject =
       let outcome = newJsObject()
+      if not jsonParseable(jsonText):
+        outcome["ok"] = toJs(false)
+        outcome["error"] = toJs(cstring"malformed JSON")
+        return outcome
       let loadResult = parsePreset($jsonText)
       if loadResult.isOk:
         applyPreset(loadResult.preset)
