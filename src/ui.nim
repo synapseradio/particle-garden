@@ -141,6 +141,8 @@ proc applyRenderToConfig(renderState: RenderState) =
   CONFIG.saturation = renderState.saturation
   CONFIG.contrast = renderState.contrast
   CONFIG.temperature = renderState.temperature
+  CONFIG.colormapIndex = renderState.colormapIndex
+  CONFIG.fieldOpacity = renderState.fieldOpacity
 
 proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
   ## Mutate a copy of the simulation state, publish it, and mirror it into
@@ -482,6 +484,16 @@ proc setupUI*() {.exportc.} =
     min = RD_KILL_MIN, max = RD_KILL_MAX, precision = 3
   )
 
+  # Reaction-diffusion field visualization (S10). fieldOpacity scales the
+  # field's contribution to the image (both bloom paths); the colormap ramp is
+  # picked by the colormap buttons (setColormap), like the palette scheme buttons.
+  configSlider("fieldOpacity", "fieldOpacityValue",
+    get = proc(): float = CONFIG.fieldOpacity,
+    set = proc(value: float) = updateRender(
+      proc(renderState: var RenderState) = renderState.fieldOpacity = value),
+    min = FIELD_OPACITY_RANGE_MIN, max = FIELD_OPACITY_RANGE_MAX, precision = 2
+  )
+
   setupPresetStoreHooks()
 
 # ==============================================================================
@@ -761,6 +773,17 @@ proc setPaletteScheme*(schemeIdValue: cstring) {.exportc.} =
   setActive("paletteWarmBtn", scheme == psWarm)
   setActive("paletteCoolBtn", scheme == psCool)
 
+proc setColormap*(indexValue: int) {.exportc.} =
+  ## Switch the reaction-diffusion field colormap (colormap-selector buttons).
+  ## Ramps are addressed by their integer index (0=inferno, 1=viridis,
+  ## 2=two-tone), the same value colormap_core.evalColormap dispatches on and
+  ## the tonemap/field-composite shaders read from TonemapParams.
+  updateRender(proc(renderState: var RenderState) =
+    renderState.colormapIndex = indexValue)
+  setActive("colormapInfernoBtn", indexValue == 0)
+  setActive("colormapViridisBtn", indexValue == 1)
+  setActive("colormapTwoToneBtn", indexValue == 2)
+
 # ==============================================================================
 # SECTION 10c: PRESET STORE WIRING
 # ==============================================================================
@@ -811,10 +834,12 @@ proc setupPresetStoreHooks*() {.exportc.} =
       renderState.saturation = settings.saturation
       renderState.contrast = settings.contrast
       renderState.temperature = settings.temperature
+      renderState.fieldOpacity = settings.fieldOpacity
     )
     setForceModel(settings.forceModel)
     setTrails(settings.trails)
     setBloom(settings.bloomEnabled)
+    setColormap(settings.colormapIndex)
   )
 
   preset_store.onMatrixDisplayRefresh(proc() = updateMatrixDisplay())
@@ -872,6 +897,7 @@ window.toggleRdSection = toggleRdSection;
 window.setForceModel = setForceModel;
 window.setSimMode = setSimMode;
 window.setPaletteScheme = setPaletteScheme;
+window.setColormap = setColormap;
 window.presetSaveClicked = presetSaveClicked;
 window.presetLoadClicked = presetLoadClicked;
 window.presetExportClicked = presetExportClicked;

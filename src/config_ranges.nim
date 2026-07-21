@@ -24,6 +24,7 @@ import memory_layout
 import sph_core
 import field_core
 import bloom_core
+import colormap_core
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -97,6 +98,14 @@ const
   CONTRAST_MAX* = 2.0
   TEMPERATURE_MIN* = -1.0
   TEMPERATURE_MAX* = 1.0
+  # Reaction-diffusion field visualization (S10). colormapIndex is an integer
+  # ramp selector (a button group, not a slider, but preset.nim clamps it);
+  # fieldOpacity is a slider. Both ranges come from colormap_core, the field
+  # colormap authority.
+  COLORMAP_INDEX_MIN* = 0
+  COLORMAP_INDEX_MAX* = COLORMAP_COUNT - 1
+  FIELD_OPACITY_RANGE_MIN* = FIELD_OPACITY_MIN
+  FIELD_OPACITY_RANGE_MAX* = FIELD_OPACITY_MAX
 
 static:
   # Every range must be non-empty, or clamping inverts.
@@ -135,3 +144,11 @@ static:
     BLOOM_DEFAULT_CONTRAST <= CONTRAST_MAX
   doAssert BLOOM_DEFAULT_TEMPERATURE >= TEMPERATURE_MIN and
     BLOOM_DEFAULT_TEMPERATURE <= TEMPERATURE_MAX
+  # Field-visualization ranges are non-empty and colormap_core's defaults sit
+  # inside them — the same default-in-range guard as the bloom/RD pairs.
+  doAssert COLORMAP_INDEX_MIN < COLORMAP_INDEX_MAX
+  doAssert FIELD_OPACITY_RANGE_MIN < FIELD_OPACITY_RANGE_MAX
+  doAssert COLORMAP_DEFAULT_INDEX >= COLORMAP_INDEX_MIN and
+    COLORMAP_DEFAULT_INDEX <= COLORMAP_INDEX_MAX
+  doAssert FIELD_OPACITY_DEFAULT >= FIELD_OPACITY_RANGE_MIN and
+    FIELD_OPACITY_DEFAULT <= FIELD_OPACITY_RANGE_MAX

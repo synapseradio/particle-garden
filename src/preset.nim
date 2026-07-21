@@ -107,6 +107,8 @@ type
     saturation*: float
     contrast*: float
     temperature*: float
+    colormapIndex*: int
+    fieldOpacity*: float
 
   Preset* = object
     ## The full persisted shape: `{schemaVersion, name, createdAt, mode,
@@ -210,7 +212,12 @@ func defaultSettings*(): PresetSettings =
     exposure: 1.0,
     saturation: 1.0,
     contrast: 1.0,
-    temperature: 0.0
+    temperature: 0.0,
+    # Mirrors colormap_core.COLORMAP_DEFAULT_INDEX / FIELD_OPACITY_DEFAULT as
+    # literals rather than an import, for the same dependency-restriction reason
+    # as the sph/rd/bloom defaults above.
+    colormapIndex: 0,
+    fieldOpacity: 0.85
   )
 
 func defaultMatrix*(): Matrix =
@@ -350,6 +357,10 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "contrast").getFloat(defaults.contrast), CONTRAST_MIN, CONTRAST_MAX)
   result.temperature = clampFloat(
     field(node, "temperature").getFloat(defaults.temperature), TEMPERATURE_MIN, TEMPERATURE_MAX)
+  result.colormapIndex = clampInt(
+    field(node, "colormapIndex").getInt(defaults.colormapIndex), COLORMAP_INDEX_MIN, COLORMAP_INDEX_MAX)
+  result.fieldOpacity = clampFloat(
+    field(node, "fieldOpacity").getFloat(defaults.fieldOpacity), FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX)
 
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
@@ -495,6 +506,8 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["saturation"] = %settings.saturation
   result["contrast"] = %settings.contrast
   result["temperature"] = %settings.temperature
+  result["colormapIndex"] = %settings.colormapIndex
+  result["fieldOpacity"] = %settings.fieldOpacity
 
 proc toJson*(preset: Preset): JsonNode =
   result = newJObject()

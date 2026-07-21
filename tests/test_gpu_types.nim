@@ -161,9 +161,9 @@ suite "Generated Render Struct Layouts":
   # structs. The generated indices must reproduce the values the hand-written
   # const blocks held, or every uniform write in webgpu_render.nim shifts.
 
-  test "RenderParamsLayout is 12 floats, 48 bytes written and allocated":
-    check RenderParamsLayout.totalSize == 48
-    check wgslUniformSize(RenderParamsLayout) == 48
+  test "RenderParamsLayout is 16 floats, 64 bytes written and allocated":
+    check RenderParamsLayout.totalSize == 64
+    check wgslUniformSize(RenderParamsLayout) == 64
 
   test "RenderParamsLayout offsets match WGSL's own layout algorithm":
     let computedOffsets = wgslComputedOffsets(RenderParamsLayout)
@@ -204,17 +204,20 @@ suite "Generated Render Struct Layouts":
 
 
 suite "RenderParams Glow Knob Indices":
-  # S1 promotes the three RenderParams pad slots into glow knobs. The struct
-  # size must not change: the pads were free f32 slots, so the knob indices
-  # take their exact positions and the 48-byte buffer stays 48 bytes.
+  # S1 promotes three RenderParams pad slots into glow knobs; S10 grows the
+  # struct with a per-mode glowDensityFloor and pads it back to 64 bytes. The
+  # knob indices keep their exact positions across both changes.
 
   test "the three former pad slots are the glow knob indices":
     check RENDER_GLOW_RADIUS_SCALE == 9
     check RENDER_GLOW_FALLOFF == 10
     check RENDER_GLOW_WARMTH == 11
 
-  test "RenderParams stays 12 floats (48 bytes) after the knob promotion":
-    check RENDER_PARAMS_F32_COUNT == 12
+  test "the S10 glowDensityFloor takes the next slot after the glow knobs":
+    check RENDER_GLOW_DENSITY_FLOOR == 12
+
+  test "RenderParams is 16 floats (64 bytes) after the S10 growth":
+    check RENDER_PARAMS_F32_COUNT == 16
 
 
 suite "Generated FieldParams Layout (Reaction-Diffusion)":
@@ -291,7 +294,10 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check TONEMAP_SATURATION == 2
     check TONEMAP_CONTRAST == 3
     check TONEMAP_TEMPERATURE == 4
-    check TONEMAP_PAD0 == 5
+    # S10 claims two former pad slots for the field-visualization pair.
+    check TONEMAP_COLORMAP_INDEX == 5
+    check TONEMAP_FIELD_OPACITY == 6
+    check TONEMAP_PAD2 == 7
     check TONEMAP_PARAMS_F32_COUNT == 8
 
   test "toWgslStruct renders both layouts with WGSL types":

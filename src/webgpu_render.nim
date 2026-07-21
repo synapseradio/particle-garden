@@ -29,6 +29,9 @@ import gpu_types
 # so reading its active-mode flag here does not disturb the JS-backend hoisting.
 import webgpu_compute
 import sim_registry
+# field_core is pure; it supplies RD_GLOW_DENSITY_FLOOR, the per-mode glow
+# density floor the render loop feeds RenderParams in reaction-diffusion mode.
+import field_core
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -90,6 +93,7 @@ var blitBindGroupLayout: GPUBindGroupLayout
 # caching pattern; -1 forces a first build.
 var fieldCompositePipeline: GPURenderPipeline
 var fieldCompositeBindGroup: GPUBindGroup
+var fieldCompositeBindGroupLayout: GPUBindGroupLayout
 var cachedFieldGeneration: int = -1
 
 # ==============================================================================
@@ -128,8 +132,15 @@ var tonemapBindGroupLayout: GPUBindGroupLayout
 # Cached bloom bind groups (rebuilt on resize alongside the trail bind groups).
 var blurBindGroupH: GPUBindGroup    # samples bloom A, writes bloom B (horizontal)
 var blurBindGroupV: GPUBindGroup    # samples bloom B, writes bloom A (vertical)
-var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A
-var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A
+var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A + field
+var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A + field
+# The tonemap bind groups reference the RD field texture (binding 4); it is
+# (re)created on RD mode entry, so they are rebuilt when fieldGeneration changes,
+# mirroring cachedFieldGeneration for the field-composite bind group. Before the
+# field exists (non-RD, or first frames) binding 4 falls back to the bloom view,
+# harmless because fieldOpacity is 0 in the modes without a field. -1 forces a
+# first build.
+var cachedTonemapFieldGeneration: int = -1
 
 
 # ==============================================================================
@@ -569,9 +580,44 @@ proc initWebGPURender*(): bool =
   # ==========================================================================
   # FIELD COMPOSITE PIPELINE (reaction-diffusion LDR backdrop)
   # ==========================================================================
-  # Reuses the blit bind-group layout (texture + sampler) and pipeline layout;
-  # only the shader and blend differ. Opaque backdrop drawn first in the present
-  # pass under glow/trails, so no blending. Depth config matches the present pass.
+  # The bloom-off quality floor for the RD field. Its bind group is texture +
+  # sampler + the shared TonemapParams uniform (S10: the field-composite reads
+  # the same colormapIndex / fieldOpacity the HDR tonemap does, so the field
+  # looks the same under either present path). Opaque backdrop drawn first in
+  # the present pass under glow/trails, so no blending. Depth matches the pass.
+
+  let fieldLayoutDesc = newJsObject()
+  fieldLayoutDesc["label"] = "Field Composite Bind Group Layout".cstring.toJs
+  let fieldLayoutEntries = newJsArray()
+  let fieldLayoutEntry0 = newJsObject()
+  fieldLayoutEntry0["binding"] = 0.toJs
+  fieldLayoutEntry0["visibility"] = gpuShaderStageFragment.toJs
+  let fieldLayoutTexture0 = newJsObject()
+  fieldLayoutTexture0["sampleType"] = "float".cstring.toJs
+  fieldLayoutEntry0["texture"] = fieldLayoutTexture0
+  discard fieldLayoutEntries.push(fieldLayoutEntry0)
+  let fieldLayoutEntry1 = newJsObject()
+  fieldLayoutEntry1["binding"] = 1.toJs
+  fieldLayoutEntry1["visibility"] = gpuShaderStageFragment.toJs
+  let fieldLayoutSampler1 = newJsObject()
+  fieldLayoutSampler1["type"] = "filtering".cstring.toJs
+  fieldLayoutEntry1["sampler"] = fieldLayoutSampler1
+  discard fieldLayoutEntries.push(fieldLayoutEntry1)
+  let fieldLayoutEntry2 = newJsObject()
+  fieldLayoutEntry2["binding"] = 2.toJs
+  fieldLayoutEntry2["visibility"] = gpuShaderStageFragment.toJs
+  let fieldLayoutBuffer2 = newJsObject()
+  fieldLayoutBuffer2["type"] = "uniform".cstring.toJs
+  fieldLayoutEntry2["buffer"] = fieldLayoutBuffer2
+  discard fieldLayoutEntries.push(fieldLayoutEntry2)
+  fieldLayoutDesc["entries"] = fieldLayoutEntries
+  fieldCompositeBindGroupLayout = webgpu_init.device.createBindGroupLayout(fieldLayoutDesc)
+
+  let fieldPipelineLayoutDesc = newJsObject()
+  let fieldPipelineLayouts = newJsArray()
+  discard fieldPipelineLayouts.push(fieldCompositeBindGroupLayout)
+  fieldPipelineLayoutDesc["bindGroupLayouts"] = fieldPipelineLayouts
+  let fieldCompositePipelineLayout = webgpu_init.device.createPipelineLayout(fieldPipelineLayoutDesc)
 
   let fieldShaderDesc = newJsObject()
   fieldShaderDesc["label"] = "Field Composite Shader".cstring.toJs
@@ -580,7 +626,7 @@ proc initWebGPURender*(): bool =
 
   let fieldPipelineDesc = newJsObject()
   fieldPipelineDesc["label"] = "Field Composite Pipeline".cstring.toJs
-  fieldPipelineDesc["layout"] = blitPipelineLayout.toJs
+  fieldPipelineDesc["layout"] = fieldCompositePipelineLayout.toJs
 
   let fieldVertexStage = newJsObject()
   fieldVertexStage["module"] = fieldShaderModule.toJs
@@ -746,6 +792,15 @@ proc initWebGPURender*(): bool =
   tonemapBuffer3["type"] = "uniform".cstring.toJs
   tonemapEntry3["buffer"] = tonemapBuffer3
   discard tonemapLayoutEntries.push(tonemapEntry3)
+  # Binding 4: RD field texture (S10). Sampled in the tonemap so the field joins
+  # the graded HDR light; a harmless placeholder view in modes without a field.
+  let tonemapEntry4 = newJsObject()
+  tonemapEntry4["binding"] = 4.toJs
+  tonemapEntry4["visibility"] = gpuShaderStageFragment.toJs
+  let tonemapTexture4 = newJsObject()
+  tonemapTexture4["sampleType"] = "float".cstring.toJs
+  tonemapEntry4["texture"] = tonemapTexture4
+  discard tonemapLayoutEntries.push(tonemapEntry4)
   tonemapLayoutDesc["entries"] = tonemapLayoutEntries
   tonemapBindGroupLayout = webgpu_init.device.createBindGroupLayout(tonemapLayoutDesc)
 
@@ -1043,8 +1098,9 @@ proc updateBindGroup*() =
 
 proc ensureFieldCompositeBindGroup() =
   ## (Re)build the field composite bind group when the field textures were
-  ## (re)created (fieldGeneration changed). Reuses the blit layout (texture +
-  ## sampler). No-op when the field view does not exist yet.
+  ## (re)created (fieldGeneration changed). Layout is texture + sampler + the
+  ## shared TonemapParams uniform (the colormap/opacity authority). No-op when
+  ## the field view does not exist yet.
   let generation = webgpu_init.fieldGeneration()
   if generation == cachedFieldGeneration and not fieldCompositeBindGroup.isNil:
     return
@@ -1054,7 +1110,7 @@ proc ensureFieldCompositeBindGroup() =
 
   let bindGroupDesc = newJsObject()
   bindGroupDesc["label"] = "Field Composite Bind Group".cstring.toJs
-  bindGroupDesc["layout"] = blitBindGroupLayout.toJs
+  bindGroupDesc["layout"] = fieldCompositeBindGroupLayout.toJs
   let entries = newJsArray()
   let textureEntry = newJsObject()
   textureEntry["binding"] = 0.toJs
@@ -1064,6 +1120,12 @@ proc ensureFieldCompositeBindGroup() =
   samplerEntry["binding"] = 1.toJs
   samplerEntry["resource"] = webgpu_init.fieldSampler().toJs
   discard entries.push(samplerEntry)
+  let uniformEntry = newJsObject()
+  uniformEntry["binding"] = 2.toJs
+  let uniformResource = newJsObject()
+  uniformResource["buffer"] = tonemapParamsBuffer.toJs
+  uniformEntry["resource"] = uniformResource
+  discard entries.push(uniformEntry)
   bindGroupDesc["entries"] = entries
   fieldCompositeBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
   cachedFieldGeneration = generation
@@ -1116,6 +1178,16 @@ proc createBloomTargets() =
   bloomV[BLOOM_TEXEL_SIZE_Y] = texelY
   webgpu_init.queue.writeBuffer(bloomParamsBufferV, 0, bloomV)
 
+proc currentFieldViewOrFallback(): GPUTextureView =
+  ## The active RD field view for the tonemap's binding 4, or the bloom view as
+  ## a harmless placeholder before the field exists (non-RD, or first frames):
+  ## fieldOpacity is 0 in the modes without a field, so the placeholder is never
+  ## visibly sampled.
+  let fieldView = webgpu_init.activeFieldView()
+  if cast[JsObject](fieldView).isNil or cast[JsObject](fieldView).isNullOrUndefined:
+    return bloomViewA
+  fieldView
+
 proc createBloomBindGroups() =
   ## (Re)create the blur and tonemap bind groups. They reference the bloom and
   ## trail texture views, so they are rebuilt whenever either is recreated.
@@ -1146,6 +1218,7 @@ proc createBloomBindGroups() =
   blurBindGroupH = makeBlurBindGroup("Blur Bind Group H", bloomViewA, bloomParamsBufferH)
   blurBindGroupV = makeBlurBindGroup("Blur Bind Group V", bloomViewB, bloomParamsBufferV)
 
+  let fieldView = currentFieldViewOrFallback()
   proc makeTonemapBindGroup(label: cstring, trailView: GPUTextureView): GPUBindGroup =
     let desc = newJsObject()
     desc["label"] = label.toJs
@@ -1169,11 +1242,24 @@ proc createBloomBindGroups() =
     entry3Resource["buffer"] = tonemapParamsBuffer.toJs
     entry3["resource"] = entry3Resource
     discard entries.push(entry3)
+    let entry4 = newJsObject()
+    entry4["binding"] = 4.toJs
+    entry4["resource"] = fieldView.toJs   # RD field, or bloom placeholder pre-field
+    discard entries.push(entry4)
     desc["entries"] = entries
     return webgpu_init.device.createBindGroup(desc)
 
   tonemapBindGroupTrailA = makeTonemapBindGroup("Tonemap Bind Group Trail A", trailViewA)
   tonemapBindGroupTrailB = makeTonemapBindGroup("Tonemap Bind Group Trail B", trailViewB)
+  cachedTonemapFieldGeneration = webgpu_init.fieldGeneration()
+
+proc ensureTonemapBindGroups() =
+  ## Rebuild the tonemap bind groups when the RD field textures were (re)created
+  ## (fieldGeneration changed) so binding 4 tracks the live field view. Mirrors
+  ## ensureFieldCompositeBindGroup for the HDR path.
+  if webgpu_init.fieldGeneration() == cachedTonemapFieldGeneration:
+    return
+  createBloomBindGroups()
 
 # ==============================================================================
 # SECTION 5: RENDER LOOP
@@ -1212,6 +1298,13 @@ proc render*(particleCount: int): RenderTiming =
   paramsData[RENDER_GLOW_RADIUS_SCALE] = float32(config.CONFIG.glowRadiusScale)
   paramsData[RENDER_GLOW_FALLOFF] = float32(config.CONFIG.glowFalloff)
   paramsData[RENDER_GLOW_WARMTH] = float32(config.CONFIG.glowWarmth)
+  # Per-mode glow density floor: reaction-diffusion runs no forces pass, so its
+  # particle density is stale at ~0 and the glow's density term bottoms out.
+  # Lift the floor in RD so the velocity term drives a legible glow; the
+  # density-driven modes pass 0, keeping their look unchanged.
+  let isReactionDiffusion = webgpu_compute.activeSimKind == skReactionDiffusion
+  paramsData[RENDER_GLOW_DENSITY_FLOOR] =
+    if isReactionDiffusion: float32(RD_GLOW_DENSITY_FLOOR) else: 0.0'f32
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, paramsData)
 
   # Update species colors uniform (pack RGB as vec4f for 16-byte alignment)
@@ -1241,6 +1334,22 @@ proc render*(particleCount: int): RenderTiming =
   fadeData[FADE_PAD1] = 0.0
   fadeData[FADE_PAD2] = 0.0
   webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
+
+  # Tonemap/grade uniforms — written every frame regardless of the present path.
+  # The HDR tonemap reads all of them; the bloom-off field-composite floor reads
+  # colormapIndex + fieldOpacity from this same buffer. fieldOpacity is forced to
+  # 0 outside reaction-diffusion so the field contribution (and its binding-4
+  # placeholder texture) is inert in the modes without a field.
+  let tonemapData = newFloat32Array(TONEMAP_PARAMS_F32_COUNT)
+  tonemapData[TONEMAP_EXPOSURE] = float32(config.CONFIG.exposure)
+  tonemapData[TONEMAP_BLOOM_INTENSITY] = float32(config.CONFIG.bloomIntensity)
+  tonemapData[TONEMAP_SATURATION] = float32(config.CONFIG.saturation)
+  tonemapData[TONEMAP_CONTRAST] = float32(config.CONFIG.contrast)
+  tonemapData[TONEMAP_TEMPERATURE] = float32(config.CONFIG.temperature)
+  tonemapData[TONEMAP_COLORMAP_INDEX] = float32(config.CONFIG.colormapIndex)
+  tonemapData[TONEMAP_FIELD_OPACITY] =
+    if isReactionDiffusion: float32(config.CONFIG.fieldOpacity) else: 0.0'f32
+  webgpu_init.queue.writeBuffer(tonemapParamsBuffer, 0, tonemapData)
 
   # Select pre-created resources based on trail parity (ZERO allocations)
   let writeView = if trailParity == 0: trailViewB else: trailViewA
@@ -1313,14 +1422,11 @@ proc render*(particleCount: int): RenderTiming =
     # composites it over the blurred glow.
     # ------------------------------------------------------------------------
 
-    # Per-frame tonemap grade uniforms.
-    let tonemapData = newFloat32Array(TONEMAP_PARAMS_F32_COUNT)
-    tonemapData[TONEMAP_EXPOSURE] = float32(config.CONFIG.exposure)
-    tonemapData[TONEMAP_BLOOM_INTENSITY] = float32(config.CONFIG.bloomIntensity)
-    tonemapData[TONEMAP_SATURATION] = float32(config.CONFIG.saturation)
-    tonemapData[TONEMAP_CONTRAST] = float32(config.CONFIG.contrast)
-    tonemapData[TONEMAP_TEMPERATURE] = float32(config.CONFIG.temperature)
-    webgpu_init.queue.writeBuffer(tonemapParamsBuffer, 0, tonemapData)
+    # The tonemap/grade uniforms (including the S10 field-visualization pair)
+    # were written above, before this branch, so both present paths share them.
+    # In RD mode the field is sampled inside the tonemap (binding 4), so its
+    # bind groups must track the live field texture.
+    ensureTonemapBindGroups()
 
     # Helper: a single-color-attachment render pass clearing to black.
     proc beginBloomPass(view: GPUTextureView, label: cstring): GPURenderPassEncoder =
@@ -1362,9 +1468,11 @@ proc render*(particleCount: int): RenderTiming =
     blurVPass.draw(3, 1, 0, 0)
     blurVPass.endPass()
 
-    # Present: clear bg, draw the RD backdrop (RD mode only), then tonemap the
-    # trail + bloom over it. The tonemap output alpha is a coverage term, so the
-    # backdrop stays visible where nothing is lit.
+    # Present: clear bg, then tonemap the trail + bloom + field over it. The RD
+    # field is composited INSIDE the tonemap now (S10 — sampled at binding 4 and
+    # folded into the graded HDR light), so there is no separate backdrop draw
+    # here; the tonemap's coverage alpha keeps the flat clear only in field-free
+    # modes where nothing is lit.
     let presentPassDesc = newJsObject()
     presentPassDesc["label"] = "Tonemap Present Pass".cstring.toJs
     gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
@@ -1389,13 +1497,8 @@ proc render*(particleCount: int): RenderTiming =
     presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
     let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
 
-    if webgpu_compute.activeSimKind == skReactionDiffusion:
-      ensureFieldCompositeBindGroup()
-      if not fieldCompositeBindGroup.isNil:
-        presentPass.setPipeline(fieldCompositePipeline)
-        presentPass.setBindGroup(0, fieldCompositeBindGroup)
-        presentPass.draw(3, 1, 0, 0)
-
+    # The field is composited inside the tonemap (no separate backdrop draw in
+    # the bloom path); the tonemap bind group carries the field at binding 4.
     let tonemapBG = if trailParity == 0: tonemapBindGroupTrailB else: tonemapBindGroupTrailA
     presentPass.setPipeline(tonemapPipeline)
     presentPass.setBindGroup(0, tonemapBG)
@@ -1436,9 +1539,10 @@ proc render*(particleCount: int): RenderTiming =
 
     let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
 
-    # Step 0: In reaction-diffusion mode, draw the field as an opaque LDR backdrop
-    # under everything else. Gated on the active mode and nil-guarded before the
-    # field textures exist. S10 replaces this with a calibrated HDR colormap.
+    # Step 0: In reaction-diffusion mode, draw the field as an opaque colormapped
+    # LDR backdrop under everything else (the bloom-off floor). It reads the same
+    # colormapIndex / fieldOpacity from the shared TonemapParams buffer the HDR
+    # tonemap uses. Gated on the active mode and nil-guarded before the textures.
     if webgpu_compute.activeSimKind == skReactionDiffusion:
       ensureFieldCompositeBindGroup()
       if not fieldCompositeBindGroup.isNil:

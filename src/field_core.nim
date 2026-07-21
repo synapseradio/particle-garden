@@ -77,6 +77,14 @@ const
     ## this and writes it to the velocity-delta buffer integrate.wgsl consumes.
     ## Zero would leave particles blind to the field. A first-cut magnitude in
     ## world velocity units; S10 calibrates it.
+  RD_GLOW_DENSITY_FLOOR* = 1.0
+    ## Per-mode floor the render loop feeds glow.wgsl's densityFactor in
+    ## reaction-diffusion mode. RD runs no forces pass, so particle density
+    ## decays to ~0 and the shared glow's density term bottoms out — the glow
+    ## reads flat. Lifting the floor lets the velocity term (particles drift
+    ## along the field gradient) drive a legible glow. The density-driven modes
+    ## pass 0 here, leaving their glow untouched. BLIND VISUAL PICK: the user's
+    ## visual pass owns the final magnitude.
 
 # ==============================================================================
 # 5-POINT LAPLACIAN STENCIL

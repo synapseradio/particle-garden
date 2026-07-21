@@ -850,6 +850,48 @@
                 step="0.001"
               />
             </div>
+
+            <!-- Field colormap selector buttons (palette-scheme button pattern). -->
+            <div class="control-group model-selector">
+              <button
+                id="colormapInfernoBtn"
+                class="model-btn active"
+                onclick="setColormap(0)"
+              >
+                Inferno
+              </button>
+              <button
+                id="colormapViridisBtn"
+                class="model-btn"
+                onclick="setColormap(1)"
+              >
+                Viridis
+              </button>
+              <button
+                id="colormapTwoToneBtn"
+                class="model-btn"
+                onclick="setColormap(2)"
+              >
+                Two-Tone
+              </button>
+            </div>
+
+            <div class="control-group">
+              <label
+                >Field Opacity
+                <span class="value-display" id="fieldOpacityValue"
+                  >0.85</span
+                ></label
+              >
+              <input
+                type="range"
+                id="fieldOpacity"
+                min="0"
+                max="1"
+                value="0.85"
+                step="0.01"
+              />
+            </div>
           </div>
         </div>
 

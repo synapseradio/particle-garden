@@ -127,8 +127,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     discard;
   }
 
-  // Density factor: high density = more glow
-  let densityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
+  // Density factor: high density = more glow. glowDensityFloor lifts it to a
+  // per-mode minimum: reaction-diffusion leaves particle density stale at ~0
+  // (it runs no forces pass), so without a floor its glow reads flat; the
+  // density-driven modes leave the floor at 0, keeping their look unchanged.
+  let rawDensityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
+  let densityFactor = max(rawDensityFactor, params.glowDensityFloor);
 
   // Velocity factor: stationary = dim (VELOCITY_BASE), moving = bright
   //

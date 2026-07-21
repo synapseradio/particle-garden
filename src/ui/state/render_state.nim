@@ -13,6 +13,7 @@
 # ==============================================================================
 
 import ../../bloom_core
+import ../../colormap_core
 
 type
   RenderState* = object
@@ -34,6 +35,11 @@ type
     saturation*: float        ## Grade: 1 = unchanged, 0 = greyscale
     contrast*: float          ## Grade: 1 = unchanged, around a 0.5 pivot
     temperature*: float       ## Grade: signed warm/cool tint, 0 = neutral
+    # Reaction-diffusion field visualization (S10). colormapIndex selects the
+    # procedural ramp; fieldOpacity scales the field's contribution. Read by
+    # both the HDR tonemap and the bloom-off field-composite floor.
+    colormapIndex*: int
+    fieldOpacity*: float
 
 func initRenderState*(): RenderState =
   ## The authoritative render defaults (copied into CONFIG by createConfig).
@@ -55,7 +61,9 @@ func initRenderState*(): RenderState =
     exposure: BLOOM_DEFAULT_EXPOSURE,
     saturation: BLOOM_DEFAULT_SATURATION,
     contrast: BLOOM_DEFAULT_CONTRAST,
-    temperature: BLOOM_DEFAULT_TEMPERATURE
+    temperature: BLOOM_DEFAULT_TEMPERATURE,
+    colormapIndex: COLORMAP_DEFAULT_INDEX,
+    fieldOpacity: FIELD_OPACITY_DEFAULT
   )
 
 func hasTrails*(state: RenderState): bool =

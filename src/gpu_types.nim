@@ -160,7 +160,12 @@ const
     totalSize: 248
   )
 
-  # RenderParams struct (48 bytes, generated into web/shaders/modules/render_params.wgsl)
+  # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
+  # glowDensityFloor (S10) lifts the glow's density factor to a per-mode floor.
+  # Reaction-diffusion leaves particle density stale at ~0 (no forces pass), so
+  # without a floor its glow reads flat; the render loop sets this per active
+  # mode (RD lifts it, the density-driven modes leave it at 0). Three trailing
+  # pads round the struct to 64 bytes.
   RenderParamsLayout* = GpuStruct(
     name: "RenderParams",
     fields: @[
@@ -174,8 +179,12 @@ const
       GpuField(name: "glowRadiusScale",   kind: gtF32, offset: 36, size: 4, count: 1),
       GpuField(name: "glowFalloff",       kind: gtF32, offset: 40, size: 4, count: 1),
       GpuField(name: "glowWarmth",        kind: gtF32, offset: 44, size: 4, count: 1),
+      GpuField(name: "glowDensityFloor",  kind: gtF32, offset: 48, size: 4, count: 1),
+      GpuField(name: "_pad0",             kind: gtF32, offset: 52, size: 4, count: 1),
+      GpuField(name: "_pad1",             kind: gtF32, offset: 56, size: 4, count: 1),
+      GpuField(name: "_pad2",             kind: gtF32, offset: 60, size: 4, count: 1),
     ],
-    totalSize: 48
+    totalSize: 64
   )
 
   # FadeParams struct (16 bytes, generated into web/shaders/modules/fade_params.wgsl)
@@ -230,8 +239,11 @@ const
 
   # TonemapParams struct (32 bytes, generated into web/shaders/modules/tonemap_params.wgsl)
   # The bloom composite/tonemap pass uniform: HDR exposure, the bloom mix gain,
-  # and the three colour-grade knobs (saturation, contrast, signed temperature).
-  # Written every frame from CONFIG.
+  # the three colour-grade knobs (saturation, contrast, signed temperature), and
+  # the S10 field-visualization pair — colormapIndex (which procedural ramp maps
+  # the RD field) and fieldOpacity (how much the field contributes). The RD
+  # field-composite (bloom-off) floor reads the same two slots from the same
+  # buffer. Written every frame from CONFIG.
   TonemapParamsLayout* = GpuStruct(
     name: "TonemapParams",
     fields: @[
@@ -240,8 +252,8 @@ const
       GpuField(name: "saturation",     kind: gtF32, offset: 8,  size: 4, count: 1),
       GpuField(name: "contrast",       kind: gtF32, offset: 12, size: 4, count: 1),
       GpuField(name: "temperature",    kind: gtF32, offset: 16, size: 4, count: 1),
-      GpuField(name: "pad0",           kind: gtF32, offset: 20, size: 4, count: 1),
-      GpuField(name: "pad1",           kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "colormapIndex",  kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "fieldOpacity",   kind: gtF32, offset: 24, size: 4, count: 1),
       GpuField(name: "pad2",           kind: gtF32, offset: 28, size: 4, count: 1),
     ],
     totalSize: 32
@@ -509,7 +521,7 @@ static:
     for fieldIndex in 0 ..< layout.fields.len:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
         layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
-  assert RenderParamsLayout.wgslUniformSize == 48, "RenderParams allocates 48 bytes"
+  assert RenderParamsLayout.wgslUniformSize == 64, "RenderParams allocates 64 bytes"
   assert FadeParamsLayout.wgslUniformSize == 16, "FadeParams allocates 16 bytes"
 
 # =============================================================================

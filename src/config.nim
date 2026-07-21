@@ -57,6 +57,8 @@ type
     saturation* {.exportc.}: float        # Grade: 1 = unchanged, 0 = greyscale
     contrast* {.exportc.}: float          # Grade: 1 = unchanged, around a 0.5 pivot
     temperature* {.exportc.}: float       # Grade: signed warm/cool tint, 0 = neutral
+    colormapIndex* {.exportc.}: int       # RD field colormap selector (0=inferno,1=viridis,2=two-tone)
+    fieldOpacity* {.exportc.}: float      # RD field contribution scale, [0,1]
     sphRestDensity* {.exportc.}: float    # SPH target density (Tait EOS rest density)
     sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
     sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
@@ -204,6 +206,8 @@ proc createConfig(): ConfigObject =
   result.saturation = visual.saturation
   result.contrast = visual.contrast
   result.temperature = visual.temperature
+  result.colormapIndex = visual.colormapIndex
+  result.fieldOpacity = visual.fieldOpacity
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 

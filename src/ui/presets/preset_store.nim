@@ -155,6 +155,8 @@ when defined(js):
     settings.saturation = config.CONFIG.saturation
     settings.contrast = config.CONFIG.contrast
     settings.temperature = config.CONFIG.temperature
+    settings.colormapIndex = config.CONFIG.colormapIndex
+    settings.fieldOpacity = config.CONFIG.fieldOpacity
 
     var matrixSnapshot: Matrix
     for matrixIndex in 0 ..< preset.MATRIX_LEN:
