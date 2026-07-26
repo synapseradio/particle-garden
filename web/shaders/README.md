@@ -1,4 +1,4 @@
-# WebGPU Compute Shaders for Particle Life Simulation
+# WebGPU Shaders
 
 This guide is for developers modifying GPU physics. For running the app, see the [main README](../../README.md). For building from source, see the [Developer Guide](../../src/README.md).
 
@@ -92,12 +92,17 @@ The simulation uses a **five-pass GPU compute pipeline**:
 
 ## Files
 
-### Shaders
-- **`bin-count.wgsl`** - Pass 1: Count particles per grid cell using atomics
-- **`forces.wgsl`** - Pass 4: Compute inter-particle forces (COMPLETE)
+Sources live in `src/`, shared code in `modules/`, and the bundled output at the top level is generated — never edit it. `tools/wgsl_bundle.nim` resolves `//! import` directives and substitutes `{{PLACEHOLDER}}` values from `src/shader_config.nim`.
 
-### Documentation
-- **`README.md`** - This file
+The walkthrough below covers the particle-life force pass in depth. The full set is wider than that, and two other simulation modes share most of it:
+
+**Grid build**, shared by every mode: `bin-count`, `prefix-sum-local`, `prefix-sum-blocks`, `prefix-sum-final`, `bin-scatter`.
+
+**Physics**, varying by mode: `forces` (particle life), `forces-sph` (SPH fluid), and `integrate` (all modes). Reaction-diffusion adds `field-deposit`, `field-resolve`, `rd-step`, and `field-force`.
+
+**Rendering**: `render`, `glow`, `fade`, `composite`, `field-composite`, `blur`, `tonemap`.
+
+`src/shader_manifest.nim` is the authority on which compute shaders each mode loads; consult it rather than this list if the two ever disagree. Note that render shaders take a different route to the GPU — `webgpu_render.nim` `staticRead`s them into `app.js`, so they are not served over HTTP and are absent from `main.nim`'s `StaticFiles`.
 
 ## forces.wgsl - Force Computation Shader
 

@@ -37,6 +37,6 @@ func defaultSimConfig*(): SimConfig =
     simKind: skParticleLife
   )
 
-## The active simulation mode. ui.nim's mode buttons set it; app.nim
-## subscribes the compute executor to it.
+## The active simulation mode. The panel's mode buttons set it through
+## gardenAPI.setSimMode; app.nim subscribes the compute executor to it.
 var activeSimKind* = newObservable(skParticleLife)

@@ -59,11 +59,12 @@ Quick version:
 git clone https://github.com/synapseradio/particle-garden
 cd particle-garden
 nimble install -y
-nimble all
+nimble setup
+just happen
 ./main
 ```
 
-Requires [Nim](https://nim-lang.org/) 2.0+.
+Requires [Nim](https://nim-lang.org/) 2.0+, [Bun](https://bun.sh/) for the control panel bundle, and [just](https://github.com/casey/just).
 
 </details>
 
@@ -87,10 +88,10 @@ webui (the library that opens the native window) couldn't find a browser. Instal
 <details>
 <summary><strong>Contributing</strong></summary>
 
-- All source is Nim — no hand-written JavaScript
-- Run `nimble test` before submitting
+- The simulation, GPU pipeline, and server are Nim; the control panel is SolidJS/TypeScript under `web-ui/`; shaders are WGSL. Nim owns every simulation value, and the panel reads them through `window.gardenAPI` rather than restating any of them.
+- Build with `just happen` and run `just check` before submitting — it covers both the Nim and TypeScript suites.
 - Code style enforced by compiler flags (see nimble file)
-- When adding shaders, register them in the `StaticFiles` table in `main.nim`
+- When adding a compute shader, register it in `shader_manifest.nim` and in the `StaticFiles` table in `main.nim`
 
 See [Developer Guide](src/README.md) for architecture details.
 

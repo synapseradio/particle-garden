@@ -24,9 +24,10 @@ Verify: `nim --version`
 ```bash
 # Install dependencies (first time only)
 nimble install
+nimble setup
 
 # Build and run
-nimble all
+just happen
 ./main
 ```
 
@@ -34,10 +35,12 @@ A browser window opens showing the simulation. Drag sliders to adjust forces bet
 
 | Command | Purpose |
 |---------|---------|
-| `nimble all` | Build frontend + native binary |
-| `nimble app` | Build frontend JS only |
-| `nimble test` | Run test suite |
-| `nimble release` | Optimized production build |
+| `just happen` | Build everything: shaders, frontend, UI bundle, native binary |
+| `just check` | Both test suites (native Nim + bun) |
+| `just test` | Native Nim suite only |
+| `just release` | Optimized production build |
+
+Build through `just`, not through the `nimble` tasks. Two reasons: the nimble tasks never invoke Bun, so they leave `web/ui-bundle.js` unbuilt — and `main.nim` `staticRead`s it, so a fresh clone fails the native compile and a stale bundle silently ships an old UI. And nimble 0.22.x exits 0 even when a task's exec fails, so a broken build reports success.
 
 ---
 
@@ -116,8 +119,15 @@ Runs in Browser (nim js → web/app.js):
                     ↓
 ┌────────────────────────────────────────────────┐
 │  Browser Integration                           │
-│  ├─ ui.nim          Sliders, mouse, matrix UI  │
+│  ├─ web_api.nim     window.gardenAPI boundary  │
+│  ├─ canvas_input.nim Mouse and touch input     │
 │  └─ grid.nim        Spatial grid dimensions    │
+└────────────────────────────────────────────────┘
+                    ↓
+┌────────────────────────────────────────────────┐
+│  Control panel (TypeScript, not Nim)           │
+│  └─ web-ui/src/     Solid components driving   │
+│                     window.gardenAPI           │
 └────────────────────────────────────────────────┘
 
 bindings/           Nim wrappers for browser APIs
@@ -134,7 +144,8 @@ bindings/           Nim wrappers for browser APIs
 |------|------|
 | Understand structure | `app.nim` (imports in dependency order) |
 | Change physics | `webgpu_compute.nim` + `web/shaders/` |
-| Change UI | `ui.nim` |
+| Change the control panel | `web-ui/src/` (Solid/TypeScript) |
+| Change what the panel can reach | `web_api.nim` + `ui/api/param_descriptor.nim` |
 | Adjust particles | `config.nim` (runtime) or `memory_layout.nim` (structure) |
 | Add browser API | new file in `bindings/` |
 
@@ -142,10 +153,10 @@ bindings/           Nim wrappers for browser APIs
 
 **Import order matters.** The import order in `app.nim` is intentional. Nim's JS backend hoists variables, so misordering causes undefined errors at runtime. Don't alphabetize it.
 
-**Register new shaders.** New shaders need to be registered in `StaticFiles` (in `main.nim`) or the server won't serve them.
+**Register new compute shaders.** A new compute shader needs an entry in `shader_manifest.nim` and in `StaticFiles` (in `main.nim`), or the fetch at pipeline-init fails. Render shaders take the other route — `webgpu_render.nim` `staticRead`s them into `app.js`, and they stay out of `StaticFiles`.
 
 **Buffer offsets live in one place.** All buffer offsets live in `memory_layout.nim` — hardcoding byte offsets elsewhere leads to silent corruption when the layout changes.
 
-**Use nimble all.** Always build with `nimble all`. Running `nim c` or `nim js` alone will miss dependencies.
+**Use just happen.** Running `nim c` or `nim js` alone misses dependencies, and the nimble tasks skip the Bun bundle that the native compile embeds.
 
 </details>

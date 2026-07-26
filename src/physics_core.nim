@@ -8,7 +8,11 @@
 # Used by:
 #   - tests/test_physics.nim (native test compilation)
 #
-# Note: WebGPU compute shaders (forces.wgsl) use equivalent GPU implementations.
+# This is a reference oracle, like grid_core: the forces the simulation
+# actually applies live in forces.wgsl, which no native test can execute.
+# These functions mirror that math in a form the native suite can check, so
+# the shader has something to be wrong against. Nothing in src/ imports this
+# module, and that is expected.
 #
 # ==============================================================================
 

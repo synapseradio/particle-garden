@@ -41,17 +41,27 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_physics.nim` | Pure physics math (forces, wrapping, density, neighbor cells) | Native |
 | `test_config.nim` | Configuration constraint invariants derived from the layout limits | Native |
 | `test_gpu_types.nim` | GPU struct layout helpers (type sizes, field offsets, accessors) | Native |
-| `test_shader_config.nim` | Shader workgroup-size and tunable-constant accessors | Native |
-| `test_observable.nim` | Observable reactive primitive (subscribe, set, dispose) | Native |
+| `test_shader_config.nim` | Shader workgroup-size and tunable-constant accessors, and the placeholders the bundler emits | Native |
+| `test_shader_manifest.nim` | The compute shaders each simulation kind declares | Native |
+| `test_sim_registry.nim` | Each mode's frame description: which passes run, in what order | Native |
+| `test_sim_config.nim` | Simulation-kind config and the active-kind observable | Native |
+| `test_observable.nim` | Observable primitive (construct, read, set, subscribe) | Native |
 | `test_input.nim` | Input handling logic | Native |
-| `test_slider.nim` | Slider component plus simulation and render state | Native |
 | `test_matrix.nim` | Attraction matrix state plus cell and species colors | Native |
-| `test_stats.nim` | Performance stats formatters and immutable updates | Native |
 | `test_app_state.nim` | App runtime and profiling-average accumulators | Native |
+| `test_param_descriptor.nim` | The descriptor table: ranges, defaults, store routing, clamping | Native |
 | `test_palette.nim` | HSL-to-RGB conversion, palette generation schemes, flat encoding | Native |
+| `test_palette_state.nim` | Palette editor state and scheme selection | Native |
 | `test_preset.nim` | Versioned preset schema: round-trip, version rejection, clamp/default degradation, migration hook | Native |
+| `test_preset_store_core.nim` | Preset name normalization, storage keys, apply-order contract | Native |
+| `test_sph_core.nim` | SPH math: 2D smoothing kernels, Tait equation, XSPH term | Native |
+| `test_field_core.nim` | Gray-Scott reaction-diffusion step and the 9-point Laplacian | Native |
+| `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
+| `test_colormap_core.nim` | Reaction-diffusion field colormap ramps | Native |
 
-Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself.
+Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage and formatting; `just check` runs both.
+
+Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, and `test_colormap_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Their subject modules have no importer in `src/` by design; see the reference-oracle table in the root `CLAUDE.md`.
 
 ### Test Architecture
 
@@ -64,24 +74,35 @@ test_all.nim (runner)
     ├── test_physics.nim        → physics_core.nim (forces, wrapping, neighbors)
     ├── test_gpu_types.nim      → gpu_types.nim (struct layout helpers)
     ├── test_shader_config.nim  → shader_config.nim (workgroup/tuning accessors)
+    ├── test_shader_manifest.nim→ shader_manifest.nim (per-kind shader sets)
+    ├── test_sim_registry.nim   → sim_registry.nim (per-kind frame description)
+    ├── test_sim_config.nim     → ui/state/sim_config.nim (active kind)
     ├── test_observable.nim     → ui/core/observable.nim
     ├── test_input.nim          → ui/input (input logic)
-    ├── test_slider.nim         → ui/controls/slider.nim, ui/state (sim/render)
     ├── test_matrix.nim         → ui/state/matrix_state.nim (matrix, colors)
-    ├── test_stats.nim          → ui/stats/stats_view.nim (formatters, updates)
     ├── test_app_state.nim      → ui/state/app_state.nim (profiling averages)
+    ├── test_param_descriptor.nim → ui/api/param_descriptor.nim (ranges, routing)
     ├── test_palette.nim        → palette.nim (HSL conversion, palette generation)
-    └── test_preset.nim         → preset.nim (versioned schema, validate/migrate)
+    ├── test_palette_state.nim  → ui/state/palette_state.nim (editor state)
+    ├── test_preset.nim         → preset.nim (versioned schema, validate/migrate)
+    ├── test_preset_store_core.nim → ui/presets/preset_store_core.nim (keys, order)
+    ├── test_sph_core.nim       → sph_core.nim (kernels, Tait, XSPH)
+    ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian)
+    ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
+    └── test_colormap_core.nim  → colormap_core.nim (field colormap ramps)
 ```
 
 ## Running Tests
 
 ### All Tests (Native)
 ```bash
-nimble test
+just test        # native Nim suite
+just check       # native Nim suite + the TypeScript suite
 ```
 
 This compiles `tests/test_all.nim` with the native backend and runs the whole suite. The same run also happens in CI before any release is built, so a failing test blocks the release.
+
+Run the suite through `just`, not `nimble test`: nimble 0.22.x exits 0 even when the task it ran failed, so a red suite reports green. The `just` recipes call `nim` directly and fail loudly.
 
 ## Test Categories
 
@@ -242,7 +263,7 @@ static:
 
 ### Runtime Tests
 
-Defined in test modules, executed via `nimble test`:
+Defined in test modules, executed via `just test`:
 ```nim
 test "particle stride is exactly 32 bytes":
   check PARTICLE_STRIDE == 32
@@ -305,7 +326,7 @@ test "particle stride is exactly 32 bytes":
 
 6. **Verify tests pass**
    ```bash
-   nimble test
+   just test
    ```
 
 ### Example: Testing a New Module
@@ -411,7 +432,7 @@ else:
 
 ## Test Execution Details
 
-### What `nimble test` Does
+### What `just test` Does
 
 1. Compiles `tests/test_all.nim` with native backend (`nim c`)
 2. Links against pure Nim modules (no browser dependencies)
@@ -446,6 +467,6 @@ The browser-dependent modules have no separate test target. Their correctness is
 
 ## Coverage Summary
 
-The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, GPU struct layouts and field accessors, shader workgroup and tuning configuration, the reactive `Observable` primitive, the UI state models (simulation, render, matrix and its colors, slider, stats formatting, and profiling averages), palette generation (HSL conversion, scheme distinctness, flat encoding), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook). Run `nimble test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
+The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, the SPH kernels and Tait equation, the Gray-Scott reaction-diffusion step and Laplacian, the bloom blur kernel and field colormap ramps, GPU struct layouts and field accessors, shader workgroup and tuning configuration and the placeholders the bundler emits, each simulation kind's frame description and shader set, the `Observable` primitive, the UI state models (simulation, render, matrix and its colors, palette editor, and profiling averages), the parameter descriptor table (ranges, defaults, store routing, clamping), palette generation (HSL conversion, scheme distinctness, flat encoding), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook) alongside preset name normalization and apply order. Run `just test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
 
 Browser integration (WebGPU, DOM, the FFI bindings) is not covered by this suite. It is exercised by the application build and by manual testing in the browser.
