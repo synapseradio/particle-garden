@@ -46,11 +46,6 @@ func clampMatrixValue*(value: float): float =
   ## Clamp value to valid matrix range [-1, 1].
   max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, value))
 
-proc randomMatrixValue*(): float =
-  ## Generate a random value in [-1, 1].
-  ## Note: Caller must provide actual random value, this just documents the range.
-  0.0  # Placeholder - actual randomization done in JS with jsRandom()
-
 func isAttraction*(value: float): bool =
   ## Check if value represents attraction (positive).
   value > 0.0

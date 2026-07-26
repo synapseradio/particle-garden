@@ -65,9 +65,3 @@ func initRenderState*(): RenderState =
     colormapIndex: COLORMAP_DEFAULT_INDEX,
     fieldOpacity: FIELD_OPACITY_DEFAULT
   )
-
-func hasTrails*(state: RenderState): bool =
-  state.trails
-
-func hasGlow*(state: RenderState): bool =
-  state.glowIntensity > 0.0

@@ -36,10 +36,6 @@ func initTimingState*(): TimingState =
     frameTimeMs: 0.0
   )
 
-func totalTimeMs*(state: TimingState): float =
-  state.gridTimeMs + state.physicsTimeMs + state.integrationTimeMs +
-    state.renderPackTimeMs + state.renderUploadTimeMs
-
 # ==============================================================================
 # SECTION 2: PROFILING STATE
 # ==============================================================================
@@ -82,9 +78,6 @@ func reset*(state: ProfilingState): ProfilingState =
 
 func averageGridTime*(state: ProfilingState): float =
   if state.frameCount > 0: state.gridTimeSum / float(state.frameCount) else: 0.0
-
-func averagePhysicsTime*(state: ProfilingState): float =
-  if state.frameCount > 0: state.physicsTimeSum / float(state.frameCount) else: 0.0
 
 func averageTotalTime*(state: ProfilingState): float =
   if state.frameCount > 0: state.totalTimeSum / float(state.frameCount) else: 0.0

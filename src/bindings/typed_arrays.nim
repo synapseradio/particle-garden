@@ -615,29 +615,3 @@ type
   Uint32ArrayView* = Uint32Array
   Uint16ArrayView* = Uint16Array
   Uint8ArrayView* = Uint8Array
-
-# ==============================================================================
-# SECTION 35: LEGACY CONSTRUCTOR ALIASES
-# ==============================================================================
-
-# These match the naming conventions in existing codebase (buffers.nim, grid.nim)
-proc newFloat32ArrayView*(buffer: JsObject, byteOffset: int, length: int): Float32Array {.importjs: "new Float32Array(#, #, #)".}
-  ## Legacy alias for newFloat32Array
-
-proc newUint8ArrayView*(buffer: JsObject, byteOffset: int, length: int): Uint8Array {.importjs: "new Uint8Array(#, #, #)".}
-  ## Legacy alias for newUint8Array
-
-proc newUint16ArrayView*(buffer: JsObject, byteOffset: int, length: int): Uint16Array {.importjs: "new Uint16Array(#, #, #)".}
-  ## Legacy alias for newUint16Array
-
-proc newUint32ArrayView*(buffer: JsObject, byteOffset: int, length: int): Uint32Array {.importjs: "new Uint32Array(#, #, #)".}
-  ## Legacy alias for newUint32Array
-
-proc newInt32ArrayView*(buffer: JsObject, byteOffset: int, length: int): Int32Array {.importjs: "new Int32Array(#, #, #)".}
-  ## Legacy alias for newInt32Array
-
-proc newUint32ArrayLocal*(length: int): Uint32Array {.importjs: "new Uint32Array(#)".}
-  ## Legacy alias for newUint32Array (local allocation)
-
-proc newFloat32ArrayLocal*(length: int): Float32Array {.importjs: "new Float32Array(#)".}
-  ## Legacy alias for newFloat32Array (local allocation)

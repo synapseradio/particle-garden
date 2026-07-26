@@ -1764,14 +1764,3 @@ proc resize*() =
   # Recreate trail textures and bind groups at new size
   if isInitialized:
     recreateTrailTextures()
-
-# ==============================================================================
-# SECTION 6: COMPATIBILITY SHIM
-# ==============================================================================
-
-# These exist for compatibility with the current app.nim interface
-proc initGL*(): bool =
-  ## Compatibility shim - initializes WebGPU render instead.
-  ## Returns true if WebGPU is available and initialized.
-  # WebGPU init is done separately, this is called after
-  return initWebGPURender()

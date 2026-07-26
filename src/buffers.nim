@@ -79,18 +79,10 @@ var gridOffsets* {.exportc.}: Uint32Array
 # SECTION 6: SHARED STATE
 # ==============================================================================
 
-var syncArray* {.exportc.}: Int32Array
 var matrix* {.exportc.}: Float32Array
 
 # ==============================================================================
-# SECTION 7: LOCAL TEMPORARY ARRAYS
-# ==============================================================================
-
-var fillOffsets* {.exportc.}: Uint32Array
-var renderData* {.exportc.}: Float32Array
-
-# ==============================================================================
-# SECTION 8: BUFFER ALLOCATION
+# SECTION 7: BUFFER ALLOCATION
 # ==============================================================================
 
 proc allocateBuffers*() {.exportc.} =
@@ -134,26 +126,11 @@ proc allocateBuffers*() {.exportc.} =
   # Shared state
   # ─────────────────────────────────────────────────────────────────────────────
 
-  syncArray = newInt32Array(sharedBuffer, layout.sync, 256)
   matrix = newFloat32Array(sharedBuffer, layout.matrix, 36)
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Local arrays (not shared)
-  # ─────────────────────────────────────────────────────────────────────────────
-
-  fillOffsets = newUint32Array(maxCells)
-  renderData = newFloat32Array(memory_layout.MAX_PARTICLES * 6)
-
 # ==============================================================================
-# SECTION 9: AoS ACCESSOR HELPERS
+# SECTION 8: AoS FIELD INDICES
 # ==============================================================================
-#
-# These helpers provide convenient access to particle fields within the AoS buffer.
-# For bulk operations, prefer direct Float32Array access with computed offsets.
-
-proc getParticleOffset*(particleIdx: int): int {.inline.} =
-  ## Get the Float32Array index for a particle's first field (pos.x)
-  particleIdx * FLOATS_PER_PARTICLE
 
 # Field indices within a particle (relative to particle start)
 const

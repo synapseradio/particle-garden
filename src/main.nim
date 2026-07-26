@@ -57,7 +57,6 @@ const StaticFiles = {
   "/shaders/field-resolve.wgsl": staticRead("../web/shaders/field-resolve.wgsl"),
   "/shaders/rd-step.wgsl": staticRead("../web/shaders/rd-step.wgsl"),
   "/shaders/field-force.wgsl": staticRead("../web/shaders/field-force.wgsl"),
-  "/shaders/render.wgsl": staticRead("../web/shaders/render.wgsl"),
 }.toTable
 
 proc getMimeType(path: string): string =

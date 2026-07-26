@@ -90,7 +90,6 @@ type
 # ==============================================================================
 
 proc jsObjectLength*(obj: JsObject): int {.importjs: "Object.keys(#).length".}
-proc jsReduceSum*(obj: JsObject): int {.importjs: "Object.values(#).reduce((sum, size) => sum + size, 0)".}
 proc jsCeilDiv*(numerator, denominator: int): int {.importjs: "Math.ceil(# / #)".}
 proc makeFeatureList(name: cstring): JsObject {.importjs: "[#]".}
 proc destroyAllBuffers*(obj: JsObject) {.importjs: "Object.values(#).forEach((buffer) => { if (buffer && typeof buffer.destroy === 'function') { buffer.destroy(); } })".}
