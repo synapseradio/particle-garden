@@ -28,7 +28,6 @@ type
     prefixSumLocal*: int  ## prefix-sum-local.wgsl: cells per workgroup (must match BLOCK_SIZE)
     prefixSumBlocks*: int ## prefix-sum-blocks.wgsl: blocks per workgroup
     prefixSumFinal*: int  ## prefix-sum-final.wgsl: cells per workgroup
-    render*: int          ## render.wgsl: vertices per workgroup
     # Reaction-diffusion field passes (S8). The deposit/force passes dispatch
     # per particle (1D, like the physics passes); resolve/rd-step dispatch per
     # field cell (2D), so their workgroup is a fieldStepX x fieldStepY tile.
@@ -63,10 +62,11 @@ type
     glowWarmthGreen*: float      ## Green attenuation per unit warmth (default 0.3)
     glowWarmthBlue*: float       ## Blue attenuation per unit warmth (default 0.6)
 
-    # SPH fluid mode (forces-sph.wgsl). Defaults mirror sph_core's authoritative
-    # constants; test_shader_config relates them so there is one source.
+    # SPH fluid mode (forces-sph.wgsl). The default mirrors sph_core's
+    # authoritative constant; test_shader_config relates them so there is one
+    # source. Gamma reaches the shader through SimParams at runtime instead,
+    # written straight from sph_core by webgpu_compute.
     sphXsphEpsilon*: float       ## XSPH velocity-smoothing weight (default 0.5)
-    sphGamma*: float             ## Tait equation-of-state exponent (default 7.0)
 
   ShaderConfig* = object
     ## Complete shader configuration
@@ -88,7 +88,6 @@ const
     prefixSumLocal: 256,  # Must match BLOCK_SIZE in shader
     prefixSumBlocks: 256, # Single workgroup processes all blocks
     prefixSumFinal: 256,  # Matches local for consistency
-    render: 128,          # Vertex generation
     fieldDeposit: 128,    # Per-particle splat; matches the particle passes' divisor
     fieldForce: 128,      # Per-particle gradient sampling; matches fieldDeposit
     fieldStepX: 16,       # 16x16 = 256 invocations per 2D field tile (warp multiple)
@@ -110,7 +109,6 @@ const
     glowWarmthGreen: 0.3,
     glowWarmthBlue: 0.6,
     sphXsphEpsilon: 0.5,          # Mirrors sph_core.SPH_XSPH_EPSILON.
-    sphGamma: 7.0,                # Mirrors sph_core.SPH_DEFAULT_GAMMA.
   )
 
   PRODUCTION_CONFIG* = ShaderConfig(
@@ -136,7 +134,6 @@ proc getWorkgroupSize*(name: string): int =
   of "prefix-sum-local": activeConfig.workgroups.prefixSumLocal
   of "prefix-sum-blocks": activeConfig.workgroups.prefixSumBlocks
   of "prefix-sum-final": activeConfig.workgroups.prefixSumFinal
-  of "render": activeConfig.workgroups.render
   of "field-deposit": activeConfig.workgroups.fieldDeposit
   of "field-force": activeConfig.workgroups.fieldForce
   of "field-step-x": activeConfig.workgroups.fieldStepX
@@ -160,7 +157,6 @@ proc getTunableFloat*(name: string): float =
   of "GLOW_WARMTH_GREEN": activeConfig.tuning.glowWarmthGreen
   of "GLOW_WARMTH_BLUE": activeConfig.tuning.glowWarmthBlue
   of "SPH_XSPH_EPSILON": activeConfig.tuning.sphXsphEpsilon
-  of "SPH_GAMMA": activeConfig.tuning.sphGamma
   else: 0.0
 
 # =============================================================================
@@ -195,7 +191,6 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_PREFIX_SUM_LOCAL"] = $activeConfig.workgroups.prefixSumLocal
   result["WORKGROUP_SIZE_PREFIX_SUM_BLOCKS"] = $activeConfig.workgroups.prefixSumBlocks
   result["WORKGROUP_SIZE_PREFIX_SUM_FINAL"] = $activeConfig.workgroups.prefixSumFinal
-  result["WORKGROUP_SIZE_RENDER"] = $activeConfig.workgroups.render
 
   # Reaction-diffusion field passes. The 1D deposit/force passes resolve their
   # {{WORKGROUP_SIZE}} shortcut through these keys (WORKGROUP_SIZE_FIELD_DEPOSIT /
@@ -215,6 +210,12 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["TUNABLE_BLAST_RANGE_SQ"] = fmt"{activeConfig.tuning.blastRangeSq:.1f}"
   result["TUNABLE_DENSITY_SMOOTH_FACTOR"] = fmt"{activeConfig.tuning.densitySmoothFactor:.2f}"
   result["TUNABLE_FIXED_POINT_SCALE"] = fmt"{activeConfig.tuning.fixedPointScale:.1f}"
+  # fixed_point.wgsl multiplies by the reciprocal rather than dividing, so the
+  # bundler emits it too. Deriving it here is what keeps the pair consistent:
+  # a hand-written inverse can drift from the scale it is supposed to invert.
+  # Sixteen places render the 2^-16 default exactly.
+  result["TUNABLE_INV_FIXED_POINT_SCALE"] =
+    fmt"{1.0 / activeConfig.tuning.fixedPointScale:.16f}"
 
   # Glow curve constants (consumed by glow.wgsl). Two decimal places keep
   # 0.15/0.05 exact while remaining unambiguous WGSL f32 literals.
@@ -229,7 +230,6 @@ proc getPlaceholderMap*(): Table[string, string] =
 
   # SPH fluid-mode constants (consumed by forces-sph.wgsl).
   result["TUNABLE_SPH_XSPH_EPSILON"] = fmt"{activeConfig.tuning.sphXsphEpsilon:.2f}"
-  result["TUNABLE_SPH_GAMMA"] = fmt"{activeConfig.tuning.sphGamma:.2f}"
 
   # HDR-bloom separable-blur kernel (consumed by blur.wgsl). The half kernel
   # (centre + one side) and its element count come from bloom_core, the single

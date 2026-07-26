@@ -22,7 +22,6 @@ const SHADER_CONFIG_TESTS_LOADED* = true
 const knownShaders = [
   "bin-count", "bin-scatter", "forces", "integrate",
   "prefix-sum-local", "prefix-sum-blocks", "prefix-sum-final",
-  "render",
   # RD per-particle passes dispatch dsParticleWorkgroups, so their 1D workgroup
   # size follows the same warp-multiple contract as the particle passes.
   "field-deposit", "field-force",
@@ -51,6 +50,16 @@ suite "Tunable Constants Stay In Physical Range":
     for name in ["MIN_DISTANCE_SQ", "MOUSE_RANGE_SQ", "BLAST_RANGE_SQ",
                  "DENSITY_SMOOTH_FACTOR", "FIXED_POINT_SCALE"]:
       check getTunableFloat(name) >= 0.0
+
+  test "the emitted fixed-point reciprocal inverts the emitted scale":
+    # fixed_point.wgsl declares both FIXED_POINT_SCALE and its reciprocal, and
+    # multiplies by the latter to decode accumulated forces. Deriving the
+    # reciprocal from the scale is the whole point: the two were independent
+    # hand-written literals before, free to drift apart silently.
+    let placeholders = getPlaceholderMap()
+    let scale = parseFloat(placeholders["TUNABLE_FIXED_POINT_SCALE"])
+    let inverse = parseFloat(placeholders["TUNABLE_INV_FIXED_POINT_SCALE"])
+    check abs(scale * inverse - 1.0) < 1e-9
 
   test "getTunableFloat returns 0.0 for an unknown constant name":
     # Documents the fall-through: an unknown name yields 0.0, which callers must
@@ -90,20 +99,20 @@ suite "Glow Tunables Feed The Bundler":
 
 
 suite "SPH Tunables Mirror sph_core's Authoritative Constants":
-  # The SPH shader constants have two homes by necessity: sph_core.nim (the
-  # native-tested authority) and shader_config's placeholder map (what the
-  # bundler substitutes into forces-sph.wgsl). These tests relate the two so
-  # they cannot silently disagree — a single source, checked.
+  # XSPH epsilon has two homes by necessity: sph_core.nim (the native-tested
+  # authority) and shader_config's placeholder map (what the bundler
+  # substitutes into forces-sph.wgsl). These tests relate the two so they
+  # cannot silently disagree — a single source, checked. Gamma needs no such
+  # mirror: it reaches the shader through SimParams, written straight from
+  # sph_core by webgpu_compute.
 
-  test "getTunableFloat resolves each SPH constant to sph_core's value":
+  test "getTunableFloat resolves XSPH epsilon to sph_core's value":
     check getTunableFloat("SPH_XSPH_EPSILON") == SPH_XSPH_EPSILON
-    check getTunableFloat("SPH_GAMMA") == SPH_DEFAULT_GAMMA
 
-  test "getPlaceholderMap emits a WGSL float literal for every SPH placeholder":
+  test "getPlaceholderMap emits a WGSL float literal for the SPH placeholder":
     let placeholders = getPlaceholderMap()
-    for placeholderName in ["TUNABLE_SPH_XSPH_EPSILON", "TUNABLE_SPH_GAMMA"]:
-      check placeholderName in placeholders
-      check "." in placeholders[placeholderName]
+    check "TUNABLE_SPH_XSPH_EPSILON" in placeholders
+    check "." in placeholders["TUNABLE_SPH_XSPH_EPSILON"]
 
 
 suite "HDR-Bloom Blur Kernel Feeds The Bundler":

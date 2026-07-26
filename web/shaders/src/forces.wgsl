@@ -74,8 +74,8 @@
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
-const MIN_DISTANCE_SQ: f32 = 4.0;  // Prevents division-by-zero when particles overlap
-const MOUSE_RANGE_SQ: f32 = 90000.0;  // 300² - mouse influence radius squared
+const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};  // Prevents division-by-zero when particles overlap
+const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};  // 300² - mouse influence radius squared
 
 // =============================================================================
 // EXPONENTIAL FORCE MODEL

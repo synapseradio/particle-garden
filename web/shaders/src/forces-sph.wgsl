@@ -70,8 +70,8 @@
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
-const MIN_DISTANCE_SQ: f32 = 4.0;      // Prevents division-by-zero when particles overlap
-const MOUSE_RANGE_SQ: f32 = 90000.0;   // 300^2 - mouse influence radius squared
+const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};      // Prevents division-by-zero when particles overlap
+const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};   // 300^2 - mouse influence radius squared
 
 // SPH tuning constants held in the shader (the runtime tunables — rest density,
 // stiffness, viscosity, gamma — arrive through SimParams; XSPH epsilon through
@@ -307,7 +307,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     else if (blastOffsetY < -halfWorldHeight) { blastOffsetY += params.worldHeight; }
 
     let blastDistSq = blastOffsetX * blastOffsetX + blastOffsetY * blastOffsetY;
-    let blastRangeSq = 40000.0;  // 200^2 - blast influence radius squared
+    let blastRangeSq = {{TUNABLE_BLAST_RANGE_SQ}};  // 200^2 - blast influence radius squared
     if (blastDistSq > 0.0 && blastDistSq < blastRangeSq) {
       let blastDist = sqrt(blastDistSq);
       let blastForce = params.blastStrength * 3000.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);

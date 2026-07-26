@@ -63,7 +63,7 @@ struct IntegrationParams {
 @group(0) @binding(2) var<storage, read> velocityDeltaFixed: array<i32>;
 @group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
 
-const DENSITY_SMOOTH_FACTOR: f32 = 0.7;  // 70% old + 30% new for temporal smoothing
+const DENSITY_SMOOTH_FACTOR: f32 = {{TUNABLE_DENSITY_SMOOTH_FACTOR}};  // 70% old + 30% new for temporal smoothing
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {

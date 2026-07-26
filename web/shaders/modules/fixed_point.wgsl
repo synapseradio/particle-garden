@@ -21,5 +21,5 @@
 // Changing them breaks the fixed-point arithmetic contract.
 // =============================================================================
 
-const FIXED_POINT_SCALE: f32 = 65536.0;           // Float-to-int conversion factor (2^16)
-const INV_FIXED_POINT_SCALE: f32 = 0.0000152587890625;  // 1.0 / 65536.0 (precomputed)
+const FIXED_POINT_SCALE: f32 = {{TUNABLE_FIXED_POINT_SCALE}};           // Float-to-int conversion factor (2^16)
+const INV_FIXED_POINT_SCALE: f32 = {{TUNABLE_INV_FIXED_POINT_SCALE}};  // 1.0 / FIXED_POINT_SCALE (precomputed)
