@@ -67,7 +67,6 @@ export interface GardenAPI {
   // Lifecycle
   isReady(): boolean;
   onReady(callback: () => void): void;
-  showWebGPURequired(): void;
 
   // Parameters
   descriptor(): ParamDescriptor[];
@@ -101,15 +100,11 @@ export interface GardenAPI {
 
   // Attraction matrix (live references; valid after onReady)
   matrix(): Float32Array;
-  colors(): Float32Array;
   matrixCellColor(value: number): string;
   clampMatrixValue(value: number): number;
   matrixStride(): number;
   speciesColor(index: number): string;
-  speciesCount(): number;
-  setSpeciesCount(count: number, randomizeNew: boolean): void;
   randomizeMatrix(): void;
-  refreshMatrixDisplay(): void;
 
   // Particles
   resetParticles(): void;

@@ -659,7 +659,6 @@ when defined(js):
     result["onReady"] = toJs(proc(callback: proc()) =
       if apiReady: callback()
       else: readyCallbacks.add(callback))
-    result["showWebGPURequired"] = toJs(proc() = showWebGpuRequiredOverlay())
 
     # Parameters
     result["descriptor"] = toJs(proc(): JsObject = descriptorArray)
@@ -704,7 +703,6 @@ when defined(js):
 
     # Attraction matrix (live Float32Array references; valid after onReady)
     result["matrix"] = toJs(proc(): Float32Array = buffers.matrix)
-    result["colors"] = toJs(proc(): Float32Array = COLORS)
     result["matrixCellColor"] = toJs(proc(value: float): cstring =
       cstring(toHslaString(cellColorFromValue(clampMatrixValue(value)))))
     result["clampMatrixValue"] = toJs(proc(value: float): float =
@@ -715,9 +713,6 @@ when defined(js):
       for channelIndex in 0 ..< channels.len:
         channels[channelIndex] = COLORS[channelIndex]
       cstring(toRgbaString(speciesColorFromIndex(index, channels))))
-    result["speciesCount"] = toJs(proc(): int = CONFIG.speciesCount)
-    result["setSpeciesCount"] = toJs(proc(count: int; randomizeNew: bool) =
-      setSpeciesCountImpl(count, randomizeNew))
     result["randomizeMatrix"] = toJs(proc() = randomizeMatrix())
 
     # Particles
