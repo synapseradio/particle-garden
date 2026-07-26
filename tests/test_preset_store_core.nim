@@ -49,66 +49,6 @@ suite "normalizePresetName trims and collapses whitespace":
       check once == twice
 
 # ==============================================================================
-# INDEX OPERATIONS
-# ==============================================================================
-
-suite "preset index add/remove operations":
-  test "addToIndex appends a new name to the end":
-    check addToIndex(@["a", "b"], "c") == @["a", "b", "c"]
-
-  test "addToIndex of a name already present returns the index unchanged":
-    check addToIndex(@["a", "b"], "b") == @["a", "b"]
-
-  test "addToIndex on an empty index starts a new one":
-    check addToIndex(newSeq[string](), "a") == @["a"]
-
-  test "removeFromIndex removes the named entry":
-    check removeFromIndex(@["a", "b", "c"], "b") == @["a", "c"]
-
-  test "removeFromIndex of a name not present returns the index unchanged":
-    check removeFromIndex(@["a", "b"], "not-there") == @["a", "b"]
-
-  test "add then remove of the same name is the identity":
-    let original = @["a", "b"]
-    check removeFromIndex(addToIndex(original, "c"), "c") == original
-
-  test "a duplicate add is the identity":
-    let original = @["a", "b"]
-    check addToIndex(original, "b") == original
-
-  test "removing an absent name is the identity":
-    let original = @["a", "b"]
-    check removeFromIndex(original, "not-there") == original
-
-# ==============================================================================
-# INDEX JSON ROUND-TRIP
-# ==============================================================================
-
-suite "preset index JSON round-trip":
-  test "an empty index round-trips through indexToJson/parseIndexJson":
-    let index: seq[string] = @[]
-    check parseIndexJson(indexToJson(index)) == index
-
-  test "names with spaces and embedded quotes round-trip exactly":
-    let index = @["My Preset", "quote\"inside\"here", "another one", "trailing space "]
-    check parseIndexJson(indexToJson(index)) == index
-
-  test "a single-entry index round-trips":
-    check parseIndexJson(indexToJson(@["only"])) == @["only"]
-
-  test "malformed JSON text decodes to an empty seq rather than raising":
-    check parseIndexJson("{not: valid json,,,") == newSeq[string]()
-
-  test "empty string input decodes to an empty seq rather than raising":
-    check parseIndexJson("") == newSeq[string]()
-
-  test "a JSON object root (not an array) decodes to an empty seq":
-    check parseIndexJson("""{"a": 1}""") == newSeq[string]()
-
-  test "a JSON scalar root decodes to an empty seq":
-    check parseIndexJson("\"just a string\"") == newSeq[string]()
-
-# ==============================================================================
 # APPLY-ORDER CONTRACT
 # ==============================================================================
 
@@ -131,15 +71,13 @@ suite "presetApplySteps pins the apply-order contract":
     check steps[6] == pasUiRefresh
 
 # ==============================================================================
-# STORAGE KEY COMPOSITION
+# STORAGE KEYS
 # ==============================================================================
+#
+# Both constants cross to TypeScript through gardenAPI.presetKeys. The panel
+# distinguishes a preset entry from the index by comparing the composed key
+# against the index key, so the two must never collide.
 
-suite "presetStorageKey composes the prefix constant with the name":
-  test "presetStorageKey prefixes the name with PRESET_KEY_PREFIX":
-    check presetStorageKey("My Preset") == PRESET_KEY_PREFIX & "My Preset"
-
-  test "presetStorageKey of the empty name is just the prefix":
-    check presetStorageKey("") == PRESET_KEY_PREFIX
-
+suite "the preset storage keys stay distinct":
   test "PRESET_INDEX_KEY is a distinct constant from the prefix alone":
     check PRESET_INDEX_KEY != PRESET_KEY_PREFIX

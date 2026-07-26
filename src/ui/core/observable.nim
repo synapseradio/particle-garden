@@ -2,12 +2,13 @@
 # OBSERVABLE - Core reactive state container
 # ==============================================================================
 #
-# Simple pub/sub observable pattern for UI state management.
-# Provides type-safe subscriptions with automatic cleanup support.
+# Pub/sub container for the two pieces of state that cross module boundaries
+# on the Nim side: canvas_input's currentInput and sim_config's activeSimKind.
+# The Solid panel owns UI reactivity; this stays deliberately small.
 #
 # Design goals:
 # - No global mutable state (state lives in Observable instances)
-# - Batched notifications prevent render thrashing
+# - Notifications coalesce on a microtask in JS, flush synchronously natively
 # - Cleanup functions prevent memory leaks with DOM callbacks
 # - Works in both JS (browser) and native (tests) contexts
 #
@@ -43,10 +44,9 @@ type
 proc `==`*(lhs, rhs: SubscriptionId): bool {.borrow.}
 
 # ==============================================================================
-# SECTION 2: BATCH STATE (module-level, manages notification coalescing)
+# SECTION 2: NOTIFICATION SCHEDULING
 # ==============================================================================
 
-var batchDepth = 0
 var pendingNotifications: seq[proc()]
 
 when defined(js):
@@ -54,9 +54,6 @@ when defined(js):
 
 proc flushPending() =
   ## Execute all pending notifications
-  if batchDepth > 0:
-    return  # Still inside a batch
-
   let toFlush = pendingNotifications
   pendingNotifications = @[]
 
@@ -73,46 +70,10 @@ proc scheduleNotification(fn: proc()) =
       queueMicrotask(flushPending)
   else:
     # Native: flush synchronously (for tests)
-    if batchDepth == 0:
-      flushPending()
+    flushPending()
 
 # ==============================================================================
-# SECTION 3: BATCH API
-# ==============================================================================
-
-proc batch*(fn: proc()) =
-  ## Group multiple updates into a single notification pass.
-  ## Observers are notified once after the batch completes,
-  ## not after each individual update.
-  ##
-  ## Nested batches are supported - notifications fire when
-  ## the outermost batch completes.
-  ##
-  ## Example:
-  ##   batch(proc() =
-  ##     count.set(1)
-  ##     name.set("updated")
-  ##     # Observers notified once here, not twice
-  ##   )
-  batchDepth += 1
-  try:
-    fn()
-  finally:
-    batchDepth -= 1
-    if batchDepth == 0:
-      flushPending()
-
-template withBatch*(body: untyped) =
-  ## Template version of batch for cleaner syntax.
-  ##
-  ## Example:
-  ##   withBatch:
-  ##     count.set(1)
-  ##     name.set("updated")
-  batch(proc() = body)
-
-# ==============================================================================
-# SECTION 4: CONSTRUCTOR
+# SECTION 3: CONSTRUCTOR
 # ==============================================================================
 
 proc newObservable*[T](initial: T): Observable[T] =
@@ -130,7 +91,7 @@ proc newObservable*[T](initial: T): Observable[T] =
   )
 
 # ==============================================================================
-# SECTION 5: VALUE ACCESS
+# SECTION 4: VALUE ACCESS
 # ==============================================================================
 
 proc get*[T](obs: Observable[T]): T {.inline.} =
@@ -140,12 +101,8 @@ proc get*[T](obs: Observable[T]): T {.inline.} =
   ##   let current = count.get()
   obs.value
 
-proc peek*[T](obs: Observable[T]): T {.inline.} =
-  ## Alias for get. Reads value without triggering effects.
-  obs.value
-
 # ==============================================================================
-# SECTION 6: NOTIFICATION
+# SECTION 5: NOTIFICATION
 # ==============================================================================
 
 proc doNotify[T](obs: Observable[T]) =
@@ -171,7 +128,7 @@ proc doNotify[T](obs: Observable[T]) =
     obs.notifying = false
 
 # ==============================================================================
-# SECTION 7: MUTATION
+# SECTION 6: MUTATION
 # ==============================================================================
 
 proc set*[T](obs: Observable[T], newValue: T) =
@@ -189,18 +146,11 @@ proc set*[T](obs: Observable[T], newValue: T) =
     let obsRef = obs  # Capture for closure
     scheduleNotification(proc() = doNotify(obsRef))
 
-proc update*[T](obs: Observable[T], fn: proc(current: T): T) =
-  ## Update value via transformation function.
-  ##
-  ## Example:
-  ##   count.update(proc(current: int): int = current + 1)
-  obs.set(fn(obs.value))
-
 # ==============================================================================
-# SECTION 8: SUBSCRIPTION
+# SECTION 7: SUBSCRIPTION
 # ==============================================================================
 
-proc subscribe*[T](obs: Observable[T], fn: Observer[T]): SubscriptionId =
+proc subscribe[T](obs: Observable[T], fn: Observer[T]): SubscriptionId =
   ## Subscribe to value changes. Returns ID for unsubscription.
   ##
   ## The observer is called immediately with the current value,
@@ -239,52 +189,3 @@ proc subscribeSimple*[T](obs: Observable[T], fn: proc(value: T)) =
     nil
   )
 
-proc unsubscribe*[T](obs: Observable[T], id: SubscriptionId) =
-  ## Remove a subscription by ID.
-  ##
-  ## Runs the cleanup function if one was returned by the observer.
-  ##
-  ## Example:
-  ##   count.unsubscribe(subId)
-  var idx = -1
-  for position, sub in obs.subscriptions:
-    if sub.id == id:
-      idx = position
-      break
-
-  if idx >= 0:
-    # Run cleanup before removing
-    if not obs.subscriptions[idx].cleanup.isNil:
-      obs.subscriptions[idx].cleanup()
-    obs.subscriptions.delete(idx)
-
-proc unsubscribeAll*[T](obs: Observable[T]) =
-  ## Remove all subscriptions. Runs all cleanup functions.
-  for sub in obs.subscriptions:
-    if not sub.cleanup.isNil:
-      sub.cleanup()
-  obs.subscriptions = @[]
-
-# ==============================================================================
-# SECTION 9: UTILITIES
-# ==============================================================================
-
-proc observerCount*[T](obs: Observable[T]): int =
-  ## Return the number of active subscriptions.
-  obs.subscriptions.len
-
-proc map*[T, U](obs: Observable[T], fn: proc(value: T): U): Observable[U] =
-  ## Create a derived observable that transforms values.
-  ##
-  ## Note: This creates a new independent observable. For computed
-  ## values that auto-update, use the computed module.
-  ##
-  ## Example:
-  ##   let doubled = count.map(proc(value: int): int = value * 2)
-  result = newObservable(fn(obs.get()))
-
-  let derived = result
-  discard obs.subscribe(proc(value: T): proc() =
-    derived.set(fn(value))
-    nil
-  )

@@ -2,18 +2,19 @@
 # PARTICLE GARDEN - PRESET STORE CORE (Pure)
 # ==============================================================================
 #
-# The pure localStorage-key and index-bookkeeping primitives the JS
-# preset_store glue (src/ui/presets/preset_store.nim, when defined(js)) is
-# built on, plus the preset-apply order as data — mirroring sim_registry's
-# buildFrame idea: the sequence a preset applies in is a value tests can pin
-# directly, not an implicit order buried in a proc body.
+# The localStorage key constants and the preset name normalizer the panel
+# reaches through gardenAPI, plus the preset-apply order as data — mirroring
+# sim_registry's buildFrame idea: the sequence a preset applies in is a value
+# tests can pin directly, not an implicit order buried in a proc body.
 #
-# Pure module: no FFI, no DOM, std/json and std/strutils only. Compiles on
-# both the native (nimble test) and JS backends.
+# The index bookkeeping built on these keys lives in TypeScript
+# (web-ui/src/lib/presets.ts), which owns localStorage I/O.
+#
+# Pure module: no FFI, no DOM, std/strutils only. Compiles on both the
+# native (nimble test) and JS backends.
 #
 # ==============================================================================
 
-import std/json
 import std/strutils
 
 # ==============================================================================
@@ -25,10 +26,6 @@ const PRESET_KEY_PREFIX* = "pg.presets."
 
 const PRESET_INDEX_KEY* = "pg.presets.index"
   ## The localStorage key holding the JSON array of saved preset names.
-
-func presetStorageKey*(name: string): string =
-  ## The localStorage key a preset named `name` is stored under.
-  PRESET_KEY_PREFIX & name
 
 # ==============================================================================
 # SECTION 2: PRESET NAME NORMALIZATION
@@ -54,55 +51,7 @@ func normalizePresetName*(raw: string): string =
       previousWasSpace = false
 
 # ==============================================================================
-# SECTION 3: PRESET NAME INDEX
-# ==============================================================================
-#
-# The index is the list of saved preset names, persisted separately (under
-# PRESET_INDEX_KEY) from the presets themselves so the preset list can
-# populate without reading every individual preset's JSON.
-
-func addToIndex*(index: seq[string]; name: string): seq[string] =
-  ## Append `name` if absent. A duplicate add returns the index unchanged.
-  if name in index:
-    index
-  else:
-    index & @[name]
-
-func removeFromIndex*(index: seq[string]; name: string): seq[string] =
-  ## Drop `name` from the index. Removing an absent name returns the index
-  ## unchanged (by value).
-  result = newSeq[string]()
-  for entry in index:
-    if entry != name:
-      result.add(entry)
-
-proc indexToJson*(index: seq[string]): string =
-  ## Serialize the index to a JSON array of strings.
-  var arrayNode = newJArray()
-  for name in index:
-    arrayNode.add(%name)
-  $arrayNode
-
-proc parseIndexJson*(text: string): seq[string] =
-  ## Parse a JSON array of strings back into an index. Malformed JSON, a
-  ## non-array root, or a non-string element degrades to an empty seq
-  ## rather than raising — a corrupted or hand-edited index value must
-  ## never crash the preset list, only appear empty.
-  var node: JsonNode
-  try:
-    node = parseJson(text)
-  except ValueError:
-    return newSeq[string]()
-  if node.kind != JArray:
-    return newSeq[string]()
-  result = newSeq[string]()
-  for element in node.getElems():
-    if element.kind != JString:
-      return newSeq[string]()
-    result.add(element.getStr())
-
-# ==============================================================================
-# SECTION 4: APPLY-ORDER CONTRACT
+# SECTION 3: APPLY-ORDER CONTRACT
 # ==============================================================================
 #
 # The order a preset's fields must land in, as data. Mirrors sim_registry's
