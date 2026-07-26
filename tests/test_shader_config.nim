@@ -11,7 +11,7 @@
 #
 # ==============================================================================
 
-import std/[strutils, tables, unittest]
+import std/[math, strutils, tables, unittest]
 import ../src/shader_config
 import ../src/sph_core
 import ../src/field_core
@@ -109,10 +109,25 @@ suite "SPH Tunables Mirror sph_core's Authoritative Constants":
   test "getTunableFloat resolves XSPH epsilon to sph_core's value":
     check getTunableFloat("SPH_XSPH_EPSILON") == SPH_XSPH_EPSILON
 
-  test "getPlaceholderMap emits a WGSL float literal for the SPH placeholder":
+  test "getPlaceholderMap emits a WGSL float literal for every SPH placeholder":
     let placeholders = getPlaceholderMap()
-    check "TUNABLE_SPH_XSPH_EPSILON" in placeholders
-    check "." in placeholders["TUNABLE_SPH_XSPH_EPSILON"]
+    for placeholderName in ["TUNABLE_SPH_XSPH_EPSILON",
+                            "TUNABLE_SPH_MAX_DENSITY_RATIO"]:
+      check placeholderName in placeholders
+      check "." in placeholders[placeholderName]
+
+  test "the pressure-density ceiling stays above the rest-density floor":
+    # forces-sph clamps the Tait input to [restDensity, restDensity * ratio].
+    # At a ratio of 1.0 that collapses to exactly restDensity, making
+    # Tait(rest, rest) identically zero — the fluid would lose all pressure
+    # response and collapse. The ceiling must leave headroom above the floor.
+    check getTunableFloat("SPH_MAX_DENSITY_RATIO") > 1.0
+
+  test "the ceiling bounds the gamma-power term to a finite factor":
+    # The whole point of the ceiling: (density/rest)^gamma is bounded because
+    # density/rest is. Pinned so raising the ratio stays a deliberate act.
+    let ratio = getTunableFloat("SPH_MAX_DENSITY_RATIO")
+    check pow(ratio, SPH_DEFAULT_GAMMA) < 1000.0
 
 
 suite "HDR-Bloom Blur Kernel Feeds The Bundler":

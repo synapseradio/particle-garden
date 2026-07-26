@@ -80,6 +80,14 @@ const SPH_XSPH_EPSILON: f32 = {{TUNABLE_SPH_XSPH_EPSILON}};  // Velocity-smoothi
 const SPH_FORCE_SCALE: f32 = 3.0;          // Pressure acceleration gain (px/frame^2). Primary aesthetic knob.
 const SPH_DENSITY_GLOW_GAIN: f32 = 2.5;    // Maps normalized density into the glow pass's density range.
 const SPH_MAX_PRESSURE_ACCEL: f32 = 5000.0;  // Clamp guarding the fixed-point i32 delta from overflow.
+// Ceiling on the density fed to Tait, in multiples of rest density. Tait raises
+// (density/rest) to the gamma power — 7 by default — so an unbounded input lets
+// a compressed cluster feed its own pressure spike: the spike flings particles
+// into their neighbours, which raises those densities, which spikes again. The
+// per-pair accel clamp bounds one interaction but not the number of them, so
+// the ceiling belongs on the input. Settled fluid sits near 1.0 and ordinary
+// compression near 1.5, so this leaves normal behaviour untouched.
+const SPH_MAX_DENSITY_RATIO: f32 = {{TUNABLE_SPH_MAX_DENSITY_RATIO}};
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -118,9 +126,11 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   // Lagged, physical (unscaled) density of THIS particle, recovered from the
   // glow-scaled value carried in the density field. Floored at rest so pressure
-  // is purely repulsive and the init state (density still 0) feels no force.
+  // is purely repulsive and the init state (density still 0) feels no force,
+  // and ceilinged at maxPressureDensity — see that constant's comment.
+  let maxPressureDensity = restDensity * SPH_MAX_DENSITY_RATIO;
   let laggedDensityThis = thisParticle.density * invDensityGlowGain;
-  let pressureDensityThis = max(laggedDensityThis, restDensity);
+  let pressureDensityThis = clamp(laggedDensityThis, restDensity, maxPressureDensity);
   let pressureThis = sphTaitPressure(pressureDensityThis, restDensity, stiffness, gamma);
 
   // Accumulators for THIS particle (held in registers, written once at the end).
@@ -230,7 +240,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // Symmetrized Tait pressure force. Neighbor's lagged physical density,
         // floored at rest so its pressure is also purely repulsive.
         let laggedDensityOther = otherParticle.density * invDensityGlowGain;
-        let pressureDensityOther = max(laggedDensityOther, restDensity);
+        let pressureDensityOther = clamp(laggedDensityOther, restDensity, maxPressureDensity);
         let pressureOther = sphTaitPressure(pressureDensityOther, restDensity, stiffness, gamma);
 
         let pairPressure =

@@ -67,6 +67,7 @@ type
     # source. Gamma reaches the shader through SimParams at runtime instead,
     # written straight from sph_core by webgpu_compute.
     sphXsphEpsilon*: float       ## XSPH velocity-smoothing weight (default 0.5)
+    sphMaxDensityRatio*: float   ## Pressure-density ceiling, in multiples of rest (default 2.0)
 
   ShaderConfig* = object
     ## Complete shader configuration
@@ -109,6 +110,10 @@ const
     glowWarmthGreen: 0.3,
     glowWarmthBlue: 0.6,
     sphXsphEpsilon: 0.5,          # Mirrors sph_core.SPH_XSPH_EPSILON.
+    sphMaxDensityRatio: 2.0,      # Tait is a 7th power: without a ceiling on its
+                                  # input, a compressed cluster feeds its own
+                                  # pressure spike. 2.0 sits far above settled
+                                  # fluid (~1.0) and normal compression (~1.5).
   )
 
   PRODUCTION_CONFIG* = ShaderConfig(
@@ -157,6 +162,7 @@ proc getTunableFloat*(name: string): float =
   of "GLOW_WARMTH_GREEN": activeConfig.tuning.glowWarmthGreen
   of "GLOW_WARMTH_BLUE": activeConfig.tuning.glowWarmthBlue
   of "SPH_XSPH_EPSILON": activeConfig.tuning.sphXsphEpsilon
+  of "SPH_MAX_DENSITY_RATIO": activeConfig.tuning.sphMaxDensityRatio
   else: 0.0
 
 # =============================================================================
@@ -230,6 +236,7 @@ proc getPlaceholderMap*(): Table[string, string] =
 
   # SPH fluid-mode constants (consumed by forces-sph.wgsl).
   result["TUNABLE_SPH_XSPH_EPSILON"] = fmt"{activeConfig.tuning.sphXsphEpsilon:.2f}"
+  result["TUNABLE_SPH_MAX_DENSITY_RATIO"] = fmt"{activeConfig.tuning.sphMaxDensityRatio:.2f}"
 
   # HDR-bloom separable-blur kernel (consumed by blur.wgsl). The half kernel
   # (centre + one side) and its element count come from bloom_core, the single
