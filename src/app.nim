@@ -230,9 +230,7 @@ proc loop(now: float): Future[void] {.async.} =
   # Render using WebGPU - data stays on GPU, no readback needed. Render/glow
   # bind groups are built once at init (webgpu_render.initWebGPURender);
   # nothing about them varies per frame, so they are never rebuilt here.
-  let renderTiming = webgpu_render.render(runtimeState.particleCount).toJs
-  currentTiming.renderPackTimeMs = renderTiming["packTimeMs"].to(float)
-  currentTiming.renderUploadTimeMs = renderTiming["uploadTimeMs"].to(float)
+  webgpu_render.render(runtimeState.particleCount)
 
   currentTiming.frameTimeMs = performanceNow() - frameStart
   currentTiming.computeTimeMs = computeTimeMs

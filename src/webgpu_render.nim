@@ -37,11 +37,6 @@ import field_core
 # SECTION 1: TYPE DEFINITIONS
 # ==============================================================================
 
-type
-  RenderTiming* = ref object of JsObject
-    packTimeMs* {.exportc.}: float    # Always 0 - no CPU packing
-    uploadTimeMs* {.exportc.}: float  # Always 0 - no upload
-
 # ==============================================================================
 # SECTION 2: MODULE STATE
 # ==============================================================================
@@ -1265,20 +1260,15 @@ proc ensureTonemapBindGroups() =
 # SECTION 5: RENDER LOOP
 # ==============================================================================
 
-proc render*(particleCount: int): RenderTiming =
+proc render*(particleCount: int) =
   ## Render particles using WebGPU with ping-pong trail rendering.
-  ## Returns timing info (always 0 since no CPU work).
   ##
   ## Ping-pong architecture:
   ##   Frame N (trailParity=0): Read from A, Write to B, Blit B to screen
   ##   Frame N+1 (trailParity=1): Read from B, Write to A, Blit A to screen
 
-  result = RenderTiming()
-  result.packTimeMs = 0.0
-  result.uploadTimeMs = 0.0
-
   if not isInitialized:
-    return result
+    return
 
   # Update render params uniform
   # Layout matches RenderParams indices in gpu_types.nim

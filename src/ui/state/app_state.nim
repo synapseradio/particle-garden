@@ -20,8 +20,6 @@ type
     gridTimeMs*: float
     physicsTimeMs*: float
     integrationTimeMs*: float
-    renderPackTimeMs*: float
-    renderUploadTimeMs*: float
     computeTimeMs*: float  # Total compute time
     frameTimeMs*: float    # Actual wall-clock frame time
 
@@ -30,8 +28,6 @@ func initTimingState*(): TimingState =
     gridTimeMs: 0.0,
     physicsTimeMs: 0.0,
     integrationTimeMs: 0.0,
-    renderPackTimeMs: 0.0,
-    renderUploadTimeMs: 0.0,
     computeTimeMs: 0.0,
     frameTimeMs: 0.0
   )
@@ -47,8 +43,6 @@ type
     gridTimeSum*: float
     physicsTimeSum*: float
     integrationTimeSum*: float
-    renderPackTimeSum*: float
-    renderUploadTimeSum*: float
     totalTimeSum*: float
 
 func initProfilingState*(): ProfilingState =
@@ -57,8 +51,6 @@ func initProfilingState*(): ProfilingState =
     gridTimeSum: 0.0,
     physicsTimeSum: 0.0,
     integrationTimeSum: 0.0,
-    renderPackTimeSum: 0.0,
-    renderUploadTimeSum: 0.0,
     totalTimeSum: 0.0
   )
 
@@ -69,8 +61,6 @@ func accumulate*(state: ProfilingState; timing: TimingState): ProfilingState =
   result.gridTimeSum = state.gridTimeSum + timing.gridTimeMs
   result.physicsTimeSum = state.physicsTimeSum + timing.physicsTimeMs
   result.integrationTimeSum = state.integrationTimeSum + timing.integrationTimeMs
-  result.renderPackTimeSum = state.renderPackTimeSum + timing.renderPackTimeMs
-  result.renderUploadTimeSum = state.renderUploadTimeSum + timing.renderUploadTimeMs
   result.totalTimeSum = state.totalTimeSum + timing.frameTimeMs
 
 func reset*(state: ProfilingState): ProfilingState =
