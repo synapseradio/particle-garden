@@ -631,7 +631,7 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       exactly the feature whose value cannot be judged from a test.
 - [x] 7.11 `just happen` and `just check` green.
       600 native, 50 TypeScript, 0 failures, build clean.
-- [ ] 7.12 Make the camera-centre wrap unconditional. `Camera`'s doc promises the centre "ALWAYS
+- [x] 7.12 Make the camera-centre wrap unconditional. `Camera`'s doc promises the centre "ALWAYS
       wrapped into [0, worldSize)", but `panned`/`zoomedAt` wrap through
       `physics_core.wrapPosition`, which corrects by at most one span — and `zoomedAt` can move
       the centre by up to (worldW/2)·(1/CAMERA_ZOOM_MIN − 1/CAMERA_ZOOM_MAX) ≈ 1.94 world
@@ -675,7 +675,7 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       non-vacuous directory sweep. No live defect existed at landing — every shader's declared
       bindings agreed with its bind group. The blank-canvas class 7.3 recorded is now a build
       failure.
-- [ ] 7.15 **Zoom floor 1.0; the tiling machinery goes** — user decision, design D15.
+- [x] 7.15 **Zoom floor 1.0; the tiling machinery goes** — user decision, design D15.
       `CAMERA_ZOOM_MIN` 0.25 → 1.0; `CAMERA_ZOOM_NOTCH_TILED` deleted (at the new floor it
       collides with the world notch); `tileRing`/`tileCount`/`tileOffsetSteps` deleted from
       `camera_core.nim` with their tests; the three particle draws revert to one instance;
@@ -684,13 +684,27 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       quads whole across the seam. 7.12's wrap fix lands beside this as invariant-pinning: at
       floor 1.0 a zoom jump moves the centre well under one span, so the multi-span defect is
       unreachable and the floor-mod is hardening.
+      DONE (commits 939fcdb + 91a1858 + 22f3427, delegated, lead-verified). 209 lines of tiling
+      deleted against 59 added; seven tiling tests deleted, one renamed to the property that
+      SURVIVES (`a point past the seam renders at its nearest image, not the long way`) because
+      its old name asserted tiling at a zoom no longer reachable. No `@binding` or layout line
+      moved — confirmed by the 7.14 manifest passing untouched. `CAMERA_ZOOM_NOTCH_WORLD` stays
+      a literal 1.0 rather than aliasing the floor: zoom 1 means that framing by definition and
+      must not drift if the floor ever moves. The wrap test was watched failing at spans −4,
+      −2.5, 3.0 and 7.25 in both movers before the floor-mod landed; 7.12's checkbox carries the
+      same commits. FOUND AND LEFT FOR THE USER, Article 6 of the principles: `CAMERA_SIZE_FLOOR`
+      and the `cameraSizeCorrection` pair are now provably dead — zoom clamps to [1, 8] at every
+      entry, so the correction returns exactly 1.0 always. Deleting a mechanism is not an
+      agent's or the lead's call to make alone; the dormancy is documented at each site and the
+      decision is queued for the user with a recommendation to delete.
 - [ ] 7.16 **Device-adaptive camera input, per design D15.** Plain scroll pans; pinch (arriving
       as Ctrl/Cmd+wheel) zooms at the cursor; middle-button drag also pans; the 7.7 keyboard
       bindings stay; left-drag remains the physics interaction. Pure handler logic in
       `src/ui/input/` with native tests; DOM wiring in `canvas_input.nim`; `preventDefault`
       suppresses each page gesture replaced — Ctrl+wheel page zoom above all, because the
       browser is a portability runtime, not a website. The two-finger tap blast (7.8) is
-      untouched.
+      untouched. Also: `wheel_handler.nim:46-47` and `key_handler.nim:65` still name the old
+      "0.25x"/"0.25..8" range in comments — 7.15 could not touch that tree; correct them here.
 
 ## 8. Notched sliders, regimes, and weather (S7)
 
