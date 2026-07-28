@@ -306,7 +306,7 @@ Done here because the bind groups are already open. Implements no second reactio
       (D8 governs preset compatibility). Left untouched deliberately rather than invented here.
 - [x] 5.7 `just happen` and `just check` green.
       545 native tests, 34 TypeScript tests, 0 failures.
-- [ ] 5.8 Floor the inhibitor at zero where deposits fold in. `field-resolve.wgsl` adds the
+- [x] 5.8 Floor the inhibitor at zero where deposits fold in. `field-resolve.wgsl` adds the
       signed deposit sum to `.g` with no floor, so stacked negative secretion drives the channel
       below Gray-Scott's domain. Measured with an offline oracle at shipped constants
       (the session's scratchpad `math_verify.py`): twenty max-deposit eroders on one empty cell
@@ -316,6 +316,13 @@ Done here because the bind groups are already open. Implements no second reactio
       Fix: `max(0.0, current.y + depositB)` in field-resolve.wgsl, the same floor in whatever
       native code mirrors the resolve fold (grep `field_core` for the oracle), and a test:
       `the inhibitor never goes negative however many eroders stack on one cell`.
+      DONE (commit ef9f112, delegated, lead-verified). The floor is exactly the prescribed
+      `max(0.0, current.y + depositB)` with the cap logic byte-identical; the mirror
+      `field_core.resolveCellDeposit` applies cap → fold → floor in the same order, lockstep
+      named at the shader site. The test was WATCHED FAILING first at −0.0468 (20 eroders) and
+      −0.2339 (100) — reproducing this task's offline measurement to three decimals from the
+      independent native harness — then green after the floor. 657 native checks, both suites
+      green in the implementing worktree; re-verified on main after integration.
 - [ ] 5.9 Fold `ChemistryField` into the descriptor table. One parameter-metadata contract
       currently has two record shapes, two clamps, two Nim→JS serializers, and two TS
       interfaces (`param_descriptor.nim`'s `ChemistryField`; `web_api.nim`'s
