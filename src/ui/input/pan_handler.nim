@@ -38,11 +38,13 @@ func pixelPanDelta*(pixelDelta: float;
   ## which is what makes the ratio exact rather than approximate — canvas.width
   ## comes from window.innerWidth, the same scale pointer coordinates use.
   ##
-  ## Zero when the view has no pixels or the camera has no zoom. Both divide by
-  ## zero, and an infinite offset folds to NaN in the camera centre, which no
-  ## later gesture recovers from: every subsequent comparison against a NaN
-  ## centre is false, so the view would stay lost until reload.
-  if viewSpanPx <= 0.0'f32 or zoom <= 0.0'f32: 0.0'f32
+  ## Zero when the view has no pixels, which a canvas reports between a resize
+  ## and the next layout. Dividing by it yields an infinite offset that folds to
+  ## NaN in the camera centre, and nothing recovers from that: every later
+  ## comparison against a NaN centre is false, so the view stays lost until
+  ## reload. Zoom needs no such guard — config_ranges.CAMERA_ZOOM_MIN floors it
+  ## at 1.0 and every write to the live camera clamps against that.
+  if viewSpanPx <= 0.0'f32: 0.0'f32
   else: pixelDelta.float32 * worldSpan / (viewSpanPx * zoom)
 
 func viewPanned*(camera: Camera; pixelDx, pixelDy: float;
