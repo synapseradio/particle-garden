@@ -55,10 +55,13 @@ mirror the shaders; a shader change without its mirror change in the same diff i
 ## 6. Build nothing without a consumer
 
 Ship a mechanism only alongside the code that uses it. A genuine reservation is prose naming what
-a future consumer must touch — never dead fields, dead branches, or machinery kept dormant.
+a future consumer must touch — never dead fields, dead branches, or machinery kept dormant. What
+is proven dead is deleted in the same change that proves it; deferring the deletion — to a later
+pass, or to someone else's authority — is how dead machinery survives.
 
 **Here:** the build fails on unused imports and variables; for everything larger the review
-question is "who reads this?", and "nothing yet" ends the discussion.
+question is "who reads this?", and "nothing yet" ends the discussion. Deleting proven-dead code
+carries standing authorization and is never parked as a question.
 
 ## 7. Compose; never enumerate
 
