@@ -697,7 +697,12 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       entry, so the correction returns exactly 1.0 always. Deleting a mechanism is not an
       agent's or the lead's call to make alone; the dormancy is documented at each site and the
       decision is queued for the user with a recommendation to delete.
-- [ ] 7.16 **Device-adaptive camera input, per design D15.** Plain scroll pans; pinch (arriving
+      THE QUEUED QUESTION WAS OVERRULED BY A STANDING USER RULE — "nothing dead ever gets to
+      remain" — now engineering principles article 6. The apparent-scale floor and size
+      correction were deleted in full (commit ffca6f6 on main, −137 lines, five tests), including
+      `apparentScale` itself once its WGSL mirror died and left it a caller-less identity.
+      Deferral dressed as deference is recorded as the failure mode, not the caution.
+- [x] 7.16 **Device-adaptive camera input, per design D15.** Plain scroll pans; pinch (arriving
       as Ctrl/Cmd+wheel) zooms at the cursor; middle-button drag also pans; the 7.7 keyboard
       bindings stay; left-drag remains the physics interaction. Pure handler logic in
       `src/ui/input/` with native tests; DOM wiring in `canvas_input.nim`; `preventDefault`
@@ -705,6 +710,16 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       browser is a portability runtime, not a website. The two-finger tap blast (7.8) is
       untouched. Also: `wheel_handler.nim:46-47` and `key_handler.nim:65` still name the old
       "0.25x"/"0.25..8" range in comments — 7.15 could not touch that tree; correct them here.
+      DONE (commits fc7ff02 + fffb3be + a66545c on main, delegated, lead-verified). Shipped map:
+      plain scroll pans by screen pixels at any zoom; Ctrl/Cmd+wheel — which is also how a
+      touchpad pinch arrives — zooms at the cursor through the existing exponential
+      clamp-before-anchor path; middle-button drag pans with a session state machine; keyboard
+      unchanged; left-drag stays physics. Wheel listener registered non-passive so
+      `preventDefault` actually suppresses page zoom and scroll. Eighteen new native tests in
+      the input suites. The stale zoom-range comments were corrected against the constants. The
+      third commit is the standing no-dead-code rule applied by the implementer itself: a
+      zero-zoom guard in the new pan path was provably unreachable (zoom clamps to [1, 8] at
+      every entry) and was deleted with the proof rather than documented.
 
 ## 8. Notched sliders, regimes, and weather (S7)
 
@@ -1258,6 +1273,31 @@ in this group:
 - [ ] 10.2 If the deposit splat dominates, shrink the kernel or lower the field substep count before
       touching particle count. Note the known gap: bloom passes carry no timestamps
       (`webgpu_render.nim beginBloomPass`).
+      PARTIALLY OVERTAKEN BY MEASUREMENT: the substep count is NOT the free lever this task
+      assumes. Lowering it unscaled raises deposit per unit of field time and dissolves the
+      ignition-coherence property (measured at 3: a scattered deposit ignited on frame 6, the
+      critical radius fell 5 → 3, the single-cell control lit the field). The fold now
+      renormalizes per field step (`RD_DEPOSIT_FRAME_SCALE`, commit 27e0307), which makes the
+      knob safe; a fully green substeps-3 configuration was built and then REVERTED by user
+      decision — evolution speed wins. Remaining sanctioned levers: `FIELD_PATTERN_SHRINK`
+      (chemistry lives in cell space) and whatever 10.1's profiling convicts.
+- [ ] 10.5 Rule on deposit-vs-population normalization, then implement the ruling. Reported by a
+      delegate and spot-verified against source, UNVERIFIED BY THE LEAD beyond that: per-cell
+      deposit drive is linear in particle count — the splat deposits per particle with no count
+      term anywhere (`field-deposit.wgsl`, the uniform write in `webgpu_compute.nim`) — so
+      halving the population halves the field's drive and thins patterns at fixed wavelength.
+      The candidate fix scales the deposit uniform by a reference count over the live count,
+      which changes the Secretion Rate slider's MEANING from per-particle to per-population;
+      pinning the reference at the shipped default count keeps default-count behaviour
+      byte-identical. That meaning change is the user's ruling to make. Confound to separate
+      first: dot size also grows as population thins, via the render density term.
+- [ ] 10.6 Recalibrate the ignition harness's coverage constant. Reported by the same delegate:
+      `HARNESS_DEPOSIT_COVERAGE` still models ~6% cell coverage of the retired 512x512 field;
+      the shipped field gives ~0.7% at the same population, so the harness measures at roughly
+      9x the real per-cell drive, and the recorded ignition constants (splat radius, default
+      deposit) inherit the inflation. Verify the arithmetic, re-measure ignition at faithful
+      coverage, and update the constants' recorded observations — or record why the inflation
+      is deliberate headroom.
 - [ ] 10.3 If Fluid Chemistry is over budget, lower that preset's default particle count. Do not
       remove the coupling combination (design D7).
 - [ ] 10.4 Record the numbers in `docs/perf-report.md` beside the existing baseline.
