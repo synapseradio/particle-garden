@@ -18,7 +18,7 @@
 #
 # ==============================================================================
 
-import std/strutils
+import std/[strutils, sets, algorithm, tables]
 
 # ==============================================================================
 # NAMED-FIELD STRUCT CONSTRUCTORS
@@ -90,3 +90,83 @@ func namedFieldConstructorLines*(code: string): seq[int] =
       if colon < line.len and line[colon] == ':':
         result.add(lineNumber)
         break
+
+# ==============================================================================
+# BIND-GROUP BINDING NUMBERS
+# ==============================================================================
+#
+# render.wgsl and glow.wgsl share ONE hand-built bind-group layout in
+# webgpu_render.nim; nothing checks that the two shaders' @binding numbers
+# still agree with it or with each other. A swapped or added binding compiles,
+# bundles, and builds green — the GPU rejects the pipeline only at runtime,
+# and the symptom is a blank canvas. Same shape as the named-field constructor
+# above, one step earlier in the pipeline: a fact living in two places (the
+# shader text, the bind group built against it) with nothing that fails
+# loudly when they disagree.
+
+func bindingsDeclared*(code: string): seq[int] =
+  ## Sorted, deduplicated `@binding(N)` numbers a shader declares.
+  ##
+  ## A trailing `//` comment is stripped from each line before the scan, so
+  ## prose that merely mentions a binding number can never inflate the set —
+  ## the same false-positives-forbidden stance as namedFieldConstructorLines.
+  ## A `/* */` block comment is NOT stripped; no bundled shader uses one
+  ## today, so this is a recorded blind spot (see the tests) rather than a
+  ## parser worth the complexity to close.
+  const marker = "@binding("
+  var seen: HashSet[int]
+  for rawLine in code.splitLines:
+    let commentAt = rawLine.find("//")
+    let line = if commentAt >= 0: rawLine[0 ..< commentAt] else: rawLine
+    var searchFrom = 0
+    while true:
+      let markerAt = line.find(marker, searchFrom)
+      if markerAt < 0:
+        break
+      let numStart = markerAt + marker.len
+      var numEnd = numStart
+      while numEnd < line.len and line[numEnd] in {'0'..'9'}:
+        inc numEnd
+      if numEnd > numStart and numEnd < line.len and line[numEnd] == ')':
+        seen.incl(parseInt(line[numStart ..< numEnd]))
+      searchFrom = numStart
+  for binding in seen:
+    result.add(binding)
+  result.sort()
+
+# ==============================================================================
+# EXPECTED-BINDINGS MANIFEST
+# ==============================================================================
+#
+# One table, read by both tools/wgsl_bundle.nim (fails the build on mismatch or
+# on a shader absent from this table) and tests/test_wgsl_lint.nim (asserts the
+# bundled output still matches). Keys are bundled shader names — the filename
+# under web/shaders/ with ".wgsl" stripped, exactly what wgsl_bundle.bundle's
+# shaderName holds. Values are the DECLARED set per shader, not a shared-layout
+# prefix: glow shares render's layout but skips a binding, so contiguity is
+# never assumed here — every entry is read off the actual bundle.
+
+const ExpectedShaderBindings*: Table[string, seq[int]] = {
+  # Compute shaders (shader_manifest.nim / sim_registry.nim dispatch keys).
+  "bin-count": @[0, 1, 2],
+  "bin-scatter": @[0, 1, 2, 3, 4, 5],
+  "prefix-sum-local": @[0, 1, 2, 3],
+  "prefix-sum-blocks": @[0, 1, 2],
+  "prefix-sum-final": @[0, 1, 2],
+  "forces": @[0, 1, 2, 3, 4, 5, 6],
+  "forces-sph": @[0, 1, 2, 3, 4, 5, 6],
+  "integrate": @[0, 1, 2, 3, 4],
+  "field-seed": @[0, 1],
+  "field-deposit": @[0, 1, 2, 3, 4],
+  "field-resolve": @[0, 1, 2],
+  "rd-step": @[0, 1, 2, 3],
+  "field-force": @[0, 1, 2, 3, 4, 5],
+  # Render shaders (staticRead into app.js by webgpu_render.nim).
+  "render": @[0, 1, 2, 3, 4],
+  "glow": @[0, 1, 2, 4],  # binding 3 (render's fieldTexture) legally absent — glow never samples the RD field
+  "fade": @[0, 1, 2, 3, 4],
+  "tonemap": @[0, 1, 2, 3, 4, 5],
+  "field-composite": @[0, 1, 2, 3],
+  "composite": @[0, 1],
+  "blur": @[0, 1, 2],
+}.toTable

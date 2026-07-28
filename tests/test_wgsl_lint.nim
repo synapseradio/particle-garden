@@ -15,7 +15,7 @@
 #
 # ==============================================================================
 
-import std/[unittest, os, strutils]
+import std/[unittest, os, strutils, tables]
 import ../src/wgsl_lint
 
 const WGSL_LINT_TESTS_LOADED* = true
@@ -105,3 +105,69 @@ suite "The Shipped Shaders Parse As WGSL":
     # Without this the suite above passes vacuously when run from the wrong
     # working directory, which would make the real check silently worthless.
     check dirExists("web/shaders/src")
+
+
+suite "Declared Bindings Are Parsed":
+  test "a single @binding is captured":
+    let code = "@group(0) @binding(0) var<uniform> params: GridParams;"
+    check bindingsDeclared(code) == @[0]
+
+  test "multiple @bindings are captured in sorted order":
+    let code = "@group(0) @binding(2) var<uniform> b: T;\n" &
+      "@group(0) @binding(0) var<storage, read> a: array<u32>;\n" &
+      "@group(0) @binding(1) var<storage, read_write> c: array<u32>;"
+    check bindingsDeclared(code) == @[0, 1, 2]
+
+  test "a duplicate @binding number is reported once":
+    let code = "@group(0) @binding(0) var a: T;\n@group(1) @binding(0) var b: T;"
+    check bindingsDeclared(code) == @[0]
+
+  test "code with no @binding declarations yields an empty seq":
+    let code = "fn main() {\n  let x = 1.0;\n}"
+    check bindingsDeclared(code).len == 0
+
+  test "a full-line comment naming a binding is not counted":
+    let code = "// @binding(3) used to live here\n@group(0) @binding(0) var a: T;"
+    check bindingsDeclared(code) == @[0]
+
+  test "a trailing comment does not add a phantom binding beyond the real one":
+    let code = "@group(0) @binding(1) var a: T; // was @binding(9) before a rename"
+    check bindingsDeclared(code) == @[1]
+
+  test "a block comment naming a binding IS still counted":
+    # `/* */` is not stripped — recorded here as the checker's known blind
+    # spot, the same way namedFieldConstructorLines pins its own blind spot
+    # above, rather than leaving it to be rediscovered as a false build pass.
+    let code = "/* @binding(9) example */"
+    check bindingsDeclared(code) == @[9]
+
+
+suite "The Bundled Shaders Declare Their Registered Bindings":
+  test "every bundled shader's declared bindings match ExpectedShaderBindings":
+    # THE ASSERTION THAT PROTECTS THE SHARED RENDER/GLOW LAYOUT. render.wgsl
+    # and glow.wgsl share one hand-built bind-group layout in
+    # webgpu_render.nim; nothing else notices a swapped or added @binding
+    # number, which compiles, bundles, and builds green while the GPU rejects
+    # the pipeline only at runtime — a blank canvas behind a green build.
+    var mismatches: seq[string]
+    var unregistered: seq[string]
+    for path in walkFiles("web/shaders" / "*.wgsl"):
+      let shaderName = path.extractFilename.replace(".wgsl", "")
+      let declared = bindingsDeclared(readFile(path))
+      if shaderName notin ExpectedShaderBindings:
+        unregistered.add(shaderName)
+        continue
+      let expected = ExpectedShaderBindings[shaderName]
+      if declared != expected:
+        mismatches.add(shaderName & ": expected " & $expected & ", got " & $declared)
+    check unregistered.len == 0
+    check mismatches.len == 0
+    if unregistered.len > 0:
+      echo "  Shaders missing from ExpectedShaderBindings: ", unregistered.join(", ")
+    if mismatches.len > 0:
+      echo "  Binding mismatches: ", mismatches.join("; ")
+
+  test "the bundled shader directory was actually found":
+    # Without this the sweep above passes vacuously when run from the wrong
+    # working directory, which would make it silently worthless.
+    check dirExists("web/shaders")

@@ -226,6 +226,22 @@ proc bundle(srcPath: string): string =
         bundledLines[lineNumber - 1].strip & "\n"
     quit report
 
+  # Reject a shader whose declared bindings disagree with the manifest.
+  # render.wgsl and glow.wgsl share one hand-built bind-group layout with no
+  # compile-time check of its own; this is the check — see
+  # ExpectedShaderBindings in src/wgsl_lint.nim. A shader absent from that
+  # table fails the same way an unregistered pass fails
+  # webgpu_compute.getExpectedEntryCount: silence is not a pass.
+  if shaderName notin ExpectedShaderBindings:
+    quit "Error: " & shaderName & " has no entry in ExpectedShaderBindings " &
+      "(src/wgsl_lint.nim). Register its declared bindings before it can bundle."
+  let declaredBindings = bindingsDeclared(result)
+  let expectedBindings = ExpectedShaderBindings[shaderName]
+  if declaredBindings != expectedBindings:
+    quit "Error: binding mismatch in " & shaderName & "\n" &
+      "  expected: " & $expectedBindings & "\n" &
+      "  got:      " & $declaredBindings
+
 # ==============================================================================
 # INCREMENTAL BUILD SUPPORT
 # ==============================================================================
