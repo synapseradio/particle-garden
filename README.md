@@ -28,21 +28,25 @@ xattr -dr com.apple.quarantine ~/Downloads/Particle\ Garden.app
 <!-- TODO: Add screenshot or GIF demonstrating the simulation here -->
 <!-- Recommended: 600-800px wide GIF showing particles forming patterns -->
 
-## Three Modes
+## One World
 
-The mode buttons at the top of the panel switch between three different simulations, each with its own physics and its own set of controls. Switching modes reshapes the panel: you only ever see the knobs that affect what is currently running.
+Three kinds of physics run in the same world at once, each behind its own strength slider: species forces, fluid pressure, and a chemical field. Every strength reaches zero, so "just particle life" or "just fluid" is an ordinary place on the sliders rather than a mode — the panel never changes shape, and every control is always live.
 
-**Particle Life** is the default. Six species attract and repel each other according to a 6x6 matrix you can edit directly. This is where swarms, orbits, and predation come from.
+**Species forces.** Six species attract and repel each other according to a 6x6 matrix you can edit directly. This is where swarms, orbits, and predation come from.
 
-**SPH Fluid** treats the same particles as an incompressible liquid, with density, pressure and viscosity instead of species rules. It sloshes.
+**Fluid.** Smoothed-particle pressure and viscosity over the same particles. It sloshes.
 
-**Reaction-Diffusion** runs a Gray-Scott chemical simulation on a field behind the particles, growing the spots, stripes and coral patterns that show up on seashells and animal coats. The particles seed the chemistry as they move, and the pattern's gradients push them back. Feed and Kill select which pattern forms; the Starter Presets give you three known-good settings to begin from.
+**Chemistry.** A Gray-Scott reaction-diffusion field lives behind the particles, growing the spots, stripes and coral patterns that show up on seashells and animal coats. Particles secrete into the field as they move — colonies are what ignite a pattern; nothing seeds it automatically — and the pattern's gradients steer them back. Feed and Kill choose the pattern; the regime buttons (Waves, Mitosis, Labyrinth, Spots, Worms, Coral) jump to known-good coordinates, and the Drift toggle lets the climate wander between them on its own.
+
+Presets are named points in this parameter space. The starter presets, one per regime, are places to begin; save your own, and presets saved by earlier versions still load.
 
 ## What You Can Do
 
 Particles form swarms, chase each other, or settle into stable orbits — all from simple attraction rules. Click the interaction matrix to change how species react to each other and watch the system reorganize.
 
 Lonely particles grow bigger. Toggle trails to see where things have been.
+
+Scroll to zoom at the cursor; arrow keys pan; `0` resets the view. Zoom in to follow a single creature; the world itself wraps like Pac-Man, so nothing ever hits a wall.
 
 ---
 
@@ -98,6 +102,7 @@ webui (the library that opens the native window) couldn't find a browser. Instal
 <details>
 <summary><strong>Contributing</strong></summary>
 
+- Read [`docs/engineering-principles.md`](docs/engineering-principles.md) first — twelve short articles; contributions are reviewed against them.
 - The simulation, GPU pipeline, and server are Nim; the control panel is SolidJS/TypeScript under `web-ui/`; shaders are WGSL. Nim owns every simulation value, and the panel reads them through `window.gardenAPI` rather than restating any of them.
 - Build with `just happen` and run `just check` before submitting — it covers both the Nim and TypeScript suites.
 - Code style enforced by compiler flags (see nimble file)

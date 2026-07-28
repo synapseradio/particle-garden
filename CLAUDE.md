@@ -1,9 +1,10 @@
 # CLAUDE.md
 
-Native desktop wrapper for a particle simulator with WebGPU compute physics. There is one world, and species forces, SPH fluid pressure and a Gray-Scott chemical field all run in it at once, each at a continuous strength the user sets. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
+Native desktop wrapper for a particle simulator with WebGPU compute physics. The browser is a portability runtime reached through nim's webui bindings — this is a desktop app, not a website, so web conventions (page scroll and zoom, responsive-site layout, external resources) do not apply, and input handlers suppress them where they collide with app gestures. There is one world, and species forces, SPH fluid pressure and a Gray-Scott chemical field all run in it at once, each at a continuous strength the user sets. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
 
 ## Golden rules
 
+- **Read [`docs/engineering-principles.md`](docs/engineering-principles.md) before designing or reviewing anything.** Twelve articles, each with its rule, the scar that earned it, and the gate that enforces it. Work is reviewed against them.
 - **Run `just happen` after every change.** It runs the shader bundle, the Nim frontend compile, the Bun/TS build (with the `tsc --noEmit` typecheck), and the native compile, in the order the staticReads require. Run `just check` (both test suites) before any release. `just be` = pull → build → run.
 - **The language boundary is `window.gardenAPI`** (`src/web_api.nim`). Nim owns the simulation: CONFIG, defaults, ranges, clamping, color math, preset schema/validation/apply order. TypeScript owns only the control panel and never restates a number the Nim side serves — ranges, defaults, steps, ceilings, and storage keys all come through `gardenAPI`. Canvas mouse/touch input stays Nim (`canvas_input.nim`).
 - **The CONFIG mirror is synchronous.** Every parameter write lands in the typed store AND the flat GPU-facing CONFIG in the same tick via `updateSimulation`/`updateRender` (`web_api.nim` documents the invariant). Never rebuild this on subscriptions or microtasks — the frame loop reads CONFIG fresh every frame.
@@ -102,14 +103,14 @@ WGSL shaders use a module system with build-time preprocessing. Layout under `we
 - `src/` — source shaders that declare `//! import particle, ...` directives.
 - `*.wgsl` (top level) — generated bundled output. DO NOT EDIT.
 
-`tools/wgsl_bundle.nim` reads `web/shaders/src/*.wgsl`, resolves the `//! import` directives from `modules/`, substitutes `{{PLACEHOLDER}}` values from `src/shader_config.nim`, and writes the bundled output. Substitution runs after imports are inlined, so placeholders work inside `modules/` too, and an unresolved `{{...}}` fails the bundle rather than reaching the GPU.
+`tools/wgsl_bundle.nim` reads `web/shaders/src/*.wgsl`, resolves the `//! import` directives from `modules/`, substitutes `{{PLACEHOLDER}}` values from `src/shader_config.nim`, and writes the bundled output. Substitution runs after imports are inlined, so placeholders work inside `modules/` too, and an unresolved `{{...}}` fails the bundle rather than reaching the GPU. The bundle step also runs `src/wgsl_lint.nim` over every bundled shader: a WGSL struct constructor written with Nim-style named fields (`Camera(centerX: ...)` — WGSL constructors are positional only) quits the build naming the shader and line, because the browser is the only WGSL compiler and would otherwise report it at runtime as a black window.
 
 **Shaders reach the GPU by two different routes**, and which one a new shader takes decides whether it belongs in `StaticFiles`:
 
 - **Compute shaders** are listed in `shader_manifest.nim`, fetched over HTTP at pipeline-init time, and therefore must be registered in the `StaticFiles` table in `main.nim`. Unregistered means unserved means a failed fetch.
 - **Render shaders** (`render`, `glow`, `fade`, `composite`, `field-composite`, `blur`, `tonemap`) are `staticRead` into `app.js` by `webgpu_render.nim` at Nim-compile time. They are deliberately absent from `StaticFiles` — serving them would ship the same bytes twice.
 
-**The render path has no compile-time bind-group check, and this is the sharpest edge in the codebase.** `render.wgsl` and `glow.wgsl` share ONE explicit bind group layout. Nothing verifies that layout, the bind-group entries built against it, and the two shaders' `@binding` numbers agree — not the Nim compiler, not `just happen`, not `just check`. All of them pass green while the app fails GPU validation in the browser and draws nothing. The compute path is protected by the `EXPECTED_BIND_GROUP_ENTRIES_*` constants and `validateBindGroupEntryCount`; the render path has no equivalent.
+**The render path's bind groups are guarded by entry counts only, and this is the sharpest edge in the codebase.** `render.wgsl` and `glow.wgsl` share ONE explicit bind group layout. `webgpu_render.nim` validates each render bind group's entry count against its `EXPECTED_BIND_GROUP_ENTRIES_*` constant at creation time — the same guard the compute path uses — but a count cannot see two swapped `@binding` numbers, and nothing compares the layout, the entries, and the shaders' `@binding` declarations against each other. That disagreement passes `just happen` and `just check` green while the app fails GPU validation in the browser and draws nothing.
 
 So when you touch a render binding, change all four together and verify in a running app: the layout in `webgpu_render.nim`, every bind group built from it, and the `@binding` numbers in BOTH shaders that share it. A binding added to one shader and not the other is not a compile error — it is a blank canvas.
 
@@ -194,7 +195,8 @@ Module inventory:
 | `grid.nim` | Spatial grid dimensions from world size + interaction radius. |
 | `palette.nim` | Pure species color-palette generation. |
 | `preset.nim` | Pure versioned preset schema (v2): serialization, validation, apply order, and the v1 mode-to-strengths migration. |
-| `tools/wgsl_bundle.nim` | Shader preprocessor (resolves `//! import`, substitutes `{{PLACEHOLDER}}`). |
+| `wgsl_lint.nim` | Pure WGSL source checks the bundler runs; rejects named-field constructor calls (WGSL constructors are positional only) as a build failure. |
+| `tools/wgsl_bundle.nim` | Shader preprocessor (resolves `//! import`, substitutes `{{PLACEHOLDER}}`, runs `wgsl_lint`). |
 
 Bindings live in `src/bindings/`: `webgpu.nim` (adapters, devices, buffers, pipelines, bind groups), `typed_arrays.nim` (Float32Array, Uint32Array, Int32Array, ...), `dom_extensions.nim` (Canvas, HTMLElement, classList), `js_interop.nim` (console, random, object creation), `window.nim` (requestAnimationFrame, performance.now()).
 
