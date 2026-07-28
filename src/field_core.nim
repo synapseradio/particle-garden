@@ -296,9 +296,18 @@ const
 
 func resolveCellDeposit*(inhibitor, deposit: float): float =
   ## One cell's inhibitor after this frame's particle deposits land on it.
-  ## Mirrors field-resolve.wgsl. The cap is on what arrives, never on what the
-  ## reaction produces, so the dynamics keep every excursion they make.
-  inhibitor + min(deposit, RD_DEPOSIT_CELL_MAX)
+  ## Mirrors field-resolve.wgsl in the same order: cap the incoming deposit,
+  ## fold it onto the inhibitor, then floor the fold at 0.0. The cap is on
+  ## what arrives, never on what the reaction produces, so the dynamics keep
+  ## every excursion they make.
+  ##
+  ## The cap bounds excess only from above (min() against a negative deposit
+  ## is a no-op), so full-erosion secretion has no matching floor without this
+  ## last step: enough eroders sharing one cell drive the fold negative, and
+  ## the reaction term (activator * inhibitor^2) does not distinguish sign —
+  ## a negative inhibitor erodes activator the same way a positive one would
+  ## spend it.
+  max(0.0, inhibitor + min(deposit, RD_DEPOSIT_CELL_MAX))
 
 func depositSplatWeight*(distance, radius: float): float =
   ## Unnormalized weight one cell receives from a particle `distance` cells

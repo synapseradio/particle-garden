@@ -88,6 +88,10 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // rather than overwritten with literals, so a future multi-channel reaction
   // can occupy them without a format change. Nothing reads or writes them
   // meaningfully today — this reserves an addressable slot, nothing more.
+  // Floors the fold at 0.0, mirroring field_core.resolveCellDeposit in the
+  // same order (cap, fold, floor): the cap above bounds excess only from
+  // above, so enough eroders sharing a cell still drive this negative
+  // without the floor.
   textureStore(dstField, coord,
-    vec4<f32>(current.x, current.y + depositB, current.z, current.w));
+    vec4<f32>(current.x, max(0.0, current.y + depositB), current.z, current.w));
 }

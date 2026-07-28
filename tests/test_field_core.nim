@@ -1530,6 +1530,25 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
     check resolveCellDeposit(0.0, 1000.0) == RD_DEPOSIT_CELL_MAX
     check resolveCellDeposit(0.2, 1000.0) == 0.2 + RD_DEPOSIT_CELL_MAX
 
+  test "the inhibitor never goes negative however many eroders stack on one cell":
+    # RD_DEPOSIT_CELL_MAX bounds excess from above only (min() is a no-op on a
+    # deposit already below it), so full-erosion secretion (SECRETION_MIN) has
+    # no upper-bound counterpart holding the fold above zero. A crowd of
+    # eroders sharing one empty cell (inhibitor 0.0) is the reachable case that
+    # exposes it: each contributes its own-cell splat fraction of
+    # RD_DEPOSIT_MAX at SECRETION_MIN.
+    #
+    # MEASURED (this construction, unfloored): 20 eroders reach B = -0.047,
+    # 100 reach B = -0.23. The reaction term A*B^2 does not distinguish sign,
+    # so a negative B erodes activator the same way a positive one would spend
+    # it — erosion past zero acts on the field like the structure it was
+    # supposed to remove.
+    let onePartcleAtMax = RD_DEPOSIT_MAX * SECRETION_MIN *
+      depositSplatWeight(0.0, RD_DEPOSIT_SPLAT_RADIUS) /
+      depositSplatNormalization(RD_DEPOSIT_SPLAT_RADIUS)
+    check resolveCellDeposit(0.0, onePartcleAtMax * 20.0) >= 0.0
+    check resolveCellDeposit(0.0, onePartcleAtMax * 100.0) >= 0.0
+
   # A held mouse, as the field sees it: a block of cells receives an unbounded
   # deposit every frame, without end, while the substeps run. `bounded` selects
   # the shipped path against the raw addition, so the two tests below differ in
