@@ -171,19 +171,18 @@ suite "Zoom Clamps And Anchors":
     # Guards against the filter above quietly emptying the test.
     check assertionsMade >= 30
 
-  test "zooming out past one tiles the world rather than naming a unique point":
-    # The other side of the boundary above, stated as its own fact: at zoom 0.5
-    # a clip coordinate beyond |0.5| has wrapped, so the point it names is the
-    # nearest image rather than the one the arithmetic started from. This is the
-    # infinity effect working, not a defect.
+  test "a point past the seam renders at its nearest image, not the long way":
+    # The other side of the boundary above, stated as its own fact: the clip
+    # position names the nearest image rather than the one the arithmetic
+    # started from, and no image sits further than a half span away.
     # Camera near the left edge; a point near the RIGHT edge is closer across
     # the seam than through the middle, so it renders to the camera's left.
     let camera = Camera(
-      centerX: 100.0'f32, centerY: WORLD_H * 0.5'f32, zoom: 0.5'f32)
+      centerX: 100.0'f32, centerY: WORLD_H * 0.5'f32, zoom: 1.0'f32)
     let acrossTheSeam = toClip(WORLD_W - 100.0'f32, WORLD_H * 0.5'f32,
       camera, WORLD_W, WORLD_H)
     check acrossTheSeam.x < 0.0'f32
-    check abs(acrossTheSeam.x) <= 0.5'f32 + EPSILON
+    check abs(acrossTheSeam.x) <= 1.0'f32 + EPSILON
 
     # A point genuinely to the camera's right, for contrast: same camera, and
     # nothing wrapped, so it lands where the direct offset puts it.
@@ -238,8 +237,11 @@ suite "Apparent Scale Moves As One":
         apparentScale(Camera(centerX: 0, centerY: 0, zoom: zoom)), zoom)
 
   test "the size floor keeps particles visible at minimum zoom":
-    # CONTRACT: unclamped, particles go sub-pixel exactly where the tiled-torus
-    # effect lives and the field most needs legible inhabitants.
+    # CONTRACT on the pure function, checked below the shipped zoom floor on
+    # purpose: TEST_ZOOM_MIN stands in for a range that descends past
+    # CAMERA_SIZE_FLOOR, which is the only condition under which the branch
+    # runs at all. camera_core.CAMERA_SIZE_FLOOR records that it lies dormant
+    # at the range the app currently ships.
     let minimal = Camera(centerX: 0, centerY: 0, zoom: TEST_ZOOM_MIN)
     check apparentScale(minimal) == CAMERA_SIZE_FLOOR
     check apparentScale(minimal) > TEST_ZOOM_MIN
@@ -361,69 +363,3 @@ suite "Screen UV And World Are Exact Inverses":
     let was = worldToScreenUv(world.x, world.y, before, WORLD_W, WORLD_H)
     check abs(was.x - 0.5'f32) < 1e-4'f32
     check abs(was.y - 0.5'f32) < 1e-4'f32
-
-
-suite "Zooming Out Tiles The World To The Window Edges":
-  # THE PROPERTY THE USER SEES. Below zoom 1 the view is wider than the world,
-  # and the world is a torus, so what belongs off the edge is the world again.
-  # Drawing each particle once — at its nearest image — is correct for exactly
-  # one world span and leaves black beyond it, which reads as the simulation
-  # having stopped at an invisible wall.
-
-  test "at zoom 1 and closer the world is drawn exactly once":
-    # The cost of tiling must be zero at every zoom that does not need it,
-    # because that is where the app spends nearly all its time.
-    for zoom in [1.0'f32, 1.5'f32, 2.0'f32, 8.0'f32]:
-      check tileRing(zoom) == 0
-      check tileCount(zoom) == 1
-
-  test "the ring always covers the half-span the view actually reaches":
-    # The relation, not the table: a view at zoom z spans 1/z worlds, so it
-    # reaches 1/(2z) worlds from the centre, and a ring of r copies covers
-    # r + 0.5. Anything less leaves a gap at the window edge.
-    for zoom in [0.25'f32, 0.3'f32, 0.34'f32, 0.5'f32, 0.7'f32, 0.9'f32,
-        0.99'f32, 1.0'f32]:
-      let covered = float32(tileRing(zoom)) + 0.5'f32
-      let reached = 1.0'f32 / (2.0'f32 * zoom)
-      check covered >= reached - 1e-6'f32
-
-  test "the ring is never larger than it needs to be":
-    # The other half of the relation. One ring less must NOT cover the view, or
-    # the formula is buying instances nobody can see.
-    for zoom in [0.25'f32, 0.3'f32, 0.5'f32, 0.9'f32]:
-      let ring = tileRing(zoom)
-      if ring > 0:
-        let oneLess = float32(ring - 1) + 0.5'f32
-        let reached = 1.0'f32 / (2.0'f32 * zoom)
-        check oneLess < reached
-
-  test "the tile count is the square of the ring's side":
-    for zoom in [1.0'f32, 0.5'f32, 0.25'f32]:
-      let side = 2 * tileRing(zoom) + 1
-      check tileCount(zoom) == side * side
-
-  test "the worst case at minimum zoom stays bounded":
-    # The instance multiplier is a per-frame cost on every particle, so the
-    # bound at CAMERA_ZOOM_MIN is the number that decides whether zooming out
-    # is affordable at all. 25 copies at 0.25 is the price of the infinity read.
-    check tileCount(0.25'f32) == 25
-
-  test "every tile index maps to a distinct world offset":
-    # A duplicate offset would draw two copies on top of each other and leave a
-    # hole somewhere else — the failure mode that looks like tiling working
-    # until you notice a missing quadrant.
-    var seen: seq[tuple[x, y: int]]
-    let ring = tileRing(0.25'f32)
-    for tile in 0 ..< tileCount(0.25'f32):
-      let offset = tileOffsetSteps(tile, ring)
-      check offset notin seen
-      seen.add(offset)
-    check seen.len == 25
-
-  test "tile 0 is a corner and the centre tile is the undisplaced world":
-    # The centre of the ring must be the world at its own position, or zooming
-    # out shifts the whole simulation sideways.
-    let ring = tileRing(0.25'f32)
-    let side = 2 * ring + 1
-    let centre = tileOffsetSteps(ring * side + ring, ring)
-    check centre == (x: 0, y: 0)

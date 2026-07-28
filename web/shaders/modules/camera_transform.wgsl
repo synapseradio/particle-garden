@@ -82,39 +82,9 @@ fn cameraWorldToScreenUv(world: vec2f, cam: Camera, worldSize: vec2f) -> vec2f {
 // Screen UV -> field UV, for the passes that composite the field behind the
 // particles. The field spans the world rect, so this is the world position
 // normalized; sampling wraps because both samplers use repeat addressing, which
-// is what lets the view sit past the world edge at zoom below 1.
+// is what lets a view straddling the world edge read the world on both sides.
 fn cameraScreenUvToFieldUv(uv: vec2f, cam: Camera, worldSize: vec2f) -> vec2f {
   return cameraScreenUvToWorld(uv, cam, worldSize) / worldSize;
-}
-
-// TILING BELOW ZOOM 1. Mirrors camera_core.tileRing / tileOffsetSteps, which is
-// where the covers-the-view and never-one-ring-more relations are tested.
-//
-// Below zoom 1 the window is wider than the world, and the world is a torus, so
-// what belongs past its edge is the world again. Drawing each particle once
-// leaves black out there instead — the simulation appearing to stop at an
-// invisible wall. Each particle is drawn once per tile, as an instance.
-//
-// The CPU asks for tileCount(zoom) instances and this decides where each one
-// goes. Both sides compute ceil((1/zoom - 1) / 2) from the same f32 zoom, so
-// they agree; a disagreement would show as a missing or doubled world copy.
-fn cameraTileRing(cam: Camera) -> u32 {
-  return u32(max(0.0, ceil((1.0 / cam.zoom - 1.0) * 0.5)));
-}
-
-// A tile index as a world-space displacement. Row-major over the ring, so the
-// middle index is the world at its own position.
-//
-// This is added to the quad's OFFSET, after the nearest-image choice rather
-// than before it: wrapping a position already pushed a world sideways would
-// simply undo the push.
-fn cameraTileOffset(cam: Camera, tile: u32, worldSize: vec2f) -> vec2f {
-  let ring = cameraTileRing(cam);
-  let side = 2u * ring + 1u;
-  let steps = vec2f(
-    f32(i32(tile % side) - i32(ring)),
-    f32(i32(tile / side) - i32(ring)));
-  return steps * worldSize;
 }
 
 // The factor particle size, trail length and glow radius ALL multiply by.
@@ -122,8 +92,9 @@ fn cameraTileOffset(cam: Camera, tile: u32, worldSize: vec2f) -> vec2f {
 //
 // One function rather than three: three quantities that disagree at any zoom
 // other than 1.0 is the specific failure that makes zoom read as broken rather
-// than merely different. The floor keeps particles above a pixel when zooming
-// out past 1:1, where the world tiles.
+// than merely different. The floor keeps particles above a pixel at a zoom
+// small enough to sink them; the shipped zoom range starts above it, so it
+// stays inert here — camera_core.CAMERA_SIZE_FLOOR records what waking it costs.
 fn cameraApparentScale(cam: Camera) -> f32 {
   return max(cam.zoom, {{CAMERA_SIZE_FLOOR}});
 }

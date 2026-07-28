@@ -19,7 +19,6 @@
 #
 # ==============================================================================
 
-import std/math
 import physics_core
 
 # ==============================================================================
@@ -31,11 +30,14 @@ const
     ## Lower bound on the apparent-scale factor that particle size, trail
     ## length, and glow radius share.
     ##
-    ## Without it, zooming out to CAMERA_ZOOM_MIN would shrink particles by the
-    ## same factor and drop them under a pixel — precisely at the zoom where
-    ## the world tiles and the field most needs legible inhabitants. At 0.5 a
-    ## particle at minimum zoom is half its 1:1 size rather than a quarter,
-    ## which keeps it visible while still reading as "further away".
+    ## DORMANT AT THE SHIPPED RANGE, and the next reader should know it:
+    ## config_ranges.CAMERA_ZOOM_MIN floors zoom at 1.0, above this value, so
+    ## apparentScale returns raw zoom at every camera the slider can reach and
+    ## cameraSizeCorrection multiplies by exactly 1.0. The floor engages only
+    ## under a zoom range that descends past 0.5, where a shrinking particle
+    ## drops under a pixel. Retiring it means retiring the same three sites
+    ## together: this constant, the mirror in camera_transform.wgsl, and the
+    ## apparent-scale suite in tests/test_camera_core.nim.
     ##
     ## BLIND VISUAL PICK: the ratio that looks right is the user's call. What
     ## is not a taste question is that a floor must exist and that all three
@@ -159,53 +161,12 @@ func apparentScale*(camera: Camera): float32 =
   ## same size while spreading apart reads as zooming a diagram, not as
   ## approaching something alive.
   ##
-  ## Floored so that zooming out past 1:1 — where the world tiles — does not
-  ## drive particles under a pixel.
+  ## Floored at CAMERA_SIZE_FLOOR so a zoom small enough to drive particles
+  ## under a pixel cannot. That floor sits below the shipped zoom range, so
+  ## this branch stays untaken at every camera the slider reaches — see the
+  ## constant for what waking it would cost.
   if camera.zoom < CAMERA_SIZE_FLOOR: CAMERA_SIZE_FLOOR
   else: camera.zoom
-
-# ==============================================================================
-# TILING THE WORLD BELOW ZOOM 1
-# ==============================================================================
-#
-# Below zoom 1 the window is wider than the world. The world is a torus, so what
-# belongs beyond its edge is the world again — and drawing it there is the whole
-# reason zooming out is worth having: the wrap stops being a rule the physics
-# obeys and becomes something you can see.
-#
-# Nearest-image drawing is correct for exactly one world span and leaves black
-# beyond it, which reads as the simulation stopping at an invisible wall rather
-# than as a world without edges. These functions say how many copies close that
-# gap. camera_transform.wgsl mirrors them; the mirror is what the render and
-# glow shaders use to place each copy, and it must agree with the instance count
-# the CPU asks for.
-
-func tileRing*(zoom: float32): int =
-  ## How many world copies out from the centre one the view can reach.
-  ##
-  ## A view at zoom z spans 1/z worlds, so it reaches 1/(2z) worlds from its
-  ## centre, and a ring of r copies covers r + 0.5 — the half accounting for the
-  ## centre copy's own far edge. Solving r >= (1/z - 1)/2 gives this, and both
-  ## directions of that inequality are pinned by tests: enough to reach the
-  ## window edge, and never one ring more than that.
-  if zoom >= CAMERA_DEFAULT_ZOOM: 0
-  else: int(ceil((1.0'f32 / zoom - 1.0'f32) * 0.5'f32))
-
-func tileCount*(zoom: float32): int =
-  ## The instance multiplier the draw calls need: every particle is drawn this
-  ## many times. 1 at zoom 1 and closer, so the common case pays nothing.
-  let side = 2 * tileRing(zoom) + 1
-  side * side
-
-func tileOffsetSteps*(tile, ring: int): tuple[x, y: int] =
-  ## A tile index as a whole number of world widths and heights to displace by.
-  ##
-  ## Row-major over the ring, so the centre tile — the world at its own position
-  ## — is the middle index rather than index 0. The displacement is added AFTER
-  ## the nearest-image choice, never before: wrapping a position that has already
-  ## been pushed a world sideways would just undo the push.
-  let side = 2 * ring + 1
-  (x: tile mod side - ring, y: tile div side - ring)
 
 # ==============================================================================
 # MOVEMENT

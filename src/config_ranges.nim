@@ -199,12 +199,12 @@ const
   # here rather than beside the camera maths because this file is the single
   # source of truth for every user-facing range, and camera_core takes them as
   # parameters precisely so that stays true.
-  CAMERA_ZOOM_MIN* = 0.25
-    ## Four worlds across the window. Below one the world tiles, which is why
-    ## the render path samples the field with repeat addressing and draws each
-    ## particle at its nearest toroidal image — a zoom this far out shows the
-    ## seam if either is missing. camera_core.CAMERA_SIZE_FLOOR is what keeps
-    ## particles legible here rather than a quarter-size and sub-pixel.
+  CAMERA_ZOOM_MIN* = 1.0
+    ## The whole world once, framed to the window, and the widest view there
+    ## is. The view therefore never spans more than one world, which is what
+    ## lets the render path draw each particle at a single nearest toroidal
+    ## image: one image covers the whole window, so no part of the frame asks
+    ## for a second copy of the world.
   CAMERA_ZOOM_MAX* = 8.0
     ## Close enough that a single particle and its immediate neighbours fill the
     ## view — the scale at which the attraction matrix's behaviour is legible as
@@ -212,11 +212,10 @@ const
   # Camera zoom notches. The camera's own descriptor belongs to the camera
   # work; these are its labelled positions, kept beside CAMERA_ZOOM_MIN/MAX
   # above so the same range assertions cover them.
-  CAMERA_ZOOM_NOTCH_TILED* = CAMERA_ZOOM_MIN
-    ## Four tiles visible — the infinity read, and the far end of the zoom
-    ## range.
   CAMERA_ZOOM_NOTCH_WORLD* = 1.0
-    ## One world to one screen: the whole world framed to the window.
+    ## One world to one screen: the whole world framed to the window. A literal
+    ## rather than CAMERA_ZOOM_MIN — zoom 1 means this framing by definition,
+    ## so the notch must stay put even if the floor ever moves.
   CAMERA_ZOOM_NOTCH_CREATURE* = CAMERA_ZOOM_MAX
     ## Close enough to watch one particle, and the near end of the zoom range.
   # Per-species field chemistry. Not sliders on a single CONFIG field — one
@@ -350,8 +349,7 @@ static:
     RD_REGIME_HIGH_FEED_DEPOSIT <= RD_DEPOSIT_MAX
   # The camera zoom notches are positions on the camera slider, so the same
   # reachability rule covers them.
-  for zoomNotch in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,
-      CAMERA_ZOOM_NOTCH_CREATURE]:
+  for zoomNotch in [CAMERA_ZOOM_NOTCH_WORLD, CAMERA_ZOOM_NOTCH_CREATURE]:
     doAssert zoomNotch >= CAMERA_ZOOM_MIN and zoomNotch <= CAMERA_ZOOM_MAX
   # Species chemistry: non-empty ranges, and field_core's defaults inside the
   # range they are the default of — the same guard as the RD pair above. The

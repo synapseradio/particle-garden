@@ -77,8 +77,7 @@ const WARMTH_GREEN: f32 = {{TUNABLE_GLOW_WARMTH_GREEN}};
 const WARMTH_BLUE: f32 = {{TUNABLE_GLOW_WARMTH_BLUE}};
 
 @vertex
-fn vs_main(@builtin(vertex_index) id: u32,
-    @builtin(instance_index) tile: u32) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   var output: VertexOutput;
   let particleId = id / 6u;
   let cornerId = id % 6u;
@@ -112,11 +111,8 @@ fn vs_main(@builtin(vertex_index) id: u32,
   // chosen from the centre, exactly as render.wgsl does it. If these two
   // shaders disagreed about which image a particle occupies, its glow would
   // detach and appear on the far side of the world.
-  // The tile displacement must match render.wgsl's instance for instance, or a
-  // tiled world shows glow copies where no particle copies are.
-  let tileOffset = cameraTileOffset(cam, tile, params.worldSize);
   let normalizedPos = cameraToClip(p.pos, cam, params.worldSize) +
-    cameraOffsetToClip(worldOffset + tileOffset, cam, params.worldSize);
+    cameraOffsetToClip(worldOffset, cam, params.worldSize);
 
   // Z-ordering: FAST particles go BEHIND (higher Z), SLOW in front (lower Z)
   // Position hash prevents z-fighting between similar particles

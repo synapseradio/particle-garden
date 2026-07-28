@@ -520,8 +520,10 @@ proc initWebGPURender*(): bool =
   samplerDesc["magFilter"] = "linear".cstring.toJs
   samplerDesc["minFilter"] = "linear".cstring.toJs
   # Repeat addressing for the same reason the field sampler uses it: the world
-  # is toroidal, the camera can look past its edge, and clamping would smear the
-  # boundary row outward instead of showing the world tiled.
+  # wraps, and fade.wgsl reprojects through worldToScreenUv, which deliberately
+  # returns UVs outside [0,1] so a trail crosses the seam without a
+  # discontinuity. Clamping would smear the boundary row across everything the
+  # reprojection reaches past the edge.
   samplerDesc["addressModeU"] = "repeat".cstring.toJs
   samplerDesc["addressModeV"] = "repeat".cstring.toJs
   samplerDesc["label"] = "Linear Sampler".cstring.toJs
@@ -1552,15 +1554,6 @@ proc render*(particleCount: int) =
   # recreated since the last frame. Cheap generation compare; usually a no-op.
   ensureRenderFieldBinding()
 
-  # How many copies of the world the view can reach. One at zoom 1 and closer,
-  # so the common case draws the world once; below that the window is wider
-  # than the world and the extra instances are what fill the corners with the
-  # world again instead of with black. Every particle draw below uses this same
-  # count, and camera_transform.wgsl derives each instance's offset from the
-  # same zoom — the shaders and this number must agree or a world copy goes
-  # missing.
-  let tiles = tileCount(activeCamera.zoom)
-
   # Update render params uniform
   # Layout matches RenderParams indices in gpu_types.nim
   renderParamsData[RENDER_RESOLUTION_X] = float32(canvas.width)
@@ -1722,7 +1715,7 @@ proc render*(particleCount: int) =
   # NOTE: Glow is drawn in present pass (not here) to avoid accumulating in trails
   offscreenPass.setPipeline(renderPipeline)
   offscreenPass.setBindGroup(0, renderBindGroup)
-  offscreenPass.draw(6 * particleCount, tiles, 0, 0)
+  offscreenPass.draw(6 * particleCount, 1, 0, 0)
 
   offscreenPass.endPass()
 
@@ -1777,7 +1770,7 @@ proc render*(particleCount: int) =
       spanBegin = true)
     glowHdrPass.setPipeline(glowHdrPipeline)
     glowHdrPass.setBindGroup(0, glowBindGroup)
-    glowHdrPass.draw(6 * particleCount, tiles, 0, 0)
+    glowHdrPass.draw(6 * particleCount, 1, 0, 0)
     glowHdrPass.endPass()
 
     # Blur H: sample A, write B.
@@ -1884,7 +1877,7 @@ proc render*(particleCount: int) =
     #   - So particles in trail texture always alpha-blend on top of glow
     presentPass.setPipeline(glowPipeline)
     presentPass.setBindGroup(0, glowBindGroup)
-    presentPass.draw(6 * particleCount, tiles, 0, 0)
+    presentPass.draw(6 * particleCount, 1, 0, 0)
 
     # Step 2: Alpha-blit trail texture on top of glow
     # Trail has transparent background where no particles, so glow shows through

@@ -204,9 +204,9 @@ proc createFieldResources() =
   let samplerDesc = makeJsObject()
   samplerDesc["magFilter".cstring] = "linear".cstring.toJs
   samplerDesc["minFilter".cstring] = "linear".cstring.toJs
-  # Repeat addressing, because the field is toroidal and the camera can look
-  # past its edge. At zoom below 1 the world tiles; clamping here would smear
-  # the boundary row across everything outside the first tile instead of
+  # Repeat addressing, because the field wraps and the composite passes sample
+  # it through a camera whose view can straddle the world edge. Clamping here
+  # would smear the boundary row across everything past that edge instead of
   # showing the world again, which is the seam the camera exists to hide.
   samplerDesc["addressModeU".cstring] = "repeat".cstring.toJs
   samplerDesc["addressModeV".cstring] = "repeat".cstring.toJs

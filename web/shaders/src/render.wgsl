@@ -91,8 +91,7 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) id: u32,
-    @builtin(instance_index) tile: u32) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   var output: VertexOutput;
 
   // Particle index = vertex_index / 6, quad corner = vertex_index % 6
@@ -167,13 +166,11 @@ fn vs_main(@builtin(vertex_index) id: u32,
   // afterwards. Wrapping the already-offset corner instead would tear a quad in
   // half whenever its particle sat near the half-world line.
   //
-  // The tile offset rides along with the quad offset for the same reason: it is
-  // a displacement, not a position, so it must not be wrapped. Instance 0 is a
-  // corner of the ring and the middle instance is the undisplaced world; at
-  // zoom 1 and closer there is exactly one instance and this term is zero.
-  let tileOffset = cameraTileOffset(cam, tile, params.worldSize);
+  // glow.wgsl computes this same pair from the same centre. The two must agree
+  // on which image a particle occupies, or its glow detaches and lands on the
+  // far side of the world.
   let normalizedPos = cameraToClip(p.pos, cam, params.worldSize) +
-    cameraOffsetToClip(worldOffset + tileOffset, cam, params.worldSize);
+    cameraOffsetToClip(worldOffset, cam, params.worldSize);
 
   // Z-ordering: Species-based layers with stable particle hash
   // Each species occupies its own depth band (0.1-0.9 divided into 6 bands)

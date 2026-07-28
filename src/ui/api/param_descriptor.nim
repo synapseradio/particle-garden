@@ -316,10 +316,10 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       2, psRender),
     # The camera. psCamera, not psRender: this writes the live view, never
     # CONFIG, so it stays out of the preset schema for the reason recorded on
-    # the enum. Its notches name the three scales worth stopping at rather than
-    # positions on a number line — tiled shows the world repeating, world is the
-    # whole world fitted to the window, creature is close enough that the
-    # attraction matrix reads as individual motion.
+    # the enum. Its notches name the two scales worth stopping at rather than
+    # positions on a number line — world is the whole world fitted to the
+    # window and the widest view the slider offers, creature is close enough
+    # that the attraction matrix reads as individual motion.
     floatParam("cameraZoom", "Zoom", "camera",
       CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX, CAMERA_DEFAULT_ZOOM.float, 2, psCamera,
       # No numerals in this hint. The reachability test reads every number a
@@ -327,7 +327,6 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       # as a digit makes the test report an unreachable value, correctly.
       hint = "the wheel zooms at the cursor; the zero key returns to the whole world",
       notches = @[
-        notch(CAMERA_ZOOM_NOTCH_TILED, "tiled"),
         notch(CAMERA_ZOOM_NOTCH_WORLD, "world"),
         notch(CAMERA_ZOOM_NOTCH_CREATURE, "creature"),
       ]),

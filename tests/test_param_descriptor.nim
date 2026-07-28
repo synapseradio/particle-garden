@@ -484,7 +484,6 @@ suite "Notches Mark Only Reachable Positions":
   test "the camera zoom notches lie inside the camera range":
     # The notch constants are checked against the range directly, so the
     # relation holds whether or not a descriptor carries them.
-    for value in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,
-        CAMERA_ZOOM_NOTCH_CREATURE]:
+    for value in [CAMERA_ZOOM_NOTCH_WORLD, CAMERA_ZOOM_NOTCH_CREATURE]:
       check value >= CAMERA_ZOOM_MIN
       check value <= CAMERA_ZOOM_MAX
