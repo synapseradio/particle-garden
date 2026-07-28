@@ -3,8 +3,8 @@
 // =============================================================================
 //
 // WHY THIS EXISTS:
-// The reaction-diffusion mode treats particles as moving sources that seed the
-// inhibitor channel of the Gray-Scott field. A uniform (activator=1, inhibitor=0)
+// Particles are moving sources that seed the inhibitor channel of the
+// Gray-Scott field. A uniform (activator=1, inhibitor=0)
 // field never reacts on its own; this pass is what injects the perturbation that
 // ignites the pattern, tracking wherever the particles happen to be.
 //
@@ -28,8 +28,8 @@
 // field-resolve.wgsl. Do that when a coupling actually needs the channel.
 //
 // INDEXING: reads particles[] in ORIGINAL index space (globalId.x), the same space
-// integrate.wgsl and field-force.wgsl use. Reaction-diffusion runs no bin-scatter,
-// so the sorted buffer is stale in this mode and is never referenced.
+// integrate.wgsl and field-force.wgsl use. A splat needs no neighbours, so this
+// pass never touches the sorted buffer bin-scatter fills.
 //
 // SPECIES SECRETION:
 // The deposit is scaled by the depositing species' signed secretion, so
@@ -87,8 +87,8 @@ const FIELD_H: i32 = {{FIELD_H}};
 fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let particleIdx = globalId.x;
 
-  // grid.particleCount carries the active count (clamped to RD_PARTICLE_CEILING
-  // on RD mode entry by the UI); threads past it own no particle.
+  // grid.particleCount carries the active count; threads past it own no
+  // particle.
   if (particleIdx >= grid.particleCount) {
     return;
   }

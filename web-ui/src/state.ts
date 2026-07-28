@@ -1,8 +1,8 @@
 // Panel controller: Solid signals mirroring the Nim-side state, with every
 // mutation routed through gardenAPI and read straight back. Reads-after-
 // writes (rather than trusting the value we sent) keep the UI honest about
-// Nim-side clamping — descriptor bounds, mode particle ceilings, preset
-// validation all happen on the other side of the boundary.
+// Nim-side clamping — descriptor bounds and preset validation both happen on
+// the other side of the boundary.
 
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
@@ -25,7 +25,6 @@ export function createPanelController(api: GardenAPI) {
   const [trails, setTrailsSignal] = createSignal(api.getTrails());
   const [bloom, setBloomSignal] = createSignal(api.getBloom());
   const [forceModel, setForceModelSignal] = createSignal(api.getForceModel());
-  const [simMode, setSimModeSignal] = createSignal(api.getSimMode());
   const [colormap, setColormapSignal] = createSignal(api.getColormap());
   const [rdRegime, setRdRegimeSignal] = createSignal(api.getRdRegime());
   const [climateDrift, setClimateDriftSignal] = createSignal(
@@ -45,11 +44,16 @@ export function createPanelController(api: GardenAPI) {
   const bumpMatrix = () => setMatrixVersion((version) => version + 1);
   const bumpChemistry = () => setChemistryVersion((version) => version + 1);
 
+  // Re-read one descriptor from Nim. Every path that moves a parameter goes
+  // through here, including the ones outside the panel: the wheel on the
+  // canvas, and the frame loop's drifting climate.
+  const syncParam = (id: string) => setParams(id, api.getParam(id));
+
   // Re-read every descriptor from Nim. The panel's values are whatever the
   // simulation says they are, so anything that can move several of them at once
   // ends by asking rather than by tracking which ones moved.
   const syncParams = () => {
-    for (const entry of descriptors) setParams(entry.id, api.getParam(entry.id));
+    for (const entry of descriptors) syncParam(entry.id);
   };
 
   const syncAll = () => {
@@ -57,7 +61,6 @@ export function createPanelController(api: GardenAPI) {
     setTrailsSignal(api.getTrails());
     setBloomSignal(api.getBloom());
     setForceModelSignal(api.getForceModel());
-    setSimModeSignal(api.getSimMode());
     setColormapSignal(api.getColormap());
     setRdRegimeSignal(api.getRdRegime());
     setClimateDriftSignal(api.getClimateDrift());
@@ -70,8 +73,8 @@ export function createPanelController(api: GardenAPI) {
   api.onReady(() => {
     setReady(true);
     api.onStats(setStats);
-    // Pick up whatever init applied after module eval: ?n=/?mode=/?bloom=
-    // overrides, the randomized matrix, mode particle ceilings.
+    // Pick up whatever init applied after module eval: the URL overrides and
+    // the randomized matrix.
     syncAll();
   });
 
@@ -83,7 +86,6 @@ export function createPanelController(api: GardenAPI) {
     trails,
     bloom,
     forceModel,
-    simMode,
     colormap,
     rdRegime,
     climateDrift,
@@ -96,10 +98,11 @@ export function createPanelController(api: GardenAPI) {
     bumpMatrix,
     bumpChemistry,
     syncAll,
+    syncParam,
 
     setParam(id: string, raw: number) {
       api.setParam(id, raw);
-      setParams(id, api.getParam(id));
+      syncParam(id);
       // Feed and kill decide which regime is lit; a drag off a regime's
       // coordinates unlights it, and onto them lights it.
       if (REGIME_COORDINATE_IDS.includes(id)) {
@@ -131,12 +134,6 @@ export function createPanelController(api: GardenAPI) {
       api.setForceModel(model);
       setForceModelSignal(api.getForceModel());
     },
-    setSimMode(id: string) {
-      api.setSimMode(id);
-      // Entering SPH/RD clamps particleCount through the same update path
-      // the slider uses; re-read the lot.
-      syncAll();
-    },
     applyRdRegime(id: string) {
       api.applyRdRegime(id);
       // A regime sets feed and kill, and may raise the deposit floor — read
@@ -152,7 +149,7 @@ export function createPanelController(api: GardenAPI) {
     // panel has to re-read them; nothing pushes at it. Called on a timer only
     // while drift is on.
     syncDriftingParams() {
-      for (const id of REGIME_COORDINATE_IDS) setParams(id, api.getParam(id));
+      for (const id of REGIME_COORDINATE_IDS) syncParam(id);
       setRdRegimeSignal(api.getRdRegime());
     },
     setColormap(index: number) {

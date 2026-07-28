@@ -11,7 +11,7 @@
 # only the input layer's own decisions: how a wheel delta becomes a zoom, which
 # key means what, and what each binding anchors on.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

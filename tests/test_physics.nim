@@ -4,7 +4,7 @@
 #
 # Unit tests for pure physics functions in physics_core.nim
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

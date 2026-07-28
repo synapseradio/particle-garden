@@ -4,7 +4,7 @@
 #
 # Unit tests for pure grid functions in grid_core.nim
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

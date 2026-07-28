@@ -1,15 +1,14 @@
 // Stats readouts fed by the gardenAPI push stream (raw numbers; formatting
 // lives here). GPU rows show "-" until a nonzero timestamp-query
-// measurement arrives, matching the old panel's placeholder behavior.
+// measurement arrives.
 //
-// "GPU grid" and "GPU field" are mutually exclusive by mode, not sometimes
-// missing: particle-life and SPH build a spatial hash and run no field,
-// reaction-diffusion runs a field and builds no hash. Whichever a mode does
-// not run reads "-".
+// A row reads "-" while the pass it times contributes nothing: the frame
+// leaves a coupling's passes out at zero strength, so "GPU field" goes quiet
+// on a world with no chemistry and the rest keep reporting.
 //
-// There is no CPU "Grid build" row. There is no CPU grid: the whole spatial
-// hash is built on the GPU, and the row that used to sit here reported a
-// hardcoded zero in all three modes.
+// There is no CPU "Grid build" row, because there is no CPU grid: the whole
+// spatial hash is built on the GPU, so such a row could only report a
+// hardcoded zero.
 
 import type { PanelController } from "../state";
 import { formatMs, formatWithThousands } from "../lib/format";

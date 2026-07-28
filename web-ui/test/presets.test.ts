@@ -14,7 +14,8 @@ import {
 } from "../src/lib/presets";
 
 // The key shape the Nim side serves via presetKeys(); tests pin the same
-// values preset_store_core.nim defines so old saved presets keep resolving.
+// values preset_store_core.nim defines, so a preset saved by any earlier
+// build keeps resolving.
 const keys: PresetKeys = {
   prefix: "pg.presets.",
   indexKey: "pg.presets.index",
@@ -61,8 +62,8 @@ describe("storage round-trips", () => {
   });
 
   test("a preset saved under the OLD Nim UI reads back unchanged", () => {
-    // Same key scheme the old preset_store used, so backward compatibility
-    // reduces to key equality.
+    // One key scheme across every build, so backward compatibility reduces
+    // to key equality.
     const storage = memoryStorage({
       "pg.presets.legacy": '{"schemaVersion":1,"name":"legacy"}',
       "pg.presets.index": '["legacy"]',

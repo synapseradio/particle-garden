@@ -38,8 +38,9 @@
 // |   1   | storage array<Particle>   | particles         | r/w    |
 // |   2   | storage array<i32>        | velocityDelta     | read   |
 // |   3   | storage array<i32>        | densityDelta      | read   |
+// |   4   | storage array<i32>        | sphDensityDelta   | read   |
 // +-------+---------------------------+-------------------+--------+
-// TOTAL: 3 storage buffers (well under 8-buffer limit)
+// TOTAL: 4 storage buffers (well under 8-buffer limit)
 //
 // THREAD MAPPING: One particle per thread (original index space)
 // =============================================================================
@@ -62,6 +63,7 @@ struct IntegrationParams {
 @group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
 @group(0) @binding(2) var<storage, read> velocityDeltaFixed: array<i32>;
 @group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
+@group(0) @binding(4) var<storage, read> sphDensityDeltaFixed: array<i32>;
 
 const DENSITY_SMOOTH_FACTOR: f32 = {{TUNABLE_DENSITY_SMOOTH_FACTOR}};  // 70% old + 30% new for temporal smoothing
 
@@ -91,6 +93,17 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // Prevents flickering as particles move in/out of interaction radius
   let smoothedDensity = p.density * DENSITY_SMOOTH_FACTOR + deltaDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
   p.density = smoothedDensity;
+
+  // The fluid's kernel density, resolved the same way but kept in its own
+  // field. Unsmoothed: the Tait equation of state wants this frame's density,
+  // and smoothing it lags the pressure behind the compression that caused it.
+  //
+  // Decoded at the DENSITY scale, not the velocity one. This is a neighbour
+  // count reaching MAX_PARTICLES, so forces-sph.wgsl encodes it coarser to keep
+  // the whole budget inside an i32; decoding it here with INV_FIXED_POINT_SCALE
+  // would still produce a number, wrong by the ratio between the two scales.
+  p.sphDensity =
+    f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
   // Apply velocity delta and friction
   var newVelX = (p.vel.x + deltaVx) * params.friction;

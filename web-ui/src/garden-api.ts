@@ -1,7 +1,7 @@
 // Typed surface of window.gardenAPI — the one boundary this UI talks
 // through. The object is created by src/web_api.nim at app.js module-eval
 // time, before this bundle evaluates. Every number (range, default, step,
-// ceiling, storage key) comes from the Nim side via these calls; this
+// notch, storage key) comes from the Nim side via these calls; this
 // project never restates one.
 //
 // Mutations are synchronous: a setParam call has landed in the simulation's
@@ -50,16 +50,6 @@ export interface RdRegime {
   minDeposit: number;
 }
 
-export interface SimMode {
-  id: string;
-  label: string;
-  particleCeiling: number;
-  // The descriptor groups this mode uses. The panel shows a control only
-  // when the active mode lists its group — see lib/mode-gating.ts, which
-  // still renders everything if an older app.js omits the field.
-  groups: string[];
-}
-
 // One editable column of the per-species chemistry grid. Its own table rather
 // than a ParamDescriptor because there is one value per SPECIES, not one per
 // id: `slot` is the offset inside a species' stride, so the panel indexes the
@@ -96,9 +86,8 @@ export interface StatsSample {
   gpuPhysicsMs: number;
   gpuDrawMs: number;
   gpuPresentMs: number;
-  // The reaction-diffusion field pass. Zero in the other two modes, which run
-  // no field — just as gpuGridMs is zero in reaction-diffusion, which builds
-  // no spatial hash.
+  // The reaction-diffusion field pass. Zero while the field couplings sit at
+  // zero strength and the frame leaves their passes out.
   gpuFieldMs: number;
 }
 
@@ -114,7 +103,6 @@ export interface PresetKeys {
 export interface BuiltinPreset {
   id: string;
   label: string;
-  mode: string;
   json: string;
 }
 
@@ -139,11 +127,6 @@ export interface GardenAPI {
   setTrails(enabled: boolean): void;
   getBloom(): boolean;
   setBloom(enabled: boolean): void;
-
-  // Simulation mode
-  simModes(): SimMode[];
-  getSimMode(): string;
-  setSimMode(id: string): void;
 
   // Force model
   getForceModel(): number;

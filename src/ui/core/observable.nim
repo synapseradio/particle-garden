@@ -3,7 +3,7 @@
 # ==============================================================================
 #
 # Pub/sub container for the two pieces of state that cross module boundaries
-# on the Nim side: canvas_input's currentInput and sim_config's activeSimKind.
+# on the Nim side: canvas_input's currentInput and sim_config's worldCouplings.
 # The Solid panel owns UI reactivity; this stays deliberately small.
 #
 # Design goals:

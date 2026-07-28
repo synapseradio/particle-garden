@@ -8,8 +8,8 @@ SHALL be `staticRead` into the frontend at Nim-compile time and served through t
 copy of the same prose exists anywhere.
 
 `staticRead` is the mechanism the render shaders and the UI bundle already use. It costs a few
-kilobytes in the frontend bundle and removes a runtime failure mode: help that fails to load is worse
-than help that is slightly larger.
+kilobytes in the frontend bundle and removes a way to fail at runtime: help that fails to load is
+worse than help that is slightly larger.
 
 #### Scenario: Documentation and help cannot disagree
 - **WHEN** a feature's description is edited
@@ -46,8 +46,8 @@ Every mouse gesture, touch gesture, and key binding SHALL be declared once in a 
 consumed both by the input handlers and by the help panel's reference section, so a binding cannot
 exist without appearing in help.
 
-This is the relation `controlGroupsFor` already establishes between what a frame dispatches and what
-the panel offers, applied to input.
+This is the single-declaration relation the descriptor table already establishes for parameters —
+one table, consumed by everything that needs the fact — applied to input.
 
 #### Scenario: A new binding documents itself
 - **WHEN** a key binding is added to the table

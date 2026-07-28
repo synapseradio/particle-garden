@@ -18,10 +18,15 @@
 // │ 0       │ pos      │ 8     │ Position (vec2<f32>)                        │
 // │ 8       │ vel      │ 8     │ Velocity (vec2<f32>)                        │
 // │ 16      │ species  │ 4     │ Species ID (u32, 0-5)                       │
-// │ 20      │ density  │ 4     │ Local density (f32)                         │
-// │ 24      │ _pad0    │ 4     │ Padding for 32-byte alignment               │
+// │ 20      │ density  │ 4     │ Colony density, same-species (f32)          │
+// │ 24      │sphDensity│ 4     │ SPH kernel density, fluid-private (f32)     │
 // │ 28      │ _pad1    │ 4     │ Padding for 32-byte alignment               │
 // └─────────┴──────────┴───────┴─────────────────────────────────────────────┘
+//
+// TWO DENSITIES, NOT INTERCHANGEABLE. `density` counts same-species neighbours
+// by proximity; dot size, brightness and glow read it. `sphDensity` is the
+// kernel-weighted, species-blind density the Tait equation of state needs, and
+// nothing outside forces-sph.wgsl reads it.
 // =============================================================================
 
 struct Particle {
@@ -29,7 +34,7 @@ struct Particle {
   vel: vec2<f32>,    // offset 8, size 8
   species: u32,      // offset 16, size 4
   density: f32,      // offset 20, size 4
-  _pad0: u32,        // offset 24, size 4
+  sphDensity: f32,   // offset 24, size 4
   _pad1: u32,        // offset 28, size 4
 }
 

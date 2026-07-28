@@ -8,11 +8,11 @@
 // writes the swap chain.
 //
 // The pass draws with alpha blending over the flat background clear already in
-// the swap chain. In reaction-diffusion the field is sampled HERE (binding 4)
-// and folded into the HDR light BEFORE exposure and the ACES tonemap, so the
-// field is graded with everything else rather than shown as a raw LDR backdrop
-// (S10). params.fieldOpacity gates and scales that contribution; it is 0 in the
-// particle-life / SPH modes, which have no field, so those paths are unchanged.
+// the swap chain. The field is sampled HERE (binding 4) and folded into the HDR
+// light BEFORE exposure and the ACES tonemap, so the field is graded with
+// everything else rather than shown as a raw LDR backdrop (S10).
+// params.fieldOpacity gates and scales that contribution, and it is the user's
+// slider: at its zero the pass costs nothing.
 // The output alpha is a coverage term (how lit the pixel is); where the field
 // contributes it is fully covered, so the field reads as the backdrop.
 // =============================================================================
@@ -57,16 +57,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   // Reaction-diffusion field contribution. The colormapped field joins the HDR
   // light so it is graded through exposure/ACES with the particles and bloom.
   //
-  // fieldOpacity is 0 in worlds without a field, and both terms carry it as a
-  // factor — the light multiplies by it and colormapFieldCoverage clamps its
-  // product — so at zero they are provably zero and the guard skips the sample
-  // and both colormap evaluations. It reads from a uniform, so the branch is
-  // coherent across the draw and costs nothing where a field exists.
+  // Both terms carry fieldOpacity as a factor — the light multiplies by it and
+  // colormapFieldCoverage clamps its product — so at the slider's zero they are
+  // provably zero and the guard skips the sample and both colormap evaluations.
+  // It reads from a uniform, so the branch is coherent across the draw and
+  // costs nothing at any other opacity.
   //
   // Coverage follows how much field is actually HERE, which is what makes the
   // field read as light in the world rather than as a backdrop the particles
-  // sit on. It used to be a flat 1.0 whenever the field was enabled at all, so
-  // an empty field still claimed every pixel.
+  // sit on. A flat 1.0 would let an empty field claim every pixel.
   // The field lives in the WORLD, so its sample goes through the camera while
   // the trail and bloom — which are screen-space render targets — do not. At
   // the default camera this reduces to input.uv exactly.

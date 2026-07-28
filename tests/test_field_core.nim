@@ -3,17 +3,18 @@
 # ==============================================================================
 #
 # Analytic tests for src/field_core.nim: the pure 9-point Laplacian stencil and
-# Gray-Scott reaction-diffusion step that the rd-step.wgsl compute shader will
-# mirror (roadmap S8). Every function is a plain scalar-in/scalar-out math
+# Gray-Scott reaction-diffusion step that the rd-step.wgsl compute shader
+# mirrors (roadmap S8). Every function is a plain scalar-in/scalar-out math
 # function — the field grid itself lives only on the GPU (a storage texture),
 # so these tests exercise one cell's update in isolation.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
 import std/unittest
 import std/math
+import std/[os, strutils]
 import ../src/field_core
 import ../src/config_ranges
 # The wrap integrate.wgsl performs, taken from the suite's own tested oracle
@@ -32,7 +33,7 @@ const EPSILON = 1e-9
 # encodes it: fieldResolve folds every particle's deposit into the inhibitor
 # channel once, then RD_STEPS_PER_FRAME Gray-Scott substeps run. Anything that
 # claims a seed does or does not ignite has to be measured through this order —
-# a per-substep deposit would forcing the field ~7x harder than the real frame.
+# a per-substep deposit would force the field ~7x harder than the real frame.
 #
 # The grid is held at HARNESS_GRID (64x64) and the frame count low: `just test`
 # compiles debug, and this is the only compute-heavy test in the suite.
@@ -93,7 +94,7 @@ const
   HARNESS_PREV = block:
     ## Wrapped index of the cell before each row/column, resolved at compile
     ## time. The stencil needs eight wrapped lookups per cell per channel, and
-    ## a runtime `mod` in that position dominated the sweep's cost.
+    ## a runtime `mod` in that position dominates the sweep's cost.
     var table: array[HARNESS_GRID, int]
     for i in 0 ..< HARNESS_GRID:
       table[i] = (i + HARNESS_GRID - 1) mod HARNESS_GRID
@@ -539,7 +540,7 @@ suite "Gray-Scott Fixed-Point Structure":
           check abs(nextB - inhibitor) < 1e-12
 
   test "the shipped defaults sit where only the trivial fixed point exists":
-    # CONTRACT: this is why deleting the automatic seed is safe. At F = 0.030,
+    # CONTRACT: this is why the field needs no automatic seed. At F = 0.030,
     # k = 0.062, 4*(F+k)^2 = 0.033856 > 0.030 — the trivial state is the only
     # homogeneous fixed point, and it is linearly stable. No pattern can arise
     # from the uniform field at all; one must be nucleated. That is the
@@ -697,11 +698,11 @@ suite "Gray-Scott Step Stays Finite And Bounded":
 
 suite "Reaction-Diffusion Ignition":
   test "the flat activator=1 inhibitor=0 seed plus particle deposits never leaves the trivial fixed point":
-    # CHARACTERIZES THE SHIPPED BUG, and must keep passing after the fix: the
-    # render-pass clear createFieldResources performs leaves Gray-Scott's
-    # trivial fixed point, and RD_DEFAULT_DEPOSIT splatted into isolated cells
-    # is far too weak to leave it. Nothing but a spatially coherent seed
-    # ignites this system, so nothing may be "simplified" back to the clear.
+    # CONTRACT: the render-pass clear createFieldResources performs leaves
+    # Gray-Scott's trivial fixed point, and RD_DEFAULT_DEPOSIT splatted into
+    # isolated cells is far too weak to leave it. Nothing but a spatially
+    # coherent seed ignites this system, so nothing may be "simplified" back to
+    # the clear.
     # OBSERVED: mean 0.0015, maxB 0.0050, alive 0.0 — the deposit accumulates a
     # trace of inhibitor and diffusion strips it again; no cell ever reaches
     # ALIVE_THRESHOLD. Threshold set an order of magnitude above that maxB.
@@ -769,7 +770,7 @@ suite "Ignition From Coherent Deposits":
   # method rather than a workaround for not having found the formula.
   #
   # Every run below starts from the flat trivial fixed point with no seed. That
-  # is the state the app now opens in.
+  # is the state the app opens in.
 
   test "a clustered deposit ignites where a scattered deposit of equal coverage does not":
     # CONTRACT: same total deposit, different spatial arrangement, different
@@ -852,7 +853,7 @@ suite "Ignition From Coherent Deposits":
   test "the splat kernel conserves a particle's total deposit at every radius":
     # CONTRACT: normalization is what keeps widening the kernel from becoming a
     # backdoor amplitude increase — which would flood the field past the
-    # ceiling RD_DEPOSIT_MAX was measured against. The shader divides by
+    # ceiling RD_DEPOSIT_MAX is measured against. The shader divides by
     # depositSplatNormalization, so the sum of normalized weights must be 1.
     for radius in [1.0, 2.0, 3.0, RD_DEPOSIT_SPLAT_RADIUS, 8.0]:
       let normalization = depositSplatNormalization(radius)
@@ -912,8 +913,8 @@ suite "Species Chemistry Coupling":
       RISING_GRADIENT, RD_DEFAULT_FIELD_FORCE, TROPISM_MIN)
     check climbing > 0.0
     check fleeing < 0.0
-    # The shipped default is the fleeing sign — the behavior the field had
-    # before species chemistry existed, at full strength.
+    # The shipped default is the fleeing sign at full strength: every species
+    # descends the gradient unless the user says otherwise.
     check RD_DEFAULT_TROPISM < 0.0
     check speciesTropismForce(
       RISING_GRADIENT, RD_DEFAULT_FIELD_FORCE, RD_DEFAULT_TROPISM) < 0.0
@@ -951,13 +952,11 @@ suite "Chemotactic Collapse Bound":
   # their own deposited gradient — while negative chemosensitivity is
   # stabilizing (docs/research/chemotaxis-stability.md).
   #
-  # THE COLLAPSE IS REAL AND WAS LOCATED. An earlier reading of a narrower
-  # sweep concluded no collapse existed, because sweeping tropism alone at the
-  # shipped deposit ceiling never diverges however far it is pushed. That
-  # conclusion was wrong: collapse lives in the PRODUCT of tropism and deposit,
-  # so a scan that holds one at its ceiling cannot find it. Widening the
-  # deposit axis found the boundary immediately, and the control below proves
-  # the divergence belongs to the chemotaxis rather than to the deposit.
+  # WHERE THE COLLAPSE LIVES: in the PRODUCT of tropism and deposit, so a scan
+  # that holds one at its ceiling cannot find it — sweeping tropism alone at the
+  # shipped deposit ceiling never diverges however far it is pushed. Widening
+  # the deposit axis locates the boundary, and the control below proves the
+  # divergence belongs to the chemotaxis rather than to the deposit.
   #
   # Every run starts from the trivial fixed point with a scattered population
   # and every species at SECRETION_MAX. The deposit is stated per test, in
@@ -980,15 +979,31 @@ suite "Chemotactic Collapse Bound":
   let downRun = runChemotaxis(TROPISM_MIN, fieldForceScale = RD_FIELD_FORCE_MAX)
   let reachableExtremeRun = runChemotaxis(
     TROPISM_MAX * 1024.0, fieldForceScale = RD_FIELD_FORCE_MAX)
-  # The divergence bracket, both at ten times the deposit ceiling.
-  let boundAtTenfoldDeposit = runChemotaxis(
-    TROPISM_MAX, deposit = RD_DEPOSIT_MAX * 10.0,
+  const COLLAPSE_DEPOSIT_SAFE_MULTIPLE = 10.0
+    ## Largest deposit, in multiples of RD_DEPOSIT_MAX, at which no tropism
+    ## sampled diverges the field. The lower half of the bracket.
+  const COLLAPSE_DEPOSIT_MULTIPLE = 15.0
+    ## Smallest deposit sampled at which some tropism DOES diverge it, and low
+    ## enough that the deposit alone still cannot — a frozen population stays
+    ## finite here and through 30x, and only diverges by 40x. The upper half.
+
+  # The runs that bracket the collapse, all with the field force at its maximum.
+  let boundAtSafeDeposit = runChemotaxis(
+    TROPISM_MAX, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_SAFE_MULTIPLE,
+    fieldForceScale = RD_FIELD_FORCE_MAX)
+  let extremeAtSafeDeposit = runChemotaxis(
+    TROPISM_MAX * 128.0,
+    deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_SAFE_MULTIPLE,
+    fieldForceScale = RD_FIELD_FORCE_MAX)
+  let frozenAtHighDeposit = runChemotaxis(
+    0.0, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
+    fieldForceScale = RD_FIELD_FORCE_MAX)
+  let chemotaxisAtHighDeposit = runChemotaxis(
+    TROPISM_MAX * 8.0, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
     fieldForceScale = RD_FIELD_FORCE_MAX)
   let collapsedRun = runChemotaxis(
-    TROPISM_MAX * 8.0, deposit = RD_DEPOSIT_MAX * 10.0,
+    TROPISM_MAX, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
     fieldForceScale = RD_FIELD_FORCE_MAX)
-  let frozenAtTenfoldDeposit = runChemotaxis(
-    0.0, deposit = RD_DEPOSIT_MAX * 10.0)
 
   test "positive tropism at its bound does not produce unbounded aggregation over N steps":
     # CONTRACT: the first half of task 5.5's warrant for TROPISM_MAX. At the
@@ -1003,44 +1018,46 @@ suite "Chemotactic Collapse Bound":
       check run.maxB < 1.5
       check run.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
 
-  test "the configured tropism bound sits below the measured collapse point":
-    # CONTRACT: task 5.5's second test, and the reason the bound is a measured
-    # quantity rather than a taste pick. THE MEASURED COLLAPSE POINT: holding
-    # the deposit at ten times its ceiling and the field force at its maximum,
-    # the field stays finite at the shipped bound and DIVERGES at eight times
-    # it. The collapse point is therefore bracketed in (1x, 8x] of TROPISM_MAX
-    # under those conditions, and the shipped bound sits below it.
+  test "collapse needs a deposit well outside the range the slider offers":
+    # CONTRACT: task 5.5's second test, restated on the axis the measurement
+    # actually brackets. THE DEPOSIT CEILING IS WHAT PROTECTS THE WORLD, not the
+    # tropism bound — the suite's own conclusion, now the thing asserted.
     #
-    # OBSERVED at deposit 0.8 (10x RD_DEPOSIT_MAX), fieldForceScale 150:
-    #   tropism 0.5  (1x the bound): maxB 0.886, peak cell 0.023, finite
-    #   tropism 4.0  (8x the bound): maxB inf, DIVERGED
-    # The field is what is asserted, not the population: runChemotaxis stops at
-    # the frame the field goes infinite, and the particles are still piling in
-    # at that moment (peak cell 0.094 and climbing there). Run to the full 120
-    # frames without that early exit and the collapse completes literally —
-    # every particle in ONE field cell, peak cell 1.000 — but the frame the
-    # divergence is DETECTED on is not a stable place to measure a population,
-    # so only the field's divergence is checked.
+    # MEASURED, fieldForceScale at its maximum, tropism 0 to 128x the bound
+    # (DIVERGED marks the tropism multiples that ran away):
+    #   deposit  5x ceiling: finite everywhere
+    #   deposit 10x ceiling: finite everywhere
+    #   deposit 15x ceiling: DIVERGED at 1x and 2x
+    #   deposit 20x ceiling: DIVERGED at 1x, 2x and 4x
+    #   deposit 30x ceiling: DIVERGED at 1x, 2x, 4x and 8x
+    # So the deposit bracket is (10x, 15x] of a ceiling the slider already caps,
+    # and the reachable range sits an order of magnitude below it.
     #
-    # IF THE FINITE HALF EVER GOES RED, the collapse point has moved below the
-    # shipped bound: halve TROPISM_MAX and record the failing value here.
-    # Never widen the ceiling or the deposit multiple to make it pass.
-    check boundAtTenfoldDeposit.finite
-    check boundAtTenfoldDeposit.maxB < 1.5
-    check boundAtTenfoldDeposit.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
+    # COLLAPSE LIVES IN A MIDDLE BAND OF TROPISM, which is why no bound on
+    # tropism alone would help: at zero there is no aggregation to run away, and
+    # at 16x and above particles overshoot the well and scatter instead of
+    # pooling. Only moderate chemotaxis dwells long enough to concentrate a
+    # deposit, and the band widens downward from the top as the deposit rises.
+    # A tropism bound cannot sit below a band whose floor it is already inside.
+    check boundAtSafeDeposit.finite
+    check boundAtSafeDeposit.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
+    check extremeAtSafeDeposit.finite
     check not collapsedRun.finite
 
   test "the collapse belongs to the chemotaxis, not to the deposit alone":
-    # THE CONTROL THAT MAKES THE PREVIOUS TEST MEAN ANYTHING. Ten times the
+    # THE CONTROL THAT MAKES THE PREVIOUS TEST MEAN ANYTHING. Fifteen times the
     # deposit ceiling is far outside the slider range, so a divergence there
     # could plausibly be the deposit flooding the field on its own — which
     # would say nothing about tropism. It is not: with the SAME deposit and no
     # chemotaxis at all, the field stays finite and saturates where it always
     # does. Only the up-gradient motion, concentrating that deposit into one
     # place, diverges it.
-    # OBSERVED: frozen population at deposit 0.8 gives maxB 0.856, finite.
-    check frozenAtTenfoldDeposit.finite
-    check frozenAtTenfoldDeposit.maxB < 1.5
+    #
+    # OBSERVED, frozen population, fieldForceScale at maximum: maxB 0.908 at 15x
+    # the deposit ceiling, still finite at 30x (maxB 1.008), divergent by 40x.
+    # COLLAPSE_DEPOSIT_MULTIPLE carries the reasoning behind the gap.
+    check frozenAtHighDeposit.finite
+    check frozenAtHighDeposit.maxB < 1.5
     # Same deposit, same field, chemotaxis added -> divergence. The pair is the
     # claim; neither run alone supports it.
     check not collapsedRun.finite
@@ -1051,8 +1068,8 @@ suite "Chemotactic Collapse Bound":
     # finite and bounded. This is why RD_DEPOSIT_MAX carries more of the safety
     # than TROPISM_MAX does, and it is the honest scope of the tropism bound's
     # protection.
-    # OBSERVED at RD_DEPOSIT_MAX, fieldForceScale 150, tropism 512 (1024x the
-    # bound): maxB 0.803, peak cell 0.102, finite.
+    # OBSERVED at RD_DEPOSIT_MAX, fieldForceScale at its maximum, tropism at
+    # 1024x the bound: finite and bounded.
     check reachableExtremeRun.finite
     check reachableExtremeRun.maxB < 1.5
     check reachableExtremeRun.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
@@ -1070,12 +1087,15 @@ suite "Chemotactic Collapse Bound":
     # its own inhibitor, so no collapse is possible". Gray-Scott bounds it
     # against amplitude, not against concentration.
     # OBSERVED (frozen, uniform deposits): 1x -> maxB 0.015 (never ignites),
-    # 10x -> maxB 0.856. Under chemotaxis at 10x -> divergent.
-    check frozenAtTenfoldDeposit.maxB < 1.5
-    check boundAtTenfoldDeposit.maxB < 1.5
-    # A tenfold uniform deposit and a tenfold deposit under bounded chemotaxis
-    # land in the same saturated band; only unbounded concentration escapes it.
-    check abs(frozenAtTenfoldDeposit.maxB - boundAtTenfoldDeposit.maxB) < 0.3
+    # 15x -> maxB 0.908, 30x -> 1.008. Fifteen times the deposit ceiling under
+    # 128x the tropism bound, which concentrates rather than spreads it,
+    # diverges from that same band.
+    check frozenAtHighDeposit.maxB < 1.5
+    check chemotaxisAtHighDeposit.maxB < 1.5
+    # A uniform deposit and the same deposit under bounded chemotaxis land in
+    # the same saturated band; only unbounded concentration escapes it.
+    # OBSERVED: 0.908 frozen against 0.966 under chemotaxis at 8x the bound.
+    check abs(frozenAtHighDeposit.maxB - chemotaxisAtHighDeposit.maxB) < 0.3
 
   test "the down-gradient sign does not aggregate beyond the scattering floor":
     # CONTRACT: this is what makes the asymmetric bound mean something. If both
@@ -1125,7 +1145,7 @@ suite "Chemotactic Collapse Bound":
 suite "The Regime Deposit Floor Preserves The Regime":
   # WHY THIS SUITE EXISTS. Two named regimes (Worms, Coral) do not ignite at the
   # default deposit, so the regime buttons raise it to
-  # RD_REGIME_HIGH_FEED_DEPOSIT. That fix carries its own risk: more inhibitor
+  # RD_REGIME_HIGH_FEED_DEPOSIT. That floor carries its own risk: more inhibitor
   # is not neutral, and a deposit large enough to ignite a regime could push it
   # into a NEIGHBOURING morphology. Replacing a dead button with a lying one
   # would be worse — a dead button says the feature is unfinished, a lying one
@@ -1239,7 +1259,7 @@ suite "The Regime Deposit Floor Preserves The Regime":
   test "a regime that gets no floor behaves the same way under the same procedure":
     # THE NEGATIVE CONTROL ON THE PROCEDURE. Labyrinth needs no deposit floor —
     # it ignites at the default — so running it through the identical comparison
-    # shows what agreement looks like when nothing was raised. If the floored
+    # shows what agreement looks like when nothing is raised. If the floored
     # regimes matched their attractors but this did not, the procedure would be
     # measuring the floor rather than the morphology.
     # OBSERVED: unforced 0.539 / 0.60, shipped at the default 0.535 / 0.62 —
@@ -1263,14 +1283,12 @@ suite "The Regime Deposit Floor Preserves The Regime":
 
 
 suite "Reaction-Diffusion Tuning Constants":
-  test "field dimensions and tuning constants hold their documented values":
-    check FIELD_W == 512
-    check FIELD_H == 512
-    check RD_DIFFUSION_A == 1.0
-    check RD_DIFFUSION_B == 0.5
+  test "tuning constants hold their documented values":
+    # Field dimensions and diffusion rates are pinned by the relations they
+    # have to satisfy rather than by their literals — see "The Field Draws A
+    # Small Pattern On Square Cells" below.
     check RD_DELTA_T == 1.0
     check RD_STEPS_PER_FRAME == 7
-    check RD_PARTICLE_CEILING == 32000
     check RD_DEFAULT_FEED == 0.030
     check RD_DEFAULT_KILL == 0.062
 
@@ -1297,12 +1315,120 @@ suite "Reaction-Diffusion Tuning Constants":
     # already-ignited field, not the thing that ignites it.
     # RD_DEFAULT_FIELD_FORCE converts the sampled field gradient into a
     # velocity impulse (field-force.wgsl); zero decouples particles from the
-    # field entirely. Both are live sliders now, so both defaults must land
+    # field entirely. Both are live sliders, so both defaults must land
     # inside the range their slider offers.
     check RD_DEFAULT_DEPOSIT >= RD_DEPOSIT_MIN
     check RD_DEFAULT_DEPOSIT <= RD_DEPOSIT_MAX
     check RD_DEFAULT_FIELD_FORCE >= RD_FIELD_FORCE_MIN
     check RD_DEFAULT_FIELD_FORCE <= RD_FIELD_FORCE_MAX
+
+
+# ==============================================================================
+# THE SIZE THE FIELD DRAWS AT
+# ==============================================================================
+#
+# TWO THINGS SET HOW BIG A SPOT LOOKS. Gray-Scott's pattern wavelength scales as
+# sqrt(diffusion) in CELLS, and a cell covers worldExtent/fieldExtent of the
+# world. Their product is the only thing the eye sees, so either lever moves it
+# and neither is meaningful alone.
+#
+# A 512x512 field over a 16:9 world also made cells 7.5 x 4.22 world units, so
+# every spot — round in cells, because the Laplacian is isotropic there —
+# rendered as an ellipse 1.78x wider than tall.
+
+suite "The Field Draws A Small Pattern On Square Cells":
+  const CONFIG_FILE = "src" / "config.nim"
+
+  # The geometry before the shrink. The 10x claim is a comparison, so the
+  # baseline has to be written down for the comparison to mean anything.
+  const LEGACY_FIELD_W = 512.0
+  const LEGACY_DIFFUSION_A = 1.0
+
+  proc worldExtent(name: string): float =
+    ## The world dimension config.nim declares, read from source. field_core is
+    ## pure and cannot import config.nim (it carries FFI pragmas), so the link
+    ## between the world's aspect and the field's is checked here instead of
+    ## assumed. Precedent: tests/test_no_modes.nim reads real source the same way.
+    result = -1.0
+    if not fileExists(CONFIG_FILE): return
+    for line in readFile(CONFIG_FILE).splitLines():
+      if line.startsWith("let " & name & "*"):
+        return parseFloat(line.rsplit('=', 1)[1].strip())
+
+  test "the config source is where this suite says it is":
+    # Without this the reads below return -1 from the wrong working directory
+    # and every comparison against them passes vacuously.
+    check fileExists(CONFIG_FILE)
+    check worldExtent("WORLD_W") > 0.0
+    check worldExtent("WORLD_H") > 0.0
+
+  test "the field grid holds the aspect of the world it covers":
+    # CONTRACT: field cells are square in world units. field-deposit.wgsl maps
+    # the whole world rect onto FIELD_W x FIELD_H, so any aspect mismatch
+    # stretches every pattern the field draws by exactly that mismatch.
+    check abs(FIELD_W.float / FIELD_H.float - FIELD_WORLD_ASPECT) < 1e-9
+
+  test "the world config still holds the aspect the field is sized against":
+    # The other half of the link above. Changing WORLD_W or WORLD_H without
+    # FIELD_WORLD_ASPECT would silently bring the stretch back.
+    check abs(worldExtent("WORLD_W") / worldExtent("WORLD_H") -
+      FIELD_WORLD_ASPECT) < 1e-9
+
+  test "a field cell is square in world units":
+    let cellW = worldExtent("WORLD_W") / FIELD_W.float
+    let cellH = worldExtent("WORLD_H") / FIELD_H.float
+    check abs(cellW - cellH) < 1e-9
+
+  test "the pattern shrinks by exactly the factor the shrink knob names":
+    # CONTRACT: FIELD_PATTERN_SHRINK is documented as a multiple of the 512-cell
+    # square field this replaced, so it has to actually be that multiple. This
+    # is what makes it a knob rather than a label — turn it and the pattern
+    # follows, in both directions.
+    let worldW = worldExtent("WORLD_W")
+    let legacy = patternDiameterWorld(LEGACY_DIFFUSION_A, LEGACY_FIELD_W, worldW)
+    let shipped = patternDiameterWorld(RD_DIFFUSION_A, FIELD_W.float, worldW)
+    check abs(legacy / shipped - FIELD_PATTERN_SHRINK.float) < 1e-9
+
+  test "the field force divides by the same knob the grid multiplies by":
+    # The unit mismatch that makes this necessary lives on
+    # RD_DEFAULT_FIELD_FORCE: the gradient is per CELL, the impulse lands in
+    # WORLD units, so a finer grid strengthens a fixed number by exactly the
+    # shrink. Deriving both from one constant is what keeps a particle's
+    # response to the pattern fixed as the knob turns.
+    check RD_DEFAULT_FIELD_FORCE * FIELD_PATTERN_SHRINK.float == 30.0
+    check RD_FIELD_FORCE_MAX == RD_DEFAULT_FIELD_FORCE * 5.0
+    check RD_SEED_BLOB_RADIUS / FIELD_PATTERN_SHRINK.float == 6.0
+
+  test "the shrink comes from the cell size and not from the chemistry":
+    # CONTRACT, and the reason the test above can be trusted: Gray-Scott's
+    # dynamics live in CELL space, so every ignition threshold, regime
+    # coordinate and collapse bound this file measures stays valid only while
+    # the diffusion rates do. The whole shrink is the cell getting smaller.
+    check RD_DIFFUSION_A == 1.0
+    check RD_DIFFUSION_B == 0.5
+    check patternDiameterCells(RD_DIFFUSION_A) ==
+      RD_DIAMETER_CELLS_AT_UNIT_DIFFUSION
+
+  test "the pattern stays wide enough for the grid to resolve it":
+    # The floor the other lever would run into. MEASURED (128x128 torus,
+    # Pearson defaults, 6000 steps): diameter tracks sqrt(diffusion) down to
+    # scale 0.25 (4.47 cells) and holds at 0.16 (3.71), then collapses — at
+    # 0.09 coverage falls from 0.22 to 0.03 and by 0.04 every surviving
+    # component is a single cell.
+    check patternDiameterCells(RD_DIFFUSION_A) >= RD_MIN_RESOLVED_DIAMETER_CELLS
+
+  test "the inhibitor diffuses at half the activator's rate":
+    # The ratio is what makes the system form Turing patterns rather than
+    # smooth itself flat.
+    check abs(RD_DIFFUSION_B / RD_DIFFUSION_A - 0.5) < 1e-12
+
+  test "the activator channel sits on the explicit-Euler stability boundary":
+    # The 9-point stencil carries center weight -1, so the worst-mode
+    # amplification reaches the unit circle exactly at diffusionA * deltaT == 1.
+    # The activator runs ON that line, which is why the field has no margin
+    # against excess injection and why RD_DEPOSIT_CELL_MAX exists.
+    check RD_DIFFUSION_A * RD_DELTA_T <= 1.0
+    check RD_DIFFUSION_B * RD_DELTA_T < 1.0
 
 
 suite "Reaction-Diffusion Seed Field":
@@ -1362,3 +1488,111 @@ suite "Reaction-Diffusion Seed Field":
           inc backgroundCells
           check abs(cell.activator - 1.0) < EPSILON
     check backgroundCells > 0
+
+
+# ==============================================================================
+# THE DEPOSIT A CELL MAY RECEIVE IN ONE FRAME
+# ==============================================================================
+#
+# THE DEFECT THIS PINS. RD_DEPOSIT_MAX bounds what ONE PARTICLE lays down per
+# frame. The stability argument that cites it is about the value in a CELL, and
+# those are the same number only while particles are spread out. Nothing bounds
+# the sum, so any input that gathers a crowd into one place — a held mouse, most
+# directly — drives a cell's inhibitor without limit, past the range explicit
+# Euler integrates stably, into a grid-scale oscillation that fills the screen.
+#
+# resolveCellDeposit is the bound, applied where the unbounded external input
+# enters the system. The dynamics themselves are left alone: they self-limit,
+# and clamping their STATE would clip excursions a living pattern makes on its
+# own. It is the injection that needs the ceiling, never the reaction.
+
+suite "A Cell's Per-Frame Deposit Is Bounded":
+
+  const UNBOUNDED_DEPOSIT = 1000.0
+    ## What a crowd with no per-cell limit delivers: far past any ceiling.
+
+  test "an ordinary deposit passes through untouched":
+    # The bound must be invisible in normal play. A spread-out population puts
+    # a small fraction of one particle's deposit into any given cell, so the
+    # ceiling sits orders of magnitude above what a cell normally receives.
+    check resolveCellDeposit(0.0, 0.001) == 0.001
+    check resolveCellDeposit(0.3, 0.01) == 0.31
+
+  test "the ceiling exceeds what a dense legitimate crowd deposits":
+    # Every particle in one cell at the deposit slider's ceiling still lands
+    # under the bound until the crowd is far denser than play produces.
+    let onePartcleAtMax = RD_DEPOSIT_MAX *
+      depositSplatWeight(0.0, RD_DEPOSIT_SPLAT_RADIUS) /
+      depositSplatNormalization(RD_DEPOSIT_SPLAT_RADIUS)
+    check RD_DEPOSIT_CELL_MAX > onePartcleAtMax * 40.0
+
+  test "an unbounded deposit saturates at the ceiling":
+    check resolveCellDeposit(0.0, 1000.0) == RD_DEPOSIT_CELL_MAX
+    check resolveCellDeposit(0.2, 1000.0) == 0.2 + RD_DEPOSIT_CELL_MAX
+
+  # A held mouse, as the field sees it: a block of cells receives an unbounded
+  # deposit every frame, without end, while the substeps run. `bounded` selects
+  # the shipped path against the raw addition, so the two tests below differ in
+  # exactly the one thing under test.
+  proc heldMouseWorst(bounded: bool, frames: int): float =
+    const gridW = 32
+    const gridH = 32
+    proc wrapCell(v, n: int): int =
+      result = v mod n
+      if result < 0: result += n
+    var activator: array[gridH, array[gridW, float]]
+    var inhibitor: array[gridH, array[gridW, float]]
+    for y in 0 ..< gridH:
+      for x in 0 ..< gridW:
+        activator[y][x] = 1.0
+        inhibitor[y][x] = 0.0
+    for frame in 0 ..< frames:
+      for dy in -3 .. 3:
+        for dx in -3 .. 3:
+          let yy = wrapCell(gridH div 2 + dy, gridH)
+          let xx = wrapCell(gridW div 2 + dx, gridW)
+          inhibitor[yy][xx] =
+            if bounded: resolveCellDeposit(inhibitor[yy][xx], UNBOUNDED_DEPOSIT)
+            else: inhibitor[yy][xx] + UNBOUNDED_DEPOSIT
+      for substep in 0 ..< RD_STEPS_PER_FRAME:
+        var nextA = activator
+        var nextB = inhibitor
+        for y in 0 ..< gridH:
+          for x in 0 ..< gridW:
+            let n = wrapCell(y - 1, gridH)
+            let s = wrapCell(y + 1, gridH)
+            let e = wrapCell(x + 1, gridW)
+            let w = wrapCell(x - 1, gridW)
+            let lapA = laplacian9(activator[y][x],
+              activator[n][x], activator[s][x], activator[y][e], activator[y][w],
+              activator[n][e], activator[n][w], activator[s][e], activator[s][w])
+            let lapB = laplacian9(inhibitor[y][x],
+              inhibitor[n][x], inhibitor[s][x], inhibitor[y][e], inhibitor[y][w],
+              inhibitor[n][e], inhibitor[n][w], inhibitor[s][e], inhibitor[s][w])
+            let stepped = grayScottStep(activator[y][x], inhibitor[y][x],
+              lapA, lapB, RD_DIFFUSION_A, RD_DIFFUSION_B,
+              RD_FEED_MIN, RD_KILL_MIN, RD_DELTA_T)
+            nextA[y][x] = stepped.activator
+            nextB[y][x] = stepped.inhibitor
+        activator = nextA
+        inhibitor = nextB
+        for y in 0 ..< gridH:
+          for x in 0 ..< gridW:
+            result = max(result, max(abs(activator[y][x]), abs(inhibitor[y][x])))
+        if result.classify in {fcNan, fcInf, fcNegInf} or result > 1.0e6:
+          return result
+
+  test "the ceiling holds the field finite under a mouse held forever":
+    # THE ACCEPTANCE CRITERION, as the reported failure. Checked at the feed and
+    # kill minimums, the corner that goes first because nothing there removes
+    # what the deposit adds.
+    let worst = heldMouseWorst(bounded = true, frames = 120)
+    check worst.classify notin {fcNan, fcInf, fcNegInf}
+    check worst < 2.0
+
+  test "without the ceiling the same held mouse diverges":
+    # WHAT MAKES THE TEST ABOVE NON-VACUOUS. Identical in every respect but the
+    # bound, so a passing pair states that the bound is what holds the field
+    # finite rather than the scenario being too gentle to break anything.
+    let worst = heldMouseWorst(bounded = false, frames = 120)
+    check worst > 1.0e6 or worst.classify in {fcNan, fcInf, fcNegInf}

@@ -45,7 +45,6 @@ when defined(js):
 
   import config
   import buffers
-  import sph_core
   import field_core
   import preset
   import canvas_input
@@ -121,10 +120,17 @@ when defined(js):
   proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
     ## Mutate a copy of the simulation state, store it, and mirror it into
     ## CONFIG synchronously.
+    ##
+    ## The couplings are published here because this is the one write path: a
+    ## strength crossing zero has to reach the executor whatever moved it — a
+    ## slider, a preset, or the drifting climate. webgpu_compute rebuilds the
+    ## frame only when the zeros actually change, so publishing on every write
+    ## costs a comparison.
     var simState = currentSimulation
     mutate(simState)
     currentSimulation = simState
     applySimulationToConfig(simState)
+    worldCouplings.set(couplingsOf(simState))
 
   proc updateRender*(mutate: proc(renderState: var RenderState)) =
     ## Mutate a copy of the render state, store it, and mirror it into
@@ -280,12 +286,18 @@ when defined(js):
           sampleRuleValue(CONFIG.ruleTemperature, gaussian)
 
   # ============================================================================
-  # SECTION 5: MUTATION IMPLS (mode, toggles, counts)
+  # SECTION 5: MUTATION IMPLS (toggles, counts)
   # ============================================================================
 
   proc triggerParticleReinit() =
     if not canvas_input.onInitParticles.isNil:
       canvas_input.onInitParticles()
+
+  proc triggerParticleResize() =
+    ## Apply a new particle count while the world keeps running. See
+    ## app.resizeParticles for what survives.
+    if not canvas_input.onResizeParticles.isNil:
+      canvas_input.onResizeParticles()
 
   proc triggerFieldReseed() =
     if not canvas_input.onReseedField.isNil:
@@ -314,28 +326,6 @@ when defined(js):
     updateRender(proc(renderState: var RenderState) =
       renderState.colormapIndex =
         clamp(index, COLORMAP_INDEX_MIN, COLORMAP_INDEX_MAX))
-
-  proc simKindCeiling(kind: SimKind): int =
-    ## The particle-count ceiling entering this mode clamps to (0 = none).
-    ## SPH's neighbor pressure loop and RD's field passes are heavier than
-    ## particle-life's forces, hence the caps.
-    case kind
-    of skParticleLife: 0
-    of skSph: SPH_PARTICLE_CEILING
-    of skReactionDiffusion: RD_PARTICLE_CEILING
-
-  proc setSimModeImpl*(kind: SimKind) =
-    ## Switch the active simulation mode. app.nim subscribes activeSimKind
-    ## to the compute executor, so the set swaps the frame description.
-    ## Entering a capped mode clamps the particle count through the same
-    ## update + re-init path the particleCount slider uses; leaving does not
-    ## restore the previous count.
-    activeSimKind.set(kind)
-    let modeCeiling = simKindCeiling(kind)
-    if modeCeiling > 0 and CONFIG.particleCount > modeCeiling:
-      updateSimulation(proc(simState: var SimulationState) =
-        simState.particleCount = modeCeiling)
-      triggerParticleReinit()
 
   proc setSpeciesCountImpl(count: int; randomizeNew: bool) =
     ## The species slider's full release behavior: clamp, update the typed
@@ -386,6 +376,7 @@ when defined(js):
     of "paletteSaturation": paletteEditorState.saturation
     of "paletteLightness": paletteEditorState.lightness
     of "sphRestDensity": CONFIG.sphRestDensity
+    of "fluidStrength": CONFIG.fluidStrength
     of "sphStiffness": CONFIG.sphStiffness
     of "sphViscosity": CONFIG.sphViscosity
     of "sphSubsteps": CONFIG.sphSubsteps.float
@@ -466,6 +457,8 @@ when defined(js):
     of "paletteLightness":
       paletteEditorState.lightness = value
       applyPaletteToColors()
+    of "fluidStrength": updateSimulation(
+      proc(simState: var SimulationState) = simState.fluidStrength = value)
     of "sphRestDensity": updateSimulation(
       proc(simState: var SimulationState) = simState.sphRestDensity = value)
     of "sphStiffness": updateSimulation(
@@ -582,10 +575,16 @@ when defined(js):
       simState.rdKill = clampedKill)
 
   proc commitParamImpl(id: string) =
-    ## The slider-release side effect (the old "change" event): only the two
+    ## The slider-release side effect (the DOM "change" event): only the two
     ## count parameters carry one — everything else applies fully on set.
+    ##
+    ## The particle count RESIZES rather than reinitializes: dragging it does
+    ## not destroy the world it is adjusting. The species count still
+    ## reinitializes, and that asymmetry is real rather than an oversight —
+    ## changing how many species exist changes what every particle's species
+    ## index means, so there is no population to preserve.
     case id
-    of "particleCount": triggerParticleReinit()
+    of "particleCount": triggerParticleResize()
     of "speciesCount": setSpeciesCountImpl(CONFIG.speciesCount,
       randomizeNew = true)
     else: discard
@@ -636,8 +635,8 @@ when defined(js):
   # ============================================================================
 
   proc snapshotPreset(name: string): Preset =
-    ## Capture the CURRENT live CONFIG, attraction matrix, species palette,
-    ## and active mode as a Preset named `name`, stamped with the current
+    ## Capture the CURRENT live CONFIG, attraction matrix, species chemistry,
+    ## and species palette as a Preset named `name`, stamped with the current
     ## wall-clock time.
     var settings: PresetSettings
     settings.particleCount = CONFIG.particleCount
@@ -669,10 +668,30 @@ when defined(js):
     settings.temperature = CONFIG.temperature
     settings.colormapIndex = CONFIG.colormapIndex
     settings.fieldOpacity = CONFIG.fieldOpacity
+    # Every field, and the fluid and chemistry ones especially: `settings` is
+    # zero-initialized, so a field left out here serializes as 0 and reloads
+    # clamped up to its range minimum. rdDeposit and rdFieldForce are
+    # chemistry's coupling strengths, so an omission there turns chemistry off
+    # across a save and load. tests/test_preset.nim pins the whole round trip.
+    settings.sphRestDensity = CONFIG.sphRestDensity
+    settings.sphStiffness = CONFIG.sphStiffness
+    settings.sphViscosity = CONFIG.sphViscosity
+    settings.sphSubsteps = CONFIG.sphSubsteps
+    settings.rdFeed = CONFIG.rdFeed
+    settings.rdKill = CONFIG.rdKill
+    settings.rdDeposit = CONFIG.rdDeposit
+    settings.rdFieldForce = CONFIG.rdFieldForce
+    settings.fluidStrength = CONFIG.fluidStrength
+    settings.climateDrift = CONFIG.climateDrift
+    settings.climateSpeed = CONFIG.climateSpeed
 
     var matrixSnapshot: Matrix
     for matrixIdx in 0 ..< preset.MATRIX_LEN:
       matrixSnapshot[matrixIdx] = buffers.matrix[matrixIdx]
+
+    var chemistrySnapshot: preset.Chemistry
+    for chemistryIdx in 0 ..< preset.CHEMISTRY_LEN:
+      chemistrySnapshot[chemistryIdx] = config.SPECIES_CHEMISTRY[chemistryIdx]
 
     var paletteSnapshot: Palette
     for speciesIndex in 0 ..< preset.MAX_SPECIES:
@@ -686,9 +705,9 @@ when defined(js):
       schemaVersion: preset.CURRENT_SCHEMA_VERSION,
       name: name,
       createdAt: $isoTimestampNow(),
-      mode: simKindId(activeSimKind.get()),
       settings: settings,
       matrix: matrixSnapshot,
+      chemistry: chemistrySnapshot,
       palette: paletteSnapshot
     )
 
@@ -698,15 +717,6 @@ when defined(js):
     ## natively. Never persists anything — storage belongs to the UI side.
     for step in presetApplySteps():
       case step
-      of pasMode:
-        try:
-          activeSimKind.set(parseSimKind(sourcePreset.mode))
-        except ValueError:
-          # Forward-compatible: a preset from a future build may carry a
-          # mode this build cannot run yet. Keep running the current mode
-          # rather than crashing the apply.
-          consoleWarn(("[preset] unknown mode id \"" & sourcePreset.mode &
-            "\" - keeping the current mode").toJs)
       of pasSpeciesCount:
         # No re-init here: particleCount is the one step that triggers it,
         # after the matrix bookkeeping is already sized for the target.
@@ -715,12 +725,30 @@ when defined(js):
         applySpeciesCountChange(sourcePreset.settings.speciesCount,
           randomizeNew = false)
       of pasParticleCount:
+        # THE BUDGET APPLIES HERE. Slider bounds alone would let a preset —
+        # hand-edited, or saved by a build with a different budget — leave the
+        # world running above what this build affords, so the starter presets
+        # need no count clamp of their own.
+        #
+        # A full reinit rather than a resize: applying a preset is adopting a
+        # different world, so there is no population the user expects to
+        # survive it.
+        let budgetedCount =
+          min(sourcePreset.settings.particleCount, PARTICLE_BUDGET)
         updateSimulation(proc(simState: var SimulationState) =
-          simState.particleCount = sourcePreset.settings.particleCount)
+          simState.particleCount = budgetedCount)
         triggerParticleReinit()
       of pasMatrix:
         for matrixIdx in 0 ..< sourcePreset.matrix.len:
           buffers.matrix[matrixIdx] = sourcePreset.matrix[matrixIdx]
+      of pasChemistry:
+        # Already clamped per channel by validateChemistry, against the same
+        # asymmetric bounds clampChemistryValue enforces on a slider edit — so
+        # a hand-edited preset cannot put a secretion or tropism into the
+        # uniform that the editor would refuse.
+        for chemistryIdx in 0 ..< sourcePreset.chemistry.len:
+          config.SPECIES_CHEMISTRY[chemistryIdx] =
+            sourcePreset.chemistry[chemistryIdx]
       of pasPalette:
         for speciesIndex in 0 ..< sourcePreset.palette.len:
           let color = sourcePreset.palette[speciesIndex]
@@ -751,6 +779,9 @@ when defined(js):
           simState.rdKill = settings.rdKill
           simState.rdDeposit = settings.rdDeposit
           simState.rdFieldForce = settings.rdFieldForce
+          simState.fluidStrength = settings.fluidStrength
+          simState.climateDrift = settings.climateDrift
+          simState.climateSpeed = settings.climateSpeed
         )
         updateRender(proc(renderState: var RenderState) =
           renderState.particleSize = settings.particleSize
@@ -779,30 +810,6 @@ when defined(js):
   # ============================================================================
   # SECTION 9: CATALOGS
   # ============================================================================
-
-  proc simKindLabel(kind: SimKind): string =
-    case kind
-    of skParticleLife: "Particle Life"
-    of skSph: "SPH Fluid"
-    of skReactionDiffusion: "Reaction-Diffusion"
-
-  let simModeArray = block:
-    let jsArray = newJsArray()
-    for kind in SimKind:
-      let mode = newJsObject()
-      mode["id"] = toJs(cstring(simKindId(kind)))
-      mode["label"] = toJs(cstring(simKindLabel(kind)))
-      mode["particleCeiling"] = toJs(simKindCeiling(kind))
-      # The descriptor groups this mode's panel shows. The panel gates on these
-      # rather than on mode ids, so which controls a mode offers stays a Nim
-      # decision (sim_registry.controlGroupsFor, tested against the mode's own
-      # frame) and the panel decides only where each group sits on screen.
-      let groups = newJsArray()
-      for group in controlGroupsFor(couplingsFor(kind)):
-        groups.push(toJs(cstring(group)))
-      mode["groups"] = groups
-      jsArray.push(mode)
-    jsArray
 
   proc paletteSchemeLabel(scheme: PaletteScheme): string =
     case scheme
@@ -850,44 +857,33 @@ when defined(js):
   # collide with, no write path to be overwritten through, and "cannot be
   # deleted" holds without any code enforcing it.
 
-  proc rdStarter(name: string; feed, kill, deposit, fieldForce: float): string =
-    ## A reaction-diffusion starter at one published Gray-Scott regime.
-    var preset = defaultPreset()
-    preset.name = name
-    preset.mode = simKindId(skReactionDiffusion)
-    preset.settings.rdFeed = feed
-    preset.settings.rdKill = kill
-    preset.settings.rdDeposit = deposit
-    preset.settings.rdFieldForce = fieldForce
-    # The apply path reaches activeSimKind directly and never runs the mode
-    # ceiling, so each starter has to carry a count its own mode can afford.
-    preset.settings.particleCount =
-      min(preset.settings.particleCount, simKindCeiling(skReactionDiffusion))
-    toJsonString(preset)
+  proc regimeStarter(label: string; feed, kill, minDeposit: float): string =
+    ## A named point in the one world's parameter space, at one published
+    ## Gray-Scott regime. Forces and chemistry both act, so the pattern records
+    ## where colonies live rather than sitting behind them.
+    ##
+    ## The deposit floor comes from the regime: at RD_DEFAULT_DEPOSIT the
+    ## high-feed regimes do not ignite at all, so one shared value would load a
+    ## blank field for two of the six.
+    var starter = defaultPreset()
+    starter.name = label
+    starter.settings.rdFeed = feed
+    starter.settings.rdKill = kill
+    starter.settings.rdDeposit = max(RD_DEFAULT_DEPOSIT, minDeposit)
+    starter.settings.rdFieldForce = RD_DEFAULT_FIELD_FORCE
+    toJsonString(starter)
 
   let builtinPresetArray = block:
     let jsArray = newJsArray()
-    # (F, k) coordinates as published for each named Gray-Scott regime; the
-    # sources live with `RD_REGIMES` in config_ranges.nim, which is also what
-    # the rdFeed/rdKill NOTCHES are built from. Every value is a position its
-    # slider can land on, so loading a starter and then nudging the slider
-    # behaves the way the reading suggests.
-    #
-    # These coordinates are a SECOND COPY of values `RD_REGIMES` already holds,
-    # free to disagree with it. Reading the regime table directly would close
-    # that, but it changes what a starter preset contains, so it belongs with
-    # the preset work in group 9 rather than here. Note the names differ too:
-    # this list's "Stripes" carries Labyrinth's coordinates.
-    for (id, label, feed, kill) in [
-        ("rd-spots", "Spots", 0.035, 0.065),
-        ("rd-stripes", "Stripes", 0.029, 0.057),
-        ("rd-worms", "Worms", 0.078, 0.061)]:
+    # Built FROM the regime table, not beside it: one set of coordinates, so a
+    # starter and its slider notch cannot name the same point differently. The
+    # feed and kill notches read the same table, so a starter lands on a tick.
+    for regime in RD_REGIMES:
       let entry = newJsObject()
-      entry["id"] = toJs(cstring(id))
-      entry["label"] = toJs(cstring(label))
-      entry["mode"] = toJs(cstring(simKindId(skReactionDiffusion)))
-      entry["json"] = toJs(cstring(rdStarter(
-        label, feed, kill, RD_DEFAULT_DEPOSIT, RD_DEFAULT_FIELD_FORCE)))
+      entry["id"] = toJs(cstring("regime-" & regime.id))
+      entry["label"] = toJs(cstring(regime.label))
+      entry["json"] = toJs(cstring(regimeStarter(
+        regime.label, regime.feed, regime.kill, regime.minDeposit)))
       jsArray.push(entry)
     jsArray
 
@@ -917,15 +913,9 @@ when defined(js):
     result["getBloom"] = toJs(proc(): bool = CONFIG.bloomEnabled)
     result["setBloom"] = toJs(proc(enabled: bool) = setBloomImpl(enabled))
 
-    # Simulation mode
-    result["simModes"] = toJs(proc(): JsObject = simModeArray)
-    result["getSimMode"] = toJs(proc(): cstring =
-      cstring(simKindId(activeSimKind.get())))
-    result["setSimMode"] = toJs(proc(id: cstring) =
-      try:
-        setSimModeImpl(parseSimKind($id))
-      except ValueError:
-        consoleWarn(toJs("[gardenAPI] unknown sim mode id: " & $id)))
+    # There is no world-selection surface here, and none is needed: what a
+    # world does is the strengths it runs, and the panel asks for each by name
+    # through the ordinary descriptor path, the same way it asks for friction.
 
     # Force model
     result["getForceModel"] = toJs(proc(): int = CONFIG.forceModel)

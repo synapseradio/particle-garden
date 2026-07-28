@@ -50,36 +50,40 @@ const
   COLORMAP_DEFAULT_INDEX* = COLORMAP_INDEX_INFERNO
     ## The field's default colormap.
 
-  FIELD_OPACITY_DEFAULT* = 1.0
-    ## Default scale on the field's contribution to the rendered image.
-    ## 1.0 = full contribution, 0.0 = field invisible.
+  FIELD_OPACITY_DEFAULT* = 0.0
+    ## Default scale on the field's contribution AS A BACKDROP — the fullscreen
+    ## layer field-composite.wgsl and the tonemap draw under the particles.
+    ## 0.0 draws no backdrop at all; 1.0 draws it at full strength.
     ##
-    ## RAISED FROM 0.85 WHEN THE FIELD BECAME LIGHT. The old value was
-    ## compensating for a field that claimed every pixel whether or not any
-    ## field was there: holding it under 1 was the only way to keep particles
-    ## visible through what was effectively an opaque sheet. fieldCoverage now
-    ## does that job properly and proportionally, so keeping the dimming as well
-    ## would pay for the same problem twice — darkening the pattern cores while
-    ## still never letting them be fully present.
+    ## THE FIELD SHOWS ITSELF THROUGH THE PARTICLES BY DEFAULT. Drawn as a
+    ## backdrop the pattern owns whole regions of the frame, and colonies,
+    ## trails and species colour have to compete with it for the same pixels.
+    ## Lighting the particles instead (FIELD_LIGHT_STRENGTH, applied in
+    ## render.wgsl and independent of this) says exactly the same thing — where
+    ## the chemistry is, and how strong — without claiming any space of its own.
     ##
-    ## The change makes particles MORE visible on balance, not less: the field
-    ## reaches full coverage only where its intensity is full, which is the
-    ## bright cores of the pattern, and contributes nothing at all across the
-    ## dark majority of the frame that used to sit at 85%.
-
-    # BLIND VISUAL PICK, like the value it replaces — reasoned from the coverage
-    # change rather than seen. The user's visual pass owns the final number.
+    ## The backdrop stays a slider rather than being deleted: it is the only way
+    ## to see the field where no particles stand, which is what makes it worth
+    ## keeping and worth leaving off.
   FIELD_OPACITY_MIN* = 0.0
   FIELD_OPACITY_MAX* = 1.0
 
   FIELD_LIGHT_STRENGTH* = 0.55
     ## How far a particle's colour is pulled toward the field's colour where the
     ## field is at full intensity — the "field as light" coupling, applied in
-    ## render.wgsl's vertex stage. 0 leaves species colours untouched (the
-    ## behaviour before the field was light), 1 replaces them entirely with the
-    ## colormapped field. BLIND VISUAL PICK, deliberately below half-and-half so
-    ## species stay tellable apart inside a bright pattern; the calibration pass
-    ## owns the final value.
+    ## render.wgsl's vertex stage. 0 leaves species colours untouched, 1 replaces
+    ## them entirely with the colormapped field.
+    ##
+    ## INDEPENDENT OF FIELD_OPACITY_DEFAULT, and that independence is the point:
+    ## the backdrop and the tint are two different ways to show one field, and
+    ## folding the backdrop's scale into the tint made turning the backdrop off
+    ## also blind the particles. The pull is already proportional to the field's
+    ## local intensity, so a particle standing where no pattern is keeps its
+    ## species colour exactly — the tint needs no second gate.
+    ##
+    ## BLIND VISUAL PICK, deliberately below half-and-half so species stay
+    ## tellable apart inside a bright pattern; the calibration pass owns the
+    ## final value.
 
   FIELD_DRIFT_SCALE* = 0.02
     ## How far the fade pass displaces its trail sample along the field
@@ -224,8 +228,12 @@ func fieldCoverage*(index: int, activator, inhibitor, fieldOpacity: float):
   ## one where the field is fully present at full opacity. `fieldOpacity`
   ## scales coverage as well as brightness, so turning the field down fades it
   ## out rather than leaving an invisible-but-opaque sheet over the world — and
-  ## an opacity of zero contributes nothing at all, which is the condition the
-  ## shaders used to spell as `if (fieldOpacity > 0.0)`.
+  ## an opacity of zero contributes nothing at all, which is what lets the
+  ## backdrop paths guard the whole lookup behind `if (fieldOpacity > 0.0)`.
+  ##
+  ## Backdrop only: field-composite.wgsl and tonemap.wgsl. render.wgsl's
+  ## particle tint answers to FIELD_LIGHT_STRENGTH instead and never reads this,
+  ## so a backdrop turned off still leaves the particles lit by the field.
   clamp01(fieldIntensity(index, activator, inhibitor) * fieldOpacity)
 
 # ==============================================================================

@@ -5,7 +5,7 @@
 # Unit tests for memory layout constants and offset calculations.
 # Verifies alignment, no overlap, and total size constraints.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

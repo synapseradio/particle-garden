@@ -1,8 +1,8 @@
 // localStorage bookkeeping for saved presets — the storage half of the
 // hybrid preset design. Keys and preset JSON come from gardenAPI (Nim owns
 // the schema, validation, and apply order); this module owns reading and
-// writing the browser's localStorage in the exact shape the old Nim
-// preset_store used, so presets saved under the old UI keep working.
+// writing the browser's localStorage in the exact shape preset_store_core.nim
+// defines, so a preset saved by any earlier build keeps working.
 //
 // The index (a JSON array of names under keys.indexKey) mirrors
 // preset_store_core.nim's semantics: malformed JSON, a non-array root, or a
@@ -74,7 +74,6 @@ export function presetExists(
 
 export function nameIsReserved(keys: PresetKeys, name: string): boolean {
   // A name whose storage key composes to the index's own key would let a
-  // saved preset overwrite the index that lists it (same generic guard as
-  // the old preset_store).
+  // saved preset overwrite the index that lists it.
   return presetStorageKey(keys, name) === keys.indexKey;
 }

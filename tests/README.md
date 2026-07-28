@@ -62,6 +62,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, the shared apparent-scale factor | Native |
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
 | `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, and tours every named regime | Native |
+| `test_no_modes.nim` | Guard test: no forbidden mode identifier or mode-id string literal survives anywhere in `src/` or `web-ui/src/`, except the one narrow, self-checking exemption for `preset.nim`'s versioned-schema legacy migration table | Native |
 
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, mode gating, and notch geometry and snapping; `just check` runs both.
 
@@ -96,7 +97,9 @@ test_all.nim (runner)
     ├── test_colormap_core.nim  → colormap_core.nim (field colormap ramps, coverage)
     ├── test_camera_core.nim    → camera_core.nim (toroidal camera, apparent scale)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
-    └── test_climate_core.nim   → climate_core.nim (drifting climate path)
+    ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
+    ├── test_no_modes.nim       → src/, web-ui/src/ (guards against a mode concept in source)
+    └── test_panel_reachability.nim → Panel.tsx (guards that every descriptor reaches a control)
 ```
 
 ## Running Tests
@@ -191,7 +194,7 @@ These modules are thin FFI bindings to browser APIs. Testing them requires:
 3. Mocking browser APIs (defeats the purpose)
 
 **Mitigation:**
-- The application build (`nimble app`) compiles the JS frontend, so a broken FFI binding fails the build
+- The application build (`just happen`) compiles the JS frontend, so a broken FFI binding fails the build
 - Manual browser testing covers integration
 - The pure-logic modules are thoroughly tested natively, and behavior is extracted into pure modules wherever it can be separated from the browser surface
 
@@ -451,7 +454,7 @@ else:
 - `--warningAsError:*` — Treats warnings as errors (an unused import or variable fails the build)
 - `--hint:XDeclaredButNotUsed:on` — Catches unused variables
 
-The browser-dependent modules have no separate test target. Their correctness is exercised by the application build (`nimble app`, which compiles the JS frontend) and by manual testing in the browser.
+The browser-dependent modules have no separate test target. Their correctness is exercised by the application build (`just happen`, which compiles the JS frontend) and by manual testing in the browser.
 
 ## Future Test Improvements
 

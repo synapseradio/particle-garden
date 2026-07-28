@@ -3,13 +3,15 @@
 // =============================================================================
 //
 // WHY THIS EXISTS:
-// The SPH fluid mode's force pass. It clones forces.wgsl's binding layout, its
-// sorted-buffer neighbor traversal, and its fixed-point self-reset contract
-// exactly (so the executor's bind-group recipe and the shared grid/scatter/
-// integrate passes serve it unchanged), then replaces the particle-life force
-// math with smoothed-particle-hydrodynamics: a Tait pressure force through the
+// The fluid coupling's force pass, dispatched wherever fluidStrength is not
+// zero. It clones forces.wgsl's binding layout and its sorted-buffer neighbor
+// traversal (so the executor's bind-group recipe and the shared grid/scatter/
+// integrate passes serve it unchanged), and carries smoothed-particle
+// hydrodynamics instead of the species force: a Tait pressure force through the
 // spiky gradient, a symmetric velocity-diffusion term (physical viscosity plus
 // XSPH smoothing), and a fresh kernel density written back for the next frame.
+// It runs ALONGSIDE forces.wgsl rather than in place of it — both accumulate
+// into velocityDelta, and integrate reads their sum.
 //
 // SINGLE-PASS, LAGGED DENSITY:
 // True SPH needs two passes (compute density, then pressure). This pipeline has
@@ -36,10 +38,8 @@
 //     reads exactly rest density 1.0, so the numbers stay O(1) at any radius.
 //   - The spiky gradient is normalized by its value at r=0, so the pressure
 //     magnitude is radius-independent and SPH_FORCE_SCALE reads in px/frame^2.
-//   - The stored density is scaled by SPH_DENSITY_GLOW_GAIN so it lands in the
-//     same numeric range particle-life densities occupy, letting the shared
-//     glow pass read both modes comparably. Pressure recovers the physical
-//     (unscaled) density by dividing the lagged value back out.
+//   - The stored density is the physical one Tait consumes. It is private to
+//     this pass, so nothing outside needs it in another range.
 //
 // BINDING MANIFEST (identical to forces.wgsl — a clone of its 7-entry layout):
 // +-------+---------------------------+------------------------+--------+
@@ -51,10 +51,19 @@
 // |   3   | storage array<u32>        | cellStartOffsets       | read   |
 // |   4   | storage array<u32>        | cellParticleCounts     | read   |
 // |   5   | storage atomic<i32>       | velocityDeltaFixed     | r/w    |
-// |   6   | storage atomic<i32>       | densityDeltaFixed      | r/w    |
+// |   6   | storage atomic<i32>       | sphDensityDeltaFixed   | r/w    |
 // +-------+---------------------------+------------------------+--------+
 //
 // THREAD MAPPING: One particle per thread (sorted index space)
+//
+// THIS PASS IS COUPLING-OWNED, which constrains it three ways:
+//
+// - It runs only while `fluidStrength` is nonzero, and that strength multiplies
+//   its ENTIRE velocity contribution at one site. A term that escapes the
+//   multiplier makes the frame's zero-strength skip observable.
+// - It writes nothing the world reads. Kernel density goes to its own buffer;
+//   the `density` the renderer reads belongs to forces.wgsl.
+// - No mouse, no blast. forces.wgsl runs in every world and applies both once.
 // =============================================================================
 
 //! import particle
@@ -68,7 +77,7 @@
 @group(0) @binding(3) var<storage, read> cellStartOffsets: array<u32>;
 @group(0) @binding(4) var<storage, read> cellParticleCounts: array<u32>;
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
-@group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
+@group(0) @binding(6) var<storage, read_write> sphDensityDeltaFixed: array<atomic<i32>>;
 
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};      // Prevents division-by-zero when particles overlap
 const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};   // 300^2 - mouse influence radius squared
@@ -78,7 +87,6 @@ const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};   // 300^2 - mouse influ
 // the bundler placeholder below).
 const SPH_XSPH_EPSILON: f32 = {{TUNABLE_SPH_XSPH_EPSILON}};  // Velocity-smoothing blend weight
 const SPH_FORCE_SCALE: f32 = 3.0;          // Pressure acceleration gain (px/frame^2). Primary aesthetic knob.
-const SPH_DENSITY_GLOW_GAIN: f32 = 2.5;    // Maps normalized density into the glow pass's density range.
 const SPH_MAX_PRESSURE_ACCEL: f32 = 5000.0;  // Clamp guarding the fixed-point i32 delta from overflow.
 // Ceiling on the density fed to Tait, in multiples of rest density. Tait raises
 // (density/rest) to the gamma power — 7 by default — so an unbounded input lets
@@ -88,6 +96,14 @@ const SPH_MAX_PRESSURE_ACCEL: f32 = 5000.0;  // Clamp guarding the fixed-point i
 // the ceiling belongs on the input. Settled fluid sits near 1.0 and ordinary
 // compression near 1.5, so this leaves normal behaviour untouched.
 const SPH_MAX_DENSITY_RATIO: f32 = {{TUNABLE_SPH_MAX_DENSITY_RATIO}};
+
+// KERNEL DENSITY ENCODES AT ITS OWN SCALE, not FIXED_POINT_SCALE. Each weight
+// below is divided by the self-weight, so a neighbour adds at most 1.0 and the
+// accumulated total counts neighbours — a quantity that reaches MAX_PARTICLES,
+// which the velocity scale's span cannot hold. SPH_DENSITY_FIXED_POINT_SCALE
+// (fixed_point.wgsl, derived in src/sph_core.nim) is coarse enough that the
+// whole particle budget encodes rather than wrapping. integrate.wgsl decodes
+// with the matching inverse; the pair must move together.
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -103,8 +119,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // Precompute constants (avoid recomputing in inner loops)
   let smoothingRadius = params.interactionRadius;
   let radiusSq = smoothingRadius * smoothingRadius;
-  let halfWorldWidth = params.worldWidth * 0.5;
-  let halfWorldHeight = params.worldHeight * 0.5;
   let invCellWidth = f32(params.gridCellsX) / params.worldWidth;
   let invCellHeight = f32(params.gridCellsY) / params.worldHeight;
   let totalCells = i32(params.gridCellsX * params.gridCellsY);
@@ -117,19 +131,20 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let selfSpikyGradient = sphSpikyGradientMagnitude2d(0.0, smoothingRadius);
   let invSelfPoly6 = select(0.0, 1.0 / selfPoly6, selfPoly6 > 0.0);
   let invSelfSpikyGradient = select(0.0, 1.0 / selfSpikyGradient, selfSpikyGradient > 0.0);
-  let invDensityGlowGain = 1.0 / SPH_DENSITY_GLOW_GAIN;
 
   let restDensity = params.sphRestDensity;
   let stiffness = params.sphStiffness;
   let viscosity = params.sphViscosity;
   let gamma = params.sphGamma;
+  let fluidStrength = params.fluidStrength;
 
-  // Lagged, physical (unscaled) density of THIS particle, recovered from the
-  // glow-scaled value carried in the density field. Floored at rest so pressure
-  // is purely repulsive and the init state (density still 0) feels no force,
-  // and ceilinged at maxPressureDensity — see that constant's comment.
+  // Lagged density of THIS particle, from the fluid's own field. Stored as the
+  // physical density the equation of state wants, so there is no glow gain to
+  // divide back out. Floored at rest so pressure is purely repulsive and the
+  // init state (density still 0) feels no force, ceilinged at
+  // maxPressureDensity — see that constant's comment.
   let maxPressureDensity = restDensity * SPH_MAX_DENSITY_RATIO;
-  let laggedDensityThis = thisParticle.density * invDensityGlowGain;
+  let laggedDensityThis = thisParticle.sphDensity;
   let pressureDensityThis = clamp(laggedDensityThis, restDensity, maxPressureDensity);
   let pressureThis = sphTaitPressure(pressureDensityThis, restDensity, stiffness, gamma);
 
@@ -138,8 +153,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var deltaVelocityThisX = 0.0;
   var deltaVelocityThisY = 0.0;
   var densityAccum = 1.0;
-  var externalForceThisX = 0.0;
-  var externalForceThisY = 0.0;
 
   // THIS PASS ACCUMULATES ONLY — the frame owns the delta resets. See the same
   // note in forces.wgsl: with both force models coupled, whichever ran second
@@ -237,7 +250,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
         // Symmetrized Tait pressure force. Neighbor's lagged physical density,
         // floored at rest so its pressure is also purely repulsive.
-        let laggedDensityOther = otherParticle.density * invDensityGlowGain;
+        let laggedDensityOther = otherParticle.sphDensity;
         let pressureDensityOther = clamp(laggedDensityOther, restDensity, maxPressureDensity);
         let pressureOther = sphTaitPressure(pressureDensityOther, restDensity, stiffness, gamma);
 
@@ -259,8 +272,12 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // Per-pair velocity delta for THIS particle: pressure repels along -dir
         // (away from other, scaled by dt like every force), plus the velocity
         // blend (a direct velocity correction, not scaled by dt).
-        let pairDeltaVelocityX = (-pressureAccel * directionX) * params.dt + velocitySmoothCoeff * velocityDiffX;
-        let pairDeltaVelocityY = (-pressureAccel * directionY) * params.dt + velocitySmoothCoeff * velocityDiffY;
+        // The one site fluidStrength multiplies. Both terms are summed here, so
+        // everything this pass does to a velocity passes through it.
+        let pairDeltaVelocityX = fluidStrength *
+          ((-pressureAccel * directionX) * params.dt + velocitySmoothCoeff * velocityDiffX);
+        let pairDeltaVelocityY = fluidStrength *
+          ((-pressureAccel * directionY) * params.dt + velocitySmoothCoeff * velocityDiffY);
 
         deltaVelocityThisX += pairDeltaVelocityX;
         deltaVelocityThisY += pairDeltaVelocityY;
@@ -273,67 +290,24 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], otherDeltaVxFixed);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], otherDeltaVyFixed);
 
-        let otherDensityFixed = i32(densityWeight * SPH_DENSITY_GLOW_GAIN * FIXED_POINT_SCALE);
-        atomicAdd(&densityDeltaFixed[otherOriginalIdx], otherDensityFixed);
+        // Kernel density carries NO fluidStrength: it feeds this pass's own
+        // equation of state, and scaling it would change what kind of fluid
+        // this is as the strength moves. Nothing outside reads it, so skipping
+        // the pass at strength zero loses nothing.
+        let otherDensityFixed =
+          i32(densityWeight * SPH_DENSITY_FIXED_POINT_SCALE);
+        atomicAdd(&sphDensityDeltaFixed[otherOriginalIdx], otherDensityFixed);
       }
     }
   }
 
-  // Mouse interaction (left attracts, right repels) — kept for parity with
-  // particle-life so the fluid stays interactive.
-  if (params.mouseLeftDown > 0.5 || params.mouseRightDown > 0.5) {
-    var mouseOffsetX = params.mouseX - thisParticle.pos.x;
-    var mouseOffsetY = params.mouseY - thisParticle.pos.y;
-
-    if (mouseOffsetX > halfWorldWidth) { mouseOffsetX -= params.worldWidth; }
-    else if (mouseOffsetX < -halfWorldWidth) { mouseOffsetX += params.worldWidth; }
-    if (mouseOffsetY > halfWorldHeight) { mouseOffsetY -= params.worldHeight; }
-    else if (mouseOffsetY < -halfWorldHeight) { mouseOffsetY += params.worldHeight; }
-
-    let mouseDistSq = mouseOffsetX * mouseOffsetX + mouseOffsetY * mouseOffsetY;
-    if (mouseDistSq > 0.0 && mouseDistSq < MOUSE_RANGE_SQ) {
-      let mouseDist = sqrt(mouseDistSq);
-      let mouseForce = 300.0 * (1.0 - mouseDist / 300.0) / mouseDist;
-
-      var mouseSign = 0.0;
-      if (params.mouseLeftDown > 0.5) { mouseSign += 1.0; }
-      if (params.mouseRightDown > 0.5) { mouseSign -= 1.0; }
-
-      externalForceThisX += mouseOffsetX * mouseForce * mouseSign;
-      externalForceThisY += mouseOffsetY * mouseForce * mouseSign;
-    }
-  }
-
-  // Blast effect (double-click repellent explosion)
-  if (params.blastStrength > 0.01) {
-    var blastOffsetX = thisParticle.pos.x - params.blastX;
-    var blastOffsetY = thisParticle.pos.y - params.blastY;
-
-    if (blastOffsetX > halfWorldWidth) { blastOffsetX -= params.worldWidth; }
-    else if (blastOffsetX < -halfWorldWidth) { blastOffsetX += params.worldWidth; }
-    if (blastOffsetY > halfWorldHeight) { blastOffsetY -= params.worldHeight; }
-    else if (blastOffsetY < -halfWorldHeight) { blastOffsetY += params.worldHeight; }
-
-    let blastDistSq = blastOffsetX * blastOffsetX + blastOffsetY * blastOffsetY;
-    let blastRangeSq = {{TUNABLE_BLAST_RANGE_SQ}};  // 200^2 - blast influence radius squared
-    if (blastDistSq > 0.0 && blastDistSq < blastRangeSq) {
-      let blastDist = sqrt(blastDistSq);
-      let blastForce = params.blastStrength * 3000.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);
-      externalForceThisX += blastOffsetX * blastForce;
-      externalForceThisY += blastOffsetY * blastForce;
-    }
-  }
-
-  // Fold the external (mouse/blast) accelerations in as a dt-scaled velocity
-  // delta, then commit THIS particle's accumulated velocity and fresh density.
-  deltaVelocityThisX += externalForceThisX * params.dt;
-  deltaVelocityThisY += externalForceThisY * params.dt;
-
+  // Commit THIS particle's accumulated velocity and its fresh kernel density.
   let thisDeltaVxFixed = i32(deltaVelocityThisX * FIXED_POINT_SCALE);
   let thisDeltaVyFixed = i32(deltaVelocityThisY * FIXED_POINT_SCALE);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], thisDeltaVxFixed);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], thisDeltaVyFixed);
 
-  let thisDensityFixed = i32(densityAccum * SPH_DENSITY_GLOW_GAIN * FIXED_POINT_SCALE);
-  atomicAdd(&densityDeltaFixed[thisOriginalIdx], thisDensityFixed);
+  let thisDensityFixed =
+    i32(densityAccum * SPH_DENSITY_FIXED_POINT_SCALE);
+  atomicAdd(&sphDensityDeltaFixed[thisOriginalIdx], thisDensityFixed);
 }

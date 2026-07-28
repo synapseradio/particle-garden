@@ -4,14 +4,14 @@
 #
 # Mouse and touch input on the simulation canvas, plus the window-resize and
 # particle-reinit callbacks app.nim registers. This is the physics-input
-# side of the old ui.nim; everything panel-shaped lives in the Solid UI
-# behind window.gardenAPI (web_api.nim).
+# side; everything panel-shaped lives in the Solid UI behind
+# window.gardenAPI (web_api.nim).
 #
 # The canonical input state is currentInput (Observable[InputState]);
 # event handlers compute new state through the pure mouse_handler /
 # touch_handler functions and set the observable.
 #
-# JS-only wiring over natively-tested pure modules; verified by `nimble app`.
+# JS-only wiring over natively-tested pure modules; verified by `just happen`.
 #
 # ==============================================================================
 
@@ -89,9 +89,19 @@ var onResize* {.exportc.}: proc() = nil
 # import Layer 4's webgpu_compute, where the seed request actually lives.
 var onReseedField* {.exportc.}: proc() = nil
 
+# Set via setResizeParticlesCallback - called when the particle COUNT changes
+# and the living population must survive it. Distinct from onInitParticles
+# because the two answer different questions: this one grows or thins a world,
+# that one replaces it.
+var onResizeParticles* {.exportc.}: proc() = nil
+
 proc setInitParticlesCallback*(callback: proc()) {.exportc.} =
   ## Set the callback for particle reinitialization.
   onInitParticles = callback
+
+proc setResizeParticlesCallback*(callback: proc()) {.exportc.} =
+  ## Set the callback for a non-destructive particle-count change.
+  onResizeParticles = callback
 
 proc setReseedFieldCallback*(callback: proc()) {.exportc.} =
   ## Set the callback for reaction-diffusion field re-seeding.
@@ -161,8 +171,8 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
       currentInput.set(handleTouchStart(currentInput.get(), eventData))
   )
 
-  # touchcancel had a pure handler and no listener, so an interrupted touch (an
-  # incoming call, a system gesture) left the press stuck down forever.
+  # An interrupted touch (an incoming call, a system gesture) fires touchcancel
+  # rather than touchend; without this listener the press stays down forever.
   canvasEl.addEventListener("touchcancel", proc(event: TouchEvent) =
     currentInput.set(handleTouchCancel(currentInput.get()))
   )

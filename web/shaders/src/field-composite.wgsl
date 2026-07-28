@@ -6,8 +6,8 @@
 // HDR tonemap path uses (the shared colormap module), and runs the result
 // through the same exposure/ACES/grade transform (the shared tonemap_grade
 // module), so the field looks the same whether bloom is on or off. Drawn as
-// the present-pass backdrop under the particles/glow/trails. Only active in
-// reaction-diffusion mode.
+// the present-pass backdrop under the particles/glow/trails, on the bloom-off
+// path only — with bloom on, the tonemap folds the field in instead.
 //
 // The colormap selection, fieldOpacity, and grade knobs arrive through the
 // shared TonemapParams uniform (the render loop writes it every frame), so
@@ -60,9 +60,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let fieldLight = applyColormap(colormapIndex, field.x, field.y) * params.fieldOpacity;
   // Graded through the shared tonemap_grade authority so toggling bloom never
   // shifts the field's tonality, and covered by the shared coverage authority
-  // so toggling it never shifts what the field OCCLUDES either. Alpha used to
-  // be a flat 1.0 here, which made the field an opaque backdrop even where no
-  // field was present.
+  // so toggling it never shifts what the field OCCLUDES either. A flat 1.0
+  // alpha here would make the field an opaque backdrop even where no field is
+  // present.
   let coverage = colormapFieldCoverage(colormapIndex, field.x, field.y,
     params.fieldOpacity);
   return vec4f(tonemapGrade(fieldLight, params), coverage);

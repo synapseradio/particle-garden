@@ -2,11 +2,11 @@
 # PARTICLE GARDEN - SPH CORE (Pure 2D Smoothed-Particle-Hydrodynamics Math)
 # ==============================================================================
 #
-# Pure functions for the SPH fluid mode: 2D smoothing kernels, the Tait
+# Pure functions for the SPH fluid: 2D smoothing kernels, the Tait
 # equation of state, and the XSPH velocity-smoothing term. No side effects, no
-# FFI — compiles on both the native (nimble test) and JS backends, and is the
+# FFI — compiles on both the native (just test) and JS backends, and is the
 # analytic mirror the forces-sph.wgsl compute shader is written against
-# (physics_core.nim plays the same role for the particle-life force math).
+# (physics_core.nim plays the same role for the species force math).
 #
 # Every function takes the smoothing radius h as a parameter. h is the runtime
 # interactionRadius, so nothing is precomputed against a fixed h; the kernel
@@ -25,6 +25,11 @@ import std/math
 # ==============================================================================
 
 const
+  SPH_DENSITY_HEADROOM* = 2.0
+    ## How much of the accumulator's span stays free above the largest density
+    ## the world can produce. The accumulation is atomic across threads, so no
+    ## contribution sees the running total and none can check it before adding;
+    ## headroom is what covers that, and it is the only thing that can.
   SPH_DEFAULT_GAMMA* = 7.0
     ## Tait exponent. 7 is the classic water value (Monaghan): stiff enough
     ## that density stays near rest without a vanishingly small timestep.
@@ -32,10 +37,6 @@ const
     ## XSPH blend fraction in [0, 1]. 0.5 is a strong-but-stable smoothing
     ## weight; the correction can never move a velocity by more than this
     ## fraction of the neighbor velocity gap (see xsphVelocityCorrection).
-  SPH_PARTICLE_CEILING* = 32000
-    ## Upper particle count for the SPH mode. SPH's neighbor pressure loop is
-    ## heavier than the particle-life force loop, so the mode caps well below
-    ## the global MAX_PARTICLES to hold interactive frame rates.
   SPH_MAX_SUBSTEPS* = 3
     ## Maximum physics substeps the executor may run per rendered frame. Higher
     ## stiffness needs a smaller effective timestep; substepping buys that
@@ -125,3 +126,45 @@ func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
   ## corrections to form the full term.
   let weight = max(0.0, min(1.0, neighborWeight))
   epsilon * weight * (velocityNeighbor - velocitySelf)
+
+# ==============================================================================
+# FIXED-POINT DENSITY ENCODING
+# ==============================================================================
+
+func fixedPointCeiling*(fixedPointScale: float): float =
+  ## Largest value an i32 atomic accumulator represents at this scale. The
+  ## delta buffers encode floats as `i32(value * scale)`, so the signed 32-bit
+  ## range divided by the scale is the whole representable span.
+  2147483647.0 / fixedPointScale
+
+func sphDensityFixedPointScale*(maxParticles: int): float =
+  ## Fixed-point scale for the kernel-density accumulator, derived from the
+  ## particle budget it has to hold.
+  ##
+  ## WHAT THE WORST CASE IS. forces-sph.wgsl divides each neighbour's poly6
+  ## weight by the self-weight, so a neighbour contributes at most 1.0 and the
+  ## accumulated density counts neighbours. Nothing bounds how many particles
+  ## share a smoothing radius, so the largest density the world can reach is
+  ## exactly `maxParticles` — every particle the slider allows, in one place.
+  ##
+  ## WHY THIS IS NOT THE SHARED SCALE. Velocity deltas want fine resolution near
+  ## zero and stay small, so they take FIXED_POINT_SCALE at 65536. Density is a
+  ## large positive count and wants range instead. Sharing one scale forces the
+  ## count to fit in 32768, which the particle ceiling passes by 3.9x, and an
+  ## i32 past its maximum wraps NEGATIVE — a density the equation of state reads
+  ## as maximal expansion and answers with force in the wrong direction.
+  ## Clamping instead would answer that by making the ceiling unreachable, which
+  ## is not what a maximum means.
+  ##
+  ## Powers of two, because a float scaled by one is exact in binary: doubling
+  ## the budget halves the scale and re-encodes every density identically, so
+  ## raising MAX_PARTICLES stays a one-constant change.
+  const i32Max = 2147483647.0
+  let needed = float(maxParticles) * SPH_DENSITY_HEADROOM
+  result = 1.0
+  # Budgets past the whole signed range need a scale below 1. Held separately
+  # from the doubling below so both directions terminate.
+  while result * needed > i32Max:
+    result *= 0.5
+  while result * 2.0 * needed <= i32Max:
+    result *= 2.0

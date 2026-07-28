@@ -2,13 +2,13 @@
 # SIMULATION STATE - Physics simulation parameters
 # ==============================================================================
 #
-# The typed record for every physics-side tunable: the nineteen ConfigObject
-# fields the compute pipeline and force model read. ui.nim holds this in an
-# Observable and mirrors each change synchronously into the flat CONFIG the
-# hot paths consume; config.nim's createConfig copies these defaults, so the
+# The typed record for every physics-side tunable: the ConfigObject fields the
+# compute pipeline and force model read. web_api.nim holds this behind
+# gardenAPI and mirrors each change synchronously into the flat CONFIG the hot
+# paths consume; config.nim's createConfig copies these defaults, so the
 # values below are the single authoritative defaults.
 #
-# Pure module: compiles on both the native (nimble test) and JS backends.
+# Pure module: compiles on both the native (just test) and JS backends.
 #
 # ==============================================================================
 
@@ -32,6 +32,13 @@ type
     forceModel*: int          ## 0=polynomial, 1=exponential
     expRepulsionAlpha*: float ## Exponential repulsion steepness
     expAttractionBeta*: float ## Exponential attraction range
+    fluidStrength*: float     ## How much of the fluid's verdict on a particle's
+                              ## velocity actually lands: multiplies the SPH
+                              ## pass's whole per-pair contribution, pressure and
+                              ## velocity smoothing together (design D14). The
+                              ## three numbers below say what KIND of fluid this
+                              ## is; this one says how much of it acts. Zero is
+                              ## an ordinary value and skips the pass exactly.
     sphRestDensity*: float    ## SPH target density the Tait EOS drives toward.
                               ## Must exceed the isolated particle's normalized
                               ## self-density of 1.0, or isolation becomes the
@@ -73,6 +80,14 @@ func initSimulationState*(): SimulationState =
     forceModel: 0,         # Polynomial (smooth curves)
     expRepulsionAlpha: 6.0,
     expAttractionBeta: 3.0,
+    # The fluid starts silent, and that is a considered default rather than a
+    # timid one. Every other coupling's default reproduces a world someone has
+    # watched; forces at 1.0 with chemistry depositing is the world these
+    # defaults reach. A fluid acting at full strength on top of both
+    # at their defaults is a world nobody has tuned — its stiffness ceiling is
+    # still a hypothesis (design C7) — so it waits behind a slider the panel
+    # always shows.
+    fluidStrength: 0.0,
     sphRestDensity: 3.0,  # ~6 neighbors at r=0.5-0.6h settle at density 2.6-3.5
     sphStiffness: 8.0,
     sphViscosity: 0.1,

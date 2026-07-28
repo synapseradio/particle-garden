@@ -2,12 +2,12 @@
 # PARTICLE GARDEN - FIELD CORE (Pure Reaction-Diffusion Math)
 # ==============================================================================
 #
-# Pure functions for the Gray-Scott reaction-diffusion mode: the 9-point
+# Pure functions for the Gray-Scott reaction-diffusion field: the 9-point
 # discrete Laplacian and one Gray-Scott step for a single grid cell. No side
-# effects, no FFI — compiles on both the native (nimble test) and JS backends,
+# effects, no FFI — compiles on both the native (just test) and JS backends,
 # and is the analytic mirror the rd-step.wgsl compute shader is written
 # against (sph_core.nim and physics_core.nim play the same role for the SPH
-# and particle-life force math).
+# and species force math).
 #
 # The field itself (the two concentration channels, activator and inhibitor)
 # lives only on the GPU as a storage texture — there is no CPU-side grid here.
@@ -29,13 +29,49 @@ import std/math
 # ==============================================================================
 
 const
-  FIELD_W* = 512
-    ## Storage-texture width for the reaction-diffusion field. Fixed and
-    ## independent of the world size or particle count: the field is its own
-    ## grid, not derived from the spatial hash the particle modes use.
-  FIELD_H* = 512
-    ## Storage-texture height. Square with FIELD_W by convention; nothing
-    ## here requires it to stay square.
+  FIELD_WORLD_ASPECT* = 16.0 / 9.0
+    ## The aspect of the world the field covers — src/config.nim's WORLD_W over
+    ## WORLD_H. Stated here because field_core is pure and cannot import
+    ## config.nim, which carries FFI pragmas; tests/test_field_core.nim reads
+    ## config.nim from source and checks the two still agree.
+  FIELD_PATTERN_SHRINK* = 4
+    ## THE ONE KNOB FOR HOW BIG THE PATTERN DRAWS. Everything the field's scale
+    ## touches is derived from it: the grid below, RD_DEFAULT_FIELD_FORCE,
+    ## RD_FIELD_FORCE_MAX in config_ranges, and RD_SEED_BLOB_RADIUS.
+    ##
+    ## Reads as a multiple of the 512-cell square field this replaced: at 1 a
+    ## spot draws the width it drew there, at 4 a quarter of it. Raising it
+    ## costs memory and bandwidth quadratically and costs nothing else — the
+    ## chemistry lives in cell space and never sees this (RD_DIFFUSION_A says
+    ## what happens when something DOES move the chemistry).
+  FIELD_W* = 512 * FIELD_PATTERN_SHRINK
+    ## Storage-texture width for the reaction-diffusion field. Its own grid, not
+    ## derived from the spatial hash the particle passes use.
+  FIELD_H* = 288 * FIELD_PATTERN_SHRINK
+    ## Storage-texture height. FIELD_W:FIELD_H holds FIELD_WORLD_ASPECT, which
+    ## is what makes a cell SQUARE in world units.
+    ##
+    ## field-deposit.wgsl maps the whole world rect onto FIELD_W x FIELD_H, so
+    ## the two aspects have to match. A square 512x512 grid over a 16:9 world
+    ## gave cells 7.5 by 4.22 world units, and since the 9-point Laplacian is
+    ## isotropic in CELLS, every spot came out an ellipse 1.78x wider than tall.
+    ##
+    ## RESOLUTION IS THE ONLY SAFE LEVER FOR PATTERN SIZE. Gray-Scott's
+    ## dynamics live in cell space, so shrinking the cell shrinks what the eye
+    ## sees and changes no chemistry at all: every ignition threshold, regime
+    ## coordinate and collapse bound in this file is measured in cells and
+    ## survives untouched. RD_DIFFUSION_A says what the other lever costs.
+    ##
+    ## 512:288 is the world's 16:9 (FIELD_WORLD_ASPECT), so a cell stays SQUARE
+    ## in world units at every shrink. A square 512x512 grid over a 16:9 world
+    ## gave cells 7.5 by 4.22 world units, and since the 9-point Laplacian is
+    ## isotropic in CELLS, every spot came out an ellipse 1.78x wider than tall.
+    ##
+    ## COST at the shipped shrink of 4: 2.36M cells, carried in two rgba16float
+    ## ping-pong textures (~19 MB each) plus one i32 deposit buffer (~9 MB).
+    ## Every frame runs 1 + RD_STEPS_PER_FRAME passes over all of it, so
+    ## RD_STEPS_PER_FRAME is the lever to reach for if the field pass costs too
+    ## much — it trades evolution speed for bandwidth and must stay odd.
 
 # ==============================================================================
 # TUNING CONSTANTS
@@ -45,6 +81,18 @@ const
   RD_DIFFUSION_A* = 1.0
     ## Activator diffusion rate Da. Classic Gray-Scott convention: the
     ## activator diffuses at the reference rate 1.0.
+    ##
+    ## THESE RATES ARE NOT A TUNING KNOB FOR PATTERN SIZE, though the sqrt law
+    ## in patternDiameterCells makes them look like one. Pearson's (F, k) phase
+    ## map — which RD_REGIMES cites, which the feed and kill slider ranges are
+    ## drawn against, and which every named regime is a coordinate in — is drawn
+    ## at THESE diffusion rates. Moving them moves the whole map underneath the
+    ## table: measured at Da=0.25, a floored regime settled 2.5x further from
+    ## its own unforced morphology than from a different regime's, scattered
+    ## deposits ignited where coherence used to be required, and the chemotactic
+    ## collapse the safety bound is measured against stopped reproducing.
+    ## Pattern size is set by FIELD_W/FIELD_H instead, which changes what a cell
+    ## covers and leaves the chemistry in cell space untouched.
   RD_DIFFUSION_B* = 0.5
     ## Inhibitor diffusion rate Db. Half the activator's rate — the ratio
     ## Db/Da that produces Turing-pattern instability rather than a field
@@ -53,18 +101,14 @@ const
     ## Per-substep timestep. Gray-Scott's explicit-Euler update is stable at
     ## dt=1 for these diffusion rates because the Laplacian is the normalized
     ## (center weight -1) 9-point stencil, laplacian9 — its worst-mode
-    ## amplification factor stays inside the unit circle at Da=1, dt=1. The
+    ## amplification factor reaches the unit circle exactly at Da*dt == 1, so
+    ## the activator channel runs ON that boundary rather than inside it. The
     ## -4-center 5-point form would need dt <= 0.25 at these rates.
   RD_STEPS_PER_FRAME* = 7
     ## Reaction-diffusion substeps run per rendered frame. The pattern
     ## evolves slowly relative to a video frame, so multiple steps per frame
     ## buys visible motion without lowering dt (and hence stability).
     ## Must be ODD — see the static assertion below.
-  RD_PARTICLE_CEILING* = 32000
-    ## Upper particle count for the reaction-diffusion mode. Particles are
-    ## sources that deposit into the field and are pushed by its gradient;
-    ## the field grid (not the particle count) is this mode's cost driver,
-    ## so the ceiling matches SPH's rather than particle-life's larger one.
   RD_DEFAULT_FEED* = 0.030
     ## Feed rate F. Paired with RD_DEFAULT_KILL below, this sits in Pearson's
     ## self-replicating-spots regime (see the constants' test suite for the
@@ -90,23 +134,80 @@ const
     ## uniform bath rather than spots; at ~0.30 it diverges. RD_DEPOSIT_MAX in
     ## config_ranges is set well below the flood point because the feed/kill
     ## sliders can weaken the depletion that opposes the deposit.
-  RD_DEFAULT_FIELD_FORCE* = 30.0
+  RD_DEFAULT_FIELD_FORCE* = 30.0 / float(FIELD_PATTERN_SHRINK)
     ## Default conversion from the sampled field gradient to a per-frame
     ## velocity impulse. field-force.wgsl multiplies the central-difference
     ## inhibitor gradient by this and writes it to the velocity-delta buffer
     ## integrate.wgsl consumes. Zero leaves particles blind to the field.
-    ## Inhibitor gradients peak near 0.05 per cell, so 30 is roughly 1.5
-    ## velocity units per frame against a maxVelocity of 50.
-  RD_GLOW_DENSITY_FLOOR* = 1.0
-    ## Per-mode floor the render loop feeds glow.wgsl's densityFactor in
-    ## reaction-diffusion mode. RD runs no forces pass, so particle density
-    ## decays to ~0 and the shared glow's density term bottoms out — the glow
-    ## reads flat. Lifting the floor lets the velocity term (particles drift
-    ## along the field gradient) drive a legible glow. The density-driven modes
-    ## pass 0 here, leaving their glow untouched. BLIND VISUAL PICK: the user's
-    ## visual pass owns the final magnitude.
+    ##
+    ## DIVIDED BY THE SHRINK, because of a unit mismatch that is easy to miss:
+    ## the gradient is taken PER CELL while the impulse lands in WORLD units.
+    ## Holding the number fixed while the cell shrinks therefore leaves a
+    ## particle moving the same distance per frame across a pattern that has
+    ## itself become smaller, so its response to a feature strengthens by
+    ## exactly the shrink.
+    ##
+    ##   cells crossed per frame = gradient * scale * FIELD_W / worldWidth
+    ##
+    ## What holds a particle's behaviour fixed is that product, not this
+    ## constant. 30 against the 512-cell field's 7.5 world units per cell is the
+    ## same motion through the same pattern as 7.5 against 1.875. Every
+    ## measurement in the chemotactic collapse suite is taken in cell space and
+    ## rests on that identity — tests/test_field_core.nim derives its harness
+    ## geometry from FIELD_W for exactly this reason.
+    ##
+    ## MEASURED (128x128 torus, settled at the Pearson defaults, central
+    ## difference): mean inhibitor gradient 0.0364 per cell, peak 0.0868. At 30
+    ## against the original grid that is roughly 1.5 velocity units per frame
+    ## against a maxVelocity of 50.
+# ==============================================================================
+# HOW BIG THE PATTERN DRAWS
+# ==============================================================================
+#
+# Two independent levers set the size of a spot on screen, and only their
+# product is visible: Gray-Scott's wavelength in CELLS, which scales as
+# sqrt(diffusion), and the world extent one cell covers, worldExtent/fieldExtent.
+# These functions state that product so a change to either lever can be checked
+# against the other rather than eyeballed.
+#
+# No caller in src/ — like physics_core and sph_core, this is a reference oracle
+# the native suite measures the shipped constants against.
+
+const
+  RD_DIAMETER_CELLS_AT_UNIT_DIFFUSION* = 9.30
+    ## Mean spot diameter in cells at the conventional Da=1.0, Db=0.5.
+    ##
+    ## MEASURED (128x128 torus, Pearson defaults, 30 seeded blobs, 6000 steps,
+    ## connected components above half the peak inhibitor). Diameter tracks
+    ## sqrt(diffusion) closely across the usable band: 9.30 cells at scale 1.0,
+    ## 6.55 at 0.5 (predicted 6.58), 4.47 at 0.25 (predicted 4.65), 3.71 at 0.16
+    ## (predicted 3.72).
+  RD_MIN_RESOLVED_DIAMETER_CELLS* = 4.0
+    ## Narrowest pattern the grid still carries as a pattern.
+    ##
+    ## MEASURED, same sweep: below scale 0.16 the sqrt law stops holding and the
+    ## pattern dies rather than shrinking — at 0.09 coverage collapses from 0.22
+    ## to 0.03, and by 0.04 every surviving component is a single cell. 4.0 sits
+    ## above that cliff rather than on it.
+
+func patternDiameterCells*(diffusionA: float): float =
+  ## Mean spot diameter in FIELD CELLS at an activator diffusion rate, assuming
+  ## Db/Da holds at 0.5. Turing wavelength goes as the square root of the
+  ## diffusion coefficient, so quartering the rate halves the pattern.
+  RD_DIAMETER_CELLS_AT_UNIT_DIFFUSION * sqrt(diffusionA)
+
+func patternDiameterWorld*(diffusionA, fieldExtent, worldExtent: float): float =
+  ## Mean spot diameter in WORLD units — what the eye actually judges. Takes the
+  ## field and world extents rather than reading FIELD_W, so the shipped
+  ## geometry can be compared against another one.
+  patternDiameterCells(diffusionA) * (worldExtent / fieldExtent)
 
 static:
+  # Field cells must be square in world units. field-deposit.wgsl maps the whole
+  # world rect onto FIELD_W x FIELD_H, so any mismatch between the two aspects
+  # stretches every pattern the field draws by exactly that mismatch.
+  doAssert abs(FIELD_W.float / FIELD_H.float - FIELD_WORLD_ASPECT) < 1e-9
+
   # fieldResolve is itself a ping-pong stage — it reads the trailing texture
   # and writes the front — so one frame performs 1 + RD_STEPS_PER_FRAME texture
   # swaps. That total must be even for the live field to land back on the
@@ -128,7 +229,7 @@ static:
 # The kernel is NORMALIZED: a particle contributes the same total deposit
 # whatever the radius. Spreading is a redistribution, not an amplification —
 # which is why widening the radius cannot flood the field past the ceiling
-# RD_DEPOSIT_MAX was measured against.
+# RD_DEPOSIT_MAX is measured against.
 
 const
   RD_DEPOSIT_SPLAT_RADIUS* = 5.0
@@ -164,6 +265,40 @@ const
     ## where the weight has fallen to ~13% of the peak — far enough out that
     ## the cut does not visibly square off the splat, close enough that the
     ## kernel stays compact.
+  RD_DEPOSIT_CELL_MAX* = 0.10
+    ## Most inhibitor one cell may take from particles in one frame.
+    ##
+    ## RD_DEPOSIT_MAX bounds ONE PARTICLE. This bounds their SUM, which is the
+    ## quantity the stability argument needs and the one nothing else limits:
+    ## particles per cell has no ceiling, so any input that gathers a crowd
+    ## into one place drives a cell without limit. At 0.02 it takes ~342
+    ## co-located particles to reach a diverging deposit and ~86 at
+    ## RD_DEPOSIT_MAX, both of which a held mouse passes immediately.
+    ##
+    ## MEASURED (64x64 grid, 100 feed/kill samples across the full slider
+    ## ranges, a block of cells taking the cap every frame for 400 frames on
+    ## top of a living pattern — the held mouse, without end):
+    ##
+    ##   cap 0.10, 3x3 and 21x21 blocks: stable, peak inhibitor 0.637
+    ##   cap 0.20, 3x3 and 21x21 blocks: stable, peak inhibitor 0.658
+    ##   cap 0.25, 21x21 block:          diverges at feed 0.010, kill 0.040
+    ##
+    ## 0.10 is half the largest measured stable cap. The margin is worth its
+    ## cost because the boundary is not monotone near the edge — clamping the
+    ## field's STATE instead was measured stable at 0.75 and unstable at both
+    ## 0.72 and 0.80 — so a cap chosen at the last passing sample would sit on
+    ## a ragged edge rather than inside a safe interval.
+    ##
+    ## Bounding the injection rather than the state is what leaves the reaction
+    ## alone: a living pattern reaches 0.515 inhibitor in steady state and
+    ## excursions above 0.7 while igniting, all of it self-limiting. A ceiling
+    ## on the state would clip those; a ceiling on what particles add does not.
+
+func resolveCellDeposit*(inhibitor, deposit: float): float =
+  ## One cell's inhibitor after this frame's particle deposits land on it.
+  ## Mirrors field-resolve.wgsl. The cap is on what arrives, never on what the
+  ## reaction produces, so the dynamics keep every excursion they make.
+  inhibitor + min(deposit, RD_DEPOSIT_CELL_MAX)
 
 func depositSplatWeight*(distance, radius: float): float =
   ## Unnormalized weight one cell receives from a particle `distance` cells
@@ -219,11 +354,10 @@ const
   SPECIES_TROPISM_SLOT* = 1
   RD_DEFAULT_SECRETION* = 1.0
     ## Full positive secretion: a species deposits exactly RD_DEFAULT_DEPOSIT,
-    ## which is what the field ships doing today. Every measurement behind
-    ## RD_DEPOSIT_MAX and RD_DEPOSIT_SPLAT_RADIUS was taken at this value.
+    ## which is what the field ships doing. Every measurement behind
+    ## RD_DEPOSIT_MAX and RD_DEPOSIT_SPLAT_RADIUS is taken at this value.
   RD_DEFAULT_TROPISM* = -1.0
-    ## Full DOWN-gradient response, the stabilizing sign and the behavior the
-    ## field shipped before species chemistry existed: particles are pushed
+    ## Full DOWN-gradient response, the stabilizing sign: particles are pushed
     ## away from their own deposits, spreading across the pattern instead of
     ## piling onto one seed. The default sits at the bound because the bound is
     ## the safe end of an asymmetric range, not the risky one.
@@ -244,12 +378,12 @@ func speciesTropismForce*(gradient, fieldForceScale, tropism: float): float =
 # FIELD SEED
 # ==============================================================================
 #
-# The initial field state, and the answer to why the mode looked inert: the
-# render-pass clear the field textures get (activator=1, inhibitor=0) is
-# Gray-Scott's trivial fixed point for ANY feed/kill/dt, and per-cell noise
-# cannot escape it either — an isolated peak loses Db*B to diffusion every
-# substep with no neighbors to replenish it. Only a spatially COHERENT
-# perturbation ignites the system, which is what these blobs are.
+# The initial field state. The render-pass clear the field textures get
+# (activator=1, inhibitor=0) is Gray-Scott's trivial fixed point for ANY
+# feed/kill/dt, and per-cell noise cannot escape it either — an isolated peak
+# loses Db*B to diffusion every substep with no neighbors to replenish it. Only
+# a spatially COHERENT perturbation ignites the system, which is what these
+# blobs are.
 #
 # web/shaders/src/field-seed.wgsl mirrors rdSeedCell exactly. The pair is
 # hand-maintained with no compile-time link, the same contract grayScottStep
@@ -263,9 +397,13 @@ const
     ## FIELD_W x FIELD_H: enough that spots fill the frame within a few
     ## seconds, few enough that the seed reads as scattered structure rather
     ## than a uniform bath.
-  RD_SEED_BLOB_RADIUS* = 6.0
+  RD_SEED_BLOB_RADIUS* = 6.0 * float(FIELD_PATTERN_SHRINK)
     ## Blob radius in cells. The floor that matters is coherence, not size —
     ## below ~2 cells diffusion erases the blob before it can react.
+    ##
+    ## Multiplied by the shrink so a spore holds the same WORLD footprint at any
+    ## field resolution: it stays the size it was on screen and simply contains
+    ## more spots than it used to.
   RD_SEED_CORE_ACTIVATOR* = 0.5
     ## Activator concentration at a blob's core. Depressed from the background
     ## 1.0: Gray-Scott spots are activator-depleted, inhibitor-rich regions.

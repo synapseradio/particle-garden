@@ -185,6 +185,12 @@ import colormap_core
 # apparent-scale mirror must share with the native-tested one. Substituted
 # rather than restated so the two cannot drift.
 import camera_core
+# sph_core is pure; it derives the density accumulator's fixed-point scale from
+# the particle budget, so the scale the shader encodes with and the
+# native-tested one are one number.
+import sph_core
+# The particle budget that derivation is taken against.
+from memory_layout import MAX_PARTICLES
 
 proc getPlaceholderMap*(): Table[string, string] =
   ## Generate placeholder substitutions for the shader bundler
@@ -228,6 +234,7 @@ proc getPlaceholderMap*(): Table[string, string] =
   # offsets the shader visits — computing it here rather than in WGSL is what
   # keeps the shader's conservation identical to the tested oracle's, since a
   # continuous-Gaussian approximation would disagree with the discrete sum.
+  result["RD_DEPOSIT_CELL_MAX"] = fmt"{RD_DEPOSIT_CELL_MAX:.4f}"
   result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
   result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)
   result["RD_DEPOSIT_SPLAT_SIGMA"] = fmt"{RD_DEPOSIT_SPLAT_SIGMA:.4f}"
@@ -261,6 +268,13 @@ proc getPlaceholderMap*(): Table[string, string] =
   # SPH fluid-mode constants (consumed by forces-sph.wgsl).
   result["TUNABLE_SPH_XSPH_EPSILON"] = fmt"{activeConfig.tuning.sphXsphEpsilon:.2f}"
   result["TUNABLE_SPH_MAX_DENSITY_RATIO"] = fmt"{activeConfig.tuning.sphMaxDensityRatio:.2f}"
+  # The density accumulator's own fixed-point scale, coarser than the shared
+  # one so the full particle budget encodes instead of clamping. Derived from
+  # MAX_PARTICLES by sph_core, never written as a literal, so raising the
+  # particle ceiling carries the encoding with it.
+  let sphDensityScale = sphDensityFixedPointScale(MAX_PARTICLES)
+  result["SPH_DENSITY_FIXED_POINT_SCALE"] = fmt"{sphDensityScale:.1f}"
+  result["SPH_DENSITY_INV_FIXED_POINT_SCALE"] = fmt"{1.0 / sphDensityScale:.16f}"
 
   # HDR-bloom separable-blur kernel (consumed by blur.wgsl). The half kernel
   # (centre + one side) and its element count come from bloom_core, the single

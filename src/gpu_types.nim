@@ -89,7 +89,7 @@ const
       GpuField(name: "vel",     kind: gtVec2F32, offset: 8,  size: 8,  count: 1),
       GpuField(name: "species", kind: gtU32,     offset: 16, size: 4,  count: 1),
       GpuField(name: "density", kind: gtF32,     offset: 20, size: 4,  count: 1),
-      GpuField(name: "_pad0",   kind: gtU32,     offset: 24, size: 4,  count: 1),
+      GpuField(name: "sphDensity", kind: gtF32,  offset: 24, size: 4,  count: 1),
       GpuField(name: "_pad1",   kind: gtU32,     offset: 28, size: 4,  count: 1),
     ],
     totalSize: 32
@@ -145,7 +145,10 @@ const
       GpuField(name: "blastX",          kind: gtF32, offset: 48, size: 4, count: 1),
       GpuField(name: "blastY",          kind: gtF32, offset: 52, size: 4, count: 1),
       GpuField(name: "blastStrength",   kind: gtF32, offset: 56, size: 4, count: 1),
-      GpuField(name: "_pad",            kind: gtF32, offset: 60, size: 4, count: 1),
+      # Spends the pad rather than growing the struct. Sits in the core block
+      # only because that is where the free word is; forces-sph.wgsl is the
+      # sole reader.
+      GpuField(name: "fluidStrength",   kind: gtF32, offset: 60, size: 4, count: 1),
       # Attraction matrix: 36 floats packed as 9 vec4s (64-208)
       GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 144, count: 9, elemKind: gtVec4F32),
       # Force model parameters (208-232)
@@ -155,8 +158,8 @@ const
       GpuField(name: "expAlpha",        kind: gtF32, offset: 220, size: 4, count: 1),
       GpuField(name: "expBeta",         kind: gtF32, offset: 224, size: 4, count: 1),
       GpuField(name: "_pad2",           kind: gtF32, offset: 228, size: 4, count: 1),
-      # SPH fluid-mode parameters (232-248). forces-sph.wgsl reads these; the
-      # particle-life force shader ignores them.
+      # SPH fluid parameters (232-248). forces-sph.wgsl reads these; the
+      # species force shader ignores them.
       GpuField(name: "sphRestDensity",  kind: gtF32, offset: 232, size: 4, count: 1),
       GpuField(name: "sphStiffness",    kind: gtF32, offset: 236, size: 4, count: 1),
       GpuField(name: "sphGamma",        kind: gtF32, offset: 240, size: 4, count: 1),
@@ -166,10 +169,11 @@ const
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
-  # glowDensityFloor (S10) lifts the glow's density factor to a per-mode floor.
-  # Reaction-diffusion leaves particle density stale at ~0 (no forces pass), so
-  # without a floor its glow reads flat; the render loop sets this per active
-  # mode (RD lifts it, the density-driven modes leave it at 0).
+  # glowDensityFloor (S10) is a floor under the glow's density factor, for a
+  # world where colony density is unavailable. forces.wgsl is world-intrinsic
+  # and writes that density every frame, so webgpu_render.nim writes the floor
+  # at 0 and glow.wgsl's max is inert. The field stays until someone shrinks
+  # RenderParams deliberately — see one-world tasks 9.0c2.
   #
   # fieldOpacity and colormapIndex are duplicated here from TonemapParams so the
   # VERTEX stage can light each particle by the field it is standing in
@@ -207,10 +211,10 @@ const
   # world. Reprojecting needs both cameras: where a world point is now, and
   # where it sat on the frame the trail texture was drawn.
   #
-  # Grown from 16 bytes to 32 to hold them. A pure UV translation would have fit
-  # in the old pads, but it is only exact while the zoom is unchanged — during a
-  # zoom the correct mapping is a scale about a point, and a single offset would
-  # smear exactly when the user is moving fastest.
+  # 32 bytes rather than 16 to hold them. A pure UV translation fits in less,
+  # but it is only exact while the zoom is unchanged — during a zoom the correct
+  # mapping is a scale about a point, and a single offset would smear exactly
+  # when the user is moving fastest.
   #
   # worldWidth/worldHeight ride along so the fade pass can run the camera
   # transform without also binding the whole of RenderParams for two numbers.
@@ -249,7 +253,7 @@ const
   )
 
   # FieldParams struct (32 bytes, generated into web/shaders/modules/field_params.wgsl)
-  # The reaction-diffusion mode's uniform: the two Gray-Scott tunables (feed,
+  # The chemical field's uniform: the two Gray-Scott tunables (feed,
   # kill), the diffusion rates and timestep field_core.nim's grayScottStep
   # takes as parameters, the two particle-coupling knobs (depositAmount,
   # fieldForceScale) fieldDeposit/fieldForce read, and the seed nonce
@@ -283,12 +287,12 @@ const
   # a user drags, ReactionParams carries the reaction's identity.
   #
   # RESERVED, NOT DELIVERED. Gray-Scott reads `reactionKind` and ignores every
-  # other member. The uniform exists now because adding it later would mean
-  # revisiting rd-step's bind group, its layout, its entry-count constant, and
-  # the shader manifest — a sweeping edit at a moment when nothing else is
-  # open. Adding it while those files are already open costs one layout table
-  # and one buffer write. This reserves an addressable slot; no second reaction
-  # is implemented and none is claimed.
+  # other member. The uniform exists because adding it later means revisiting
+  # rd-step's bind group, its layout, its entry-count constant, and the shader
+  # manifest — a sweeping edit across files an unrelated change has no reason
+  # to touch. Declaring it beside them costs one layout table and one buffer
+  # write. This reserves an addressable slot; no second reaction is implemented
+  # and none is claimed.
   ReactionParamsLayout* = GpuStruct(
     name: "ReactionParams",
     fields: @[
@@ -520,8 +524,8 @@ macro genFieldIndices*(layout: static GpuStruct, prefix: static string): untyped
   ## `<prefix>_PARAMS_F32_COUNT` gives the total f32 count. A field whose
   ## upper-snake name already begins with the prefix keeps a single prefix
   ## ("fadeAmount" under "FADE" -> FADE_AMOUNT, not FADE_FADE_AMOUNT).
-  ## Replaces the hand SIM_*/RENDER_*/FADE_* blocks so the write indices can
-  ## never drift from the layout tables.
+  ## Generating them rather than hand-writing the SIM_*/RENDER_*/FADE_* blocks
+  ## keeps the write indices from drifting from the layout tables.
   result = nnkConstSection.newTree()
   for field in layout.fields:
     let upperName = toUpperSnake(field.name)
@@ -549,7 +553,9 @@ static:
   assert ParticleLayout.fieldOffset("pos") == 0
   assert ParticleLayout.fieldOffset("vel") == 8
   assert ParticleLayout.fieldOffset("species") == 16
-  assert ParticleLayout.fieldOffset("density") == 20
+  assert ParticleLayout.fieldOffset("density") == memory_layout.PARTICLE_DENSITY_OFFSET
+  assert ParticleLayout.fieldOffset("sphDensity") ==
+    memory_layout.PARTICLE_SPH_DENSITY_OFFSET
 
   # Validate GridParams struct
   assert GridParamsLayout.totalSize == 32, "GridParams must be 32 bytes"
@@ -576,8 +582,8 @@ static:
 # =============================================================================
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
 # emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
-# _END=51, ... SIM_PAD2=57, and SIM_PARAMS_F32_COUNT=58, replacing the
-# magic numbers webgpu_compute.nim once hand-wrote.
+# _END=51, ... SIM_PAD2=57, and SIM_PARAMS_F32_COUNT=58, so webgpu_compute.nim
+# hand-writes no magic number.
 
 genFieldIndices(SimParamsLayout, "SIM")
 
@@ -653,7 +659,7 @@ static:
   assert CameraLayout.wgslUniformSize == 16, "Camera allocates 16 bytes"
 
 # =============================================================================
-# FIELDPARAMS FIELD INDICES (reaction-diffusion mode, webgpu_compute.nim)
+# FIELDPARAMS FIELD INDICES (the chemical field, webgpu_compute.nim)
 # =============================================================================
 # Generated from FieldParamsLayout by genFieldIndices, like SIM_*/RENDER_*/
 # FADE_* above: FIELD_FEED=0, FIELD_KILL=1, ... FIELD_SEED_NONCE=7,

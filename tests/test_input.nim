@@ -5,7 +5,7 @@
 # Unit tests for input state and event handlers.
 # Tests pure state transitions without DOM.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

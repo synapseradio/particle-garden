@@ -7,7 +7,7 @@
 # palette.nim's documented psOpenColor inertness both ways), scheme-id
 # round-trip, defaults, and channel range invariants.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

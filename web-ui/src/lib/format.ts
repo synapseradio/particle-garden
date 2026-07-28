@@ -1,6 +1,5 @@
 // Display formatting for values the Nim side hands over as raw numbers.
-// Mirrors the old natively-tested formatters (slider.nim formatValue,
-// stats_view.nim): int-kind and precision-0 values truncate, float values
+// Int-kind and precision-0 values truncate, float values
 // render at their descriptor precision, particle counts take comma
 // separators deterministically (no locale dependence).
 

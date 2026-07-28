@@ -3,8 +3,8 @@
 # ==============================================================================
 #
 # The palette editor's live tunables: which scheme is active, plus the
-# saturation/lightness knobs generatePalette accepts. ui.nim holds one of
-# these at module scope and regenerates the six species colors into
+# saturation/lightness knobs generatePalette accepts. web_api.nim holds one of
+# these behind gardenAPI and regenerates the six species colors into
 # config.COLORS whenever it changes.
 #
 # Deliberately NOT part of SimConfig or the preset store: the editor's
@@ -12,7 +12,7 @@
 # (see preset.nim's serialization contract, which this module does not
 # touch).
 #
-# Pure module: no FFI, no DOM. Compiles on both the native (nimble test) and
+# Pure module: no FFI, no DOM. Compiles on both the native (just test) and
 # JS backends.
 #
 # ==============================================================================
@@ -68,9 +68,8 @@ func withScheme*(state: PaletteEditorState,
 # ==============================================================================
 #
 # Stable string ids for DOM button wiring and any future serialization
-# surface, mirroring sim_registry's simKindId/parseSimKind pattern: ids are
-# addressed by string, never by enum ordinal, so reordering PaletteScheme
-# cannot change what an id means.
+# surface. Ids are addressed by string, never by enum ordinal, so reordering
+# PaletteScheme cannot change what an id means.
 
 func schemeId*(scheme: PaletteScheme): string =
   ## The stable id for a palette scheme.

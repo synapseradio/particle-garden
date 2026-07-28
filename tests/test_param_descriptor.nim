@@ -6,17 +6,16 @@
 # the TypeScript UI reads instead of duplicating any range, default, or step.
 # Every descriptor must agree with config_ranges (the range authority) and
 # with the typed state defaults (the default authority), so the UI cannot
-# drift from the simulation the way dead index.html attributes once did.
+# drift from the simulation.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
 import std/[unittest, sets, math, strutils, sequtils]
 import ../src/ui/api/param_descriptor
 import ../src/config_ranges
-import ../src/field_core  # SPECIES_CHEMISTRY_STRIDE, RD_PARTICLE_CEILING
-import ../src/sph_core    # SPH_PARTICLE_CEILING, the other coupling ceiling
+import ../src/field_core  # SPECIES_CHEMISTRY_STRIDE and the chemistry defaults
 import ../src/ui/state/simulation_state
 import ../src/ui/state/render_state
 import ../src/palette
@@ -32,7 +31,7 @@ proc byId(id: string): ParamDescriptor =
   raise newException(KeyError, "no descriptor with id: " & id)
 
 suite "Descriptor Table Covers The Full Slider Inventory":
-  test "every ui.nim slider registration has exactly one descriptor":
+  test "every slider the panel offers has exactly one descriptor":
     # The interface contract with the TypeScript UI: these ids, no others.
     let expectedIds = toHashSet([
       "particleCount", "speciesCount", "interactionRadius", "forceStrength",
@@ -44,15 +43,18 @@ suite "Descriptor Table Covers The Full Slider Inventory":
       "repulsionEnd", "attractionPeak", "expRepulsionAlpha",
       "expAttractionBeta",
       "paletteSaturation", "paletteLightness",
+      # fluidStrength is the coupling strength design D14 introduces: the
+      # fluid's other three numbers say what kind of fluid it is, and none says
+      # how much of it acts.
+      "fluidStrength",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
       "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
-      # climateSpeed has no ui.nim ancestor — the drifting climate is new, not
-      # a port of an existing slider. It is listed because this set is the
-      # interface contract with the panel, not a historical inventory.
+      # climateSpeed drives the drifting climate. This set is the interface
+      # contract with the panel, so every id the panel reads appears in it.
       "climateSpeed",
-      # cameraZoom has no ui.nim ancestor either — it is view state, routed
-      # through psCamera to the live camera rather than to CONFIG, which is
-      # also why it never reaches the preset schema.
+      # cameraZoom is view state, routed through psCamera to the live camera
+      # rather than to CONFIG, which is also why it never reaches the preset
+      # schema.
       "cameraZoom"])
     var seenIds = initHashSet[string]()
     for descriptor in descriptors:
@@ -73,8 +75,8 @@ suite "Hints Name Only Reachable Slider Positions":
   # nothing to check it against. Here the range, step and precision that decide
   # reachability sit in the same object as the text.
   #
-  # This caught a real defect: the panel's old kill-rate hint read
-  # "movers ~.0609" against a slider whose step is 0.001.
+  # What this forbids concretely: a kill-rate hint reading "movers ~.0609"
+  # against a slider whose step is 0.001.
 
   proc numeralsIn(hint: string): seq[float] =
     ## Every decimal numeral appearing in a hint, e.g. ".035" or "0.062".
@@ -110,11 +112,9 @@ suite "Hints Name Only Reachable Slider Positions":
     check checkedNumerals > 0
 
   test "the regime coordinates are no longer carried as hint numerals":
-    # They used to be: the feed and kill hints listed four coordinates each,
-    # and this suite existed to keep those numbers reachable. They are notches
-    # now, checked by "Notches Mark Only Reachable Positions" below under the
-    # same reachability rule plus a label. A hint restating them would be a
-    # second copy free to drift — and the old one had drifted, naming a coral
+    # The regime coordinates live in the notches, checked by "Notches Mark Only
+    # Reachable Positions" below under the same reachability rule plus a label.
+    # A hint restating them is a second copy free to drift — one naming a coral
     # at (0.055, 0.062) against the regime table's (0.082, 0.059).
     check numeralsIn(byId("rdFeed").hint).len == 0
     check numeralsIn(byId("rdKill").hint).len == 0
@@ -135,7 +135,7 @@ suite "Every Descriptor Is Internally Coherent":
       check descriptor.defaultValue >= descriptor.minValue
       check descriptor.defaultValue <= descriptor.maxValue
 
-  test "step derives from kind and precision the way slider.nim derived it":
+  test "step derives from kind and precision":
     for descriptor in descriptors:
       case descriptor.kind
       of pkInt:
@@ -317,9 +317,9 @@ suite "Clamping Is The Descriptor's Job":
   test "in-range values pass through unchanged":
     check clampParamValue(byId("friction"), 0.25) == 0.25
 
-  test "integer parameters truncate fractional values like the old slider":
-    # slider.nim's clampValue converted through int(); the descriptor keeps
-    # that exact behavior so a drag position lands on the same value.
+  test "integer parameters truncate fractional values":
+    # CONTRACT: integer parameters truncate through int() rather than rounding,
+    # so a drag position lands on the value below it and never above.
     check clampParamValue(byId("speciesCount"), 4.9) == 4.0
     check clampParamValue(byId("particleSize"), 2.2) == 2.0
 
@@ -463,18 +463,24 @@ suite "Notches Mark Only Reachable Positions":
     check byId("rdDeposit").notches.anyIt(
       it.value == RD_REGIME_HIGH_FEED_DEPOSIT)
 
-  test "the particle-count ceiling notch tracks both coupling ceilings":
-    # It is one notch because SPH and the field cap at the same count. If a
-    # later change moves one of them, this goes red rather than silently
-    # mislabelling the other.
-    check SPH_PARTICLE_CEILING == RD_PARTICLE_CEILING
-    check COUPLING_PARTICLE_CEILING == SPH_PARTICLE_CEILING
+  test "the particle-count notch marks the world's one budget":
+    # One world, one budget, one tick.
     check byId("particleCount").notches.anyIt(
-      it.value == COUPLING_PARTICLE_CEILING.float)
+      it.value == PARTICLE_BUDGET.float)
+
+  test "every coupling strength offers a notch at zero":
+    # Zero is an ordinary value of a coupling strength (design D13), and an
+    # unmarked off position hides the setting that isolates what a coupling
+    # contributes.
+    for id in ["forceStrength", "fluidStrength", "rdDeposit", "rdFieldForce"]:
+      let descriptor = byId(id)
+      checkpoint("coupling strength " & id)
+      check descriptor.minValue == 0.0
+      check descriptor.notches.anyIt(it.value == 0.0)
 
   test "the camera zoom notches lie inside the camera range":
-    # The camera's descriptor belongs to the camera work; its notch values sit
-    # beside the range here so this relation holds before the slider exists.
+    # The notch constants are checked against the range directly, so the
+    # relation holds whether or not a descriptor carries them.
     for value in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,
         CAMERA_ZOOM_NOTCH_CREATURE]:
       check value >= CAMERA_ZOOM_MIN

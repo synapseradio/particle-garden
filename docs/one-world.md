@@ -1,225 +1,330 @@
-# The couplings model
+# One world
 
-One world, composed. A simulation is not one of several modes; it is a set of
-independent **couplings** switched on together, and the GPU frame is built from
-whichever are active.
+There is one world. Species forces, fluid pressure, and chemistry all run in it,
+at once and in any proportion, so each arrives as a continuous **strength**
+rather than a switch. Zero counts as an ordinary value of a strength. A world
+with no fluid runs its fluid strength at zero, reached by moving a slider, and
+differs in no kind from a world running a little fluid.
 
-This document is the guide to adding a coupling. It assumes you will read
-`src/sim_registry.nim` alongside it — that file is the authority, this is the
-map.
+This document guides adding a coupling. Read `src/sim_registry.nim` alongside it
+— that file holds the authority, this holds the map.
 
-## What a coupling is
+## The four strengths
 
-A coupling is one way particles interact with something. Three exist:
+`WorldCouplings` in `src/sim_registry.nim` holds four floats. Each names a live
+simulation parameter the panel writes through the ordinary descriptor path, and
+`couplingsOf` in `src/ui/state/sim_config.nim` reads all four off
+`SimulationState` on demand, so nothing keeps a second copy that could disagree.
 
-| Coupling | What it does | Shader |
-|---|---|---|
-| `forces` | Species attraction and repulsion over the spatial hash | `forces.wgsl` |
-| `sph` | Smoothed-particle pressure and viscosity | `forces-sph.wgsl` |
-| `field` | The Gray-Scott chemical field particles secrete into and follow | `field-*.wgsl`, `rd-step.wgsl` |
+| Strength | Parameter | What it scales | Shader |
+|---|---|---|---|
+| `forces` | `forceStrength` | species attraction and repulsion, reaching the shader as `params.forceMultiplier` | `forces.wgsl` |
+| `fluid` | `fluidStrength` | the SPH pass's whole per-pair velocity contribution, pressure and smoothing together | `forces-sph.wgsl` |
+| `deposit` | `rdDeposit` | how much each particle secretes into the chemical field | `field-deposit.wgsl` |
+| `fieldForce` | `rdFieldForce` | how hard the field's gradient steers particles | `field-force.wgsl` |
 
-They live in `WorldCouplings` as three independent booleans. Independent is the
-whole design: all eight combinations are meaningful and none needs to be
-enumerated anywhere. A world running `forces` and `field` together gives
-colonies that build a chemical pattern and then navigate it — that combination
-is not a fourth mode someone added, it falls out of two booleans being true.
+Every one of those four ranges reaches zero. A static loop at the bottom of
+`src/config_ranges.nim` fails the build if a coupling strength's floor sits
+anywhere else, so each coupling can be switched off through its own slider.
 
-This is why the couplings are booleans rather than an enum. An enum of modes
-has to name every combination, and the count doubles with each new coupling; a
-set of booleans names none of them.
+`sim_config.worldCouplings` carries the derived value to the executor, and
+`webgpu_compute.setCouplings` adopts it: it rebuilds the frame description when a
+strength crosses zero, and does nothing when a slider moves within its range.
 
-`SimKind` still exists, and is **only** a preset compatibility layer. Presets
-serialize stable mode ids, and `couplingsFor` maps each id to the triple it
-always meant. Nothing in the frame path consults it.
+## The frame asks exactly one question of a strength: is it zero
+
+`acts` in `sim_registry.nim` holds the only comparison in the frame path.
+Nothing reads a magnitude, tests a threshold, or branches on a combination. A
+strength one part in a billion above zero dispatches exactly what a strength of
+one dispatches, and `tests/test_sim_registry.nim` asserts that directly, so a
+`> 0.001` cannot slip back in as a mode with a floating-point door.
+
+## Which passes a strength may skip
+
+A strength may skip a pass only when it multiplies **everything** that pass
+produces. Where a pass also produces something no strength scales, skipping it
+removes an output the strength never owned and the world jumps at zero. Passes
+therefore divide in two.
+
+**World-intrinsic passes run at every setting of every strength.** The grid
+triad (`binCount` and the three prefix-sum stages) with `binScatter`, the
+neighbour sweep in `forces.wgsl`, `fieldResolve`, the `RD_STEPS_PER_FRAME`
+Gray-Scott substeps, and `integrate`. These make up what the world is.
+
+**Coupling-owned passes drop out at exactly zero.** `forcesSph` under `fluid`,
+`fieldDeposit` under `deposit`, and `fieldForce` under `fieldForce`. Each
+strength multiplies its pass's entire output.
+
+### Forces are the asymmetric case
+
+`forces.wgsl` carries three things: the species force, scaled inside the shader
+by `params.forceMultiplier`; the per-particle colony density the renderer reads
+for dot size, brightness and glow radius; and the mouse and blast input. Only the
+first belongs to a coupling. So the pass runs world-intrinsic, no force strength
+may skip it, and the neighbour sweep runs even in a world where no forces act.
+The frame pays that price rather than paying a discontinuity, and the test suite
+asserts the arrangement instead of leaving it assumed.
+
+Two densities keep that split clean. `density` at particle offset 20 measures
+same-species proximity and leaves the physics through the intrinsic sweep alone;
+`sphDensity` at offset 24 is the fluid's kernel-weighted, species-blind reading,
+private to its equation of state. One field carrying both would make the glow
+track the fluid, and zeroing the fluid would then drop the density the renderer
+needs — the jump-at-zero reappearing in the density channel.
+
+### The field belongs to the world
+
+`fieldResolve` and the Gray-Scott substeps run unguarded. A field frozen
+mid-pattern at zero deposit and breathing again one epsilon above it would be a
+mode, and a visible one. What chemistry's strengths own is the two couplings
+*between* particles and field: the deposit going in, the gradient force coming
+out.
+
+The ping-pong parity sharpens this. `fieldResolve` is itself one stage of the
+field's texture swap, so a frame performs `1 + RD_STEPS_PER_FRAME` swaps in
+total. `field_core.nim` statically asserts that total comes out even — that
+`RD_STEPS_PER_FRAME` stays odd — because the live field must land back on the
+texture the renderer, `fieldForce`, and the next frame's resolve all read.
+Skipping `fieldResolve` at zero deposit would remove one swap and strand the
+field on the texture nothing looks at.
 
 ## The frame is data
 
-`buildFrame(couplings)` returns a `FrameDescription` — a `seq[FrameNode]`,
-where a node is one of:
+`buildFrame(couplings)` returns a `FrameDescription` — a `seq[FrameNode]`, where
+a node takes one of three shapes:
 
 - `fnkClearBuffer` — zero a `SimBuffer` at the encoder level.
 - `fnkCopyBuffer` — copy one `SimBuffer` into another.
 - `fnkComputePass` — a labelled, profiler-slotted group of dispatches.
 
-`webgpu_compute.nim` walks that sequence and encodes it. The description is
-pure data with no GPU handles in it, which is what lets the whole pass list be
-asserted in a native test without a GPU present — `tests/test_sim_registry.nim`
-pins each legacy combination's exact pass list.
+`webgpu_compute.nim` walks that sequence and encodes it. The description carries
+no GPU handles, which lets the whole pass list be asserted in a native test with
+no GPU present.
 
-Dispatch sizes are symbolic (`DispatchSize`), resolved by the executor each
-frame. The description never rebuilds when the particle count or grid size
-changes.
+Read it as a union over independent strengths, never as a table of worlds. The
+intrinsic sequence always appears and always in the same order; each `acts(...)`
+guard inserts one coupling's pass into it. Strip the coupling-owned keys from any
+frame and exactly the intrinsic sequence remains, and
+`tests/test_sim_registry.nim` states it that way — as a derivation rather than a
+list — so a fifth coupling cannot reintroduce enumeration by accident.
+
+Dispatch sizes stay symbolic (`DispatchSize`), resolved by the executor each
+frame, so particle-count and grid-size changes never rebuild the description.
 
 **Substepping is an executor loop, not frame nodes.** The executor encodes the
-same description N times into one command encoder. A frame description is
-always one substep's worth of work.
+same description N times into one command encoder, and only a world running fluid
+asks for more than one pass. A frame description always holds one substep's worth
+of work.
 
 ### The order a frame composes in
 
-1. Clear `sbVelocityDelta` and `sbDensityDelta` — always, whatever is coupled.
-2. If `forces or sph`: clear `sbGridCounts`, run the Grid Build pass
-   (bin-count, the three prefix-sum stages), copy `sbGridOffsets` into
-   `sbFillPointers`, then one force pass containing bin-scatter followed by
-   whichever of `forces` and `forcesSph` are active.
-3. If `field`: one pass containing `fieldDeposit`, `fieldResolve`,
-   `RD_STEPS_PER_FRAME` alternating `rdStepToFront` / `rdStepToTrail`
-   substeps, and `fieldForce`.
-4. `integrate`, always last.
+1. Clear `sbVelocityDelta`, `sbDensityDelta` and `sbGridCounts`.
+2. **Grid Build** — `binCount`, then `prefixLocal`, `prefixBlocks`,
+   `prefixFinal`.
+3. Copy `sbGridOffsets` into `sbFillPointers`, which `binScatter` consumes as
+   its running write cursors.
+4. **Physics** — `binScatter`, then `forces`, then `forcesSph` where `fluid`
+   acts.
+5. **Field (RD)** — `fieldDeposit` where `deposit` acts, then `fieldResolve`,
+   then `RD_STEPS_PER_FRAME` substeps alternating `rdStepToFront` and
+   `rdStepToTrail`, then `fieldForce` where `fieldForce` acts.
+6. **Integrate** — `integrate`.
 
-`integrate` closes every frame because it is the one pass that reads the summed
-deltas and moves particles, so every contributor must already have run. It sits
-in its own compute pass rather than joining the force pass because the field
-passes have to come between the two, and one pass cannot be in two places.
+`integrate` closes every frame because it reads the summed deltas and moves
+particles, so every contributor must already have run. It sits in its own compute
+pass because the field passes have to come between it and the force pass, and one
+pass cannot be in two places.
 
-## Why delta-buffer ownership moved to the frame
+## One pipeline set
 
-This is the constraint that made composition possible, and the one most likely
-to be broken by a well-meaning edit.
+`allShaderSpecs()` in `src/shader_manifest.nim` registers every compute shader at
+init, with no per-world subset. Timing decides this rather than tidiness.
+Rebuilding the frame description is pure sequence construction and costs nothing;
+creating a pipeline means fetching WGSL over HTTP and compiling it. Registering
+only the couplings currently acting would turn a slider leaving zero into an
+asynchronous operation, and the frames between the slider moving and the pipeline
+arriving would dispatch against a missing dictionary entry. One compile per
+shader at startup buys every strength change synchronously.
+
+It also keeps the manifest free of enumeration. No per-world list exists to fall
+out of step with `buildFrame`, and `tests/test_shader_manifest.nim` asserts the
+relation that remains: every key any frame dispatches is registered, and no key
+is registered twice.
+
+## Delta buffers have one reset owner
 
 `velocityDelta` accumulates per-particle velocity impulses as fixed-point
-integers, two `i32` per particle. Several passes contribute to it: `forces`,
-`forcesSph`, and `fieldForce`.
+integers, two `i32` per particle. Three passes contribute to it: `forces`,
+`forcesSph` and `fieldForce`.
 
-Each of those passes used to **reset** the buffer in its own prologue and then
-write into it. That works when exactly one of them runs per frame, and it is
-why the pre-composition build could only offer one coupling at a time: with two
-contributors, whichever ran second zeroed the first one's work and the first
-coupling silently did nothing.
-
-So the reset moved to the frame. `buildFrame` clears both delta buffers once at
-the top, and **every contributor accumulates only, atomically**. The rule for
-any new pass that writes a delta buffer:
+`buildFrame` clears both delta buffers once at the top of the frame, and every
+contributor accumulates only. The rule for any new pass that writes a delta
+buffer:
 
 > Use `atomicAdd`. Never `atomicStore`, never a plain store. The frame has
 > already cleared the buffer; a store erases whatever ran before you.
 
-The clears are encoder-level operations interleaved into the same ordered
-command stream as the compute passes, so a clear that precedes a dispatch is
-ordered before it, not racing it.
+A pass that self-resets in its own prologue works while exactly one contributor
+runs per frame, and breaks the moment two do — whichever runs second erases the
+first. That is why the reset lives in the frame.
 
-Both delta buffers are cleared every frame even when nothing writes them. One
-encoder operation removes a whole class of question about what the previous
-couplings left behind.
+The clears are encoder-level operations interleaved into the same ordered command
+stream as the compute passes, so a clear preceding a dispatch is ordered before
+it rather than racing it.
 
-`sbFieldDeposit` is the exception and stays self-resetting: `fieldResolve`
-zeroes each cell as it consumes it, so nothing else needs to.
+Both delta buffers get cleared every frame even when nothing writes them. One
+encoder operation removes a whole class of question about what the previous frame
+left behind.
 
-## Adding a fourth coupling
+`sbFieldDeposit` stays self-resetting: `fieldResolve` zeroes each cell as it
+consumes it. That is also what makes skipping the deposit at zero exact rather
+than merely cheap — the buffer a skipped deposit leaves behind already holds
+zero.
 
-Every step below has an existing example to copy. Working through them in order
-produces a coupling that composes with the three that exist.
+## Adding a fifth coupling
 
-**1. `src/sim_registry.nim` — declare it.** Add a `bool` to `WorldCouplings`.
-If your coupling searches for neighbours, add it to `buildsSpatialHash` so the
-grid triad runs; if its particles read a texture or a uniform instead, leave it
-out and the grid is skipped.
+Every step below has an existing example to copy. `fluidStrength` is the most
+recent coupling to arrive and touches all of them.
 
-**2. `src/sim_registry.nim` — dispatch it.** Add a branch to `buildFrame`.
-Decide where in the order it belongs: before `integrate` always, and relative
-to the force and field passes according to what it reads. If it needs its own
-profiler slot, add a `PROFILER_SLOT_*` constant mirroring `gpu_profiler`.
+Settle the multiplier question before writing any guard. Does your strength scale
+everything its pass produces? If it does, the pass is coupling-owned and may be
+skipped at zero. If the pass also writes something no strength scales — a
+measurement, a user input, a texture the renderer samples — the pass is
+world-intrinsic, the strength acts inside the shader, and the frame never changes
+shape.
 
-**3. `src/sim_registry.nim` — give it controls.** Add a `*_GROUPS` constant and
-a branch in `controlGroupsFor`. That function unions rather than concatenates,
-because group ids are shared — `grid` belongs to both force couplings. Any
-group id that keys a panel section rather than a slider list must also be
-listed in `SECTION_ONLY_GROUPS`, or the coverage test will read it as a typo.
+**1. `src/config_ranges.nim` — give the strength a range whose floor is zero.**
+The static loop at the bottom of that file fails the build otherwise.
 
-**4. `src/shader_manifest.nim` — name its shaders.** Add a branch to
-`shaderSpecsFor(couplings)`. It deduplicates by key: registering a key twice
-would create the same pipeline twice under one dictionary entry.
+**2. `src/ui/state/simulation_state.nim` — add the field and its default** to
+`SimulationState` and `initSimulationState`.
 
-**5. `src/main.nim` — serve them.** Every **compute** shader is fetched over
-HTTP at pipeline-init time and must be registered in the `StaticFiles` table.
-Unregistered means unserved means a failed fetch. Render shaders take a
-different route and are deliberately absent from that table — see CLAUDE.md's
-shader section.
+**3. `src/ui/api/param_descriptor.nim` — add a `floatParam` in the right group.**
+That table is the whole panel surface: `gardenAPI.descriptor()` serves it and the
+panel builds the slider from it. Lead the section with the strength and put the
+parameters describing the coupling's character below it, the way `fluidStrength`
+leads the `fluid` group.
 
-**6. `src/webgpu_compute.nim` — bind it.** For each new pipeline add an
+A descriptor promises a control; `web-ui/src/components/Panel.tsx` decides where
+it sits. A new group needs a `groupIds("<your-group>")` loop there, or its
+sliders never reach the screen. `tests/test_panel_reachability.nim` reads that
+file and fails the native suite for any descriptor the panel places by neither
+its id nor its group, so forgetting this is a red build rather than a control
+nobody can find.
+
+**4. `src/ui/state/sim_config.nim` — read it in `couplingsOf`.** The couplings
+are derived on demand, never stored.
+
+**5. `src/sim_registry.nim` — declare it and dispatch it.** Add the float to
+`WorldCouplings`, then guard its dispatch in `buildFrame` with `acts(...)`. Place
+it before `integrate`, and relative to the force and field passes according to
+what it reads. Add a `PROFILER_SLOT_*` constant mirroring `gpu_profiler.nim` if
+it needs a compute pass of its own.
+
+**6. `src/webgpu_compute.nim` — add it to `sameFrameShape`.** That function
+decides whether a write to the simulation state rebuilds the frame. A strength
+missing from it crosses zero without the frame noticing.
+
+**7. `src/shader_manifest.nim` — name its shaders.** Add a `ShaderSpec` array and
+append it in `allShaderSpecs`. Every key any frame dispatches must appear exactly
+once, and `tests/test_shader_manifest.nim` checks both halves of that.
+
+**8. `src/main.nim` — serve them.** Every compute shader is fetched over HTTP at
+pipeline-init time and must be registered in the `StaticFiles` table.
+Unregistered means unserved means a failed fetch. Render shaders take a different
+route and are deliberately absent from that table — see CLAUDE.md's shader
+section.
+
+**9. `src/webgpu_compute.nim` — bind it.** For each new pipeline add an
 `EXPECTED_BIND_GROUP_ENTRIES_*` constant, a case for its pipeline key in
-`getExpectedEntryCount`, and bind-group creation in `createBindGroups` ending
-in a `validateBindGroupEntryCount` call. The entry-count constant is not
-decoration: a bind group whose entry count disagrees with its shader's bindings
-fails GPU validation at runtime in the browser, and nothing earlier catches it —
+`getExpectedEntryCount`, and bind-group creation in `createBindGroups` ending in
+a `validateBindGroupEntryCount` call. The entry-count constant is not decoration:
+a bind group whose count disagrees with its shader's bindings fails GPU
+validation at runtime in the browser, and nothing earlier catches it.
 `getExpectedEntryCount` returns `-1` for an unregistered key, which is how a
-pipeline that was never given a count announces itself.
+pipeline nobody gave a count announces itself.
 
-**7. Uniforms, if it needs any.** Add a layout table to `src/gpu_types.nim`
-with the standard compile-time offset validation, register a generated WGSL
-struct module in `tools/wgsl_bundle.nim`, create the buffer in `initPipelines`,
-and write it per frame under a guard on your coupling's flag.
-`SpeciesChemistryLayout` is a complete worked example.
+**10. Uniforms, if it needs any.** The cheap route spends a pad word in an
+existing layout: `fluidStrength` sits at offset 60 of `SimParamsLayout` in
+`src/gpu_types.nim` and gets written beside the other per-frame uniforms. A
+coupling needing its own block adds a layout table with the standard compile-time
+offset validation, a `generateStructModule` call in `tools/wgsl_bundle.nim`,
+buffer creation in `initPipelines`, and a per-frame write.
+`SpeciesChemistryLayout` is a complete worked example of the second route.
 
-**8. Accumulate, never store.** If your pass writes `velocityDelta` or
-`densityDelta`, use `atomicAdd`. See the section above for why.
-
-**9. New buffers, if it needs any.** Add the enum value to `SimBuffer` and a
+**11. New buffers, if it needs any.** Add the enum value to `SimBuffer` and a
 case to `byteLengthFor` in `webgpu_compute.nim`. That function is what the
 executor consults to size a clear or a copy, and its `case` is exhaustive — a
-missing entry is a compile error rather than a silently unclear buffer. Get the
-element size right: `sbVelocityDelta` is `particleCount * 8`, not `* 4`,
-because it holds two `i32` per particle.
+missing entry is a compile error rather than a silently uncleared buffer. Get the
+element size right: `sbVelocityDelta` is `particleCount * 8`, not `* 4`, because
+it holds two `i32` per particle.
 
-**10. Tests.** Add a pass-list assertion in `tests/test_sim_registry.nim` — the
-existing ones pin each legacy combination exactly, and yours should pin the new
-combination the same way. The control-group coverage invariant and the
-ping-pong parity check pick up new couplings automatically.
+**12. Accumulate, never store.** See the rule above.
 
-### The one step this guide cannot give you
+**13. `src/preset.nim` — carry it.** Add the field to `PresetSettings`, its
+default to `defaultSettings`, its clamp to `validateSettings`, and its line to
+`toJson`. `LEGACY_MODE_COUPLINGS` gains no row: a mode that never existed cannot
+have written a preset.
 
-Everything above builds a coupling and dispatches it. **Switching it on from
-the panel is not yet possible**, and that is a real gap rather than an omission
-here.
+**14. Tests.** `tests/coupling_space.nim` builds `ALL_COUPLINGS` from nested
+loops over `COUPLING_OFF` and `COUPLING_ON`; add a level and every "for every
+world" invariant in `tests/test_sim_registry.nim` and
+`tests/test_shader_manifest.nim` widens to cover your coupling. Then pin the
+coupling itself: add its pipeline key to the `KNOWN` list, and either to
+`WORLD_INTRINSIC_SEQUENCE` if the pass is intrinsic, or — if it is
+coupling-owned — to the strip list in "no world enumerates" plus a skip test in
+"A Strength At Zero Skips Its Own Pass And Nothing Else". The range floor is
+covered for free by `config_ranges`'s loop.
 
-`setCouplings(couplings)` accepts any triple and is the executor's actual
-entry point, so a coupling is reachable from code the moment you write it. But
-the only caller is `setActiveSimKind`, which maps a legacy `SimKind` id through
-`couplingsFor` — and there are exactly three of those. The control panel offers
-the same three. So a fourth coupling can be built, dispatched, and tested, and
-still has no user-facing switch.
+Nothing in that list opens a mode. The panel gains a slider at step 3 and the
+world gains a pass at step 5, and no code anywhere names the combination.
 
-Until the panel exposes couplings directly, reach a new combination by calling
-`setCouplings` from `app.nim` or by widening `couplingsFor`. Both are stopgaps,
-and both are honest ones — neither pretends to be the design.
+## Presets are points in this world
 
-## What each starter preset dispatches
+A preset records a point in the one world's parameter space. Schema v2 carries
+the four strengths among its ordinary settings and names no mode.
 
-Three starter presets ship, all reaction-diffusion: **Spots**, **Stripes** and
-**Worms**. Each carries a `mode` of the reaction-diffusion id, which
-`couplingsFor` maps to `field` alone — so each dispatches the field frame:
-`fieldDeposit`, `fieldResolve`, the Gray-Scott substeps, `fieldForce`, then
-`integrate`. No grid build, because a field-only world searches no neighbours.
+`LEGACY_MODE_COUPLINGS` in `src/preset.nim` is the only table in the codebase
+that names a mode, and it describes files rather than the model: the v1 branch of
+`migrate` reads it to translate a pre-2.0 preset's mode into the strengths that
+mode meant. Translation rather than subtraction, because v1 serialized every
+scalar unconditionally — a v1 "particle-life" preset carries a nonzero
+`rdDeposit` from a slider that sat at its default while the mode hid it, so
+loading it untranslated would switch chemistry on in a world that never ran any.
 
-They differ only in their feed and kill coordinates.
+The starter presets are the six named Gray-Scott regimes, built in `web_api.nim`
+from `config_ranges.RD_REGIMES` so a starter lands exactly on a notch the feed
+and kill sliders already draw. Each runs forces and chemistry together at the
+default force strength, carrying the deposit its own morphology needs — Worms and
+Coral do not ignite at the default deposit at all.
 
 ## Facts about the field that are easy to get wrong
 
 These are measured, and each is the opposite of what first-principles reasoning
 suggests. The measurements live in `tests/test_field_core.nim`.
 
-**Chemotactic collapse lives in the product of tropism and deposit, not in
-either alone.** Sweeping tropism with the deposit at its ceiling finds no
-collapse at a thousand times the shipped bound. Widening the deposit axis finds
-the boundary immediately. `RD_DEPOSIT_MAX` is what keeps the reachable range
-safe; `TROPISM_MAX` is the second line. Because the two multiply, anything that
-raises the deposit ceiling spends the tropism margin too and must re-run the
-collapse suite.
+**Chemotactic collapse lives in the product of tropism and deposit, not in either
+alone.** Sweeping tropism with the deposit at its ceiling finds no collapse at a
+thousand times the shipped bound. Widening the deposit axis finds the boundary
+immediately. `RD_DEPOSIT_MAX` is what keeps the reachable range safe;
+`TROPISM_MAX` is the second line. Because the two multiply, anything that raises
+the deposit ceiling spends the tropism margin too and must re-run the collapse
+suite.
 
-**Gray-Scott saturates against deposit amplitude but not against
-concentration.** Its `(feed+kill)*B` sink grows linearly in B, so raising a
-*uniform* deposit tenfold barely moves the field's peak. Concentrating the same
-deposit is a different matter: that raises the rate per cell, and past a
-threshold the autocatalytic `A*B^2` term outruns the sink and the peak runs
-away. Reasoning from "Gray-Scott bounds its own inhibitor" to "no collapse is
-possible" is the specific mistake this sentence exists to prevent.
+**Gray-Scott saturates against deposit amplitude but not against concentration.**
+Its `(feed+kill)*B` sink grows linearly in B, so raising a *uniform* deposit
+tenfold barely moves the field's peak. Concentrating the same deposit is a
+different matter: that raises the rate per cell, and past a threshold the
+autocatalytic `A*B^2` term outruns the sink and the peak runs away. Reasoning
+from "Gray-Scott bounds its own inhibitor" to "no collapse is possible" is the
+specific mistake this sentence exists to prevent.
 
 **Three of the six named regimes are deposit-sustained by nature.** Spots,
-Mitosis and Waves have no unforced attractor at all — at their low feed a
-nucleus cannot sustain itself without continuous deposit, so those patterns
-exist *because* particles feed them. Worms and Coral do have unforced
-attractors, but their basin is narrow enough that a weak nucleus dies at those
-coordinates and the seed's strength, not the physics, decides whether they
-appear.
+Mitosis and Waves have no unforced attractor at all — at their low feed a nucleus
+cannot sustain itself without continuous deposit, so those patterns exist
+*because* particles feed them. Worms and Coral do have unforced attractors, but
+their basin is narrow enough that a weak nucleus dies at those coordinates and
+the deposit's strength, not the reaction, decides whether they appear.
 
 **Coherence, not magnitude, ignites the field.** A single-cell deposit fails to
 ignite at any amplitude the slider offers; the same total deposit spread over a

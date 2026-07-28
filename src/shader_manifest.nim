@@ -2,7 +2,7 @@
 # PARTICLE GARDEN - COMPUTE SHADER MANIFEST (Pure)
 # ==============================================================================
 #
-# The compute shaders each coupling needs, as data. A pure companion to
+# The compute shaders the world needs, as data. A pure companion to
 # sim_registry.nim: sim_registry says which pipeline keys a frame dispatches,
 # this module says where each of those pipelines' shader source lives and how
 # to build it. tests/test_shader_manifest.nim relates the two, so a frame that
@@ -14,11 +14,9 @@
 # test suite check the frame↔manifest contract without a GPU.
 #
 # Pure module: no FFI, no imports from GPU-facing code. Compiles on both the
-# native (nimble test) and JS backends.
+# native (just test) and JS backends.
 #
 # ==============================================================================
-
-import sim_registry
 
 type
   ShaderSpec* = object
@@ -50,10 +48,9 @@ const
     ShaderSpec(key: "binScatter", path: "./shaders/bin-scatter.wgsl",
       label: "Bin Scatter Shader (AoS)", entryPoint: "main"),
   ]
-    ## The spatial hash both force couplings search through, registered once for
-    ## whichever of them is active. sim_registry.buildsSpatialHash is the same
-    ## question on the frame side, and asking it here is what keeps the two
-    ## couplings from each registering their own copy of these five pipelines.
+    ## The spatial hash, world-intrinsic and registered once. Both force
+    ## couplings search through it, so hoisting it here is what keeps them from
+    ## each carrying a copy of these five pipelines.
   FORCES_SPECS* = [
     ShaderSpec(key: "forces", path: "./shaders/forces.wgsl",
       label: "Forces Shader (AoS)", entryPoint: "computeForces"),
@@ -64,9 +61,10 @@ const
     ShaderSpec(key: "forcesSph", path: "./shaders/forces-sph.wgsl",
       label: "SPH Forces", entryPoint: "computeForces"),
   ]
-    ## Smoothed-particle pressure and viscosity. It replaces the force pass
-    ## rather than the grid search, which is why it reads interactionRadius as
-    ## its smoothing radius and shares GRID_SPECS verbatim.
+    ## Smoothed-particle pressure and viscosity. It runs alongside the force
+    ## pass rather than in place of it, and searches the same spatial hash,
+    ## which is why it reads interactionRadius as its smoothing radius and
+    ## shares GRID_SPECS verbatim.
   FIELD_SPECS* = [
     ShaderSpec(key: "fieldSeed", path: "./shaders/field-seed.wgsl",
       label: "Field Seed Shader", entryPoint: "seedField"),
@@ -94,32 +92,26 @@ const
     ## ping-pong), so both keys are registered against the same path/entry. The
     ## keys name their DESTINATION texture; a name saying nothing about which
     ## texture ends up holding the live field is exactly how an
-    ## off-by-one-substep parity bug hid in the sequence.
+    ## off-by-one-substep parity bug hides in the sequence.
 
-func shaderSpecsFor*(couplings: WorldCouplings): seq[ShaderSpec] =
-  ## Every compute shader the active couplings need: integrate always, the grid
-  ## triad whenever a coupling searches neighbors, then each active coupling's
-  ## own shaders. Every Dispatch.pipelineKey that
-  ## sim_registry.buildFrame(couplings) emits appears here — the relation test
-  ## pins that direction.
+func allShaderSpecs*(): seq[ShaderSpec] =
+  ## Every compute shader the world can dispatch, registered once at init.
   ##
-  ## A union rather than a per-mode list for the same reason buildFrame
-  ## composes: a world coupling forces and the field dispatches both sets, and
-  ## no third list should have to be written to say so.
+  ## ONE WORLD, ONE PIPELINE SET, AND THE REASON IS TIMING RATHER THAN TIDINESS.
+  ## A strength crossing zero rebuilds the frame description, which is pure and
+  ## costs nothing. Creating a pipeline is neither: the shader has to be fetched
+  ## over HTTP and compiled, so registering only the couplings currently acting
+  ## would make a slider leaving zero an asynchronous operation, and the frames
+  ## between the slider moving and the pipeline arriving would dispatch against
+  ## a missing dictionary entry. Registering everything up front costs one
+  ## compile per shader at startup and makes every strength change synchronous.
   ##
-  ## NO KEY BELONGS TO TWO OF THE LISTS ABOVE, which is what lets this append
-  ## rather than deduplicate. The shared pipelines are shared by being hoisted
-  ## out — integrate into INTEGRATE_SPEC, the neighbor search into GRID_SPECS —
-  ## so a key can only be registered twice if a new list repeats one, and
-  ## "the union registers no key twice" in tests/test_shader_manifest.nim is
-  ## what catches that.
+  ## This is also what keeps the manifest free of enumeration. There is no
+  ## per-world list to fall out of step with buildFrame, and
+  ## tests/test_shader_manifest.nim asserts the relation that remains: every key
+  ## any frame dispatches is registered here, and no key is registered twice.
   result.add INTEGRATE_SPEC
-  if buildsSpatialHash(couplings): result.add GRID_SPECS
-  if couplings.forces: result.add FORCES_SPECS
-  if couplings.sph: result.add SPH_SPECS
-  if couplings.field: result.add FIELD_SPECS
-
-func shaderSpecsFor*(kind: SimKind): seq[ShaderSpec] =
-  ## The shaders a legacy mode id's world needs, through the couplings triple
-  ## that id always meant.
-  shaderSpecsFor(couplingsFor(kind))
+  result.add GRID_SPECS
+  result.add FORCES_SPECS
+  result.add SPH_SPECS
+  result.add FIELD_SPECS

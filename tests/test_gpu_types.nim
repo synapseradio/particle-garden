@@ -7,7 +7,7 @@
 # exercise the helper FUNCTIONS that buffer-write code calls at runtime and the
 # structural relationships (non-overlap, contiguity) the GPU depends on.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
@@ -142,9 +142,9 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_REPULSION_END == SimParamsLayout.fieldOffset("repulsionEnd") div 4
     check SIM_EXP_BETA == SimParamsLayout.fieldOffset("expBeta") div 4
 
-  test "the generated indices reproduce the values the hand-written block held":
+  test "the generated indices sit where the layout puts them":
     check SIM_DT == 0
-    check SIM_PAD == 15
+    check SIM_FLUID_STRENGTH == 15
     check SIM_ATTRACTION_MATRIX_START == 16
     check SIM_ATTRACTION_MATRIX_END == 51
     check SIM_REPULSION_END == 52
@@ -180,8 +180,8 @@ suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
 
 suite "Generated Render Struct Layouts":
   # S2: RenderParams and FadeParams join SimParams as layout-table-generated
-  # structs. The generated indices must reproduce the values the hand-written
-  # const blocks held, or every uniform write in webgpu_render.nim shifts.
+  # structs. The generated indices must hold the exact values below, or every
+  # uniform write in webgpu_render.nim shifts.
 
   test "RenderParamsLayout is 16 floats, 64 bytes written and allocated":
     check RenderParamsLayout.totalSize == 64
@@ -201,9 +201,9 @@ suite "Generated Render Struct Layouts":
     check RENDER_TRAIL_LENGTH_SCALE == 8
 
   test "FadeParamsLayout is 8 floats and generates FADE_ indices":
-    # Grown from 16 bytes to 32 to carry the previous frame's camera, which the
-    # trail reprojection needs — see the layout's own comment for why a pure UV
-    # translation in the old pads would not have been correct under zoom.
+    # 32 bytes because it carries the previous frame's camera, which the trail
+    # reprojection needs — see the layout's own comment for why a pure UV
+    # translation is not correct under zoom.
     check FadeParamsLayout.totalSize == 32
     check wgslUniformSize(FadeParamsLayout) == 32
     check FADE_AMOUNT == 0
@@ -225,8 +225,8 @@ suite "Generated Render Struct Layouts":
 
 suite "RenderParams Glow Knob Indices":
   # S1 promotes three RenderParams pad slots into glow knobs; S10 grows the
-  # struct with a per-mode glowDensityFloor and pads it back to 64 bytes. The
-  # knob indices keep their exact positions across both changes.
+  # struct with a glowDensityFloor and pads it back to 64 bytes. The knob
+  # indices hold the exact positions below.
 
   test "the three former pad slots are the glow knob indices":
     check RENDER_GLOW_RADIUS_SCALE == 9
@@ -242,7 +242,7 @@ suite "RenderParams Glow Knob Indices":
 
 suite "Generated FieldParams Layout (Reaction-Diffusion)":
   # S8a: FieldParams joins SimParams/RenderParams/FadeParams as a
-  # layout-table-generated struct — the reaction-diffusion mode's uniform.
+  # layout-table-generated struct — the reaction-diffusion field's uniform.
 
   test "FieldParamsLayout is 8 floats, 32 bytes written and allocated":
     check FieldParamsLayout.totalSize == 32
@@ -297,7 +297,7 @@ suite "Generated ReactionParams Layout (Reserved Reaction Slot)":
     # The reason ReactionParams exists as its own uniform rather than as four
     # more FieldParams members: that table is full, and its static assertions
     # reject a ninth field. If this ever passes at a larger size, the split
-    # lost its justification.
+    # loses its justification.
     check FieldParamsLayout.totalSize == 32
     check FieldParamsLayout.fields.len == 8
 
@@ -355,7 +355,7 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
   test "FieldParams stays closed while chemistry grows beside it":
     # The reason SpeciesChemistry is its own uniform: FieldParamsLayout is full
     # at 32 bytes and its static assertions reject a ninth field. If this ever
-    # passes at a larger size, the split lost its justification.
+    # passes at a larger size, the split loses its justification.
     check FieldParamsLayout.totalSize == 32
     check FieldParamsLayout.fields.len == 8
 
@@ -377,10 +377,10 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check BLOOM_PARAMS_F32_COUNT == 4
 
   test "TonemapParamsLayout is 12 floats, 48 bytes written and allocated":
-    # Grown from 32 to 48 by the camera work: both composite paths map screen UV
-    # into field space, which needs the world extent. The camera itself is bound
-    # from the shared camera buffer rather than copied in here, so this grew by
-    # two live fields and the padding to the next 16-byte boundary.
+    # 48 bytes because both composite paths map screen UV into field space,
+    # which needs the world extent. The camera itself is bound from the shared
+    # camera buffer rather than copied in here, so that costs two live fields
+    # and the padding to the next 16-byte boundary.
     check TonemapParamsLayout.totalSize == 48
     check wgslUniformSize(TonemapParamsLayout) == 48
 
@@ -390,7 +390,7 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check TONEMAP_SATURATION == 2
     check TONEMAP_CONTRAST == 3
     check TONEMAP_TEMPERATURE == 4
-    # S10 claims two former pad slots for the field-visualization pair.
+    # S10 claims two pad slots for the field-visualization pair.
     check TONEMAP_COLORMAP_INDEX == 5
     check TONEMAP_FIELD_OPACITY == 6
     # The camera work claims two more for the world extent the UV mapping needs.

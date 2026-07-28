@@ -66,7 +66,14 @@ const
   PARTICLE_VEL_Y_OFFSET* = 12
   PARTICLE_SPECIES_OFFSET* = 16
   PARTICLE_DENSITY_OFFSET* = 20
-  # Offsets 24-31 are padding
+    ## Colony density: same-species neighbours, proximity-weighted. Written by
+    ## the world-intrinsic sweep; read by dot size, brightness and glow radius.
+  PARTICLE_SPH_DENSITY_OFFSET* = 24
+    ## The fluid's kernel-weighted, species-blind density, private to its
+    ## equation of state. A separate field because the two measure different
+    ## things, and one field carrying both makes the glow track the fluid.
+    ## Free: this word pads the struct to its 32-byte alignment anyway.
+  # Offset 28 is padding
 
 # ==============================================================================
 # SECTION 3: SHARED BUFFER CONFIGURATION
@@ -82,7 +89,7 @@ const
 # ==============================================================================
 
 const
-  PARTICLES_BUFFER_SIZE = MAX_PARTICLES * PARTICLE_STRIDE  # 64K * 32 = 2MB per buffer
+  PARTICLES_BUFFER_SIZE = MAX_PARTICLES * PARTICLE_STRIDE  # 128000 * 32 = 4,096,000 bytes
   GRID_CELLS = MAX_GRID * MAX_GRID  # 256 * 256 = 65536 cells
 
 # ==============================================================================

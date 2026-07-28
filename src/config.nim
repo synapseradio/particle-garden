@@ -60,6 +60,7 @@ type
     temperature* {.exportc.}: float       # Grade: signed warm/cool tint, 0 = neutral
     colormapIndex* {.exportc.}: int       # RD field colormap selector (0=inferno,1=viridis,2=two-tone)
     fieldOpacity* {.exportc.}: float      # RD field contribution scale, [0,1]
+    fluidStrength* {.exportc.}: float     # How much of the fluid's velocity verdict lands
     sphRestDensity* {.exportc.}: float    # SPH target density (Tait EOS rest density)
     sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
     sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
@@ -191,6 +192,7 @@ proc createConfig(): ConfigObject =
   result.forceModel = sim.forceModel
   result.expRepulsionAlpha = sim.expRepulsionAlpha
   result.expAttractionBeta = sim.expAttractionBeta
+  result.fluidStrength = sim.fluidStrength
   result.sphRestDensity = sim.sphRestDensity
   result.sphStiffness = sim.sphStiffness
   result.sphViscosity = sim.sphViscosity

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Native desktop wrapper for a particle simulator with WebGPU compute physics. A world composes three independent couplings — species forces, SPH fluid pressure, and a Gray-Scott chemical field — and any combination of them runs in one frame. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
+Native desktop wrapper for a particle simulator with WebGPU compute physics. There is one world, and species forces, SPH fluid pressure and a Gray-Scott chemical field all run in it at once, each at a continuous strength the user sets. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
 
 ## Golden rules
 
@@ -33,7 +33,9 @@ just be                 # git pull + build + run
 
 The just recipes invoke `nim` and `bun` directly instead of going through nimble tasks: nimble 0.22.x exits 0 even when a task's exec fails, which once left a stale `web/app.js` behind a "successful" build. The nimble tasks still exist for manual use, but only the just recipes are trusted to fail loudly. The flag constants in the justfile mirror `particle_garden.nimble` and must stay in sync.
 
-Run `just test` after changing any pure-logic Nim module (physics, grid, SPH, reaction-diffusion field, bloom, colormap, memory layout, gpu_types, sim registry, shader manifest, UI state, param descriptor). The suite is native-only: it compiles `tests/test_all.nim` with `nim c` and exercises the pure modules. `just test-ui` covers the TypeScript pure logic (preset storage, formatting) with `bun test`. Browser, WebGPU, and FFI code is verified by the build itself — a broken FFI binding fails `build-app`, and a broken component fails the typecheck. CI runs `just check` before any release, so a red suite blocks the release. See `tests/README.md` for layout and conventions.
+Run `just test` after changing any pure-logic Nim module (physics, grid, SPH, reaction-diffusion field, bloom, colormap, memory layout, gpu_types, sim registry, shader manifest, UI state, param descriptor). The suite is native-only: it compiles `tests/test_all.nim` with `nim c` and exercises the pure modules. `just test-ui` covers the TypeScript pure logic (preset storage, formatting) with `bun test`. Browser, WebGPU, and FFI code is verified by the build itself — a broken FFI binding fails `build-app`, and a broken component fails the typecheck.
+
+Two native tests read TypeScript source from disk rather than importing a Nim module, so `just test` covers them even though nothing Nim changed: `test_no_modes.nim` sweeps `src/` and `web-ui/src/` for the vocabulary of the deleted mode model, and `test_panel_reachability.nim` fails when `Panel.tsx` places no control for a descriptor. Run `just test` after editing `web-ui/src/components/Panel.tsx` for that reason. CI runs `just check` before any release, so a red suite blocks the release. See `tests/README.md` for layout and conventions.
 
 ## Architecture
 
@@ -44,7 +46,7 @@ Two components, because browsers require Cross-Origin-Opener-Policy and Cross-Or
 
 ### The gardenAPI boundary
 
-`src/web_api.nim` installs a single `window.gardenAPI` object at `app.js` module-eval time — before the Solid bundle evaluates. The Solid panel (`web-ui/`) drives everything through it: descriptor-driven sliders (`descriptor()`/`setParam`/`commitParam`, clamped in Nim against `ui/api/param_descriptor.nim`), mode/palette/colormap catalogs, the named reaction-diffusion regimes (`rdRegimes`/`applyRdRegime`), live `matrix()` and `chemistry()` Float32Array references gated behind `onReady` (buffers exist only after `init()`), a pushed stats stream (`onStats`, cadence set loop-side in `app.nim`), and hybrid presets (`exportPresetJson`/`applyPresetJson` keep schema, validation, and `presetApplySteps` order in Nim; the UI owns localStorage under `preset_store_core`'s `pg.presets.*` keys, so presets saved before the port keep loading). One JS-backend caveat lives at this boundary: `std/json.parseJson` delegates to `JSON.parse`, whose SyntaxError is a foreign exception Nim's `except ValueError` cannot catch — `applyPresetJson` pre-checks parseability instead.
+`src/web_api.nim` installs a single `window.gardenAPI` object at `app.js` module-eval time — before the Solid bundle evaluates. The Solid panel (`web-ui/`) drives everything through it: descriptor-driven sliders (`descriptor()`/`setParam`/`commitParam`, clamped in Nim against `ui/api/param_descriptor.nim`), palette and colormap catalogs, the named reaction-diffusion regimes (`rdRegimes`/`applyRdRegime`), live `matrix()` and `chemistry()` Float32Array references gated behind `onReady` (buffers exist only after `init()`), a pushed stats stream (`onStats`, cadence set loop-side in `app.nim`), and hybrid presets (`exportPresetJson`/`applyPresetJson` keep schema, validation, and `presetApplySteps` order in Nim; the UI owns localStorage under `preset_store_core`'s `pg.presets.*` keys, so a preset saved by any earlier build keeps loading). One JS-backend caveat lives at this boundary: `std/json.parseJson` delegates to `JSON.parse`, whose SyntaxError is a foreign exception Nim's `except ValueError` cannot catch — `applyPresetJson` pre-checks parseability instead.
 
 ### Particle buffer
 
@@ -57,33 +59,40 @@ All particle data lives in a SharedArrayBuffer with AoS (Array of Structures) la
 | 8  | vx | f32 | velocity x |
 | 12 | vy | f32 | velocity y |
 | 16 | species | i32 | species index (0-5) |
-| 20 | density | f32 | local density |
-| 24 | padding | — | alignment to 32 bytes |
+| 20 | density | f32 | colony density: same-species neighbours, proximity-weighted. Written by the world-intrinsic sweep; read by dot size, brightness and glow radius |
+| 24 | sphDensity | f32 | the fluid's kernel-weighted, species-blind density, private to its equation of state |
+| 28 | padding | — | alignment to 32 bytes |
 
 ### GPU physics pipeline
 
 All physics runs on WebGPU compute shaders — there is no CPU physics path. Particles stay on the GPU from initialization through rendering; there is no CPU readback.
 
-A world is a set of independent **couplings**, not one of several modes. `WorldCouplings` in `sim_registry.nim` holds three booleans — `forces` (species attraction over the spatial hash), `sph` (smoothed-particle pressure and viscosity), and `field` (the Gray-Scott chemical field) — and `buildFrame(couplings)` composes the GPU frame from whichever are active. All eight combinations are meaningful and none is enumerated anywhere; a world running forces and field together falls out of two booleans being true rather than being a fourth mode someone wrote.
+**Couplings are continuous strengths, not modes.** `WorldCouplings` in `sim_registry.nim` holds four floats — `forces` (the species force term), `fluid` (smoothed-particle pressure and viscosity), `deposit` (what particles secrete into the chemical field), and `fieldForce` (how hard the field's gradient steers them). Each is a live simulation parameter (`forceStrength`, `fluidStrength`, `rdDeposit`, `rdFieldForce`), derived on demand by `couplingsOf` in `ui/state/sim_config.nim` rather than stored twice, and every one of their ranges reaches zero. Zero is an ordinary value of a strength, never a state of the world.
 
-`SimKind` survives as the preset compatibility layer and nothing else. Presets serialize stable mode ids and `couplingsFor` maps each to the triple it always meant; nothing in the frame path consults it.
+**The frame asks exactly one question of a strength: is it zero.** `sim_registry.acts` is the only comparison site — nothing reads a magnitude or tests a threshold. `webgpu_compute.sameFrameShape` compares only the zeros, so a slider moving within its range rebuilds nothing, and `setCouplings` rebuilds the pure frame description when a strength crosses zero. `shader_manifest.allShaderSpecs()` registers every compute shader at init with no per-world subset, which is what makes that crossing synchronous instead of waiting on a shader fetch and compile.
 
-`sim_registry.nim` holds the frame as data and `webgpu_compute.nim` dispatches it, so the pass list lives in one place rather than in prose here. It also holds `controlGroupsFor`, which unions the descriptor groups of every active coupling — a union rather than a per-mode list because couplings compose and `grid` belongs to both force couplings. A native test asserts the relation directly: a world with no `forces` dispatch cannot offer the attraction matrix or the force-model controls.
+**A strength may skip a pass only when it multiplies everything that pass produces.** Otherwise skipping removes an output the strength never scaled and the world jumps at zero. Passes therefore divide two ways. World-intrinsic, never skipped: the grid triad with bin-scatter, the neighbour sweep in `forces.wgsl`, `field-resolve`, the `RD_STEPS_PER_FRAME` Gray-Scott substeps, and `integrate`. Coupling-owned, skipped at exactly zero: `forces-sph` (`fluid`), `field-deposit` (`deposit`), `field-force` (`fieldForce`).
 
-**Delta-buffer ownership belongs to the frame, and this is the invariant that makes composition work.** `buildFrame` clears `velocityDelta` and `densityDelta` once at the top of every frame, and every contributing pass — `forces`, `forces-sph`, `field-force` — accumulates into them with `atomicAdd` and never stores. Each pass used to reset the buffer in its own prologue, which is exactly why only one coupling could run at a time: with two contributors, whichever ran second erased the first. Any new pass that writes a delta buffer must accumulate. `field-deposit` is the exception and stays self-resetting, because `field-resolve` zeroes each cell as it consumes it.
+Forces are the asymmetric case. `forces.wgsl` applies the species force, accumulates the per-particle colony density the renderer reads, and carries the mouse and blast input. Only the first is coupling-owned, so the pass stays world-intrinsic and no force strength may skip it — the neighbour sweep runs in a world where no forces act, which is the honest price of one world. The field is intrinsic for the same reason and for the ping-pong parity below.
+
+**Delta-buffer ownership belongs to the frame, and this is the invariant that makes composition work.** `buildFrame` clears `velocityDelta` and `densityDelta` once at the top of every frame, and every contributing pass — `forces`, `forces-sph`, `field-force` — accumulates into them with `atomicAdd` and never stores. A pass that self-resets in its own prologue works while one contributor runs and breaks the moment two do, because whichever runs second erases the first. Any new pass that writes a delta buffer must accumulate. `field-deposit` is the exception and stays self-resetting, because `field-resolve` zeroes each cell as it consumes it.
 
 A frame composes in this order:
 
-1. Clear `velocityDelta` and `densityDelta` — always, whatever is coupled.
-2. If `forces or sph`: clear `gridCounts`, run **bin-count**, the three **prefix-sum** stages (local, blocks, final), copy `gridOffsets` into `fillPointers`, then one force pass containing **bin-scatter** followed by whichever of `forces` and `forces-sph` are active.
-3. If `field`: one pass containing **field-deposit**, **field-resolve**, `RD_STEPS_PER_FRAME` alternating **rd-step** substeps, and **field-force**.
-4. **integrate**, always last — the one pass that reads the summed deltas and moves particles, so every contributor must already have run.
+1. Clear `velocityDelta`, `densityDelta` and `gridCounts`.
+2. **Grid Build** — **bin-count**, then the three **prefix-sum** stages (local, blocks, final).
+3. Copy `gridOffsets` into `fillPointers`, which bin-scatter consumes as its write cursors.
+4. **Physics** — **bin-scatter**, then **forces**, then **forces-sph** where `fluid` acts.
+5. **Field (RD)** — **field-deposit** where `deposit` acts, then **field-resolve**, `RD_STEPS_PER_FRAME` alternating **rd-step** substeps, then **field-force** where `fieldForce` acts.
+6. **integrate**, always last — the one pass that reads the summed deltas and moves particles, so every contributor must already have run.
 
 `field-seed` writes a pattern into the field and is a one-shot the executor encodes on reset and on the deliberate "scatter spores" action, never a frame node. Nothing seeds the field automatically: it clears to Gray-Scott's trivial fixed point and is lifted off it by particle deposits alone, which is what makes the pattern a record of where colonies lived. Ignition depends on coherence rather than magnitude — a single-cell deposit fails at any amplitude the slider offers, so `field-deposit` splats each particle's deposit over a normalized kernel.
 
-`docs/one-world.md` is the guide to adding a fourth coupling.
+`field-resolve` is itself one stage of the field ping-pong, so `1 + RD_STEPS_PER_FRAME` must be even for the live field to end each frame on the texture the renderer samples. `field_core.nim` asserts that parity statically, which is also why no strength may skip `field-resolve`.
 
-`field-resolve` is itself one stage of the field ping-pong, so `1 + RD_STEPS_PER_FRAME` must be even for the live field to end each frame on the texture the renderer samples. `field_core.nim` asserts that parity statically.
+Presets are schema v2: a point in this parameter space, carrying the four strengths and no `mode` field. `LEGACY_MODE_COUPLINGS` in `preset.nim` is the only table naming a mode, reachable only from the v1 branch of `migrate`, which translates a pre-2.0 preset's mode into the strengths that mode meant.
+
+`docs/one-world.md` is the guide to adding a fifth coupling.
 
 ## Shaders
 
@@ -104,7 +113,7 @@ WGSL shaders use a module system with build-time preprocessing. Layout under `we
 
 So when you touch a render binding, change all four together and verify in a running app: the layout in `webgpu_render.nim`, every bind group built from it, and the `@binding` numbers in BOTH shaders that share it. A binding added to one shader and not the other is not a compile error — it is a blank canvas.
 
-**Add a compute shader:** create `web/shaders/src/my-shader.wgsl`, add `//! import particle` (and any other modules) at the top, run `just happen`, add it to `shader_manifest.nim` for the couplings that need it, and register it in `StaticFiles`. Add an `EXPECTED_BIND_GROUP_ENTRIES_*` constant and a case in `expectedBindGroupEntries` — a bind group whose entry count disagrees with its shader's bindings fails validation at runtime, and that constant is what turns it into a loud failure instead.
+**Add a compute shader:** create `web/shaders/src/my-shader.wgsl`, add `//! import particle` (and any other modules) at the top, run `just happen`, add a `ShaderSpec` for it in `shader_manifest.nim` (appended in `allShaderSpecs`, which registers everything at init), and register it in `StaticFiles`. Add an `EXPECTED_BIND_GROUP_ENTRIES_*` constant and a case in `getExpectedEntryCount` — a bind group whose entry count disagrees with its shader's bindings fails validation at runtime, and that constant is what turns it into a loud failure instead.
 
 **Modify a shared struct:** edit the WGSL side in `web/shaders/modules/particle.wgsl` and the Nim side in `src/gpu_types.nim` to match. Compile-time validation in `gpu_types.nim` catches mismatches.
 
@@ -137,7 +146,7 @@ GitHub Actions (`.github/workflows/release.yml`) builds and publishes releases f
 
 The version in `particle_garden.nimble` must match the git tag (without the `v` prefix). Semantic versioning:
 - **MAJOR** — breaking changes (user-visible behavior change, config format change, removed features).
-- **MINOR** — new features or significant improvements (new UI controls, new physics modes).
+- **MINOR** — new features or significant improvements (new UI controls, a new coupling).
 - **PATCH** — bug fixes, docs, refactoring (no user-visible functional change).
 
 When versions diverge, examine commits since the last tag to pick the bump — `git log $(git describe --tags --abbrev=0)..HEAD --oneline`. Any breaking commit → major; otherwise any feature → minor; else patch. To release: bump the nimble version, commit, then `git tag vX.Y.Z && git push && git push origin vX.Y.Z`.
@@ -170,21 +179,21 @@ Module inventory:
 | `config_ranges.nim` | Single source of truth for every user-facing tunable's range. |
 | `gpu_types.nim` | Type-safe GPU struct layouts with compile-time validation, named buffer indices. |
 | `webgpu_init.nim` | GPU device init, feature detection, buffer allocation. |
-| `webgpu_compute.nim` | Builds the active couplings' frame from `sim_registry` and dispatches the compute passes. |
+| `webgpu_compute.nim` | Builds the world's frame from `sim_registry` (rebuilt only when a strength crosses zero) and dispatches the compute passes. |
 | `webgpu_render.nim` | GPU rendering: instanced quads, trail effects, glow, HDR bloom and tonemap. |
 | `gpu_profiler.nim` | Per-pass GPU timing via timestamp queries; inert when the adapter lacks the feature. |
-| `sim_registry.nim` | The frame as data: `WorldCouplings`, `buildFrame`, and the descriptor groups each coupling contributes. |
-| `shader_manifest.nim` | The compute shaders each coupling needs, as data. Companion to `sim_registry`. |
+| `sim_registry.nim` | The frame as data: `WorldCouplings` (the four coupling strengths), `acts`, and `buildFrame`. |
+| `shader_manifest.nim` | Every compute shader the world can dispatch, as data; `allShaderSpecs()` registers them all at init. Companion to `sim_registry`. |
 | `climate_core.nim` | Pure drifting-climate path: the closed tour of named regimes feed and kill follow. |
 | `camera_core.nim` | Pure toroidal camera: nearest-image offset, clip mapping, zoom anchoring, apparent scale. |
-| `web_api.nim` | The `window.gardenAPI` boundary: typed-state → CONFIG bridge (synchronous mirror), descriptor-clamped parameter writes, palette/matrix/mode logic, preset snapshot/apply. |
+| `web_api.nim` | The `window.gardenAPI` boundary: typed-state → CONFIG bridge (synchronous mirror), descriptor-clamped parameter writes, palette and matrix logic, starter presets, preset snapshot/apply. |
 | `canvas_input.nim` | Canvas mouse/touch input → physics (currentInput observable), resize and particle-reinit callbacks. |
 | `ui/api/param_descriptor.nim` | Pure descriptor table for every tunable (id, range, step, precision, default, store routing); natively tested; served to TS via `gardenAPI.descriptor()`. |
 | `ui/` | Pure UI state modules (`state/`, `core/observable`, `input/` handlers, `presets/preset_store_core`); natively tested where pure. |
 | `web-ui/` | The Solid control panel (TypeScript): components over gardenAPI, localStorage preset I/O, formatting; built by Bun via `build.ts`. |
 | `grid.nim` | Spatial grid dimensions from world size + interaction radius. |
 | `palette.nim` | Pure species color-palette generation. |
-| `preset.nim` | Pure versioned preset schema: serialization, validation, apply order. |
+| `preset.nim` | Pure versioned preset schema (v2): serialization, validation, apply order, and the v1 mode-to-strengths migration. |
 | `tools/wgsl_bundle.nim` | Shader preprocessor (resolves `//! import`, substitutes `{{PLACEHOLDER}}`). |
 
 Bindings live in `src/bindings/`: `webgpu.nim` (adapters, devices, buffers, pipelines, bind groups), `typed_arrays.nim` (Float32Array, Uint32Array, Int32Array, ...), `dom_extensions.nim` (Canvas, HTMLElement, classList), `js_interop.nim` (console, random, object creation), `window.nim` (requestAnimationFrame, performance.now()).

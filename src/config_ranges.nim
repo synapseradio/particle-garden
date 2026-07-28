@@ -12,9 +12,9 @@
 #   - tests (natively)
 #
 # Because both consumers read these constants, the UI and the preset schema
-# cannot drift apart — the drift class that once let preset bounds track
-# dead web/index.html attributes (e.g. a 64000 particle ceiling against a
-# live 128000 slider) is structurally closed.
+# cannot drift apart — neither side holds its own copy, so a preset bound
+# cannot track a dead web/index.html attribute (a 64000 particle ceiling
+# against a live 128000 slider).
 #
 # ==============================================================================
 
@@ -29,13 +29,22 @@ const
   PARTICLE_COUNT_MAX* = memory_layout.MAX_PARTICLES
   SPECIES_COUNT_MIN* = 2
     ## Minimum 2: particle life needs at least two species for cross-species
-    ## rules to exist. (ui.nim once registered 1 while the HTML said 2; this
-    ## constant settles the mismatch at 2.)
+    ## rules to exist. This constant is the only authority on that floor.
   SPECIES_COUNT_MAX* = memory_layout.MAX_SPECIES
   INTERACTION_RADIUS_MIN* = 10
   INTERACTION_RADIUS_MAX* = 150
-  FORCE_STRENGTH_MIN* = 0.1
+  FORCE_STRENGTH_MIN* = 0.0
+    ## Zero is an ordinary value of a coupling strength (design D13).
+    ## `fMul` scales BOTH force zones (`src/physics_core.nim:52-60`), so zero
+    ## removes short-range repulsion too and particles pass through each other.
+    ## Design C0 covers what that means for the crowding cap.
   FORCE_STRENGTH_MAX* = 5.0
+  FLUID_STRENGTH_MIN* = 0.0
+  FLUID_STRENGTH_MAX* = 1.0
+    ## One is the whole fluid. Nothing above it: this multiplies the pass's
+    ## entire velocity contribution, so a higher value amplifies pressure past
+    ## the settings design C7's stability analysis covers. Stiffness is where to
+    ## ask for a stiffer fluid, because its ceiling answers.
   FRICTION_MIN* = 0.0
   FRICTION_MAX* = 0.5
   RULE_TEMPERATURE_MIN* = 0.1
@@ -82,12 +91,12 @@ const
     ## the executor loop and the slider bound stay one value.
   RD_FEED_MIN* = 0.010
   RD_FEED_MAX* = 0.085
-    ## Raised from 0.080 for Coral, whose feed coordinate is 0.082 (design D4).
-    ## Shipping a labelled notch outside its own slider's range would be the
-    ## same defect the named regimes exist to fix — a position the panel names
-    ## and the user cannot reach. The static assertion below ties the ceiling
-    ## to the regime table, so the next coordinate past it fails the build
-    ## rather than shipping an unreachable label.
+    ## 0.085 clears Coral, whose feed coordinate is 0.082 (design D4); a 0.080
+    ## ceiling strands it. Shipping a labelled notch outside its own slider's
+    ## range would be the same defect the named regimes exist to fix — a
+    ## position the panel names and the user cannot reach. The static assertion
+    ## below ties the ceiling to the regime table, so the next coordinate past
+    ## it fails the build rather than shipping an unreachable label.
   RD_KILL_MIN* = 0.040
   RD_KILL_MAX* = 0.075
   RD_DEPOSIT_MIN* = 0.0
@@ -95,7 +104,7 @@ const
     ## entirely, leaving the reaction-diffusion pattern to evolve on its own.
   RD_DEPOSIT_MAX* = 0.08
     ## Measured at the Pearson defaults, the field floods into a uniform bath
-    ## from around 0.15 and diverges near 0.30. Those numbers were taken at
+    ## from around 0.15 and diverges near 0.30. Those numbers come from
     ## feed=0.030 kill=0.062; at the slider's weakest corner (RD_FEED_MIN,
     ## RD_KILL_MIN) the (feed+kill)*B depletion opposing the deposit is about
     ## 1.8x weaker, so the ceiling has to sit well below the measured flood
@@ -104,14 +113,20 @@ const
   RD_FIELD_FORCE_MIN* = 0.0
     ## Zero leaves particles blind to the field — a real setting, and the way
     ## to watch the pattern evolve without particles stirring it.
-  RD_FIELD_FORCE_MAX* = 150.0
-    ## Inhibitor gradients peak near 0.05 per cell, so the default 30 is about
-    ## 1.5 velocity units per frame against a maxVelocity of 50. 150 is five
-    ## times that: violent, but still bounded by the integrator's own velocity
-    ## clamp. Kept non-negative deliberately — field-force.wgsl notes that a
-    ## negative scale pulls particles up-gradient, concentrating their deposits
-    ## on inhibitor ridges into a positive-feedback loop nothing here has
-    ## checked for stability.
+  RD_FIELD_FORCE_MAX* = RD_DEFAULT_FIELD_FORCE * 5.0
+    ## Five times the default: violent, but still bounded by the integrator's
+    ## own velocity clamp, and the setting every measurement in test_field_core's
+    ## chemotactic collapse suite is taken at.
+    ##
+    ## Derived from the default rather than written down, so it inherits the
+    ## division by FIELD_PATTERN_SHRINK — the gradient is per CELL and the
+    ## impulse lands in WORLD units, so the pairing of the two is what a
+    ## particle actually feels. RD_DEFAULT_FIELD_FORCE carries the derivation.
+    ##
+    ## Kept non-negative deliberately — field-force.wgsl notes that a negative
+    ## scale pulls particles up-gradient, concentrating their deposits on
+    ## inhibitor ridges into a positive-feedback loop nothing here has checked
+    ## for stability.
   RD_REGIME_HIGH_FEED_DEPOSIT* = 0.040
     ## The deposit the high-feed regimes need, as a notch on the Deposit slider
     ## as well as a floor the regime buttons apply. RD_REGIMES' `minDeposit`
@@ -124,7 +139,7 @@ const
     ## "The Regime Deposit Floor Preserves The Regime"), Coral at this floor
     ## sits 0.10 from its own attractor while Coral at RD_DEPOSIT_MAX sits
     ## 0.42 from it — four times further. A larger deposit does not merely cost
-    ## nothing extra, it actively distorts the regime it was meant to reveal.
+    ## nothing extra, it actively distorts the regime it is meant to reveal.
     ## Raising this constant, or flattening the per-regime `minDeposit` into a
     ## single value, trades morphology fidelity for a simpler table.
   # Named reaction-diffusion regimes. Representative (feed, kill) points for
@@ -172,16 +187,14 @@ const
     ## "no way to find the living parts except by accident" failure the named
     ## regimes exist to fix. 0.040 ignites both on frame 4, comfortably above
     ## the 0.030 boundary where they first ignite at all.
-  COUPLING_PARTICLE_CEILING* = SPH_PARTICLE_CEILING
-    ## The particle count the heavier couplings cap at, as one name. Routed
-    ## through the range authority rather than read from sph_core directly —
-    ## the same pattern SPH_SUBSTEPS_MAX uses — so the descriptor table needs
-    ## only this module.
+  PARTICLE_BUDGET* = 32000
+    ## The particle count this world runs. One number, because couplings compose
+    ## and a per-coupling ceiling describes neither a world running two of them
+    ## nor a world running none (design D11).
     ##
-    ## It is ONE constant because SPH and the field cap at the same count. The
-    ## static assertion below is what makes that safe to assume: if they ever
-    ## diverge, this name stops meaning anything and the build says so rather
-    ## than the panel silently labelling a tick with the wrong ceiling.
+    ## INHERITED AND UNMEASURED: 32000 sizes a world running ONE heavy coupling.
+    ## Nothing measures what a world running all of them affords. Group 10
+    ## replaces it with a measured value.
   CLIMATE_SPEED_MIN* = 0.05
     ## Slowest weather: one tour of the regimes every twenty minutes. Not zero —
     ## zero is what the drift toggle is for, and a speed slider that can also
@@ -211,7 +224,7 @@ const
     ## Four tiles visible — the infinity read, and the far end of the zoom
     ## range.
   CAMERA_ZOOM_NOTCH_WORLD* = 1.0
-    ## One world to one screen: the view every pre-camera build had.
+    ## One world to one screen: the whole world framed to the window.
   CAMERA_ZOOM_NOTCH_CREATURE* = CAMERA_ZOOM_MAX
     ## Close enough to watch one particle, and the near end of the zoom range.
   # Per-species field chemistry. Not sliders on a single CONFIG field — one
@@ -226,7 +239,7 @@ const
   SECRETION_MAX* = 1.0
     ## Full construction, and the default: a species deposits exactly the
     ## Deposit slider's value. Every measurement behind RD_DEPOSIT_MAX and
-    ## RD_DEPOSIT_SPLAT_RADIUS was taken here, so the ceiling is the value
+    ## RD_DEPOSIT_SPLAT_RADIUS is taken here, so the ceiling is the value
     ## those measurements describe rather than a multiple of it.
   TROPISM_MIN* = -1.0
     ## Full DOWN-gradient authority. Negative chemosensitivity is stabilizing:
@@ -304,6 +317,15 @@ static:
   doAssert GLOW_WARMTH_MIN < GLOW_WARMTH_MAX
   doAssert SPH_REST_DENSITY_MIN < SPH_REST_DENSITY_MAX
   doAssert SPH_STIFFNESS_MIN < SPH_STIFFNESS_MAX
+  doAssert FORCE_STRENGTH_MIN < FORCE_STRENGTH_MAX
+  doAssert FLUID_STRENGTH_MIN < FLUID_STRENGTH_MAX
+  # Every coupling strength reaches zero (design D13). One loop rather than an
+  # assertion each, so a fifth coupling with a nonzero floor fails here.
+  for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
+      RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN]:
+    doAssert strengthFloor == 0.0,
+      "a coupling strength's range excludes zero; design D13 requires that " &
+      "every coupling can be turned off through its own slider"
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
   doAssert RD_FEED_MIN < RD_FEED_MAX
@@ -334,13 +356,8 @@ static:
       "regime " & regime.id & " needs a deposit outside the deposit range"
   doAssert RD_REGIME_HIGH_FEED_DEPOSIT >= RD_DEPOSIT_MIN and
     RD_REGIME_HIGH_FEED_DEPOSIT <= RD_DEPOSIT_MAX
-  # COUPLING_PARTICLE_CEILING is one name for two constants. It is only honest
-  # while they agree.
-  doAssert SPH_PARTICLE_CEILING == RD_PARTICLE_CEILING,
-    "SPH and field particle ceilings have diverged; COUPLING_PARTICLE_CEILING " &
-    "can no longer name both"
-  doAssert COUPLING_PARTICLE_CEILING >= PARTICLE_COUNT_MIN and
-    COUPLING_PARTICLE_CEILING <= PARTICLE_COUNT_MAX
+  doAssert PARTICLE_BUDGET >= PARTICLE_COUNT_MIN and
+    PARTICLE_BUDGET <= PARTICLE_COUNT_MAX
   # The camera zoom notches are positions on the camera slider, so the same
   # reachability rule covers them.
   for zoomNotch in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,
@@ -361,11 +378,11 @@ static:
   doAssert RD_DEFAULT_TROPISM >= TROPISM_MIN and
     RD_DEFAULT_TROPISM <= TROPISM_MAX
   # Camera zoom is a non-empty range straddling 1.0, and it must: 1.0 is the
-  # view that reproduces the pre-camera framing exactly, so a range excluding it
+  # view that frames the whole world to the window, so a range excluding it
   # would make the default view unreachable.
   doAssert CAMERA_ZOOM_MIN < CAMERA_ZOOM_MAX
   doAssert CAMERA_ZOOM_MIN <= 1.0 and CAMERA_ZOOM_MAX >= 1.0,
-    "zoom range must contain 1.0, the framing the renderer had before a camera"
+    "zoom range must contain 1.0, the whole world framed to the window"
   # Bloom/grade ranges are non-empty and their bloom_core defaults sit inside
   # the slider range they are the default of — the same guard as the RD pair,
   # so a future default change that escapes its range fails the build here.

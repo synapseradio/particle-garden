@@ -5,7 +5,7 @@
 # Pure, versioned schema for saving and loading simulation presets. Built on
 # std/json only: no FFI, no DOM, no localStorage. Compiles on both the
 # native (`nim c`) and JS (`nim js`) backends, so it is safe to import from
-# both `tests/test_all.nim` and a future browser-side preset_store module.
+# both `tests/test_all.nim` and browser-side preset code.
 #
 # Validation-first: every entry point that accepts external JSON (`validate`,
 # `parsePreset`) degrades hostile or stale input to safe, clamped defaults
@@ -46,11 +46,19 @@ export config_ranges
 # SECTION 1: SCHEMA VERSION
 # ==============================================================================
 
-const CURRENT_SCHEMA_VERSION* = 1
-  ## The only schema version this build writes and fully understands.
-  ## `validate` rejects any JSON claiming a higher version. Future bumps
-  ## add a branch to `migrate` that upgrades a node one version forward;
+const CURRENT_SCHEMA_VERSION* = 2
+  ## The schema version this build writes and fully understands.
+  ## `validate` rejects any JSON claiming a higher version. Bumps add a
+  ## branch to `migrate` that upgrades a node one version forward;
   ## `CURRENT_SCHEMA_VERSION` moves up alongside it.
+  ##
+  ## v2 carries coupling strengths and names no mode; v1 names a mode and
+  ## carries a value for every scalar whether or not that mode reads it.
+  ## `migrate` translates the first shape into the second — see
+  ## LEGACY_MODE_COUPLINGS for why translation is the only mechanism that works.
+  ##
+  ## v2 also adds three fields v1 has no slot for: per-species chemistry,
+  ## the fluid strength, and the two climate-drift settings.
 
 # ==============================================================================
 # SECTION 2: SHAPE
@@ -65,10 +73,22 @@ const MAX_SPECIES* = 6
 
 const MATRIX_LEN* = MAX_SPECIES * MAX_SPECIES ## 36: the flattened 6x6 attraction matrix.
 
+const CHEMISTRY_STRIDE* = 2
+  ## (secretion, tropism) per species slot. Mirrors config.nim's
+  ## SPECIES_CHEMISTRY_STRIDE, as a literal for the same
+  ## dependency-restriction reason MAX_SPECIES is one.
+
+const CHEMISTRY_LEN* = MAX_SPECIES * CHEMISTRY_STRIDE ## 12: six slots, two values each.
+
 type
   PaletteColor* = array[3, float] ## Interleaved RGB, each channel in [0, 1].
   Matrix* = array[MATRIX_LEN, float] ## Row-major 6x6 attraction matrix, values in [-1, 1].
   Palette* = array[MAX_SPECIES, PaletteColor] ## One color per species slot, always 6 long.
+  Chemistry* = array[CHEMISTRY_LEN, float]
+    ## Interleaved (secretion, tropism) per species slot, always 12 long.
+    ## A DIMENSION rather than a scalar, which is why it sits beside `matrix`
+    ## in the Preset rather than inside PresetSettings: the settings record
+    ## holds one number per name, and this holds MAX_SPECIES x 2.
 
   PresetSettings* = object
     ## Every CONFIG scalar a preset can restore. Mirrors config.nim's
@@ -95,6 +115,7 @@ type
     glowRadiusScale*: float
     glowFalloff*: float
     glowWarmth*: float
+    fluidStrength*: float
     sphRestDensity*: float
     sphStiffness*: float
     sphViscosity*: float
@@ -103,6 +124,8 @@ type
     rdKill*: float
     rdDeposit*: float
     rdFieldForce*: float
+    climateDrift*: bool
+    climateSpeed*: float
     bloomEnabled*: bool
     bloomIntensity*: float
     exposure*: float
@@ -113,23 +136,23 @@ type
     fieldOpacity*: float
 
   Preset* = object
-    ## The full persisted shape: `{schemaVersion, name, createdAt, mode,
-    ## settings, matrix[36], palette}`.
+    ## The full persisted shape: `{schemaVersion, name, createdAt, settings,
+    ## matrix[36], chemistry[12], palette}`.
+    ##
+    ## NO MODE FIELD, and its absence is the schema saying there is one world.
+    ## A preset is a POINT in that world's parameter space: the strengths it
+    ## carries are what it restores, and nothing consults a mode to decide what
+    ## those strengths mean. v1's `mode` survives only inside `migrate`, which
+    ## reads it off the raw JSON to translate an old file forward.
     schemaVersion*: int
     name*: string
     createdAt*: string
       ## ISO-8601 string, or "" for "unknown". This module has no clock
       ## access (pure, no FFI) — the storage layer stamps a real value on
       ## save; "" is the safe default when a preset is missing one.
-    mode*: string
-      ## A mode id, e.g. "particle-life" (the only mode today). Free-form:
-      ## `validate` only checks it is a non-empty string. It does not
-      ## restrict to a known-mode allowlist, so a v1 preset saved by a
-      ## future build with mode="sph" or mode="rd" still round-trips
-      ## through this same validator without a schema bump — the whole
-      ## point of carrying the field before those modes exist.
     settings*: PresetSettings
     matrix*: Matrix
+    chemistry*: Chemistry
     palette*: Palette
 
 # ==============================================================================
@@ -156,7 +179,6 @@ static:
   doAssert MAX_SPECIES == SPECIES_COUNT_MAX,
     "preset array sizing and the species slider ceiling must agree"
 
-const DEFAULT_MODE* = "particle-life"
 const DEFAULT_PRESET_NAME* = "Untitled Preset"
 
 func openColorDefaultPalette(): Palette =
@@ -184,9 +206,9 @@ func defaultSettings*(): PresetSettings =
     ruleTemperature: 0.3,
     timeScale: 0.5,
     particleSize: 3,
-    trails: false,
-    trailLength: 0.0,
-    glowIntensity: 0.8,
+    trails: true,
+    trailLength: 50.0,
+    glowIntensity: 0.08,
     velocityGlowScale: 1.0,
     maxVelocity: 50.0,
     repulsionEnd: 0.5,
@@ -197,6 +219,9 @@ func defaultSettings*(): PresetSettings =
     glowRadiusScale: 3.0,
     glowFalloff: 6.0,
     glowWarmth: 0.4,
+    # Mirrors simulation_state.initSimulationState's fluidStrength: the shipped
+    # world runs no fluid, so a preset that never mentions one restores none.
+    fluidStrength: 1.0,
     sphRestDensity: 3.0,
     sphStiffness: 8.0,
     sphViscosity: 0.1,
@@ -209,7 +234,11 @@ func defaultSettings*(): PresetSettings =
     rdFeed: 0.030,
     rdKill: 0.062,
     rdDeposit: 0.02,
-    rdFieldForce: 30.0,
+    rdFieldForce: 7.5,
+    # Mirrors simulation_state's climate defaults. Weather is opt-in, so a
+    # preset missing these restores a world that moves only when asked.
+    climateDrift: false,
+    climateSpeed: 0.25,
     # Mirrors bloom_core.BLOOM_DEFAULT_* as literals rather than an import,
     # for the same dependency-restriction reason as the sph/rd defaults above.
     bloomEnabled: false,
@@ -222,7 +251,9 @@ func defaultSettings*(): PresetSettings =
     # literals rather than an import, for the same dependency-restriction reason
     # as the sph/rd/bloom defaults above.
     colormapIndex: 0,
-    fieldOpacity: 0.85
+    # Mirrors colormap_core.FIELD_OPACITY_DEFAULT. A hand-mirrored constant
+    # drifts silently, so tests/test_preset.nim asserts the two agree.
+    fieldOpacity: 0.0
   )
 
 func defaultMatrix*(): Matrix =
@@ -231,14 +262,24 @@ func defaultMatrix*(): Matrix =
   ## so an all-zero matrix is the one deterministic, safe fallback.
   discard # zero-initialized by default
 
+func defaultChemistry*(): Chemistry =
+  ## Mirrors field_core's RD_DEFAULT_SECRETION / RD_DEFAULT_TROPISM for every
+  ## species slot: full positive secretion, and the negative, down-gradient
+  ## tropism. Literals for the same dependency-restriction reason as
+  ## defaultSettings above.
+  for speciesIndex in 0 ..< MAX_SPECIES:
+    let base = speciesIndex * CHEMISTRY_STRIDE
+    result[base] = 1.0       ## secretion
+    result[base + 1] = -1.0  ## tropism
+
 func defaultPreset*(): Preset =
   Preset(
     schemaVersion: CURRENT_SCHEMA_VERSION,
     name: DEFAULT_PRESET_NAME,
     createdAt: "",
-    mode: DEFAULT_MODE,
     settings: defaultSettings(),
     matrix: defaultMatrix(),
+    chemistry: defaultChemistry(),
     palette: DEFAULT_PALETTE
   )
 
@@ -256,9 +297,8 @@ type
     ## Always carries a safe, usable `preset` — even on error, `preset`
     ## is `defaultPreset()` — so a caller that ignores `errorKind` still
     ## gets a valid preset rather than undefined behavior. `errorKind`
-    ## and `errorMessage` exist for callers (the future preset_store /
-    ## UI layer) that want to surface *why* a load was rejected or
-    ## repaired.
+    ## and `errorMessage` exist for callers (the preset store / UI layer)
+    ## that want to surface *why* a load was rejected or repaired.
     preset*: Preset
     errorKind*: PresetErrorKind
     errorMessage*: string
@@ -339,6 +379,9 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "glowFalloff").getFloat(defaults.glowFalloff), GLOW_FALLOFF_MIN, GLOW_FALLOFF_MAX)
   result.glowWarmth = clampFloat(
     field(node, "glowWarmth").getFloat(defaults.glowWarmth), GLOW_WARMTH_MIN, GLOW_WARMTH_MAX)
+  result.fluidStrength = clampFloat(
+    field(node, "fluidStrength").getFloat(defaults.fluidStrength),
+    FLUID_STRENGTH_MIN, FLUID_STRENGTH_MAX)
   result.sphRestDensity = clampFloat(
     field(node, "sphRestDensity").getFloat(defaults.sphRestDensity), SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX)
   result.sphStiffness = clampFloat(
@@ -357,6 +400,10 @@ proc validateSettings(node: JsonNode): PresetSettings =
   result.rdFieldForce = clampFloat(
     field(node, "rdFieldForce").getFloat(defaults.rdFieldForce),
     RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX)
+  result.climateDrift = field(node, "climateDrift").getBool(defaults.climateDrift)
+  result.climateSpeed = clampFloat(
+    field(node, "climateSpeed").getFloat(defaults.climateSpeed),
+    CLIMATE_SPEED_MIN, CLIMATE_SPEED_MAX)
   result.bloomEnabled = field(node, "bloomEnabled").getBool(defaults.bloomEnabled)
   result.bloomIntensity = clampFloat(
     field(node, "bloomIntensity").getFloat(defaults.bloomIntensity), BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX)
@@ -381,6 +428,25 @@ proc validateMatrix(node: JsonNode): Matrix =
     result[matrixIndex] = clampFloat(
       elemAt(node, matrixIndex).getFloat(0.0), MATRIX_VALUE_MIN, MATRIX_VALUE_MAX)
 
+proc validateChemistry(node: JsonNode): Chemistry =
+  ## Repaired per slot, like the matrix: a missing or non-numeric entry falls
+  ## back to that slot's default rather than discarding the other eleven.
+  ##
+  ## The two channels clamp against DIFFERENT ranges, and asymmetrically —
+  ## tropism's ceiling sits below the magnitude of its floor (design D5), so a
+  ## hand-edited preset asking for strong positive tropism is brought back to
+  ## the bound rather than landing raw in the uniform.
+  let defaults = defaultChemistry()
+  for speciesIndex in 0 ..< MAX_SPECIES:
+    let secretionAt = speciesIndex * CHEMISTRY_STRIDE
+    let tropismAt = secretionAt + 1
+    result[secretionAt] = clampFloat(
+      elemAt(node, secretionAt).getFloat(defaults[secretionAt]),
+      SECRETION_MIN, SECRETION_MAX)
+    result[tropismAt] = clampFloat(
+      elemAt(node, tropismAt).getFloat(defaults[tropismAt]),
+      TROPISM_MIN, TROPISM_MAX)
+
 proc validateColor(node: JsonNode; fallback: PaletteColor): PaletteColor =
   ## A color is valid only as a whole 3-element numeric triple; a
   ## malformed triple falls back to `fallback` entirely rather than
@@ -403,24 +469,91 @@ proc validatePalette(node: JsonNode): Palette =
     result[speciesIndex] = validateColor(
       elemAt(node, speciesIndex), DEFAULT_PALETTE[speciesIndex])
 
-proc validateMode(node: JsonNode): string =
-  let modeName = node.getStr("")
-  if modeName.len > 0: modeName else: DEFAULT_MODE
-
 # ==============================================================================
 # SECTION 8: MIGRATE + VALIDATE + PARSE
 # ==============================================================================
 
+type
+  LegacyCouplings = object
+    ## What a v1 mode id meant, as the strengths that say the same thing.
+    ## `keep` names a strength the mode's world actually used, so the preset's
+    ## own value survives; anything not kept is zeroed.
+    keepForces: bool
+    keepFluid: bool
+    keepChemistry: bool
+
+const LEGACY_MODE_COUPLINGS: array[3, (string, LegacyCouplings)] = [
+  ("particle-life", LegacyCouplings(
+    keepForces: true, keepFluid: false, keepChemistry: false)),
+  ("sph", LegacyCouplings(
+    keepForces: false, keepFluid: true, keepChemistry: false)),
+  ("reaction-diffusion", LegacyCouplings(
+    keepForces: false, keepFluid: false, keepChemistry: true)),
+]
+  ## THE ONLY PLACE IN THE CODEBASE THAT NAMES A MODE, and it is history rather
+  ## than model: a table about files on disk, reachable only from the v1 branch
+  ## of `migrate`. No live path reaches it, and a new coupling adds no row.
+  ##
+  ## WHY TRANSLATION AND NOT SUBTRACTION. Treating an absent strength as zero
+  ## cannot work: v1 serializes every scalar unconditionally and parses each
+  ## with a nonzero default, so a v1 particle-life file carries a deposit and a
+  ## field force from sliders its mode hid. Loading it untranslated switches
+  ## chemistry on in a world that has none. The mode id is the only record of
+  ## which values that world reads, so the decode consults it once and drops it.
+
+const V1_FIELD_FORCE_SCALE* = 0.25
+  ## What a v1 field force multiplies by to mean the same thing here.
+  ##
+  ## The v1 field grid was 512 cells across; this one is four times finer.
+  ## field-force.wgsl turns a gradient measured PER CELL into an impulse in
+  ## WORLD units, so the same number carries a particle four times further
+  ## across a pattern built from four-times-smaller cells. This is
+  ## 1 / field_core.FIELD_PATTERN_SHRINK, mirrored as a literal for the same
+  ## dependency-restriction reason MAX_SPECIES is one, and tests/test_preset.nim
+  ## checks it against field_core's own constant.
+
+proc legacyCouplingsFor(modeName: string): LegacyCouplings =
+  ## An unrecognised mode keeps everything it carries, minus the fluid it has no
+  ## field for. Forward-compatible in the same spirit v1's free-form `mode`
+  ## field was: a preset from a build this one does not know about loads as the
+  ## world it describes rather than being emptied by a table lookup that missed.
+  for (modeId, couplings) in LEGACY_MODE_COUPLINGS:
+    if modeId == modeName: return couplings
+  LegacyCouplings(keepForces: true, keepFluid: false, keepChemistry: true)
+
 proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
-  ## Upgrades a preset JSON node from `fromVersion` to
-  ## CURRENT_SCHEMA_VERSION. v1 is the only version that has ever existed,
-  ## so this is the identity transform today. A future schema bump adds a
-  ## step here, e.g.:
-  ##   if fromVersion < 2: node = /* rewrite v1 shape -> v2 shape */
-  ##   if fromVersion < 3: node = /* rewrite v2 shape -> v3 shape */
-  ## each falling through to the next, so a preset many versions old
-  ## still upgrades in one call.
-  node
+  ## Upgrades a preset JSON node from `fromVersion` to CURRENT_SCHEMA_VERSION.
+  ## Steps fall through, so a preset many versions old still upgrades in one
+  ## call.
+  result = node
+  if fromVersion < 2:
+    # v1 -> v2: modes become strengths. The mode says which of the values this
+    # file carries are live; every other coupling strength zeroes. Written onto
+    # the settings node so the ordinary clamp path validates the result — a
+    # translation bypassing validateSettings is a second, unclamped way in.
+    let settings = field(result, "settings")
+    if settings != nil and settings.kind == JObject:
+      let legacy = legacyCouplingsFor(field(result, "mode").getStr(""))
+      if not legacy.keepForces:
+        settings["forceStrength"] = %0.0
+      if not legacy.keepChemistry:
+        settings["rdDeposit"] = %0.0
+        settings["rdFieldForce"] = %0.0
+      elif settings.hasKey("rdFieldForce"):
+        # RESCALE RATHER THAN CLAMP. A v1 field force is a number of WORLD
+        # units per unit of gradient per FIELD CELL, so it only means what it
+        # meant while the cell covered what it covered. The field grid is finer
+        # than the one v1 wrote against, and the ceiling came down by the same
+        # factor to hold a particle's response fixed
+        # (field_core.RD_DEFAULT_FIELD_FORCE derives it), so a v1 value carried
+        # over verbatim would clamp to the new maximum and land stronger than
+        # the world it was saved from. Scaling it restores that world; clamping
+        # would silently rewrite it.
+        settings["rdFieldForce"] =
+          %(field(settings, "rdFieldForce").getFloat(0.0) * V1_FIELD_FORCE_SCALE)
+      # v1 carries no fluidStrength to keep or drop, so this derives one: a
+      # legacy fluid world runs its fluid at full effect, every other runs none.
+      settings["fluidStrength"] = %(if legacy.keepFluid: 1.0 else: 0.0)
 
 proc validate*(node: JsonNode): PresetLoadResult =
   ## Validates and normalizes an already-parsed JSON node into a `Preset`.
@@ -455,9 +588,9 @@ proc validate*(node: JsonNode): PresetLoadResult =
       schemaVersion: CURRENT_SCHEMA_VERSION,
       name: field(working, "name").getStr(DEFAULT_PRESET_NAME),
       createdAt: field(working, "createdAt").getStr(""),
-      mode: validateMode(field(working, "mode")),
       settings: validateSettings(field(working, "settings")),
       matrix: validateMatrix(field(working, "matrix")),
+      chemistry: validateChemistry(field(working, "chemistry")),
       palette: validatePalette(field(working, "palette"))
     ),
     errorKind: pekNone,
@@ -505,6 +638,7 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["glowRadiusScale"] = %settings.glowRadiusScale
   result["glowFalloff"] = %settings.glowFalloff
   result["glowWarmth"] = %settings.glowWarmth
+  result["fluidStrength"] = %settings.fluidStrength
   result["sphRestDensity"] = %settings.sphRestDensity
   result["sphStiffness"] = %settings.sphStiffness
   result["sphViscosity"] = %settings.sphViscosity
@@ -513,6 +647,8 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["rdKill"] = %settings.rdKill
   result["rdDeposit"] = %settings.rdDeposit
   result["rdFieldForce"] = %settings.rdFieldForce
+  result["climateDrift"] = %settings.climateDrift
+  result["climateSpeed"] = %settings.climateSpeed
   result["bloomEnabled"] = %settings.bloomEnabled
   result["bloomIntensity"] = %settings.bloomIntensity
   result["exposure"] = %settings.exposure
@@ -527,13 +663,17 @@ proc toJson*(preset: Preset): JsonNode =
   result["schemaVersion"] = %preset.schemaVersion
   result["name"] = %preset.name
   result["createdAt"] = %preset.createdAt
-  result["mode"] = %preset.mode
   result["settings"] = toJson(preset.settings)
 
   var matrixArr = newJArray()
   for matrixValue in preset.matrix:
     matrixArr.add(%matrixValue)
   result["matrix"] = matrixArr
+
+  var chemistryArr = newJArray()
+  for chemistryValue in preset.chemistry:
+    chemistryArr.add(%chemistryValue)
+  result["chemistry"] = chemistryArr
 
   var paletteArr = newJArray()
   for color in preset.palette:

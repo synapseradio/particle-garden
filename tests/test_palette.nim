@@ -6,7 +6,7 @@
 # Tests hslToRgb known values, generatePalette count/length behavior, scheme
 # distinctness, and channel range invariants.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

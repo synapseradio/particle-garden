@@ -10,8 +10,10 @@
 // neighbors to replenish it. Only a spatially COHERENT perturbation ignites the
 // system. This one-shot pass writes that perturbation.
 //
-// It is NOT a frame node. webgpu_compute encodes it on demand — on entering the
-// mode and on a particle reset — ahead of that frame's substeps.
+// It is NOT a frame node. webgpu_compute encodes it on demand — on a particle
+// reset and on the deliberate "scatter spores" action — ahead of that frame's
+// substeps. Nothing seeds the field automatically, which is what makes an
+// unseeded pattern a record of where colonies lived.
 //
 // THIS FILE MIRRORS src/field_core.nim's rdSeedCell EXACTLY, the same
 // hand-maintained contract rd-step.wgsl has with grayScottStep. The pair is what

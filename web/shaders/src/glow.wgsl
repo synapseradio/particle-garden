@@ -145,10 +145,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     discard;
   }
 
-  // Density factor: high density = more glow. glowDensityFloor lifts it to a
-  // per-mode minimum: reaction-diffusion leaves particle density stale at ~0
-  // (it runs no forces pass), so without a floor its glow reads flat; the
-  // density-driven modes leave the floor at 0, keeping their look unchanged.
+  // Density factor: high density = more glow. glowDensityFloor would lift it to
+  // a minimum where density is unavailable; forces.wgsl is world-intrinsic and
+  // accumulates colony density on every frame, so webgpu_render writes the floor
+  // at 0 and this max is inert.
   let rawDensityFactor = clamp(input.densityVal * DENSITY_SCALE, DENSITY_MIN, DENSITY_MAX);
   let densityFactor = max(rawDensityFactor, params.glowDensityFloor);
 

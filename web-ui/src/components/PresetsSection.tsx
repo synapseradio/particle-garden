@@ -1,11 +1,13 @@
 // Presets UI over the hybrid boundary: gardenAPI snapshots/validates/applies
 // (Nim owns the schema and apply order), this component owns localStorage
-// under the same pg.presets.* keys the old panel used, so presets saved
-// before the port keep loading.
+// under the pg.presets.* keys, so a preset saved by any earlier build still
+// loads.
 //
 // Starter presets are the exception that proves the split: their JSON comes
 // from Nim and is applied straight through, never written to storage. That
 // is why they cannot collide with a saved name or be overwritten by one.
+// Each one names a POINT in the one world's parameter space, so loading it
+// moves the sliders rather than switching to a different kind of world.
 
 import { createSignal, For, Show } from "solid-js";
 import type { BuiltinPreset } from "../garden-api";
@@ -29,9 +31,6 @@ export function PresetsSection(props: { ctrl: PanelController }) {
     selected().length > 0 ? selected() : keys.defaultName;
 
   const builtins = () => api.builtinPresets?.() ?? [];
-
-  const modeLabel = (id: string) =>
-    api.simModes().find((mode) => mode.id === id)?.label ?? id;
 
   const applyBuiltin = (entry: BuiltinPreset) => {
     const result = props.ctrl.applyPresetJson(entry.json);
@@ -104,7 +103,7 @@ export function PresetsSection(props: { ctrl: PanelController }) {
               {(entry) => (
                 <button
                   class="model-btn"
-                  title={`Switches to ${modeLabel(entry.mode)}`}
+                  title={`Move the world to ${entry.label}`}
                   onClick={() => applyBuiltin(entry)}
                 >
                   {entry.label}

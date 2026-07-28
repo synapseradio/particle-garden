@@ -59,3 +59,63 @@ constant's value reflects what is actually written; unused channels are not allo
 #### Scenario: Adding a deposit channel
 - **WHEN** the channel-count constant increases
 - **THEN** allocation, indexing, and reset all follow from it without separate edits
+
+
+### Requirement: The kernel-density accumulator holds the whole particle budget
+
+The SPH kernel-density accumulator SHALL encode at a fixed-point scale derived from `MAX_PARTICLES`,
+separate from the `FIXED_POINT_SCALE` the velocity deltas use, such that the largest density the
+world can produce encodes without saturating.
+
+That largest density is exactly `MAX_PARTICLES`. `forces-sph.wgsl` divides each neighbour's poly6
+weight by the self-weight, so a neighbour contributes at most 1.0 and the accumulated value counts
+neighbours; nothing bounds how many particles share a smoothing radius. Sharing the velocity scale
+would cap the accumulator at 32768, which the particle ceiling passes, and an i32 past its maximum
+wraps NEGATIVE — a density the equation of state reads as maximal expansion and answers with force in
+the wrong direction.
+
+The scale SHALL be a power of two leaving at least `SPH_DENSITY_HEADROOM` of the signed range free,
+derived in `src/sph_core.nim` and substituted into the shaders rather than written as a literal.
+Headroom rather than a check, because the total is formed by `atomicAdd` across threads: no
+contribution sees the running total, so no contribution can test it before adding.
+
+Saturating the encode is not an acceptable alternative. The particle ceiling is a setting the slider
+offers, so the density it produces has to encode as itself.
+
+#### Scenario: The whole budget encodes as itself
+
+- **WHEN** every particle the count slider allows sits inside one smoothing radius
+- **THEN** the encoded density stays inside the signed 32-bit range and decodes to what was written
+
+#### Scenario: Raising the particle ceiling carries the encoding with it
+
+- **WHEN** `MAX_PARTICLES` changes
+- **THEN** the density scale re-derives from it, and no other constant needs editing for the new
+  ceiling to encode
+
+#### Scenario: A decoder reading the wrong scale
+
+- **WHEN** a pass decodes the density accumulator with the velocity scale's inverse
+- **THEN** the value is wrong by the ratio between the two scales rather than absent, which is why
+  each scale has exactly one encoder and one decoder and the module says so
+
+### Requirement: Crowding and scale parameters ride SimParams
+
+The crowding strength and the SPH radius fraction SHALL be members of the `SimParamsLayout` table in
+`src/gpu_types.nim`, reaching the shaders that read them (`forces.wgsl`, `forces-sph.wgsl`) through
+the generated struct module and the generated write indices, with the written and allocated size
+assertions updated in the same edit. Neither value reaches a shader by any second route, and neither
+gets a uniform of its own — they are ordinary simulation parameters in the struct the force passes
+already bind.
+
+#### Scenario: The members are added through the table
+
+- **WHEN** the two fields are appended to `SimParamsLayout`
+- **THEN** their write indices, the struct's element count, the buffer allocation size, and the
+  generated WGSL struct all follow from that one table edit, and the size assertions pin the new
+  totals
+
+#### Scenario: A shader reads a member the table does not declare
+
+- **WHEN** a shader references a SimParams member absent from the table
+- **THEN** the shader fails to compile against the generated struct at bundle time

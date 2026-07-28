@@ -2,51 +2,104 @@
 
 ### Requirement: Frame described as data
 
-The GPU frame SHALL be a pure `FrameDescription` returned by
-`buildFrame(couplings: WorldCouplings)`, where `WorldCouplings = (forces, sph, field: bool)` composes
-one frame: the grid-build triad and scatter run when `forces or sph`; the field passes run when
-`field`; `integrate` always runs last. The frame is built once at init or on a couplings change and
-walked every frame with symbolic dispatch sizes resolved against live counts. The frame SHALL open
-with explicit clear nodes for velocityDelta and densityDelta. The three legacy combinations —
-forces-only, sph-only, field-only — SHALL be behavior-identical to their former per-kind frames.
+The GPU frame SHALL be a pure `FrameDescription` describing ONE world. Species forces, fluid
+pressure, and chemistry each contribute according to a continuous strength, and zero SHALL be an
+ordinary value of that strength rather than a state the world is in.
 
-#### Scenario: Chemistry world runs forces and field together
-- **WHEN** couplings are (forces: true, sph: false, field: true)
+Passes SHALL divide into two kinds. **World-intrinsic** passes — the grid-build triad and scatter,
+local density accumulation, the field's own Gray-Scott evolution, and `integrate` — run whenever the
+world runs and SHALL NOT be skipped by any strength. **Coupling-owned** passes exist only to make one
+coupling act on the particles, SHALL be multiplied by that coupling's strength across their entire
+output, and MAY be skipped at exactly zero. The frame is walked every frame with symbolic dispatch
+sizes resolved against live counts, and SHALL open with explicit clear nodes for velocityDelta and
+densityDelta.
+
+Skipping a coupling-owned pass at exactly zero is an OPTIMIZATION derived from that number, never a
+selection among worlds. No part of the system SHALL enumerate combinations of couplings.
+
+#### Scenario: One world runs forces and chemistry together
+- **WHEN** force strength and the deposit and field-force strengths are non-zero, and fluid strength
+  is zero
 - **THEN** one frame runs the grid triad, forces, the field passes, and integrate, in that order
 
-#### Scenario: Legacy combination unchanged
-- **WHEN** couplings match a former mode's triple
-- **THEN** the dispatched pass sequence is behavior-identical to that mode's former frame
+#### Scenario: Zero strength dispatches none of its coupling-owned passes
+- **WHEN** a coupling's strength is exactly zero
+- **THEN** no coupling-owned pass belonging to it is dispatched
+
+#### Scenario: The world runs even when every strength is zero
+- **WHEN** every coupling strength is zero
+- **THEN** the grid triad, density accumulation, the field's evolution, and integrate all still run,
+  because the world is what they are
+
+#### Scenario: Turning a coupling down is continuous
+- **WHEN** a coupling's strength moves from a small positive value to zero
+- **THEN** nothing else about the world changes — no reset, no re-initialization, no change to which
+  controls exist
+
+#### Scenario: The former modes still behave as they did
+- **WHEN** strengths are set to the values that used to constitute forces-only, forces-with-fluid, or
+  forces-with-chemistry
+- **THEN** the world BEHAVES as that former frame did, with two stated exceptions and no others: the
+  dispatch list gains exactly the world-intrinsic passes that mode did not run, and glow reads real
+  density where it formerly read a substitute floor
+
+#### Scenario: Dispatch identity is not claimed, behaviour identity is
+- **WHEN** a former field-only setting is compared against its old frame
+- **THEN** the new frame additionally dispatches the grid and density passes, which is intended —
+  behaviour is what is pinned, and the added passes are world-intrinsic by definition
 
 ### Requirement: Frame descriptions are pinned by native tests
 
-Every couplings combination's exact pass list SHALL be pinned by tests/test_sim_registry.nim,
-including forces+field and forces+sph+field.
+The exact pass list for a given set of coupling strengths SHALL be pinned by
+tests/test_sim_registry.nim, including the zero-strength skip and the all-couplings-active frame.
 
 #### Scenario: Unreviewed frame change goes red
-- **WHEN** any combination's pass list changes without its pinned test changing
+- **WHEN** the pass list for any pinned set of strengths changes without its test changing
 - **THEN** `just test` fails
 
-### Requirement: Control groups live beside the frame
+### Requirement: One world offers one control set
 
-`controlGroupsFor(couplings)` SHALL return the union of each active coupling's descriptor groups,
-declared beside buildFrame so the native coverage invariant continues to relate dispatches to knobs.
-An inactive coupling contributes none of its groups.
+The panel SHALL offer every control the simulation has, at all times. No control appears or
+disappears as a consequence of what the world is currently doing, because there is only one thing it
+can be. `controlGroupsFor` and the per-group visibility predicate it feeds SHALL be removed.
 
-#### Scenario: Union of active couplings
-- **WHEN** couplings are (forces: true, field: true)
-- **THEN** the panel offers the force-model and matrix groups together with the field groups
+A control whose coupling is at zero strength still exists and still works; moving it is how a user
+brings that coupling back. Hiding it would make the coupling unreachable from the panel and would
+reintroduce the mode by another name.
 
-### Requirement: Simulation identity serializes by stable id
+#### Scenario: Controls do not come and go
+- **WHEN** any coupling strength changes, including to or from zero
+- **THEN** the set of controls the panel offers is unchanged
 
-Presets SHALL keep serializing by the stable string ids (`particle-life`, `sph`,
-`reaction-diffusion`); SimKind and simKindId/parseSimKind survive as a compatibility layer mapping
-each legacy id to its couplings triple, so presets saved before the merge keep loading.
-`parseSimKind` raises on unknown ids; untrusted-input callers catch and fall back explicitly.
+### Requirement: A world serializes as its strengths
 
-#### Scenario: Legacy preset selects couplings
-- **WHEN** a preset carrying mode "reaction-diffusion" is applied
-- **THEN** the world adopts that id's mapped couplings triple
+Presets SHALL carry coupling strengths and SHALL NOT carry a mode. `SimKind`, `simKindId`,
+`parseSimKind`, `couplingsFor`, and the mode catalog SHALL be removed rather than retained as a
+compatibility layer.
+
+Presets written before this change SHALL be translated once, in the legacy branch of the versioned
+schema decode, where `mode` is consulted to zero the strengths that mode excluded. Subtraction cannot
+do this job: the schema serializes every scalar unconditionally (`src/preset.nim:490`, `:506-515`)
+with nonzero defaults (`:199-212`), so nothing is ever absent to subtract, and a legacy particle-life
+preset carries a live `rdDeposit` and `rdFieldForce`.
+
+Consulting `mode` there is versioned-schema history about files written by old builds, reachable only
+from a branch guarded on an older schema version. It is not a live mode concept, and the test that
+asserts nothing names a mode SHALL scope itself to the live model with that branch as a stated,
+justified exemption.
+
+#### Scenario: An old preset loads as the world it was saved as
+- **WHEN** a preset carrying `"mode": "particle-life"` is applied
+- **THEN** it loads with chemistry and fluid strengths zeroed, despite carrying nonzero values for
+  both, because its mode excluded them
+
+#### Scenario: A current preset never consults a mode
+- **WHEN** a preset at the current schema version is applied
+- **THEN** it carries its strengths explicitly, has no mode field, and the legacy branch is not taken
+
+#### Scenario: Nothing names a mode
+- **WHEN** the source tree is searched for a mode type, a mode id, or a list of modes
+- **THEN** nothing is found
 
 ### Requirement: Delta buffers have one reset owner
 

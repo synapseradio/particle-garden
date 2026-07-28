@@ -4,7 +4,7 @@
 #
 # Unit tests for the observable pattern in ui/core/
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

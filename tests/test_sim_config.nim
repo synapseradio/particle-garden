@@ -3,16 +3,17 @@
 # ==============================================================================
 #
 # Behavioral tests for the typed configuration layer: SimulationState (physics
-# tunables), RenderState (visual tunables), and SimConfig (their composition
-# plus the active simulation kind). config.nim's createConfig copies these
-# defaults into the flat GPU-facing CONFIG mirror, so this module is the
-# single authoritative home of every default value.
+# tunables), RenderState (visual tunables), SimConfig (their composition), and
+# couplingsOf, which reads the world's couplings off the strengths rather than
+# storing them. config.nim's createConfig copies these defaults into the flat
+# GPU-facing CONFIG mirror, so this module is the single authoritative home of
+# every default value.
 #
 # Tests prefer relations over scalar pins: each default must lie inside its
 # own config_ranges clamp range (the same constants the sliders and preset
 # schema use), and cross-field identities are asserted directly.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
@@ -95,9 +96,8 @@ suite "Render Defaults Lie Inside Their Slider Ranges":
     check defaults.glowWarmth <= GLOW_WARMTH_MAX
 
   test "default glow radius reproduces the pre-knob hard-coded radius":
-    # glow.wgsl hard-coded baseRadius = 12.0 before the knobs existed; the
-    # defaults must keep (particleSize + 1) * glowRadiusScale at that value
-    # so default visuals are unchanged.
+    # CONTRACT: the defaults hold (particleSize + 1) * glowRadiusScale at 12.0,
+    # the baseRadius glow.wgsl draws with and what fixes the default look.
     check float(defaults.particleSize + 1) * defaults.glowRadiusScale == 12.0
 
   test "bloom and grade defaults are inside their clamp ranges":
@@ -117,21 +117,63 @@ suite "Render Defaults Lie Inside Their Slider Ranges":
 
 
 suite "SimConfig Composition":
-  test "defaultSimConfig starts in particle-life with the module defaults":
+  test "defaultSimConfig composes the two state records and nothing else":
     let composed = defaultSimConfig()
-    check composed.simKind == skParticleLife
     check composed.simulation == initSimulationState()
     check composed.render == initRenderState()
 
-  test "activeSimKind observable starts in particle-life":
-    check activeSimKind.get() == skParticleLife
+
+suite "The Couplings Are Read Off The Parameters":
+  test "each strength is the simulation parameter it names":
+    # Derived, never stored: a second copy could disagree with the sliders, and
+    # the disagreement would be a frame skipping a pass whose strength is not
+    # zero. Asserting equality with the source is what makes the copy absent.
+    var state = initSimulationState()
+    state.forceStrength = 2.5
+    state.fluidStrength = 0.25
+    state.rdDeposit = 0.03
+    state.rdFieldForce = 40.0
+    let couplings = couplingsOf(state)
+    check couplings.forces == 2.5
+    check couplings.fluid == 0.25
+    check couplings.deposit == 0.03
+    check couplings.fieldForce == 40.0
+
+  test "the shipped world couples forces and chemistry, and no fluid":
+    # The shipped world: colonies that feel each other AND write the field they
+    # live in. The fluid waits at zero behind a slider the panel always shows.
+    let couplings = couplingsOf(initSimulationState())
+    check couplings.forces > 0.0
+    check couplings.deposit > 0.0
+    check couplings.fieldForce > 0.0
+    check couplings.fluid == 0.0
+
+  test "every coupling strength can be turned off through its own range":
+    # Design D13 as an executable fact rather than a claim about ranges. A
+    # strength whose minimum sits above zero cannot express "off", leaving its
+    # world with a coupling the user cannot remove.
+    var silent = initSimulationState()
+    silent.forceStrength = FORCE_STRENGTH_MIN
+    silent.fluidStrength = FLUID_STRENGTH_MIN
+    silent.rdDeposit = RD_DEPOSIT_MIN
+    silent.rdFieldForce = RD_FIELD_FORCE_MIN
+    let couplings = couplingsOf(silent)
+    check couplings.forces == 0.0
+    check couplings.fluid == 0.0
+    check couplings.deposit == 0.0
+    check couplings.fieldForce == 0.0
+
+  test "fluid strength's default and range are consistent":
+    let defaults = initSimulationState()
+    check defaults.fluidStrength >= FLUID_STRENGTH_MIN
+    check defaults.fluidStrength <= FLUID_STRENGTH_MAX
 
 
 suite "The Trails Toggle Always Produces Trails":
   # THE DEFECT THIS PINS. Trails are two controls over one effect: a boolean
   # gating the fade pass, and a length deciding how much of the previous frame
   # that pass keeps. At length 0 the pass keeps nothing, so switching the
-  # toggle on ran a pass that cleared — a control that does nothing, from the
+  # toggle on runs a pass that clears — a control that does nothing, from the
   # user's side indistinguishable from a broken one.
 
   test "enabling trails from the shipped defaults yields a visible length":

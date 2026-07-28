@@ -7,7 +7,7 @@
 # misconfigures the GPU (wrong workgroup size, or a zero tunable that divides by
 # zero in atomic accumulation). Tests run against the default activeConfig.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

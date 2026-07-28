@@ -14,7 +14,7 @@
 #   - Tests validate INVARIANTS for buffer sizes and matrix dimensions
 #   - Tests check BOUNDS that prevent buffer overflows
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

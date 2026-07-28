@@ -11,7 +11,7 @@
 # (web-ui/src/lib/presets.ts), which owns localStorage I/O.
 #
 # Pure module: no FFI, no DOM, std/strutils only. Compiles on both the
-# native (nimble test) and JS backends.
+# native (just test) and JS backends.
 #
 # ==============================================================================
 
@@ -56,8 +56,8 @@ func normalizePresetName*(raw: string): string =
 #
 # The order a preset's fields must land in, as data. Mirrors sim_registry's
 # buildFrame: the sequence is a value a test can pin directly, not an
-# implicit order buried in a proc body. ORDER IS THE CONTRACT — mode must
-# apply before speciesCount (the species count a mode allows may differ),
+# implicit order buried in a proc body. ORDER IS THE CONTRACT — speciesCount
+# applies before the per-species arrays (matrix and chemistry are sized by it),
 # and speciesCount before particleCount (particleCount is the one step that
 # triggers a re-init; the matrix grid must already be sized for the target
 # species count when that re-init happens, or newly-exposed cells render
@@ -65,10 +65,10 @@ func normalizePresetName*(raw: string): string =
 
 type
   PresetApplyStep* = enum
-    pasMode           ## Switch simulation mode (parseSimKind + setSimMode path).
     pasSpeciesCount   ## setSpeciesCount(n, randomizeNew = false) — no re-init.
     pasParticleCount  ## Write particleCount, then trigger the one re-init.
     pasMatrix         ## Write all 36 attraction-matrix floats.
+    pasChemistry      ## Write the 6 (secretion, tropism) pairs.
     pasPalette        ## Write the 6 literal species colors into COLORS.
     pasScalars        ## Remaining settings: friction, forceModel, trails, etc.
     pasUiRefresh      ## Refresh slider DOM, matrix legend, button active-states.
@@ -76,5 +76,8 @@ type
 func presetApplySteps*(): seq[PresetApplyStep] =
   ## The fixed apply order, as data. See the type's doc comment for why each
   ## step must precede the next.
-  @[pasMode, pasSpeciesCount, pasParticleCount, pasMatrix, pasPalette,
+  ##
+  ## No step selects a world, because there is one: a preset's coupling
+  ## strengths are ordinary scalars and land with the rest under `pasScalars`.
+  @[pasSpeciesCount, pasParticleCount, pasMatrix, pasChemistry, pasPalette,
     pasScalars, pasUiRefresh]

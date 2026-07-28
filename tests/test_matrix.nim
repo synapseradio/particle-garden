@@ -5,7 +5,7 @@
 # Unit tests for matrix state pure functions.
 # Tests index calculations, value operations, and color generation.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

@@ -52,6 +52,8 @@ type
 
     # Density deltas for symmetric accumulation
     densityDelta* {.importjs: "densityDelta".}: GPUBuffer  ## i32 per particle (fixed-point)
+    sphDensityDelta* {.importjs: "sphDensityDelta".}: GPUBuffer
+      ## The fluid's private kernel density, i32 per particle (fixed-point).
 
     # Grid structure
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
@@ -81,6 +83,7 @@ type
     ## accumulated for BOTH particles. Since WGSL lacks atomic f32, we use
     ## fixed-point i32 (scale=65536) and apply in integrate pass.
     densityDelta* {.importjs: "densityDelta".}: int
+    sphDensityDelta* {.importjs: "sphDensityDelta".}: int
     gridCounts* {.importjs: "gridCounts".}: int
     gridOffsets* {.importjs: "gridOffsets".}: int
     sync* {.importjs: "sync".}: int
@@ -114,7 +117,7 @@ var hasTimestampQuery* {.exportc.}: bool = false
 # rect. rgba16float rather than rg16float because WebGPU does not permit rg16float
 # as a write-only storage texture — it is not in the storage-capable format list;
 # rgba16float is the nearest storage+sampled+filterable half-float format. This is the
-# app's first use of STORAGE_BINDING: the rd-step / resolve passes sample one
+# app's only use of STORAGE_BINDING: the rd-step / resolve passes sample one
 # texture and write the other. fieldTextureA is the FIXED front the render and
 # force passes always read; fieldTextureB is the scratch the ping-pong bounces
 # through (see field-resolve.wgsl for why the half-float format forces a
@@ -154,6 +157,7 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   # Density deltas: 1 i32 per particle (fixed-point for atomic accumulation)
   # Required for symmetric density in half-neighbor iteration
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
+  result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
 
   # Grid: u32 per cell
   result.gridCounts = gridCells * 4
@@ -220,11 +224,11 @@ proc createFieldResources() =
   # Clear both field textures to (activator=1, inhibitor=0) via a render-pass
   # clear (rgba16float is renderable). This is the PRE-SEED BASELINE, not the
   # seed: it is Gray-Scott's trivial fixed point, inert for any feed/kill, and
-  # the field stays exactly here until field-seed.wgsl writes a real pattern
-  # over it on mode entry. What this clear guarantees is a defined starting
-  # state, so a frame encoded before the first seed reads sane values rather
-  # than uninitialized texture memory. Also zero the deposit buffer so frame 0
-  # folds no garbage.
+  # the field stays exactly here until particle deposits lift it off, or
+  # field-seed.wgsl writes a pattern over it on a reset or a deliberate scatter.
+  # What this clear guarantees is a defined starting state, so a frame encoded
+  # before the first deposit reads sane values rather than uninitialized texture
+  # memory. Also zero the deposit buffer so frame 0 folds no garbage.
   let seedEncoder = device.createCommandEncoderLabeled("RD Field Seed")
 
   proc clearFieldTexture(view: GPUTextureView, label: cstring) =
@@ -408,6 +412,8 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   # Density deltas for symmetric accumulation (half-neighbor pattern)
   # Each pair processed once; both particles receive density contribution via atomics
   buffers.densityDelta = createBuf(sizes.densityDelta, bufferUsage, "Density Delta (fixed-point i32)")
+  buffers.sphDensityDelta = createBuf(
+    sizes.sphDensityDelta, bufferUsage, "SPH Kernel Density Delta (fixed-point i32)")
 
   # Grid buffers
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")
@@ -425,8 +431,8 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   let bufferCount = jsObjectLength(cast[JsObject](buffers))
   {.emit: "console.log('WebGPU AoS buffers created:', `bufferCount`, 'buffers');".}
 
-  # Reaction-diffusion field textures + deposit buffer (created regardless of the
-  # active mode, like the SPH buffers, so a switch to RD finds them ready).
+  # Reaction-diffusion field textures + deposit buffer (created for every world,
+  # like the SPH buffers, so a strength leaving zero finds them ready).
   createFieldResources()
   {.emit: "console.log('WebGPU RD field resources created (512x512 rgba16float ping-pong)');".}
 

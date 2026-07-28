@@ -26,12 +26,8 @@ import webgpu_init
 import gpu_profiler
 import gpu_types
 # webgpu_compute is imported before webgpu_render in app.nim's dependency order,
-# so reading its active-mode flag here does not disturb the JS-backend hoisting.
+# so reading its state here does not disturb the JS-backend hoisting.
 import webgpu_compute
-import sim_registry
-# field_core is pure; it supplies RD_GLOW_DENSITY_FLOOR, the per-mode glow
-# density floor the render loop feeds RenderParams in reaction-diffusion mode.
-import field_core
 # camera_core is pure; it owns the Camera type and the toroidal transform that
 # camera_transform.wgsl mirrors. The uniform written here is that type's fields.
 import camera_core
@@ -121,7 +117,7 @@ var canvasFormat: cstring
 var fadeBindGroupLayout: GPUBindGroupLayout
 var blitBindGroupLayout: GPUBindGroupLayout
 
-# Reaction-diffusion field composite (LDR backdrop, present pass, RD mode only).
+# Reaction-diffusion field composite (LDR backdrop, present pass, bloom off).
 # Reuses the blit bind-group layout (texture + sampler). The bind group is (re)built
 # lazily when webgpu_init.fieldGeneration() changes, mirroring the trail-texture
 # caching pattern; -1 forces a first build.
@@ -177,13 +173,13 @@ var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A +
 var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A + field
 # The tonemap bind groups reference the RD field texture (binding 4). The
 # textures are created once, in webgpu_init's createFieldResources during
-# initWebGPU — NOT on RD mode entry, which only re-seeds their contents and
-# leaves the texture objects and this bind group alone. fieldGeneration bumps
-# only on an actual (re)creation, which is what these groups rebuild on,
-# mirroring cachedFieldGeneration for the field-composite bind group. Before
-# the field exists (first frames) binding 4 falls back to the bloom view,
-# harmless because fieldOpacity is 0 in the modes without a field. -1 forces a
-# first build.
+# initWebGPU — a re-seed only rewrites their contents and leaves the texture
+# objects and this bind group alone. fieldGeneration bumps only on an actual
+# (re)creation, which is what these groups rebuild on, mirroring
+# cachedFieldGeneration for the field-composite bind group. Binding 4 falls back
+# to the bloom view while the field view is nil, because the layout declares an
+# entry there either way; createFieldResources runs inside initWebGPU, so the
+# live path binds the real field from the first build. -1 forces a first build.
 var cachedTonemapFieldGeneration: int = -1
 
 
@@ -966,7 +962,7 @@ proc initWebGPURender*(): bool =
   tonemapEntry3["buffer"] = tonemapBuffer3
   discard tonemapLayoutEntries.push(tonemapEntry3)
   # Binding 4: RD field texture (S10). Sampled in the tonemap so the field joins
-  # the graded HDR light; a harmless placeholder view in modes without a field.
+  # the graded HDR light; the bloom view stands in while the field view is nil.
   let tonemapEntry4 = newJsObject()
   tonemapEntry4["binding"] = 4.toJs
   tonemapEntry4["visibility"] = gpuShaderStageFragment.toJs
@@ -1242,9 +1238,9 @@ proc updateBindGroup*() =
   discard entries.push(colorsEntry)
 
   # Entry 3: the reaction-diffusion field, so the vertex stage can light each
-  # particle by the field it is standing in. Before the field exists (or in a
-  # world without one) this is the same harmless bloom-view placeholder the
-  # tonemap binds; RENDER_FIELD_OPACITY is 0 there, so it is never read.
+  # particle by the field it is standing in. While the field view is nil this is
+  # the same bloom-view placeholder the tonemap binds, which keeps the entry
+  # count right until createFieldResources has run.
   let fieldEntry = newJsObject()
   fieldEntry["binding"] = 3.toJs
   fieldEntry["resource"] = currentFieldViewOrFallback().toJs
@@ -1284,8 +1280,7 @@ proc setCamera*(next: Camera) =
   activeCamera = next
 
 proc resetCamera*() =
-  ## Back to the whole world, centred — the framing the renderer had before a
-  ## camera existed.
+  ## Back to the whole world, centred.
   activeCamera = initCamera(float32(config.WORLD_W), float32(config.WORLD_H))
 
 proc createFadeBindGroups() =
@@ -1293,9 +1288,8 @@ proc createFadeBindGroups() =
   ## so they are rebuilt whenever those are recreated (resize), and they carry
   ## the field texture, so they are rebuilt when that appears too.
   ##
-  ## One proc rather than the two identical inline copies this replaced: the
-  ## field binding would otherwise have had to be added, and kept in step, in
-  ## three places.
+  ## One proc rather than an inline copy at each call site: the field binding is
+  ## declared once instead of kept in step across all three.
   proc makeFadeBindGroup(label: cstring, trailView: GPUTextureView): GPUBindGroup =
     let desc = newJsObject()
     desc["label"] = label.toJs
@@ -1319,8 +1313,8 @@ proc createFadeBindGroups() =
     paramsEntry["resource"] = paramsResource
     discard entries.push(paramsEntry)
 
-    # The field the trail drifts along. Placeholder before a field exists;
-    # FADE_FIELD_DRIFT_SCALE is 0 there, so the displacement collapses to zero.
+    # The field the trail drifts along. The bloom view stands in while the field
+    # view is nil, because the layout declares an entry here either way.
     let fieldEntry = newJsObject()
     fieldEntry["binding"] = 3.toJs
     fieldEntry["resource"] = currentFieldViewOrFallback().toJs
@@ -1384,7 +1378,7 @@ proc ensureFieldCompositeBindGroup() =
   uniformEntry["resource"] = uniformResource
   discard entries.push(uniformEntry)
   # The camera, so this path places the field exactly where the tonemap path
-  # does. Grading parity was never enough on its own once the view can move.
+  # does. Grading parity alone does not place it: the view moves.
   let compositeCameraEntry = newJsObject()
   compositeCameraEntry["binding"] = 3.toJs
   let compositeCameraResource = newJsObject()
@@ -1450,10 +1444,9 @@ proc createBloomTargets() =
   webgpu_init.queue.writeBuffer(bloomParamsBufferV, 0, bloomV)
 
 proc currentFieldViewOrFallback(): GPUTextureView =
-  ## The active RD field view for the tonemap's binding 4, or the bloom view as
-  ## a harmless placeholder before the field exists (non-RD, or first frames):
-  ## fieldOpacity is 0 in the modes without a field, so the placeholder is never
-  ## visibly sampled.
+  ## The active RD field view for the tonemap's binding 4, or the bloom view
+  ## while the field view is nil — the layout declares an entry there, so the
+  ## bind group needs one whether or not createFieldResources has run.
   let fieldView = webgpu_init.activeFieldView()
   if cast[JsObject](fieldView).isNil or cast[JsObject](fieldView).isNullOrUndefined:
     return bloomViewA
@@ -1560,12 +1553,12 @@ proc render*(particleCount: int) =
   ensureRenderFieldBinding()
 
   # How many copies of the world the view can reach. One at zoom 1 and closer,
-  # so the common case draws exactly what it always did; below that the window
-  # is wider than the world and the extra instances are what fill the corners
-  # with the world again instead of with black. Every particle draw below uses
-  # this same count, and camera_transform.wgsl derives each instance's offset
-  # from the same zoom — the shaders and this number must agree or a world copy
-  # goes missing.
+  # so the common case draws the world once; below that the window is wider
+  # than the world and the extra instances are what fill the corners with the
+  # world again instead of with black. Every particle draw below uses this same
+  # count, and camera_transform.wgsl derives each instance's offset from the
+  # same zoom — the shaders and this number must agree or a world copy goes
+  # missing.
   let tiles = tileCount(activeCamera.zoom)
 
   # Update render params uniform
@@ -1585,25 +1578,16 @@ proc render*(particleCount: int) =
   renderParamsData[RENDER_GLOW_RADIUS_SCALE] = float32(config.CONFIG.glowRadiusScale)
   renderParamsData[RENDER_GLOW_FALLOFF] = float32(config.CONFIG.glowFalloff)
   renderParamsData[RENDER_GLOW_WARMTH] = float32(config.CONFIG.glowWarmth)
-  # Glow density floor for a world that computes no density: with no force pass
-  # the density term is stale at ~0 and the glow reads flat, so the floor lets
-  # the velocity term drive it instead. A world that runs forces or SPH has real
-  # density and passes 0, keeping its look unchanged.
-  #
-  # This exists only while a field world can run without forces. Once chemistry
-  # couples both, density is real again and the floor retires (task 9.4).
-  let hasNoDensitySource = webgpu_compute.activeCouplings.field and
-    not computesDensity(webgpu_compute.activeCouplings)
-  renderParamsData[RENDER_GLOW_DENSITY_FLOOR] =
-    if hasNoDensitySource: float32(RD_GLOW_DENSITY_FLOOR) else: 0.0'f32
-  # The field lights the particles standing in it (render.wgsl). Gated exactly
-  # as the tonemap's copy is: zero outside a world that has a field, which makes
-  # both the lighting and its placeholder texture binding inert there, so a
-  # forces-only world renders precisely as it did before the field was light.
+  # No floor: the neighbour sweep is world-intrinsic, so every particle in every
+  # world carries a measured density and the glow reads it directly.
+  renderParamsData[RENDER_GLOW_DENSITY_FLOOR] = 0.0'f32
+  # The field lights the particles standing in it (render.wgsl), in every world,
+  # because every world has a field. What decides whether anything shows is the
+  # field's own intensity: a world depositing nothing sits at Gray-Scott's
+  # trivial fixed point, where the coverage term is zero and each particle keeps
+  # its species colour exactly.
   renderParamsData[RENDER_COLORMAP_INDEX] = float32(config.CONFIG.colormapIndex)
-  renderParamsData[RENDER_FIELD_OPACITY] =
-    if webgpu_compute.activeCouplings.field: float32(config.CONFIG.fieldOpacity)
-    else: 0.0'f32
+  renderParamsData[RENDER_FIELD_OPACITY] = float32(config.CONFIG.fieldOpacity)
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, renderParamsData)
 
   # Camera uniform. One buffer feeds render, glow, fade, tonemap and the field
@@ -1650,12 +1634,9 @@ proc render*(particleCount: int) =
     # Decay to 5% visibility over that many frames: decay^frames = 0.05
     pow(0.05, 1.0 / framesVisible)
   fadeData[FADE_AMOUNT] = float32(fadeAmount)
-  # Trails bend along the field gradient. Gated on the world having a field, so
-  # a forces-only world fades exactly as it always did and never reads the
-  # placeholder texture bound in its field slot.
-  fadeData[FADE_FIELD_DRIFT_SCALE] =
-    if webgpu_compute.activeCouplings.field: float32(FIELD_DRIFT_SCALE)
-    else: 0.0'f32
+  # Trails bend along the field gradient, in every world. A flat field has zero
+  # gradient, so the drift term vanishes by arithmetic rather than by a gate.
+  fadeData[FADE_FIELD_DRIFT_SCALE] = float32(FIELD_DRIFT_SCALE)
   # The camera the trail texture was drawn under. The fade pass asks where each
   # world point sat on that frame's screen and reads the trail there, so a
   # moving view slides its history with the world instead of smearing it across
@@ -1671,19 +1652,18 @@ proc render*(particleCount: int) =
 
   # Tonemap/grade uniforms — written every frame regardless of the present path.
   # The HDR tonemap reads all of them; the bloom-off field-composite floor reads
-  # colormapIndex + fieldOpacity from this same buffer. fieldOpacity is forced to
-  # 0 outside reaction-diffusion so the field contribution (and its binding-4
-  # placeholder texture) is inert in the modes without a field.
+  # colormapIndex + fieldOpacity from this same buffer. fieldOpacity is the
+  # user's slider, passed through unchanged.
   tonemapData[TONEMAP_EXPOSURE] = float32(config.CONFIG.exposure)
   tonemapData[TONEMAP_BLOOM_INTENSITY] = float32(config.CONFIG.bloomIntensity)
   tonemapData[TONEMAP_SATURATION] = float32(config.CONFIG.saturation)
   tonemapData[TONEMAP_CONTRAST] = float32(config.CONFIG.contrast)
   tonemapData[TONEMAP_TEMPERATURE] = float32(config.CONFIG.temperature)
   tonemapData[TONEMAP_COLORMAP_INDEX] = float32(config.CONFIG.colormapIndex)
-  # The field contributes to the tonemap only in a world that has one.
-  tonemapData[TONEMAP_FIELD_OPACITY] =
-    if webgpu_compute.activeCouplings.field: float32(config.CONFIG.fieldOpacity)
-    else: 0.0'f32
+  # The field contributes to the tonemap wherever it has intensity, which is a
+  # question the coverage term answers per pixel rather than one the world
+  # answers once.
+  tonemapData[TONEMAP_FIELD_OPACITY] = float32(config.CONFIG.fieldOpacity)
   # World extent, so both composite paths can map screen UV into field space.
   tonemapData[TONEMAP_WORLD_WIDTH] = float32(config.WORLD_W)
   tonemapData[TONEMAP_WORLD_HEIGHT] = float32(config.WORLD_H)
@@ -1762,8 +1742,8 @@ proc render*(particleCount: int) =
 
     # The tonemap/grade uniforms (including the S10 field-visualization pair)
     # were written above, before this branch, so both present paths share them.
-    # In RD mode the field is sampled inside the tonemap (binding 4), so its
-    # bind groups must track the live field texture.
+    # The field is sampled inside the tonemap (binding 4), so its bind groups
+    # must track the live field texture.
     ensureTonemapBindGroups()
 
     # Helper: a single-color-attachment render pass clearing to black.
@@ -1816,10 +1796,10 @@ proc render*(particleCount: int) =
     blurVPass.endPass()
 
     # Present: clear bg, then tonemap the trail + bloom + field over it. The RD
-    # field is composited INSIDE the tonemap now (S10 — sampled at binding 4 and
+    # field is composited INSIDE the tonemap (S10 — sampled at binding 4 and
     # folded into the graded HDR light), so there is no separate backdrop draw
-    # here; the tonemap's coverage alpha keeps the flat clear only in field-free
-    # modes where nothing is lit.
+    # here; the tonemap's coverage alpha keeps the flat clear wherever the field
+    # has no intensity.
     let presentPassDesc = newJsObject()
     presentPassDesc["label"] = "Tonemap Present Pass".cstring.toJs
     gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
@@ -1886,16 +1866,16 @@ proc render*(particleCount: int) =
 
     let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
 
-    # Step 0: In reaction-diffusion mode, draw the field as an opaque colormapped
-    # LDR backdrop under everything else (the bloom-off floor). It reads the same
-    # colormapIndex / fieldOpacity from the shared TonemapParams buffer the HDR
-    # tonemap uses. Gated on the active mode and nil-guarded before the textures.
-    if webgpu_compute.activeCouplings.field:
-      ensureFieldCompositeBindGroup()
-      if not fieldCompositeBindGroup.isNil:
-        presentPass.setPipeline(fieldCompositePipeline)
-        presentPass.setBindGroup(0, fieldCompositeBindGroup)
-        presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+    # Step 0: draw the field as a colormapped LDR backdrop under everything else
+    # (the bloom-off floor). It reads the same colormapIndex / fieldOpacity from
+    # the shared TonemapParams buffer the HDR tonemap uses, and its alpha follows
+    # the field's own intensity — so a world whose field sits at the trivial
+    # fixed point composites nothing visible. Nil-guarded before the textures.
+    ensureFieldCompositeBindGroup()
+    if not fieldCompositeBindGroup.isNil:
+      presentPass.setPipeline(fieldCompositePipeline)
+      presentPass.setBindGroup(0, fieldCompositeBindGroup)
+      presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
     # Step 1: Draw glow FIRST (additive blending on background)
     # GUARANTEE: Glow is ALWAYS behind particles because:

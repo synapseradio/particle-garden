@@ -12,12 +12,14 @@
 # pinning the closed-form constant: if the derived constant were wrong, the
 # integral over the support disc would not equal 1.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
 import std/[unittest, math]
 import ../src/sph_core
+
+from ../src/memory_layout import MAX_PARTICLES
 
 const SPH_CORE_TESTS_LOADED* = true
 
@@ -126,9 +128,8 @@ suite "Floored Tait Pressure Mirrors The Shader's Purely-Repulsive EOS":
     # CONTRACT: forces-sph.wgsl floors density at restDensity before the EOS,
     # so an isolated particle (self-density 1.0) and a resting one both feel
     # zero pressure. With restDensity 3.0, isolation sits below rest and must
-    # not repel — the pre-fix restDensity of 1.0 made isolation the
-    # zero-pressure state, so every contact was repulsive and the fluid
-    # behaved as an expanding gas.
+    # not repel — a restDensity of 1.0 makes isolation the zero-pressure state,
+    # which turns every contact repulsive and the fluid into an expanding gas.
     let restDensity = 3.0
     check abs(flooredTaitPressure(
       1.0, restDensity, 8.0, SPH_DEFAULT_GAMMA)) < EPSILON
@@ -174,12 +175,64 @@ suite "XSPH Velocity Correction Is Bounded By Epsilon Times The Velocity Gap":
 
 
 suite "SPH Tuning Constants Are In Physical Range":
-  test "gamma, epsilon, ceiling, and substep bounds hold their documented values":
+  test "gamma, epsilon, and substep bounds hold their documented values":
     check SPH_DEFAULT_GAMMA == 7.0
     check SPH_XSPH_EPSILON == 0.5
-    check SPH_PARTICLE_CEILING == 32000
     check SPH_MAX_SUBSTEPS == 3
 
   test "the XSPH epsilon is a well-formed blend fraction in [0, 1]":
     check SPH_XSPH_EPSILON >= 0.0
     check SPH_XSPH_EPSILON <= 1.0
+
+
+# ==============================================================================
+# THE DENSITY A FIXED-POINT BUFFER CAN HOLD
+# ==============================================================================
+#
+# WHAT SETS THE WORST CASE. forces-sph.wgsl divides each neighbour's poly6
+# weight by the self-weight, so one neighbour contributes at most 1.0 and the
+# accumulated density counts neighbours. Nothing bounds how many particles share
+# a smoothing radius, so the largest density the world can produce is exactly
+# MAX_PARTICLES: every particle the slider allows, gathered into one place.
+#
+# THE ACCUMULATOR MUST HOLD THAT, not clamp it. A shared FIXED_POINT_SCALE of
+# 65536 spans 32768, which MAX_PARTICLES passes by 3.9x, and an i32 past its
+# maximum wraps NEGATIVE — a density the equation of state reads as maximal
+# expansion and answers with force in the wrong direction. Clamping would answer
+# the overflow by making the particle ceiling unreachable, so the density
+# accumulator takes its own coarser scale instead, derived from the budget.
+
+suite "The Full Particle Budget Encodes Without Saturating":
+  const I32_MAX = 2147483647.0
+  let scale = sphDensityFixedPointScale(MAX_PARTICLES)
+
+  test "the whole particle budget in one smoothing radius encodes as itself":
+    # THE CONTRACT: 128000 particles is a reachable setting, so the density it
+    # produces has to survive the round trip rather than saturate on the way in.
+    check float(MAX_PARTICLES) * scale < I32_MAX
+    check fixedPointCeiling(scale) > float(MAX_PARTICLES)
+
+  test "the scale keeps the stated headroom above the budget":
+    # The accumulation is atomic across threads, so the total is formed by adds
+    # that never see each other. Headroom is what absorbs that.
+    check fixedPointCeiling(scale) >=
+      float(MAX_PARTICLES) * SPH_DENSITY_HEADROOM
+
+  test "the scale is a power of two so encoding introduces no rounding":
+    let exponent = log2(scale)
+    check abs(exponent - round(exponent)) < 1e-12
+
+  test "the scale follows the particle budget rather than a literal":
+    # Raising MAX_PARTICLES must move the scale with it. A budget that grows by
+    # 4x drops the scale by 4x and still fits, which is what makes the ceiling a
+    # one-constant change instead of a silent overflow.
+    for budget in [MAX_PARTICLES, MAX_PARTICLES * 4, MAX_PARTICLES * 64]:
+      let budgetScale = sphDensityFixedPointScale(budget)
+      check float(budget) * budgetScale < I32_MAX
+      check fixedPointCeiling(budgetScale) >=
+        float(budget) * SPH_DENSITY_HEADROOM
+
+  test "one particle's own weight stays far above the accumulator's resolution":
+    # An isolated particle reads exactly 1.0. The scale is only useful if that
+    # value is resolved with room to spare, or the fluid loses its rest state.
+    check 1.0 / scale < 0.001

@@ -31,9 +31,9 @@
 // in front of the particles rather than illuminate them.
 //
 // textureLoad, not textureSample: the vertex stage has no implicit derivatives,
-// and the read is at an exact cell anyway. In a world without a field, binding 3
-// holds a harmless placeholder view and RenderParams.fieldOpacity is 0, which
-// guards the lookup out entirely and leaves the species colour standing.
+// and the read is at an exact cell anyway. Binding 3 holds the bloom view as a
+// stand-in while the field view is nil, because the layout declares an entry
+// there either way.
 
 //! import particle
 //! import render_params
@@ -208,26 +208,28 @@ fn vs_main(@builtin(vertex_index) id: u32,
   // vertex of one particle agrees and the quad is lit as one thing rather than
   // gradient-shaded across itself.
   //
-  // fieldOpacity is 0 in a world without a field, which zeroes the pull, and
-  // mix at 0 returns the species colour untouched — so the guard skips the
-  // whole lookup rather than running it for all six vertices of every particle
-  // on every tile instance. It reads from a uniform, so the branch is coherent
-  // across the draw and costs nothing where a field exists.
-  var particleColor = speciesColor;
-  if (params.fieldOpacity > 0.0) {
-    let fieldCellX = clamp(i32(p.pos.x / params.worldSize.x * f32(FIELD_LIGHT_DIMS.x)),
-      0, FIELD_LIGHT_DIMS.x - 1);
-    let fieldCellY = clamp(i32(p.pos.y / params.worldSize.y * f32(FIELD_LIGHT_DIMS.y)),
-      0, FIELD_LIGHT_DIMS.y - 1);
-    let fieldHere = textureLoad(fieldTexture, vec2<i32>(fieldCellX, fieldCellY), 0).xy;
-    let colormapIndex = u32(params.colormapIndex + 0.5);
-    // Pull toward the field's colour in proportion to how much field is actually
-    // here, so a particle in a dark region keeps its species colour exactly.
-    let fieldPull = colormapFieldIntensity(colormapIndex, fieldHere.x, fieldHere.y) *
-      params.fieldOpacity * FIELD_LIGHT_STRENGTH;
-    let fieldTint = applyColormap(colormapIndex, fieldHere.x, fieldHere.y);
-    particleColor = mix(speciesColor, fieldTint, fieldPull);
-  }
+  // THE TINT DOES NOT READ fieldOpacity, and that is deliberate. fieldOpacity
+  // scales the BACKDROP — the fullscreen layer field-composite.wgsl and the
+  // tonemap draw under everything — and it ships at zero, because a backdrop
+  // claims whole regions of the frame that colonies and trails then compete
+  // with. Lighting the particles is how the field shows itself instead, so
+  // gating this on the backdrop's scale would blind the particles the moment
+  // the backdrop is turned off, which is its default state.
+  //
+  // No guard, for the same reason: the pull is already proportional to the
+  // field's local intensity, and the field clears to Gray-Scott's trivial fixed
+  // point where the inhibitor is 0. A particle standing where no pattern is
+  // therefore gets a pull of 0 and mix returns its species colour untouched.
+  let fieldCellX = clamp(i32(p.pos.x / params.worldSize.x * f32(FIELD_LIGHT_DIMS.x)),
+    0, FIELD_LIGHT_DIMS.x - 1);
+  let fieldCellY = clamp(i32(p.pos.y / params.worldSize.y * f32(FIELD_LIGHT_DIMS.y)),
+    0, FIELD_LIGHT_DIMS.y - 1);
+  let fieldHere = textureLoad(fieldTexture, vec2<i32>(fieldCellX, fieldCellY), 0).xy;
+  let colormapIndex = u32(params.colormapIndex + 0.5);
+  let fieldPull = colormapFieldIntensity(colormapIndex, fieldHere.x, fieldHere.y) *
+    FIELD_LIGHT_STRENGTH;
+  let fieldTint = applyColormap(colormapIndex, fieldHere.x, fieldHere.y);
+  let particleColor = mix(speciesColor, fieldTint, fieldPull);
   output.color = vec4f(particleColor, 1.0);
 
   return output;

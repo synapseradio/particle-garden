@@ -3,12 +3,17 @@
 # ==============================================================================
 #
 # Behavioral tests for src/sim_registry.nim: the pure frame description that
-# webgpu_compute.nim's executor walks each frame. buildFrame(skParticleLife)
-# must reproduce exactly the pass sequence the hand-coded runPhysicsFrame
-# executed — these tests pin it node-by-node, because a drifted description
-# silently reorders GPU work.
+# webgpu_compute.nim's executor walks each frame.
 #
-# Run with: nimble test
+# WHAT THESE PIN. There is one world, and a coupling contributes according to a
+# strength whose zero is an ordinary value (design D7). So the frame path may
+# ask a strength exactly one question — is it zero — and a pass may be skipped
+# only when its strength provably scales everything that pass produces (design
+# D12). A skip that removes an output the strength never scaled is a mode
+# wearing a floating-point comparison, and these tests are what stop one
+# appearing.
+#
+# Run with: just test
 #
 # ==============================================================================
 
@@ -16,8 +21,7 @@ import std/unittest
 import std/sets
 import ../src/sim_registry
 import ../src/field_core
-import ../src/ui/api/param_descriptor
-import coupling_space  # ALL_COUPLINGS, the eight worlds every sweep covers
+import coupling_space  # the corners of the strength space, ALL_COUPLINGS
 
 const SIM_REGISTRY_TESTS_LOADED* = true
 
@@ -30,9 +34,8 @@ proc dispatchesPipeline(couplings: WorldCouplings; pipelineKey: string): bool =
   false
 
 proc dispatchSequence(couplings: WorldCouplings): seq[string] =
-  ## Every pipeline key the frame dispatches, in encoded order. This is the
-  ## thing that must not change for the legacy triples: pass grouping and
-  ## profiler slots are presentation, but the order work reaches the GPU in is
+  ## Every pipeline key the frame dispatches, in encoded order. Pass grouping
+  ## and profiler slots are presentation; the order work reaches the GPU in is
   ## the behavior.
   for node in buildFrame(couplings):
     if node.kind == fnkComputePass:
@@ -44,113 +47,142 @@ proc clearedBuffers(couplings: WorldCouplings): seq[SimBuffer] =
     if node.kind == fnkClearBuffer:
       result.add node.clearTarget
 
+proc without(sequence: seq[string]; key: string): seq[string] =
+  for item in sequence:
+    if item != key: result.add item
+
 func rdStepKeys(): seq[string] =
   for stepIndex in 0 ..< RD_STEPS_PER_FRAME:
     result.add(
       if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail")
 
-suite "SimKind Serialization Contract":
-  test "mode ids are stable strings, never ordinals":
-    # Presets and mode selectors serialize these strings; reordering the enum
-    # must never change what a saved preset means.
-    check simKindId(skParticleLife) == "particle-life"
-    check simKindId(skSph) == "sph"
-    check simKindId(skReactionDiffusion) == "reaction-diffusion"
-
-  test "parseSimKind round-trips every kind and rejects unknown ids":
-    for kind in SimKind:
-      check parseSimKind(simKindId(kind)) == kind
-    expect ValueError:
-      discard parseSimKind("no-such-mode")
-
-suite "Legacy Couplings Reproduce Today's Frames":
-  # THE REGRESSION CHECK FOR THE WHOLE RESTRUCTURE. These three ran before any
-  # shader was touched and must still run after. What they pin is the DISPATCH
-  # SEQUENCE — the order work reaches the GPU in. Pass grouping and profiler
-  # slots did move: integrate left the physics pass because the field passes
-  # have to sit between the two, and the frame gained explicit delta clears
-  # because the shaders no longer self-reset. Neither changes what executes,
-  # or in what order.
-
-  test "forces-only couplings produce exactly today's particle-life pass list":
-    check dispatchSequence(couplingsFor(skParticleLife)) == @[
-      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
-      "binScatter", "forces", "integrate"]
-
-  test "sph-only couplings produce exactly today's SPH pass list":
-    check dispatchSequence(couplingsFor(skSph)) == @[
-      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
-      "binScatter", "forcesSph", "integrate"]
-
-  test "field-only couplings produce exactly today's reaction-diffusion pass list":
-    check dispatchSequence(couplingsFor(skReactionDiffusion)) ==
-      @["fieldDeposit", "fieldResolve"] & rdStepKeys() &
-      @["fieldForce", "integrate"]
-
-  test "the legacy triples build no spatial hash they did not build before":
-    # RD never ran a neighbor search and must not start: fieldForce reads a
-    # texture, not sorted neighbor particles.
-    check buildsSpatialHash(couplingsFor(skParticleLife))
-    check buildsSpatialHash(couplingsFor(skSph))
-    check not buildsSpatialHash(couplingsFor(skReactionDiffusion))
-
-  test "the legacy force pass labels are unchanged":
-    # A profile taken before the merge must read against one taken after.
-    proc labelOf(couplings: WorldCouplings, slot: int): string =
-      for node in buildFrame(couplings):
-        if node.kind == fnkComputePass and node.profilerSlot == slot:
-          return node.label
-      ""
-    check labelOf(couplingsFor(skParticleLife), PROFILER_SLOT_PHYSICS) ==
-      "Physics (AoS)"
-    check labelOf(couplingsFor(skSph), PROFILER_SLOT_PHYSICS) ==
-      "Physics (SPH)"
+const WORLD_INTRINSIC_SEQUENCE =
+  @["binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
+    "binScatter", "forces", "fieldResolve"] & rdStepKeys() & @["integrate"]
+  ## What the world is, at every setting of every strength: the spatial hash,
+  ## the neighbour sweep that measures density and carries the mouse, the
+  ## field's own Gray-Scott evolution, and the integration that moves particles.
 
 
-suite "Composed Frames":
-  test "chemistry runs the grid triad, forces, the field passes, then integrate":
-    # The world this whole change exists to make possible: particles that feel
-    # each other AND write the field, in one frame.
-    check dispatchSequence(WorldCouplings(forces: true, field: true)) ==
-      @["binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
-        "binScatter", "forces",
-        "fieldDeposit", "fieldResolve"] & rdStepKeys() &
-      @["fieldForce", "integrate"]
+suite "The World Runs, Whatever The Strengths Are":
+  test "a world with every strength at zero still runs every world-intrinsic pass":
+    # The definition of world-intrinsic, stated as the one case that isolates
+    # it. Nothing here is a contribution; it is what the world is made of.
+    check dispatchSequence(UNCOUPLED) == WORLD_INTRINSIC_SEQUENCE
 
-  test "forces and field together dispatch the grid build exactly once":
-    # Both couplings want a spatial hash; building it twice would be pure waste
-    # and would double-count every particle into gridCounts.
+  test "every world-intrinsic pass survives every combination of strengths":
     for couplings in ALL_COUPLINGS:
-      var gridBuilds = 0
-      for key in dispatchSequence(couplings):
-        if key == "binCount": inc gridBuilds
-      check gridBuilds == (if buildsSpatialHash(couplings): 1 else: 0)
+      let sequence = dispatchSequence(couplings)
+      for key in WORLD_INTRINSIC_SEQUENCE:
+        if key notin sequence:
+          checkpoint("a strength removed the world-intrinsic pass " & key)
+        check key in sequence
 
-  test "fluid chemistry runs both force models over one shared grid":
-    let sequence = dispatchSequence(
-      WorldCouplings(forces: true, sph: true, field: true))
-    check sequence == @[
-      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
-      "binScatter", "forces", "forcesSph",
-      "fieldDeposit", "fieldResolve"] & rdStepKeys() &
-      @["fieldForce", "integrate"]
+  test "the neighbour sweep runs where no forces act":
+    # The honest price of D12, asserted rather than assumed. Density and the
+    # mouse both come out of this pass, and neither belongs to the force
+    # coupling, so force strength zero cannot take the sweep with it.
+    check dispatchesPipeline(UNCOUPLED, "binCount")
+    check dispatchesPipeline(UNCOUPLED, "forces")
 
-  test "couplings with nothing active dispatch only the clears and integrate":
-    # The degenerate world still has to be a valid frame: particles keep their
-    # velocity and drift. A frame that dispatched nothing would freeze them,
-    # and one that skipped the clears would integrate last frame's deltas
-    # forever.
-    let empty = WorldCouplings(forces: false, sph: false, field: false)
-    check dispatchSequence(empty) == @["integrate"]
-    check clearedBuffers(empty) == @[sbVelocityDelta, sbDensityDelta]
+  test "the field evolves in a world that deposits nothing into it":
+    # Chemistry's strengths own the deposit and the force, never the reaction.
+    # A field frozen mid-pattern at zero deposit and breathing again one epsilon
+    # above it is the jump-at-zero this design forbids.
+    check dispatchesPipeline(UNCOUPLED, "fieldResolve")
+    var substeps = 0
+    for key in dispatchSequence(UNCOUPLED):
+      if key in ["rdStepToFront", "rdStepToTrail"]: inc substeps
+    check substeps == RD_STEPS_PER_FRAME
+
+  test "integrate runs last and exactly once in every world":
+    for couplings in ALL_COUPLINGS:
+      let sequence = dispatchSequence(couplings)
+      check sequence.len > 0
+      check sequence[^1] == "integrate"
+      var integrations = 0
+      for key in sequence:
+        if key == "integrate": inc integrations
+      check integrations == 1
+
+
+suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
+  # The multiplier property in its frame form (design D12): at exactly zero the
+  # world is identical to the world with that pass absent. The continuity half —
+  # that the contribution approaches zero as the strength does — is physics, and
+  # lives with the oracles that mirror the shaders.
+
+  test "zero fluid strength skips the SPH pass":
+    check dispatchesPipeline(FULLY_COUPLED, "forcesSph")
+    var noFluid = FULLY_COUPLED
+    noFluid.fluid = COUPLING_OFF
+    check not dispatchesPipeline(noFluid, "forcesSph")
+
+  test "zero deposit skips the deposit pass":
+    var noDeposit = FULLY_COUPLED
+    noDeposit.deposit = COUPLING_OFF
+    check not dispatchesPipeline(noDeposit, "fieldDeposit")
+
+  test "zero field force skips the field-force pass":
+    var noFieldForce = FULLY_COUPLED
+    noFieldForce.fieldForce = COUPLING_OFF
+    check not dispatchesPipeline(noFieldForce, "fieldForce")
+
+  test "moving a strength to zero changes nothing else about the world":
+    # THE TEST THAT MAKES A SKIP AN OPTIMIZATION RATHER THAN A MODE. Zeroing one
+    # strength must subtract exactly one pass and leave every other pass in
+    # place, in order. A skip that also drops a neighbour's work rebuilds the
+    # eight enumerated worlds under a nicer name.
+    for skippable in [("fluid", "forcesSph"), ("deposit", "fieldDeposit"),
+        ("fieldForce", "fieldForce")]:
+      var zeroed = FULLY_COUPLED
+      case skippable[0]
+      of "fluid": zeroed.fluid = COUPLING_OFF
+      of "deposit": zeroed.deposit = COUPLING_OFF
+      else: zeroed.fieldForce = COUPLING_OFF
+      checkpoint("zeroing " & skippable[0])
+      check dispatchSequence(zeroed) ==
+        dispatchSequence(FULLY_COUPLED).without(skippable[1])
+
+  test "force strength never changes the frame":
+    # Forces are the asymmetric coupling and this is where that is recorded.
+    # The force TERM is coupling-owned and scaled by its strength, but its pass
+    # also measures density and applies the mouse, so the pass is world-intrinsic
+    # and no force strength may skip it. The strength acts inside the shader,
+    # which is why it reaches zero continuously without the frame moving at all.
+    for couplings in ALL_COUPLINGS:
+      var flipped = couplings
+      flipped.forces =
+        if couplings.forces == COUPLING_OFF: COUPLING_ON else: COUPLING_OFF
+      check dispatchSequence(flipped) == dispatchSequence(couplings)
+
+  test "a strength one part in a billion above zero dispatches its pass":
+    # ZERO IS THE ONLY SPECIAL VALUE. A threshold — `> 0.001`, `> epsilon` —
+    # would be a mode with a floating-point door, and a user dragging a slider
+    # to its bottom would fall through it into a different world.
+    var barelyOn = UNCOUPLED
+    barelyOn.fluid = 1e-9
+    barelyOn.deposit = 1e-9
+    barelyOn.fieldForce = 1e-9
+    check dispatchSequence(barelyOn) == dispatchSequence(FULLY_COUPLED)
+
+  test "no world enumerates: every frame is the intrinsic sequence plus its couplings":
+    # The frame is a union over independent strengths, never a table of worlds.
+    # Stated as a derivation: strip the coupling-owned passes from any world and
+    # exactly the intrinsic sequence is left, whatever the strengths were.
+    for couplings in ALL_COUPLINGS:
+      var stripped = dispatchSequence(couplings)
+      for key in ["forcesSph", "fieldDeposit", "fieldForce"]:
+        stripped = stripped.without(key)
+      check stripped == WORLD_INTRINSIC_SEQUENCE
 
 
 suite "Delta Buffers Have One Reset Owner":
   test "every frame clears velocityDelta and densityDelta before any pass that writes them":
-    # THE INVARIANT THAT MAKES COMPOSITION POSSIBLE. While forces.wgsl and
-    # forces-sph.wgsl self-reset these buffers in their prologues, a frame
-    # running two contributors erased the first one's work. The reset moved to
-    # the frame; the contributors accumulate only.
+    # THE INVARIANT THAT MAKES COMPOSITION POSSIBLE. A contributor that
+    # self-resets these buffers in its own prologue erases the work of whichever
+    # contributor ran before it in the frame. The frame owns the reset;
+    # forces.wgsl and forces-sph.wgsl accumulate only.
     for couplings in ALL_COUPLINGS:
       let frame = buildFrame(couplings)
       var clearedAt: array[SimBuffer, int]
@@ -167,62 +199,75 @@ suite "Delta Buffers Have One Reset Owner":
         for step in node.dispatches:
           if step.pipelineKey in ["forces", "forcesSph", "fieldForce"]:
             check clearedAt[sbVelocityDelta] < index
-          if step.pipelineKey in ["forces", "forcesSph"]:
+          if step.pipelineKey == "forces":
             check clearedAt[sbDensityDelta] < index
 
   test "no delta buffer is cleared twice in a frame":
-    # Two clears would be harmless but would mean two owners, which is the
-    # state this change exists to leave.
+    # Two clears would be harmless but would mean two owners. The frame is the
+    # only one.
     for couplings in ALL_COUPLINGS:
       let cleared = clearedBuffers(couplings)
       check toHashSet(cleared).len == cleared.len
 
-  test "integrate runs last in every couplings combination":
-    # integrate reads the summed deltas and moves particles, so every
-    # contributor must already have run.
+  test "the SPH pass is not a density writer in any world":
+    # Density leaves the physics through ONE writer, the world-intrinsic sweep.
+    # A fluid that also wrote it loses the density the renderer reads whenever
+    # zero strength skips the fluid — the jump-at-zero appearing in the density
+    # channel instead of the velocity channel.
+    for couplings in ALL_COUPLINGS:
+      let frame = buildFrame(couplings)
+      var densityClearedAt = -1
+      for index, node in frame:
+        if node.kind == fnkClearBuffer and node.clearTarget == sbDensityDelta:
+          densityClearedAt = index
+      check densityClearedAt >= 0
+
+
+suite "The Grid Is Built Once":
+  test "every world builds the spatial hash exactly once":
+    # Two builds would double-count every particle into gridCounts, and the
+    # second scatter would run against pointers the first had already consumed.
+    for couplings in ALL_COUPLINGS:
+      var gridBuilds = 0
+      var scatters = 0
+      for key in dispatchSequence(couplings):
+        if key == "binCount": inc gridBuilds
+        if key == "binScatter": inc scatters
+      check gridBuilds == 1
+      check scatters == 1
+
+  test "the scatter precedes every pass that reads sorted particles":
     for couplings in ALL_COUPLINGS:
       let sequence = dispatchSequence(couplings)
-      check sequence.len > 0
-      check sequence[^1] == "integrate"
-      var integrations = 0
-      for key in sequence:
-        if key == "integrate": inc integrations
-      check integrations == 1
+      let scatterAt = sequence.find("binScatter")
+      check scatterAt >= 0
+      for reader in ["forces", "forcesSph"]:
+        let readerAt = sequence.find(reader)
+        if readerAt >= 0:
+          check scatterAt < readerAt
 
-
-suite "Which Worlds Compute Particle Density":
-  test "computesDensity holds exactly for the worlds that run a force pass":
-    # forces.wgsl and forces-sph.wgsl are the only passes that write
-    # densityDelta; field-force.wgsl writes velocityDelta and nothing else. So
-    # a world's density comes from its force couplings, and a field-only world
-    # carries a stale ~0 density however much of a pattern it grows.
-    #
-    # webgpu_render.nim reads exactly this to decide whether the glow needs its
-    # density floor: with no density source the density term reads flat and the
-    # velocity term has to drive the glow instead. Stating the predicate against
-    # the frame keeps the renderer's gate and the frame's contributors from
-    # drifting apart.
+  test "gridCounts is cleared before bin-count increments it":
     for couplings in ALL_COUPLINGS:
-      let writesDensity = dispatchesPipeline(couplings, "forces") or
-        dispatchesPipeline(couplings, "forcesSph")
-      if computesDensity(couplings) != writesDensity:
-        checkpoint("density claim disagrees with the frame for forces=" &
-          $couplings.forces & " sph=" & $couplings.sph &
-          " field=" & $couplings.field)
-      check computesDensity(couplings) == writesDensity
-      # The same relation over the booleans themselves: the field contributes
-      # no density, so coupling it changes nothing here.
-      check computesDensity(couplings) == (couplings.forces or couplings.sph)
+      let frame = buildFrame(couplings)
+      var clearedAt = -1
+      for index, node in frame:
+        if node.kind == fnkClearBuffer and node.clearTarget == sbGridCounts:
+          clearedAt = index
+        if node.kind == fnkComputePass:
+          for step in node.dispatches:
+            if step.pipelineKey == "binCount":
+              check clearedAt >= 0
+              check clearedAt < index
 
 
 suite "Field Passes Compose Safely":
-  test "the field ping-pong parity holds for every couplings combination containing field":
+  test "the field ping-pong parity holds in every world":
     # fieldResolve is itself one swap, so 1 + RD_STEPS_PER_FRAME swaps happen
     # per frame. The substeps must start ToFront and end ToFront, or the live
     # field lands on the texture nothing reads and the last substep is thrown
-    # away every frame.
+    # away every frame. The field being world-intrinsic makes this unconditional
+    # rather than a property only some worlds must satisfy.
     for couplings in ALL_COUPLINGS:
-      if not couplings.field: continue
       var steps: seq[string]
       for key in dispatchSequence(couplings):
         if key in ["rdStepToFront", "rdStepToTrail"]: steps.add key
@@ -233,25 +278,31 @@ suite "Field Passes Compose Safely":
         check key == (
           if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail")
 
-  test "the field passes appear exactly when the field is coupled":
-    for couplings in ALL_COUPLINGS:
-      for fieldKey in ["fieldDeposit", "fieldResolve", "fieldForce"]:
-        check dispatchesPipeline(couplings, fieldKey) == couplings.field
-
   test "fieldDeposit precedes fieldResolve which precedes every substep":
     # fieldResolve consumes the deposit buffer and zeroes it; a substep running
     # first would evolve a field the frame's deposits never reached.
     for couplings in ALL_COUPLINGS:
-      if not couplings.field: continue
       let sequence = dispatchSequence(couplings)
-      let depositAt = sequence.find("fieldDeposit")
       let resolveAt = sequence.find("fieldResolve")
       let firstStepAt = sequence.find("rdStepToFront")
-      check depositAt >= 0
-      check depositAt < resolveAt
+      let depositAt = sequence.find("fieldDeposit")
+      check resolveAt >= 0
       check resolveAt < firstStepAt
+      if depositAt >= 0:
+        check depositAt < resolveAt
 
-  test "no couplings combination dispatches an unknown pipeline key":
+  test "fieldForce runs after the substeps it reads":
+    # It samples the gradient of the field the frame just evolved; running it
+    # first would steer particles by the previous frame's chemistry.
+    for couplings in ALL_COUPLINGS:
+      let sequence = dispatchSequence(couplings)
+      let forceAt = sequence.find("fieldForce")
+      if forceAt >= 0:
+        for stepIndex, key in sequence:
+          if key in ["rdStepToFront", "rdStepToTrail"]:
+            check stepIndex < forceAt
+
+  test "no world dispatches an unknown pipeline key":
     # A typo'd key reaches the executor as a missing dictionary entry at
     # runtime, in a browser, with no native test between it and the user.
     const KNOWN = [
@@ -263,16 +314,12 @@ suite "Field Passes Compose Safely":
       for key in dispatchSequence(couplings):
         check key in KNOWN
 
-  test "the monolithic prefix-sum pipeline is gone from every frame":
-    for couplings in ALL_COUPLINGS:
-      check not dispatchesPipeline(couplings, "prefixSum")
-
 
 suite "Profiler Slot Constants":
   test "the slot constants are distinct":
-    # They index one query set. Two passes sharing a slot would overwrite each
-    # other's timestamps and report a meaningless delta — which is exactly what
-    # the field pass did while it borrowed the grid-build slot.
+    # They index one query set. Two passes sharing a slot overwrite each other's
+    # timestamps and report a meaningless delta — the field pass borrowing the
+    # grid-build slot is the collision this forbids.
     let slots = [PROFILER_SLOT_GRID_BUILD, PROFILER_SLOT_PHYSICS,
       PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE]
     check toHashSet(slots).len == slots.len
@@ -284,104 +331,3 @@ suite "Profiler Slot Constants":
         if node.kind == fnkComputePass:
           check node.profilerSlot notin seenSlots
           seenSlots.incl node.profilerSlot
-
-
-suite "Control Groups Follow The Couplings":
-  let sectionOnly = toHashSet(@SECTION_ONLY_GROUPS)
-  let descriptorGroups = block:
-    var groups: HashSet[string]
-    for descriptor in buildParamDescriptors():
-      groups.incl descriptor.group
-    groups
-
-  test "every group a world lists either owns descriptors or is declared section-only":
-    # THE red light: a typo'd group id would silently hide a whole section
-    # instead of failing anywhere. Section-only ids (the matrix editor, the
-    # force-model button row) are legitimately descriptor-free, so they are
-    # declared rather than inferred.
-    for couplings in ALL_COUPLINGS:
-      for group in controlGroupsFor(couplings):
-        check group in descriptorGroups or group in sectionOnly
-
-  test "every descriptor group is reachable from some couplings":
-    # The converse red light: an unreachable group vanishes from every panel,
-    # so its sliders become unreachable without any error.
-    var listed: HashSet[string]
-    for couplings in ALL_COUPLINGS:
-      for group in controlGroupsFor(couplings):
-        listed.incl group
-    for group in descriptorGroups:
-      check group in listed
-
-  test "no world lists a group twice":
-    # "grid" belongs to both the forces and sph coupling sets, so the union has
-    # to deduplicate — a plain concatenation would render that slider twice in
-    # a world coupling both.
-    for couplings in ALL_COUPLINGS:
-      let groups = controlGroupsFor(couplings)
-      check toHashSet(groups).len == groups.len
-
-  test "controlGroupsFor unions the groups of active couplings":
-    # The relation stated directly: every active coupling contributes all of
-    # its groups, and an inactive one contributes none of its exclusive ones.
-    for couplings in ALL_COUPLINGS:
-      let groups = toHashSet(controlGroupsFor(couplings))
-      if couplings.forces:
-        for group in FORCES_GROUPS: check group in groups
-      if couplings.sph:
-        for group in SPH_GROUPS: check group in groups
-      if couplings.field:
-        for group in FIELD_GROUPS: check group in groups
-      for universal in UNIVERSAL_GROUPS: check universal in groups
-
-  test "only worlds that dispatch the forces pass offer the force-model groups":
-    # forces.wgsl is the sole reader of the attraction matrix and the
-    # force-model selector, so a world without that dispatch must not present
-    # either. forces-sph reads neither, and the field runs no force pass.
-    for couplings in ALL_COUPLINGS:
-      let groups = toHashSet(controlGroupsFor(couplings))
-      let runsForces = dispatchesPipeline(couplings, "forces")
-      for forceGroup in ["matrix", "force-model", "force-polynomial",
-          "force-exponential", "particle-life"]:
-        check (forceGroup in groups) == runsForces
-
-  test "the grid group appears exactly for the worlds that build a spatial hash":
-    # interactionRadius is the neighbor-search radius binCount bins by, and
-    # SPH's smoothing radius. A field-only world dispatches no binCount, so the
-    # control would be inert there.
-    for couplings in ALL_COUPLINGS:
-      check ("grid" in controlGroupsFor(couplings)) ==
-        dispatchesPipeline(couplings, "binCount")
-
-  test "the field groups appear exactly when the field is coupled":
-    for couplings in ALL_COUPLINGS:
-      let groups = toHashSet(controlGroupsFor(couplings))
-      check ("rd" in groups) == couplings.field
-      check ("rd-field" in groups) == couplings.field
-
-  test "every world offers the universal groups":
-    # simulation/render/glow/bloom/palette touch every world's pipeline, so a
-    # world that dropped one would hide a control that still works.
-    for couplings in ALL_COUPLINGS:
-      let groups = toHashSet(controlGroupsFor(couplings))
-      for universal in ["simulation", "render", "glow", "bloom", "palette"]:
-        check universal in groups
-
-  test "the legacy modes still present exactly the groups they always did":
-    # The compatibility layer has to hold on the panel too, not only in the
-    # frame: a preset that reopens particle life must show the same panel.
-    #
-    # "camera" joins every list because it is UNIVERSAL, and that is the point
-    # of the change rather than a drift in it: no coupling can take away where
-    # the viewer is standing. What this test still pins is the part that must
-    # not move — which groups each COUPLING contributes.
-    check toHashSet(controlGroupsFor(couplingsFor(skParticleLife))) ==
-      toHashSet(@["simulation", "grid", "particle-life", "matrix",
-        "force-model", "force-polynomial", "force-exponential",
-        "render", "glow", "bloom", "palette", "camera"])
-    check toHashSet(controlGroupsFor(couplingsFor(skSph))) ==
-      toHashSet(@["simulation", "grid", "sph",
-        "render", "glow", "bloom", "palette", "camera"])
-    check toHashSet(controlGroupsFor(couplingsFor(skReactionDiffusion))) ==
-      toHashSet(@["simulation", "rd", "rd-field",
-        "render", "glow", "bloom", "palette", "camera"])

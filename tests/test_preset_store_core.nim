@@ -6,7 +6,7 @@
 # localStorage-key and index-bookkeeping primitives the JS preset_store glue
 # builds on, plus the apply-order contract as data (presetApplySteps).
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
@@ -54,21 +54,32 @@ suite "normalizePresetName trims and collapses whitespace":
 
 suite "presetApplySteps pins the apply-order contract":
   test "presetApplySteps returns exactly the seven steps in the fixed order":
-    ## ORDER IS THE CONTRACT: mode must land before speciesCount, and
-    ## speciesCount before particleCount, so the matrix grid is sized for
-    ## the right species count before particleCount triggers the single
-    ## re-init the whole apply performs; matrix/palette then land into
-    ## buffers already sized for the new mode/species, and scalars/uiRefresh
+    ## ORDER IS THE CONTRACT: speciesCount lands before particleCount, so the
+    ## matrix grid is sized for the right species count before particleCount
+    ## triggers the single re-init the whole apply performs; the per-species
+    ## arrays then land into buffers already sized for it, and scalars/uiRefresh
     ## close out without touching particle data at all.
     let steps = presetApplySteps()
     check steps.len == 7
-    check steps[0] == pasMode
-    check steps[1] == pasSpeciesCount
-    check steps[2] == pasParticleCount
-    check steps[3] == pasMatrix
+    check steps[0] == pasSpeciesCount
+    check steps[1] == pasParticleCount
+    check steps[2] == pasMatrix
+    check steps[3] == pasChemistry
     check steps[4] == pasPalette
     check steps[5] == pasScalars
     check steps[6] == pasUiRefresh
+
+  test "no step selects a world before the rest of the preset lands":
+    ## The apply order says there is one world by carrying no step that picks
+    ## between worlds. Asserted over the step names rather than by counting, so
+    ## a step introducing world selection under any spelling faces this test.
+    for step in presetApplySteps():
+      check $step notin ["pasMode", "pasWorld", "pasCouplings"]
+
+  test "both per-species arrays land after the species count that sizes them":
+    let steps = presetApplySteps()
+    check steps.find(pasSpeciesCount) < steps.find(pasMatrix)
+    check steps.find(pasSpeciesCount) < steps.find(pasChemistry)
 
 # ==============================================================================
 # STORAGE KEYS

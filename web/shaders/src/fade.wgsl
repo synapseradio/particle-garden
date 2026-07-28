@@ -11,8 +11,8 @@
 // THE TRAIL DRIFTS ALONG THE FIELD. Binding 3 is the reaction-diffusion field;
 // the trail is re-sampled a hair along its gradient, so a trail decaying near
 // the pattern bends around it rather than fading straight back. fieldDriftScale
-// is 0 in a world without a field, which collapses the displacement to zero and
-// leaves the fade byte-identical to what it was before.
+// carries colormap_core's FIELD_DRIFT_SCALE, and the field is world-intrinsic,
+// so the drift is live on every frame the trail is on.
 // =============================================================================
 
 //! import fade_params
@@ -77,11 +77,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let reprojectedUv = cameraWorldToScreenUv(worldHere, prevCam, worldSize);
 
   // Displace the sample along the field gradient. The whole term is multiplied
-  // by fieldDriftScale, which is 0 without a field, so this reduces to the
-  // reprojected UV exactly — and the guard skips the four texture loads that
-  // would build a gradient about to be multiplied by zero. fieldDriftScale comes
-  // from a uniform, so the branch is coherent across the draw and costs nothing
-  // in the worlds that do drift.
+  // by fieldDriftScale, so at zero this reduces to the reprojected UV exactly
+  // and the guard skips the four texture loads that would build a gradient
+  // about to be multiplied by zero. It comes from a uniform, so the branch is
+  // coherent across the draw. The shipped scale is nonzero, which makes the
+  // guard a contract with the value rather than a path the app takes.
   //
   // The field cell comes from the WORLD position, not from the screen UV: the
   // field lives in the world, so a camera that has panned or zoomed must read

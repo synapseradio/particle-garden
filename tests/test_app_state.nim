@@ -7,7 +7,7 @@
 # frameCount > 0 guard that must hold to avoid dividing by zero before any
 # frame has been recorded.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

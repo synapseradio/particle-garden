@@ -102,9 +102,9 @@ fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let forceX = gradX * params.fieldForceScale * tropism;
   let forceY = gradY * params.fieldForceScale * tropism;
 
-  // ACCUMULATE, never overwrite. This pass is no longer the sole writer: a world
-  // coupling forces and the field runs both, and integrate must see their sum.
-  // The frame clears velocityDelta before either contributor runs.
+  // ACCUMULATE, never overwrite. forces.wgsl and forces-sph.wgsl write the same
+  // buffer, and integrate must see the sum of all three. The frame clears
+  // velocityDelta once at the top, before any contributor runs.
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u],
     i32(forceX * FIXED_POINT_SCALE));
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u + 1u],

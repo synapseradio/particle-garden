@@ -7,7 +7,7 @@
 # web/shaders/modules/colormap.wgsl. A bad ramp would recolour the whole RD
 # field — visible, but invisible to the shader compiler, so it is pinned here.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

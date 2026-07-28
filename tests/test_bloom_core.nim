@@ -7,7 +7,7 @@
 # HDR bloom source with the wrong shape or brightness — visible, but invisible
 # to the shader compiler, so it is pinned here.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 

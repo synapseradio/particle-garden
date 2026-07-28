@@ -6,14 +6,14 @@
 # label and group, value kind, range, step, precision, default, and which
 # mutation path a write routes through. The TypeScript control panel reads
 # this table via window.gardenAPI.descriptor() instead of duplicating any
-# number, and web_api clamps every setParam against it — the clamp authority
-# that used to live in slider.nim.
+# number, and web_api clamps every setParam against it — the one clamp
+# authority.
 #
 # Ranges come from config_ranges (the range authority) and defaults from the
 # typed state records (the default authority); tests/test_param_descriptor.nim
 # pins both relations natively, so the UI and the simulation cannot drift.
 #
-# Pure module: no FFI, no DOM. Compiles on both the native (nimble test) and
+# Pure module: no FFI, no DOM. Compiles on both the native (just test) and
 # JS backends.
 #
 # ==============================================================================
@@ -61,9 +61,9 @@ type
   ParamDescriptor* = object
     id*: string           ## CONFIG field name (or palette state field)
     label*: string        ## Display label (verbatim from the control panel)
-    group*: string        ## Stable group id the UI sections key on, and the
-                          ## unit sim_registry's per-mode group lists gate on:
-                          ## a group belongs to a mode, or it does not appear.
+    group*: string        ## Stable group id the panel's sections key on. It
+                          ## decides where a control sits, never whether it
+                          ## appears: one world offers every control always.
     kind*: ParamKind
     minValue*: float
     maxValue*: float
@@ -105,8 +105,8 @@ func regimeNotches*(axis: RegimeAxis): seq[ParamNotch] =
       regime.label)
 
 func paramStep(kind: ParamKind; precision: int): float =
-  ## The step rule slider.nim's bindToDOM used: ints step by 1; floats step
-  ## by one unit of their display precision.
+  ## The step rule: ints step by 1; floats step by one unit of their display
+  ## precision.
   case kind
   of pkInt: 1.0
   of pkFloat:
@@ -156,34 +156,35 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     intParam("particleCount", "Particles", "simulation",
       PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX, sim.particleCount,
       psSimulation, reinitOnCommit = true,
-      # The coupling ceiling, so a user dragging past it can see where the
-      # heavier couplings stop following. One notch rather than two because SPH
-      # and the field cap at the same count — config_ranges asserts that
-      # statically, which is what lets COUPLING_PARTICLE_CEILING name both.
+      # The world's particle budget, so a user dragging past it can see where
+      # the frame stops keeping up. One tick, because one world has one budget.
       notches = @[
-        notch(COUPLING_PARTICLE_CEILING.float, "fluid + chemistry ceiling"),
+        notch(PARTICLE_BUDGET.float, "budget"),
       ]).withDefaultNotch(1),
     intParam("speciesCount", "Species", "simulation",
       SPECIES_COUNT_MIN, SPECIES_COUNT_MAX, sim.speciesCount,
       psSimulation, reinitOnCommit = true),
     # "grid" rather than "simulation": interactionRadius is the neighbor search
     # radius forces.wgsl uses and the smoothing radius forces-sph.wgsl uses.
-    # Reaction-diffusion runs no spatial-hash pass at all, so the control does
-    # nothing there and the group keeps it off that mode's panel.
+    # The group says where the control sits, never whether it appears.
     intParam("interactionRadius", "Interaction Radius", "grid",
       INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX, sim.interactionRadius,
       psSimulation),
-    # forceStrength and ruleTemperature drive the attraction matrix, which only
-    # forces.wgsl reads — forces-sph.wgsl ignores both, and RD has no force
-    # pass. Hence a particle-life-only group rather than "simulation".
-    floatParam("forceStrength", "Force Strength", "particle-life",
+    # A coupling strength, and its zero notch says so. Zero removes short-range
+    # repulsion along with attraction (fMul scales both force zones), so
+    # particles pass freely through each other — hence a notch label naming
+    # what happens rather than "off".
+    floatParam("forceStrength", "Force Strength", "species",
       FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX, sim.forceStrength, 1,
-      psSimulation),
+      psSimulation,
+      notches = @[
+        notch(FORCE_STRENGTH_MIN, "no forces"),
+      ]).withDefaultNotch(1),
     floatParam("friction", "Friction", "simulation",
       FRICTION_MIN, FRICTION_MAX, sim.friction, 2, psSimulation),
     floatParam("timeScale", "Time Scale", "simulation",
       TIME_SCALE_MIN, TIME_SCALE_MAX, sim.timeScale, 1, psSimulation),
-    floatParam("ruleTemperature", "🌡️ Temperature", "particle-life",
+    floatParam("ruleTemperature", "🌡️ Temperature", "species",
       RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX, sim.ruleTemperature, 2,
       psSimulation),
     floatParam("maxVelocity", "Max Velocity", "simulation",
@@ -245,27 +246,37 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       PALETTE_LIGHTNESS_MIN, PALETTE_LIGHTNESS_MAX, DEFAULT_LIGHTNESS, 2,
       psPalette),
 
-    # SPH Fluid section
-    floatParam("sphRestDensity", "Rest Density", "sph",
+    # SPH Fluid section. fluidStrength leads it because it is the coupling
+    # strength and the three below it are the fluid's character: they say what
+    # KIND of fluid this is — how hard it resists compression, what spacing it
+    # relaxes to, how fast it shears — while this one says how much of that
+    # fluid's verdict on a particle's velocity actually lands (design D14).
+    floatParam("fluidStrength", "Fluid", "fluid",
+      FLUID_STRENGTH_MIN, FLUID_STRENGTH_MAX, sim.fluidStrength, 2,
+      psSimulation,
+      hint = "how much of the fluid acts; the three below shape what kind of fluid it is",
+      notches = @[
+        notch(FLUID_STRENGTH_MIN, "no fluid"),
+        notch(FLUID_STRENGTH_MAX, "full"),
+      ]),
+    floatParam("sphRestDensity", "Rest Density", "fluid",
       SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX, sim.sphRestDensity, 2,
       psSimulation),
-    floatParam("sphStiffness", "Stiffness", "sph",
+    floatParam("sphStiffness", "Stiffness", "fluid",
       SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, sim.sphStiffness, 1,
       psSimulation),
-    floatParam("sphViscosity", "Viscosity", "sph",
+    floatParam("sphViscosity", "Viscosity", "fluid",
       SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX, sim.sphViscosity, 2,
       psSimulation),
-    intParam("sphSubsteps", "Substeps", "sph",
+    intParam("sphSubsteps", "Substeps", "fluid",
       SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX, sim.sphSubsteps, psSimulation),
 
     # Reaction-Diffusion section. Feed and kill carry the six named regimes as
     # notches, so the living parts of the plane are positions the user can
     # reach by name instead of by accident. The coordinates live in
-    # config_ranges beside the ranges they must satisfy; the hints that used to
-    # list a few of them as raw numbers are gone, because a hint naming values
-    # the notches already mark would be a second copy free to drift — and did
-    # drift: it named a coral at (0.055, 0.062) from a different source than
-    # the (0.082, 0.059) the regime table transcribes.
+    # config_ranges beside the ranges they must satisfy, and no hint restates
+    # them: a hint naming values the notches already mark is a second copy free
+    # to drift from the (0.082, 0.059) the regime table transcribes.
     floatParam("rdFeed", "Breath In", "rd",
       RD_FEED_MIN, RD_FEED_MAX, sim.rdFeed, 3, psSimulation,
       hint = "the feed rate F; a regime needs both axes, so the buttons set the pair",
@@ -289,8 +300,12 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         # those two regimes are dead buttons — see RD_REGIMES' minDeposit.
         notch(RD_REGIME_HIGH_FEED_DEPOSIT, "high-feed"),
       ]).withDefaultNotch(1),
+    # One decimal, where the other strengths take none: the range divides by
+    # FIELD_PATTERN_SHRINK (field_core.RD_DEFAULT_FIELD_FORCE says why), so the
+    # default and the ceiling stop landing on whole numbers as the field grid
+    # gets finer. A slider that cannot stop on its own default is a broken one.
     floatParam("rdFieldForce", "Scent-following", "rd",
-      RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX, sim.rdFieldForce, 0,
+      RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX, sim.rdFieldForce, 1,
       psSimulation,
       hint = "how hard the pattern pushes particles; 0 leaves them blind",
       notches = @[
@@ -308,13 +323,13 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     # CONFIG, so it stays out of the preset schema for the reason recorded on
     # the enum. Its notches name the three scales worth stopping at rather than
     # positions on a number line — tiled shows the world repeating, world is the
-    # framing the renderer had before a camera existed, creature is close enough
-    # that the attraction matrix reads as individual motion.
+    # whole world fitted to the window, creature is close enough that the
+    # attraction matrix reads as individual motion.
     floatParam("cameraZoom", "Zoom", "camera",
       CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX, CAMERA_DEFAULT_ZOOM.float, 2, psCamera,
       # No numerals in this hint. The reachability test reads every number a
       # hint names as a slider position, and the zero key is a KEY — spelling it
-      # as a digit made the test report an unreachable value, correctly.
+      # as a digit makes the test report an unreachable value, correctly.
       hint = "the wheel zooms at the cursor; the zero key returns to the whole world",
       notches = @[
         notch(CAMERA_ZOOM_NOTCH_TILED, "tiled"),
@@ -377,9 +392,7 @@ func clampChemistryValue*(field: ChemistryField; value: float): float =
 
 func clampParamValue*(descriptor: ParamDescriptor; value: float): float =
   ## Coerce a raw UI value into the descriptor's range. Integer parameters
-  ## additionally truncate through int(), the same coercion slider.nim's
-  ## clampValue applied, so a drag position lands on the same value it
-  ## always did.
+  ## additionally truncate through int().
   let clamped = max(descriptor.minValue, min(descriptor.maxValue, value))
   case descriptor.kind
   of pkInt: float(int(clamped))

@@ -6,7 +6,7 @@
 # contract. Covers round-trip fidelity, newer-schema-version rejection,
 # clamp/default degradation of hostile input, and the migrate hook.
 #
-# Run with: nimble test
+# Run with: just test
 #
 # ==============================================================================
 
@@ -14,6 +14,9 @@ import std/unittest
 import std/json
 import ../src/memory_layout
 import ../src/preset
+import ../src/colormap_core  # the authority preset.nim mirrors fieldOpacity from
+import ../src/field_core     # and the chemistry defaults it mirrors
+import ../src/climate_core   # and the climate speed default
 
 const PRESET_TESTS_LOADED* = true
 
@@ -22,18 +25,39 @@ const PRESET_TESTS_LOADED* = true
 # ==============================================================================
 
 suite "Clamp Bounds Are The Live Slider Ranges":
-  # STRUCTURE: preset.nim re-exports config_ranges.nim, the same module
-  # ui.nim's configSlider registrations read — so preset bounds and UI ranges
-  # agree by construction, not by mirrored literals. What remains testable
-  # here are the relations between independent sources.
+  # STRUCTURE: preset.nim re-exports config_ranges.nim, the range authority the
+  # panel's descriptors read — so preset bounds and UI ranges agree by
+  # construction, not by mirrored literals. What remains testable here are the
+  # relations between independent sources.
 
   test "the particle ceiling is the buffer allocation limit, not a stale UI copy":
-    # The bug this replaces: preset bounds pinned to dead web/index.html
-    # attributes (a 64000 ceiling against a live 128000 slider).
+    # What this forbids: a preset ceiling pinned to a UI copy rather than to the
+    # allocation limit — a 64000 ceiling against a 128000 slider.
     check PARTICLE_COUNT_MAX == memory_layout.MAX_PARTICLES
 
   test "the species ceiling equals the preset's own array sizing":
     check SPECIES_COUNT_MAX == preset.MAX_SPECIES
+
+  test "every mirrored default equals the module that owns it":
+    # preset.nim carries these as literals because its dependencies are
+    # restricted to config_ranges and palette. A literal mirror drifts in
+    # silence — a preset missing the field then restores a different value than
+    # a fresh session starts at — so the agreement is asserted from here, where
+    # both modules are importable.
+    let defaults = defaultSettings()
+    check defaults.fieldOpacity == FIELD_OPACITY_DEFAULT
+    check defaults.rdFeed == RD_DEFAULT_FEED
+    check defaults.rdKill == RD_DEFAULT_KILL
+    check defaults.rdDeposit == RD_DEFAULT_DEPOSIT
+    check defaults.rdFieldForce == RD_DEFAULT_FIELD_FORCE
+    check defaults.climateSpeed == CLIMATE_DEFAULT_SPEED
+
+  test "the default chemistry equals the per-species defaults it mirrors":
+    let chemistry = defaultChemistry()
+    for speciesIndex in 0 ..< preset.MAX_SPECIES:
+      let base = speciesIndex * CHEMISTRY_STRIDE
+      check chemistry[base] == RD_DEFAULT_SECRETION
+      check chemistry[base + 1] == RD_DEFAULT_TROPISM
 
   test "every documented default lies inside its own clamp range":
     let defaults = defaultSettings()
@@ -77,7 +101,6 @@ suite "Preset Round-Trip Contract":
     var customPreset = defaultPreset()
     customPreset.name = "My Garden"
     customPreset.createdAt = "2026-07-19T12:00:00Z"
-    customPreset.mode = "particle-life"
     customPreset.settings.particleCount = 32000
     customPreset.settings.speciesCount = 6
     customPreset.settings.interactionRadius = 80
@@ -106,7 +129,7 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.rdFeed = 0.045
     customPreset.settings.rdKill = 0.058
     customPreset.settings.rdDeposit = 0.035
-    customPreset.settings.rdFieldForce = 80.0
+    customPreset.settings.rdFieldForce = 8.0
     customPreset.settings.bloomEnabled = true
     customPreset.settings.bloomIntensity = 1.8
     customPreset.settings.exposure = 1.4
@@ -126,15 +149,25 @@ suite "Preset Round-Trip Contract":
     check loaded.preset == customPreset
 
   test "serialized preset is valid JSON carrying the documented top-level keys":
-    ## CONTRACT: the wire shape is {schemaVersion, name, createdAt, mode, settings, matrix, palette}
+    ## CONTRACT: the wire shape is
+    ## {schemaVersion, name, createdAt, settings, matrix, chemistry, palette}
     let node = toJson(defaultPreset())
     check node.kind == JObject
-    for key in ["schemaVersion", "name", "createdAt", "mode", "settings", "matrix", "palette"]:
+    for key in ["schemaVersion", "name", "createdAt", "settings", "matrix",
+        "chemistry", "palette"]:
       check node.hasKey(key)
     check node["matrix"].kind == JArray
     check node["matrix"].len == MATRIX_LEN
+    check node["chemistry"].kind == JArray
+    check node["chemistry"].len == CHEMISTRY_LEN
     check node["palette"].kind == JArray
     check node["palette"].len == preset.MAX_SPECIES
+
+  test "a saved preset names no mode":
+    ## CONTRACT: there is one world, so a preset is a POINT in it rather than a
+    ## selection among worlds. A `mode` key on the wire is a world type under a
+    ## label, and every reader then has to decide what it means.
+    check not toJson(defaultPreset()).hasKey("mode")
 
 # ==============================================================================
 # SCHEMA VERSION CONTRACT
@@ -232,9 +265,9 @@ suite "Preset Malformed Input Contract":
     let result = validate(%*{})
     check result.isOk
     check result.preset.name == DEFAULT_PRESET_NAME
-    check result.preset.mode == DEFAULT_MODE
     check result.preset.settings == defaultSettings()
     check result.preset.matrix == defaultMatrix()
+    check result.preset.chemistry == defaultChemistry()
     check result.preset.palette == DEFAULT_PALETTE
 
   test "a matrix that is not an array defaults to the neutral matrix":
@@ -262,22 +295,136 @@ suite "Preset Malformed Input Contract":
     check result.preset.palette[0] == [0.9, 0.9, 0.9]
     check result.preset.palette[1] == DEFAULT_PALETTE[1]
 
-  test "a missing mode defaults to particle-life":
-    let result = validate(%*{})
-    check result.preset.mode == DEFAULT_MODE
-
-  test "an unrecognized mode string is preserved, not rejected":
-    ## CONTRACT: mode is forward-compatible; a future SPH/RD preset must
-    ## round-trip through this same v1 validator without a schema bump
-    let node = %*{"mode": "sph"}
+  test "a malformed chemistry array falls back per slot without discarding the rest":
+    let node = %*{"chemistry": [0.5, "oops"]}
     let result = validate(node)
+    check result.preset.chemistry[0] == 0.5
+    check result.preset.chemistry[1] == defaultChemistry()[1]
+    check result.preset.chemistry[2] == defaultChemistry()[2]
+
+  test "chemistry clamps each channel against its own asymmetric bound":
+    ## Tropism's ceiling sits below the magnitude of its floor (design D5), so
+    ## the two channels cannot share one clamp. A hand-edited preset asking for
+    ## strong positive tropism comes back to the bound rather than landing raw
+    ## in the uniform.
+    let node = %*{"chemistry": [5.0, 5.0, -5.0, -5.0]}
+    let result = validate(node)
+    check result.preset.chemistry[0] == SECRETION_MAX
+    check result.preset.chemistry[1] == TROPISM_MAX
+    check result.preset.chemistry[2] == SECRETION_MIN
+    check result.preset.chemistry[3] == TROPISM_MIN
+
+
+# ==============================================================================
+# LEGACY TRANSLATION CONTRACT (design D8)
+# ==============================================================================
+
+suite "A Legacy Preset Loads As The World It Described":
+  # THE MECHANISM IS TRANSLATION, NOT SUBTRACTION, and these tests make the
+  # difference observable. A v1 file carries a value for every scalar, including
+  # the couplings its mode hides, so treating an absent strength as zero does
+  # nothing at all — nothing is absent — and the hidden defaults switch their
+  # couplings on.
+
+  func v1Preset(mode: string): JsonNode =
+    ## A v1 file: a mode id, and a value for every scalar whether or not that
+    ## mode reads it.
+    %*{
+      "schemaVersion": 1,
+      "name": "Saved before the merge",
+      "mode": mode,
+      "settings": {
+        "forceStrength": 1.5,
+        "sphStiffness": 12.0,
+        "rdDeposit": 0.02,
+        "rdFieldForce": 30.0
+      }
+    }
+
+  test "a legacy particle-life preset does NOT switch chemistry on":
+    ## THE REGRESSION SUBTRACTION SHIPS. This file carries deposit 0.02 and
+    ## field force 30 from sliders sitting at their defaults behind a mode that
+    ## hides them. A world with no chemistry must not acquire it on reopening.
+    let result = validate(v1Preset("particle-life"))
     check result.isOk
-    check result.preset.mode == "sph"
+    check result.preset.settings.rdDeposit == 0.0
+    check result.preset.settings.rdFieldForce == 0.0
 
-  test "an empty-string mode defaults to particle-life":
-    let node = %*{"mode": ""}
+  test "a legacy preset keeps the strengths its mode did use":
+    let result = validate(v1Preset("particle-life"))
+    check result.preset.settings.forceStrength == 1.5
+
+  test "a legacy preset zeroes the strengths its mode excluded":
+    let sph = validate(v1Preset("sph"))
+    check sph.preset.settings.forceStrength == 0.0
+    check sph.preset.settings.rdDeposit == 0.0
+    check sph.preset.settings.rdFieldForce == 0.0
+    let rd = validate(v1Preset("reaction-diffusion"))
+    check rd.preset.settings.forceStrength == 0.0
+    check rd.preset.settings.rdDeposit == 0.02
+    # Rescaled, not carried over: the v1 file's 30 was written against a field
+    # grid ten times coarser, where it meant the same motion through the pattern
+    # that 3 means here. See preset.V1_FIELD_FORCE_SCALE.
+    check rd.preset.settings.rdFieldForce == 30.0 * V1_FIELD_FORCE_SCALE
+
+  test "a legacy sph preset arrives with its fluid acting":
+    ## v1 has no fluidStrength field at all, so this is derived rather than
+    ## read: an "sph" preset described a world running its fluid, and every
+    ## other v1 world ran none.
+    check validate(v1Preset("sph")).preset.settings.fluidStrength == 1.0
+    check validate(v1Preset("particle-life")).preset.settings.fluidStrength == 0.0
+    check validate(
+      v1Preset("reaction-diffusion")).preset.settings.fluidStrength == 0.0
+
+  test "an unrecognised legacy mode keeps what it carries rather than emptying":
+    ## Forward-compatible in the same spirit v1's free-form `mode` field was: a
+    ## preset from a build this one does not know about loads as the world it
+    ## describes, rather than being emptied by a table lookup that missed.
+    let result = validate(v1Preset("some-future-mode"))
+    check result.isOk
+    check result.preset.settings.forceStrength == 1.5
+    check result.preset.settings.rdDeposit == 0.02
+
+  test "a current-schema preset applies exactly the strengths it carries":
+    ## No translation, no mode consulted. What the file says is what loads.
+    let node = %*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {
+        "forceStrength": 0.5,
+        "fluidStrength": 0.25,
+        "rdDeposit": 0.01,
+        "rdFieldForce": 10.0
+      }
+    }
     let result = validate(node)
-    check result.preset.mode == DEFAULT_MODE
+    check result.preset.settings.forceStrength == 0.5
+    check result.preset.settings.fluidStrength == 0.25
+    check result.preset.settings.rdDeposit == 0.01
+    check result.preset.settings.rdFieldForce == 10.0
+
+  test "a current-schema preset carrying a stray mode key ignores it":
+    ## Belt and braces: the mode table is reachable only from the v1 branch, so
+    ## a `mode` key at the current version must not translate anything.
+    let node = %*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "mode": "sph",
+      "settings": {"forceStrength": 1.5, "rdDeposit": 0.02}
+    }
+    let result = validate(node)
+    check result.preset.settings.forceStrength == 1.5
+    check result.preset.settings.rdDeposit == 0.02
+
+  test "translated strengths still pass through the ordinary clamp":
+    ## The translation writes onto the settings node and lets validateSettings
+    ## run, so a legacy file with an out-of-range value cannot use the legacy
+    ## branch as a second, unclamped way in.
+    let node = %*{
+      "schemaVersion": 1,
+      "mode": "particle-life",
+      "settings": {"forceStrength": 999.0}
+    }
+    let result = validate(node)
+    check result.preset.settings.forceStrength == FORCE_STRENGTH_MAX
 
 # ==============================================================================
 # CLAMP BEHAVIOR CONTRACT
@@ -343,9 +490,9 @@ suite "Preset Clamp Behavior Contract":
     check result.preset.settings.rdFieldForce == RD_FIELD_FORCE_MIN
 
   test "a missing reaction-diffusion field defaults rather than crashing":
-    # The two coupling knobs arrived after v1 presets shipped. No schema bump
-    # covers that: validateSettings supplies the default for an absent field,
-    # so a preset saved before they existed still loads.
+    # A preset carrying neither of the two coupling knobs still loads: no schema
+    # bump covers their absence, and validateSettings supplies the default for
+    # any absent field.
     let result = validate(%*{"settings": {}})
     check result.preset.settings.rdFeed == defaultSettings().rdFeed
     check result.preset.settings.rdKill == defaultSettings().rdKill
@@ -369,7 +516,7 @@ suite "Preset Clamp Behavior Contract":
 
   test "a missing bloom field defaults rather than crashing":
     ## A pre-S9 preset carries no bloom fields; they must fall back to the
-    ## defaults on load without a schema bump (schema stays v1).
+    ## defaults on load without a schema bump.
     let result = validate(%*{"settings": {}})
     check result.preset.settings.bloomEnabled == defaultSettings().bloomEnabled
     check result.preset.settings.exposure == defaultSettings().exposure
@@ -416,24 +563,27 @@ suite "Preset Clamp Behavior Contract":
 
 suite "Preset Migration Hook Contract":
   test "migrate is the identity transform at the current version":
-    ## CONTRACT: v1 is the only version that has ever existed, so migrating
-    ## from CURRENT_SCHEMA_VERSION must return the node unchanged
+    ## CONTRACT: migrating a node already at CURRENT_SCHEMA_VERSION returns it
+    ## unchanged — no step applies to a preset that needs no upgrade
     let node = toJson(defaultPreset())
     let migrated = migrate(node, CURRENT_SCHEMA_VERSION)
     check migrated == node
 
   test "validate routes an older-versioned node through migrate before field validation":
-    ## FIXTURE: simulates a hypothetical pre-v1 preset (schemaVersion 0) to
-    ## prove the migrate hook is wired into the validate path, not just
-    ## defined. Since migrate is identity today, a v0-tagged node is
-    ## field-validated exactly as a v1 node would be — the fixture exists
-    ## to pin that wiring so a future `if fromVersion < 2` branch has a
-    ## regression test to extend rather than a blank slate.
+    ## FIXTURE: a pre-v1 preset (schemaVersion 0) proves the migrate hook is
+    ## wired into the validate path rather than only defined. A v0-tagged node
+    ## falls through the same steps a v1 node does and is then field-validated,
+    ## so this pins the wiring each added migration step extends.
+    ##
+    ## The deposit assertion is what makes it non-vacuous: the fixture carries a
+    ## nonzero rdDeposit behind a mode that hides chemistry, so a zero coming
+    ## back proves the mode translation ran. A branch narrowed to exactly one
+    ## version would leave the 0.02 standing and fail here.
     let fixture = %*{
       "schemaVersion": 0,
       "name": "Legacy Preset",
       "mode": "particle-life",
-      "settings": {"particleCount": 20000},
+      "settings": {"particleCount": 20000, "rdDeposit": 0.02},
       "matrix": newSeq[float](MATRIX_LEN),
       "palette": DEFAULT_PALETTE
     }
@@ -442,6 +592,7 @@ suite "Preset Migration Hook Contract":
     check result.preset.schemaVersion == CURRENT_SCHEMA_VERSION
     check result.preset.name == "Legacy Preset"
     check result.preset.settings.particleCount == 20000
+    check result.preset.settings.rdDeposit == 0.0
 
   test "a negative schemaVersion still migrates and validates rather than rejecting":
     let node = %*{"schemaVersion": -1, "name": "Very old"}

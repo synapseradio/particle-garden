@@ -5,8 +5,7 @@
 # Single compilation unit for the web frontend.
 # All modules compile together, eliminating duplicate variable problems.
 #
-# ARCHITECTURE: WebGPU-only physics and rendering.
-# The WASM worker path has been removed; all computation runs on GPU.
+# ARCHITECTURE: WebGPU-only physics and rendering. All computation runs on GPU.
 #
 # Compile with: nim js -d:release --out:web/app.js src/app.nim
 #
@@ -70,7 +69,6 @@ proc logGpuProfile(particleCount: int, gridMs: float, physicsMs: float, drawMs: 
                    presentMs: float, bloomMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms bloom=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
-proc urlParamStr(name: cstring): cstring {.importjs: "(new URLSearchParams(location.search).get(#) || '')".}
 
 # ==============================================================================
 # APPLICATION STATE
@@ -148,9 +146,43 @@ proc initParticles*() {.exportc.} =
   if useWebGPU:
     discard webgpu_compute.uploadInitialData(newCount)
 
+proc resizeParticles*() {.exportc.} =
+  ## Change how many particles the world runs without restarting it, so the
+  ## slider can feed a settled world or thin a clogged one. The reset control is
+  ## how you ask for a fresh world.
+  ##
+  ## Lowering the count keeps every survivor where it is — the simulation just
+  ## stops iterating past the new count. Raising it seeds and uploads only the
+  ## arrivals, leaving the living population untouched.
+  let previousCount = runtimeState.particleCount
+  let newCount = config.CONFIG.particleCount
+  if newCount == previousCount:
+    return
+  runtimeState = runtimeState.withParticleCount(newCount)
+  if newCount < previousCount:
+    return
+
+  let ns = config.CONFIG.speciesCount
+  for particleIndex in previousCount ..< newCount:
+    let base = particleIndex * buffers.FLOATS_PER_PARTICLE
+    buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * config.WORLD_W
+    buffers.particlesA[base + buffers.FIELD_POS_Y] = jsRandom() * config.WORLD_H
+    buffers.particlesA[base + buffers.FIELD_VEL_X] = (jsRandom() - 0.5) * 2.0
+    buffers.particlesA[base + buffers.FIELD_VEL_Y] = (jsRandom() - 0.5) * 2.0
+    # Species drawn at random rather than round-robin. The arrivals are joining
+    # a population whose species balance the user may have already shifted, and
+    # a deterministic cycle over a handful of new particles would bias whichever
+    # species the cycle happened to start on.
+    buffers.particlesA[base + buffers.FIELD_SPECIES] =
+      float32(bitwiseOr(jsRandom() * float(ns), 0))
+    buffers.particlesA[base + buffers.FIELD_DENSITY] = 0.0
+
+  if useWebGPU:
+    webgpu_compute.uploadParticleRange(previousCount, newCount)
+
 proc resetParticles*() {.exportc.} =
   ## Reset particles to initial random state.
-  initParticles()  # This now handles GPU upload internally
+  initParticles()  # Handles the GPU upload internally
 
 # ==============================================================================
 # PHYSICS (WebGPU Compute)
@@ -242,10 +274,10 @@ proc loop(now: float): Future[void] {.async.} =
   # UI lying — the climate-drift spec requires the visible path for that
   # reason.
   if config.CONFIG.climateDrift:
-    climatePhase = climateAdvance(
+    climatePhase = tourAdvance(
       climatePhase, config.CONFIG.climateSpeed, cappedDt)
-    let climate = climateAt(climatePhase)
-    web_api.setClimateFromSimulation(climate.feed, climate.kill)
+    let climate = tourAt(RD_CLIMATE_TOUR, climatePhase)
+    web_api.setClimateFromSimulation(climate[caFeed], climate[caKill])
 
   await physics(dt)
 
@@ -273,15 +305,14 @@ proc loop(now: float): Future[void] {.async.} =
     var gpuPresentMs = 0.0
     var gpuFieldMs = 0.0
     if gpu_profiler.isActive():
-      # gpuGridMs reads 0 in reaction-diffusion and gpuFieldMs reads 0 in the
-      # other two modes. That is not a gap: each mode genuinely runs only one
-      # of the two, and the separate slots are what keep either number from
-      # standing in for the other.
+      # Grid build and the field are both world-intrinsic, so both slots carry
+      # a real number every frame. They stay separate so neither time can
+      # stand in for the other.
       gpuGridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
       # Force pass plus integrate. They are separate slots because composable
-      # frames put the field passes between them, but "physics" has always
-      # meant both, and splitting the reported number would silently break
-      # every comparison against a baseline recorded before the merge.
+      # frames put the field passes between them, but "physics" means both,
+      # and splitting the reported number would silently break every
+      # comparison against a recorded baseline.
       gpuPhysicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics) +
         gpu_profiler.passTimeMs(gpu_profiler.passIntegrate)
       gpuDrawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
@@ -310,7 +341,7 @@ proc loop(now: float): Future[void] {.async.} =
 
 proc init(): Future[void] {.async, exportc.} =
   ## Initialize the application.
-  ## Requires WebGPU - no fallback to WASM workers.
+  ## Requires WebGPU; there is no fallback path.
 
   # Optional ?n=<count> URL override for profiling runs at a chosen scale
   let requestedCount = urlParamInt("n", config.CONFIG.particleCount)
@@ -363,6 +394,7 @@ proc init(): Future[void] {.async, exportc.} =
 
   # Set up canvas input and lifecycle callbacks
   canvas_input.setInitParticlesCallback(initParticles)
+  canvas_input.setResizeParticlesCallback(resizeParticles)
   canvas_input.setResizeCallback(webgpu_render.resize)
   canvas_input.setReseedFieldCallback(webgpu_compute.requestFieldSeed)
   # Camera hooks. canvas_input sits a layer below webgpu_render and cannot read
@@ -372,9 +404,9 @@ proc init(): Future[void] {.async, exportc.} =
   canvas_input.cameraSetter = webgpu_render.setCamera
   canvas_input.setupEvents(cast[JsObject](webgpu_render.canvas))
 
-  # Mode selector drives the compute executor's frame description
-  subscribeSimple(sim_config.activeSimKind, proc(kind: SimKind) =
-    webgpu_compute.setActiveSimKind(kind))
+  # A strength crossing zero drives the compute executor's frame description.
+  subscribeSimple(sim_config.worldCouplings, proc(couplings: WorldCouplings) =
+    webgpu_compute.setCouplings(couplings))
 
   # Initialize attraction matrix with random values
   web_api.randomizeMatrix()
@@ -391,26 +423,8 @@ proc init(): Future[void] {.async, exportc.} =
 
   consoleLog(toJs("Initial data uploaded to GPU"))
 
-  # Optional ?mode=<sim-kind-id> URL override (machine interface, like ?n=/?seed=
-  # — never a user-facing surface). Routes through web_api.setSimModeImpl, the
-  # same path gardenAPI's mode buttons use, so the compute executor swaps to the
-  # requested frame. Runs after setup so the activeSimKind subscription and
-  # pipelines are live. An unknown id is ignored with a warning rather than
-  # crashing the loop.
-  if urlParamHas("mode"):
-    let requestedMode = urlParamStr("mode")
-    var isKnownMode = false
-    for kind in SimKind:
-      if simKindId(kind) == $requestedMode:
-        isKnownMode = true
-    if isKnownMode:
-      consoleLog(toJs("[app] ?mode= override:"), toJs(requestedMode))
-      web_api.setSimModeImpl(parseSimKind($requestedMode))
-    else:
-      consoleWarn(toJs("[app] unknown ?mode= value, ignoring:"), toJs(requestedMode))
-
   # Optional ?bloom=0|1 URL override for the HDR bloom path (machine interface,
-  # like ?n=/?seed=/?mode= — never a user-facing surface). Routes through
+  # like ?n=/?seed= — never a user-facing surface). Routes through
   # web_api.setBloomImpl, the same path gardenAPI's bloom toggle uses.
   if urlParamHas("bloom"):
     web_api.setBloomImpl(urlParamInt("bloom", 0) != 0)

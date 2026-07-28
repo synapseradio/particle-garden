@@ -1,6 +1,6 @@
 // One range slider bound to a descriptor: min/max/step, label, hint and
 // notches all come from the Nim side, input events write through setParam
-// (clamped, synchronous mirror), release fires commitParam (the old "change"
+// (clamped, synchronous mirror), release fires commitParam (the DOM "change"
 // event's side effects).
 //
 // Notches are labelled tick marks the drag snaps to when it comes close. They
