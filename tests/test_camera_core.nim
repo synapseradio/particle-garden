@@ -123,6 +123,42 @@ suite "Panning Is Seamless And Exact":
       check camera.centerY >= 0.0'f32
       check camera.centerY < WORLD_H
 
+  test "a centre moved by any multiple of the world span rewraps into [0, worldSize)":
+    # THE POSTCONDITION THE Camera DOC PROMISES, held against inputs that move
+    # a centre further than one span. Everything downstream reads that promise
+    # as its precondition: wrapDelta corrects by a single step, which is enough
+    # only while the centre sits inside one span, so a mover that handed back a
+    # centre two spans out would reintroduce the seam nearest-image exists to
+    # hide.
+    #
+    # No gesture reaches these inputs today — a zoom jump across the whole
+    # [1, 8] range displaces the centre by under half a span. The movers are
+    # held to the promise regardless of who calls them, because a postcondition
+    # that holds only for the callers who happen to exist is not one.
+    for spans in [-4.0'f32, -2.5'f32, -1.0'f32, 0.0'f32, 1.0'f32, 3.0'f32,
+        7.25'f32]:
+      checkpoint("moved by " & $spans & " world spans")
+      let pannedFar = initCamera(WORLD_W, WORLD_H).panned(
+        spans * WORLD_W, spans * WORLD_H, WORLD_W, WORLD_H)
+      check pannedFar.centerX >= 0.0'f32
+      check pannedFar.centerX < WORLD_W
+      check pannedFar.centerY >= 0.0'f32
+      check pannedFar.centerY < WORLD_H
+
+      # zoomedAt is driven from a centre already outside one span, the only way
+      # to reach the multi-span case through it: its own displacement is
+      # bounded by half a span across the whole zoom range.
+      let far = Camera(
+        centerX: WORLD_W * (0.5'f32 + spans),
+        centerY: WORLD_H * (0.5'f32 + spans),
+        zoom: 1.0'f32)
+      let zoomedFar = far.zoomedAt(
+        4.0'f32, 0.3'f32, -0.3'f32, WORLD_W, WORLD_H)
+      check zoomedFar.centerX >= 0.0'f32
+      check zoomedFar.centerX < WORLD_W
+      check zoomedFar.centerY >= 0.0'f32
+      check zoomedFar.centerY < WORLD_H
+
   test "panning and panning back returns the starting view":
     let camera = initCamera(WORLD_W, WORLD_H)
     let roundTripped = camera

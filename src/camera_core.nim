@@ -19,6 +19,7 @@
 #
 # ==============================================================================
 
+import std/math
 import physics_core
 
 # ==============================================================================
@@ -172,6 +173,21 @@ func apparentScale*(camera: Camera): float32 =
 # MOVEMENT
 # ==============================================================================
 
+func wrappedCenter(pos, size: float32): float32 =
+  ## A camera centre folded into [0, size) from however many spans out.
+  ##
+  ## physics_core.wrapPosition corrects one span, which is everything a particle
+  ## advanced by a single bounded step can need, and the hot path keeps that
+  ## cheap form for exactly that reason. A camera centre carries no such bound:
+  ## deltaX and the zoom anchor arrive from callers, so the fold here must hold
+  ## for any displacement rather than for the ones today's gestures produce.
+  result = pos - floor(pos / size) * size
+  # For inputs many spans out the quotient loses enough precision that the fold
+  # can land on `size` itself, or a hair below zero. Both mean zero, and the
+  # half-open bound is the whole promise, so it is enforced rather than assumed.
+  if result < 0.0'f32 or result >= size:
+    result = 0.0'f32
+
 func panned*(camera: Camera, deltaX, deltaY: float32,
     worldWidth, worldHeight: float32): Camera =
   ## The camera moved by a world-space offset, its centre rewrapped.
@@ -181,8 +197,8 @@ func panned*(camera: Camera, deltaX, deltaY: float32,
   ## itself comes back to where it started, so nothing accumulates drift over
   ## a long pan and the nearest-image maths keeps its precondition.
   Camera(
-    centerX: wrapPosition(camera.centerX + deltaX, worldWidth),
-    centerY: wrapPosition(camera.centerY + deltaY, worldHeight),
+    centerX: wrappedCenter(camera.centerX + deltaX, worldWidth),
+    centerY: wrappedCenter(camera.centerY + deltaY, worldHeight),
     zoom: camera.zoom)
 
 func zoomedAt*(camera: Camera, newZoom: float32,
@@ -205,8 +221,8 @@ func zoomedAt*(camera: Camera, newZoom: float32,
   let newOffsetX = anchorClipX * worldWidth / (2.0'f32 * newZoom)
   let newOffsetY = anchorClipY * worldHeight / (2.0'f32 * newZoom)
   Camera(
-    centerX: wrapPosition(
+    centerX: wrappedCenter(
       camera.centerX + (oldOffsetX - newOffsetX), worldWidth),
-    centerY: wrapPosition(
+    centerY: wrappedCenter(
       camera.centerY + (oldOffsetY - newOffsetY), worldHeight),
     zoom: newZoom)
