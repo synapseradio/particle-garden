@@ -235,6 +235,7 @@ proc getPlaceholderMap*(): Table[string, string] =
   # keeps the shader's conservation identical to the tested oracle's, since a
   # continuous-Gaussian approximation would disagree with the discrete sum.
   result["RD_DEPOSIT_CELL_MAX"] = fmt"{RD_DEPOSIT_CELL_MAX:.4f}"
+  result["RD_DEPOSIT_FRAME_SCALE"] = fmt"{RD_DEPOSIT_FRAME_SCALE:.6f}"
   result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
   result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)
   result["RD_DEPOSIT_SPLAT_SIGMA"] = fmt"{RD_DEPOSIT_SPLAT_SIGMA:.4f}"

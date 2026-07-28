@@ -221,10 +221,15 @@ func substep(sourceA, sourceB: HarnessField, targetA, targetB: var HarnessField,
       targetB[y][x] = b
 
 func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
-    mask: HarnessField, deposit, feed, kill: float) =
+    mask: HarnessField, deposit, feed, kill: float,
+    substeps = RD_STEPS_PER_FRAME, depositScale = RD_DEPOSIT_FRAME_SCALE) =
   ## One shipped frame in the order webgpu_compute encodes it: fieldResolve
-  ## folds every particle's deposit into the inhibitor channel once, then
-  ## RD_STEPS_PER_FRAME Gray-Scott substeps run.
+  ## folds every particle's deposit into the inhibitor channel once — scaled
+  ## by RD_DEPOSIT_FRAME_SCALE, mirroring field-resolve.wgsl — then
+  ## RD_STEPS_PER_FRAME Gray-Scott substeps run. The two trailing parameters
+  ## exist for the fold-invariance test; every other caller takes the shipped
+  ## defaults. A non-default substep count must stay ODD or the copy-back
+  ## below returns the wrong buffer.
   ##
   ## The substeps ping-pong between the field pair and a caller-owned scratch
   ## pair, exactly as the GPU ping-pongs its two field textures. Because
@@ -233,8 +238,8 @@ func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
   ## the frame closes with one copy back rather than one per substep.
   for y in 0 ..< HARNESS_GRID:
     for x in 0 ..< HARNESS_GRID:
-      fieldB[y][x] = fieldB[y][x] + mask[y][x] * deposit
-  for index in 0 ..< RD_STEPS_PER_FRAME:
+      fieldB[y][x] = fieldB[y][x] + depositScale * mask[y][x] * deposit
+  for index in 0 ..< substeps:
     if index mod 2 == 0:
       substep(fieldA, fieldB, scratchA, scratchB, feed, kill)
     else:
@@ -244,15 +249,18 @@ func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
 
 func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
     feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL,
-    mask = depositMask()): FieldStats =
+    mask = depositMask(), substeps = RD_STEPS_PER_FRAME,
+    depositScale = RD_DEPOSIT_FRAME_SCALE): FieldStats =
   ## Run `frames` shipped frames from a seed and summarize the inhibitor
-  ## channel.
+  ## channel. The two trailing parameters pass through to advanceFrame for
+  ## the fold-invariance test; every other caller takes the shipped defaults.
   var fieldA = seedA
   var fieldB = seedB
   var scratchA, scratchB: HarnessField
 
   for _ in 0 ..< frames:
-    advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill)
+    advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill,
+      substeps, depositScale)
 
   const CELLS = HARNESS_GRID * HARNESS_GRID
   var total = 0.0
@@ -1291,6 +1299,9 @@ suite "Reaction-Diffusion Tuning Constants":
     check RD_STEPS_PER_FRAME == 7
     check RD_DEFAULT_FEED == 0.030
     check RD_DEFAULT_KILL == 0.062
+    check RD_DEPOSIT_STEP_REFERENCE == 8
+    check RD_DEPOSIT_FRAME_SCALE ==
+      float(1 + RD_STEPS_PER_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
 
   test "the substep count keeps the field ping-pong chain closed":
     # CONTRACT: fieldResolve is itself one ping-pong stage (it reads the trail
@@ -1299,6 +1310,38 @@ suite "Reaction-Diffusion Tuning Constants":
     # the texture the next frame's resolve reads and the renderer samples. An
     # even RD_STEPS_PER_FRAME silently discards the last substep every frame.
     check RD_STEPS_PER_FRAME mod 2 == 1
+
+  test "the deposit fold is invariant per field step under the substep knob":
+    # CONTRACT: deposits fold once per frame while the reaction runs
+    # 1 + RD_STEPS_PER_FRAME steps, so without the frame scale a lower substep
+    # count delivers MORE deposit per unit of field time — measured unscaled
+    # at 3 substeps as a scattered mask igniting on frame 6, the critical
+    # radius falling from 5 to 3, and the single-cell negative control
+    # lighting the field. Equal field steps at equal per-step deposit must
+    # land near the same field, whatever the frame granularity; nearness is
+    # bounded rather than exact because the fold arrives every 4 steps in one
+    # variant and every 8 in the other.
+    let mask = clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian)
+    let seed = flatSeed()
+    # 12 frames x 8 steps and 24 frames x 4 steps are the same 96 field steps.
+    let reference = evolve(seed.a, seed.b, 12, RD_DEFAULT_DEPOSIT,
+      mask = mask, substeps = 7, depositScale = 8.0 / 8.0)
+    let halved = evolve(seed.a, seed.b, 24, RD_DEFAULT_DEPOSIT,
+      mask = mask, substeps = 3, depositScale = 4.0 / 8.0)
+    check (reference.aliveFraction > 0.0) == (halved.aliveFraction > 0.0)
+    check abs(reference.maxB - halved.maxB) < 0.05
+    check abs(reference.aliveFraction - halved.aliveFraction) < 0.05
+    # The unscaled fold is the failure mode the scale removes, and it lives at
+    # the ignition THRESHOLD, not in peak amplitude: without the scale a
+    # SCATTERED deposit ignites at 3 substeps — the coherence requirement
+    # dissolves — while the scaled fold keeps the scatter dead exactly as the
+    # reference does.
+    let scattered = evolve(seed.a, seed.b, 24, RD_DEPOSIT_MAX,
+      mask = depositMask(), substeps = 3, depositScale = 1.0)
+    let scatteredScaled = evolve(seed.a, seed.b, 24, RD_DEPOSIT_MAX,
+      mask = depositMask(), substeps = 3, depositScale = 4.0 / 8.0)
+    check scattered.aliveFraction > 0.0
+    check scatteredScaled.aliveFraction == 0.0
 
   test "the Pearson defaults sit in the classic self-replicating-spots regime":
     # Pearson, J.E. (1993), "Complex Patterns in a Simple System", Science

@@ -109,6 +109,32 @@ const
     ## evolves slowly relative to a video frame, so multiple steps per frame
     ## buys visible motion without lowering dt (and hence stability).
     ## Must be ODD — see the static assertion below.
+    ## NOT a free performance lever, although each frame runs
+    ## 1 + RD_STEPS_PER_FRAME full-field passes and the cost is real: deposits
+    ## fold once per frame, so LOWERING the substep count raises the deposit
+    ## rate per unit of field time and dissolves the coherence requirement on
+    ## ignition. Measured at 3: a scattered deposit ignites on frame 6, the
+    ## critical splat radius falls from 5 to 3, and the single-cell negative
+    ## control lights the field — design D3's property fails. The fold
+    ## therefore renormalizes: RD_DEPOSIT_FRAME_SCALE below holds the deposit
+    ## rate per FIELD STEP invariant under this knob, which is what makes it
+    ## a speed lever at all. What the knob still changes is wall-clock: the
+    ## pattern evolves proportionally slower, and particles travel further
+    ## per field step, which the chemotaxis suite measures.
+  RD_DEPOSIT_STEP_REFERENCE* = 8
+    ## Field steps per frame — 1 + RD_STEPS_PER_FRAME — at which every deposit
+    ## constant in this file was measured: the splat radius, the cell cap, the
+    ## collapse bounds, and the regime deposit floors. The fold scales against
+    ## this reference so those measurements stay valid when the substep count
+    ## moves. Re-measuring the deposit constants at a new step count is the
+    ## only reason to change this number.
+  RD_DEPOSIT_FRAME_SCALE* =
+    float(1 + RD_STEPS_PER_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
+    ## Multiplier the resolve fold applies to each frame's capped deposit so
+    ## the deposit rate per FIELD STEP is invariant under RD_STEPS_PER_FRAME.
+    ## Exactly 1.0 when the substep count sits at the reference. Applied after
+    ## the cell cap, so the effective injection bound scales with it and the
+    ## measured stability margin holds in field time.
   RD_DEFAULT_FEED* = 0.030
     ## Feed rate F. Paired with RD_DEFAULT_KILL below, this sits in Pearson's
     ## self-replicating-spots regime (see the constants' test suite for the
@@ -294,12 +320,14 @@ const
     ## excursions above 0.7 while igniting, all of it self-limiting. A ceiling
     ## on the state would clip those; a ceiling on what particles add does not.
 
-func resolveCellDeposit*(inhibitor, deposit: float): float =
+func resolveCellDeposit*(inhibitor, deposit: float,
+    scale = RD_DEPOSIT_FRAME_SCALE): float =
   ## One cell's inhibitor after this frame's particle deposits land on it.
   ## Mirrors field-resolve.wgsl in the same order: cap the incoming deposit,
-  ## fold it onto the inhibitor, then floor the fold at 0.0. The cap is on
-  ## what arrives, never on what the reaction produces, so the dynamics keep
-  ## every excursion they make.
+  ## scale it per field step, fold it onto the inhibitor, then floor the fold
+  ## at 0.0. The cap is on what arrives, never on what the reaction produces,
+  ## so the dynamics keep every excursion they make. The scale parameter
+  ## exists for the invariance test; every shipped caller takes the default.
   ##
   ## The cap bounds excess only from above (min() against a negative deposit
   ## is a no-op), so full-erosion secretion has no matching floor without this
@@ -307,7 +335,7 @@ func resolveCellDeposit*(inhibitor, deposit: float): float =
   ## the reaction term (activator * inhibitor^2) does not distinguish sign —
   ## a negative inhibitor erodes activator the same way a positive one would
   ## spend it.
-  max(0.0, inhibitor + min(deposit, RD_DEPOSIT_CELL_MAX))
+  max(0.0, inhibitor + scale * min(deposit, RD_DEPOSIT_CELL_MAX))
 
 func depositSplatWeight*(distance, radius: float): float =
   ## Unnormalized weight one cell receives from a particle `distance` cells

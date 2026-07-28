@@ -52,6 +52,7 @@
 const FIELD_W: u32 = {{FIELD_W}}u;
 const FIELD_H: u32 = {{FIELD_H}}u;
 const RD_DEPOSIT_CELL_MAX: f32 = {{RD_DEPOSIT_CELL_MAX}};
+const RD_DEPOSIT_FRAME_SCALE: f32 = {{RD_DEPOSIT_FRAME_SCALE}};
 
 @compute @workgroup_size({{WORKGROUP_SIZE_FIELD_X}}, {{WORKGROUP_SIZE_FIELD_Y}}, 1)
 fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -69,11 +70,16 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // addressing field-deposit.wgsl writes with. See that file for what a second
   // channel would cost and what it would change on both sides.
   let cellIndex = cellY * FIELD_W + cellX;
-  // Mirrors field_core.resolveCellDeposit. RD_DEPOSIT_MAX bounds one particle;
-  // nothing bounds how many share a cell, so an input that gathers a crowd into
-  // one place drives this past the range explicit Euler integrates stably. The
-  // cap is on what arrives, never on what the reaction produces.
-  let depositB = min(
+  // Mirrors field_core.resolveCellDeposit in the same order: cap, scale,
+  // fold, floor. RD_DEPOSIT_MAX bounds one particle; nothing bounds how many
+  // share a cell, so an input that gathers a crowd into one place drives this
+  // past the range explicit Euler integrates stably. The cap is on what
+  // arrives, never on what the reaction produces. The frame scale holds the
+  // deposit rate per FIELD STEP invariant under RD_STEPS_PER_FRAME — the fold
+  // lands once per frame while the reaction runs 1 + RD_STEPS_PER_FRAME
+  // steps, so an unscaled fold would strengthen deposits whenever the substep
+  // count fell.
+  let depositB = RD_DEPOSIT_FRAME_SCALE * min(
     f32(atomicLoad(&fieldDeposit[cellIndex])) * INV_FIXED_POINT_SCALE,
     RD_DEPOSIT_CELL_MAX);
 
