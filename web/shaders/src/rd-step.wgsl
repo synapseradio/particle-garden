@@ -26,42 +26,55 @@
 // 5-point form diverges at these rates.
 // Neighbor reads wrap toroidally, matching the wrapping particle world.
 //
-// REACTION SEAM: reactionKind is a pipeline-override constant (default 0 =
-// Gray-Scott). It is the seam a future Lenia reaction slots into without touching
-// this file's bindings — FieldParams has no reactionKind field and its layout is
-// fixed, so the selector lives here as an override rather than a uniform member.
+// REACTION SEAM: which reaction runs is read from the ReactionParams uniform, as
+// a value from the named constant set below. It arrived as a pipeline-override
+// constant, which meant selecting a reaction required creating a second pipeline;
+// reading it from a uniform makes a second reaction a new branch in this file and
+// nothing else. RESERVED, NOT DELIVERED — REACTION_GRAY_SCOTT is the only value
+// any code writes, and the other ReactionParams members are untouched by it.
 //
-// CHANNELS: .r = activator (A), .g = inhibitor (B).
+// CHANNELS: .r = activator (A), .g = inhibitor (B). The .b and .a channels are
+// RESERVED STATE CHANNELS for a multi-channel reaction and are carried through
+// untouched — see field-resolve.wgsl for why they cost nothing.
 //
 // BINDING MANIFEST:
-// +-------+-------------------------------------+-------------+--------+
-// | Bind  | Shader Type                         | Resource    | Access |
-// +-------+-------------------------------------+-------------+--------+
-// |   0   | texture_2d<f32>                     | src view    | sample |
-// |   1   | texture_storage_2d<rgba16float,write> | dst view  | write  |
-// |   2   | uniform FieldParams                 | fieldParams | read   |
-// +-------+-------------------------------------+-------------+--------+
+// +-------+-------------------------------------+----------------+--------+
+// | Bind  | Shader Type                         | Resource       | Access |
+// +-------+-------------------------------------+----------------+--------+
+// |   0   | texture_2d<f32>                     | src view       | sample |
+// |   1   | texture_storage_2d<rgba16float,write> | dst view     | write  |
+// |   2   | uniform FieldParams                 | fieldParams    | read   |
+// |   3   | uniform ReactionParams              | reactionParams | read   |
+// +-------+-------------------------------------+----------------+--------+
 // =============================================================================
 
 //! import field_params
+//! import reaction_params
 
 @group(0) @binding(0) var srcField: texture_2d<f32>;
 // rgba16float (see field-resolve.wgsl): rg16float is not a storage-capable
 // format in WebGPU. Only .rg is meaningful (.r = activator, .g = inhibitor).
 @group(0) @binding(1) var dstField: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var<uniform> params: FieldParams;
+@group(0) @binding(3) var<uniform> reaction: ReactionParams;
 
-// reactionKind: 0 = Gray-Scott (the only reaction implemented this stage). A
-// future Lenia reaction is another value; the pipeline is created with the
-// default, so behavior is unchanged until a caller overrides it.
-override reactionKind: u32 = 0u;
+// The reaction constant set. Gray-Scott is the only member with an
+// implementation; a second reaction becomes a second constant and a second
+// branch in rdStep, without touching a binding, a layout, or the manifest.
+const REACTION_GRAY_SCOTT: u32 = 0u;
 
 const FIELD_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
 
-fn loadCell(coord: vec2<i32>) -> vec2<f32> {
+fn loadCellFull(coord: vec2<i32>) -> vec4<f32> {
   // Toroidal wrap so the field is seamless, matching the wrapping world.
   let wrapped = (coord + FIELD_DIMS) % FIELD_DIMS;
-  return textureLoad(srcField, wrapped, 0).xy;
+  return textureLoad(srcField, wrapped, 0);
+}
+
+fn loadCell(coord: vec2<i32>) -> vec2<f32> {
+  // Only the reacting channels. Neighbors contribute to the Laplacian and
+  // nothing else, so their reserved channels are never read.
+  return loadCellFull(coord).xy;
 }
 
 @compute @workgroup_size({{WORKGROUP_SIZE_FIELD_X}}, {{WORKGROUP_SIZE_FIELD_Y}}, 1)
@@ -72,7 +85,8 @@ fn rdStep(@builtin(global_invocation_id) globalId: vec3<u32>) {
     return;
   }
 
-  let center = loadCell(vec2<i32>(cellX, cellY));
+  let centerFull = loadCellFull(vec2<i32>(cellX, cellY));
+  let center = centerFull.xy;
   let north = loadCell(vec2<i32>(cellX, cellY - 1));
   let south = loadCell(vec2<i32>(cellX, cellY + 1));
   let east = loadCell(vec2<i32>(cellX + 1, cellY));
@@ -93,14 +107,18 @@ fn rdStep(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var nextA = activator;
   var nextB = inhibitor;
 
-  if (reactionKind == 0u) {
+  if (u32(reaction.reactionKind) == REACTION_GRAY_SCOTT) {
     // Gray-Scott — mirrors field_core.grayScottStep.
-    let reaction = activator * inhibitor * inhibitor;
+    let reactionTerm = activator * inhibitor * inhibitor;
     nextA = activator + params.deltaT * (
-      params.diffusionA * laplacian.x - reaction + params.feed * (1.0 - activator));
+      params.diffusionA * laplacian.x - reactionTerm + params.feed * (1.0 - activator));
     nextB = inhibitor + params.deltaT * (
-      params.diffusionB * laplacian.y + reaction - (params.feed + params.kill) * inhibitor);
+      params.diffusionB * laplacian.y + reactionTerm - (params.feed + params.kill) * inhibitor);
   }
 
-  textureStore(dstField, vec2<i32>(cellX, cellY), vec4<f32>(nextA, nextB, 0.0, 1.0));
+  // Reserved channels carried through, never overwritten with literals: a
+  // multi-channel reaction needs them to survive every substep, and writing
+  // constants here would erase them RD_STEPS_PER_FRAME times per frame.
+  textureStore(dstField, vec2<i32>(cellX, cellY),
+    vec4<f32>(nextA, nextB, centerFull.z, centerFull.w));
 }

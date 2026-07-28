@@ -123,13 +123,10 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var forceOnThisY = 0.0;
   var densityAccum = 0.0;
 
-  // ATOMIC INITIALIZATION: Reset delta buffers for this particle.
-  // This replaces clearBuffer() to avoid race conditions between buffer clearing
-  // and atomic writes. Each thread owns its particle's slot, so this is safe.
-  // See: W3C WGSL spec on memory model - no inter-workgroup ordering guarantees.
-  atomicStore(&velocityDeltaFixed[thisOriginalIdx * 2u], 0);
-  atomicStore(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], 0);
-  atomicStore(&densityDeltaFixed[thisOriginalIdx], 0);
+  // THIS PASS ACCUMULATES ONLY. The frame clears velocityDelta and densityDelta
+  // before anything writes them (sim_registry.buildFrame opens with both clears),
+  // so a self-reset here would erase whatever a co-running contributor — the
+  // field force, or forces-sph — had already added.
 
   // Find this particle's grid cell
   var cellX = i32(thisParticle.pos.x * invCellWidth);

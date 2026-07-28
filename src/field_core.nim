@@ -72,16 +72,17 @@ const
   RD_DEFAULT_KILL* = 0.062
     ## Kill rate k. See RD_DEFAULT_FEED.
   RD_DEFAULT_DEPOSIT* = 0.02
-    ## Default inhibitor concentration each particle folds into its field cell
-    ## per frame. field-deposit.wgsl splats this (fixed-point) into the deposit
-    ## buffer; field-resolve.wgsl adds the decoded sum onto the inhibitor
-    ## channel.
+    ## Default inhibitor concentration each particle folds into the field per
+    ## frame. field-deposit.wgsl splats this (fixed-point) across the cells
+    ## within RD_DEPOSIT_SPLAT_RADIUS; field-resolve.wgsl adds the decoded sum
+    ## onto the inhibitor channel.
     ##
-    ## This is a PERTURBATION on an already-ignited field, not what ignites it.
-    ## Ignition comes from rdSeedCell below: a particle deposit lands in one
-    ## isolated cell, and diffusion strips an isolated peak of Db*B per substep,
-    ## so no deposit magnitude in a usable band can lift the field off
-    ## Gray-Scott's trivial (activator=1, inhibitor=0) fixed point.
+    ## Spread over a splat radius this magnitude IGNITES the field from a
+    ## colony — that is what the radius exists to buy. Landing in one isolated
+    ## cell it cannot: diffusion strips an isolated peak of Db*B per substep,
+    ## so no deposit magnitude in a usable band lifts a single-cell
+    ## perturbation off Gray-Scott's trivial (activator=1, inhibitor=0) fixed
+    ## point. Coherence, not magnitude, is what crosses the threshold.
     ##
     ## MEASURED BAND (64x64 grid, Pearson defaults, seeded field, deposit folded
     ## once per frame ahead of RD_STEPS_PER_FRAME substeps): at 0.02 the pattern
@@ -113,6 +114,131 @@ static:
   # RD_STEPS_PER_FRAME leaves it on the wrong texture, silently discarding the
   # last substep every frame.
   doAssert RD_STEPS_PER_FRAME mod 2 == 1
+
+# ==============================================================================
+# DEPOSIT SPLAT KERNEL
+# ==============================================================================
+#
+# A particle's deposit is spread over a disc rather than dropped in one cell,
+# because coherence is what escapes the trivial fixed point and a single cell
+# has none. web/shaders/src/field-deposit.wgsl mirrors these two functions; the
+# radius and the normalization reach it as substituted shader constants, so the
+# two sides cannot disagree about kernel weight.
+#
+# The kernel is NORMALIZED: a particle contributes the same total deposit
+# whatever the radius. Spreading is a redistribution, not an amplification —
+# which is why widening the radius cannot flood the field past the ceiling
+# RD_DEPOSIT_MAX was measured against.
+
+const
+  RD_DEPOSIT_SPLAT_RADIUS* = 5.0
+    ## Radius in field cells over which one particle's deposit is spread.
+    ##
+    ## MEASURED (tests/test_field_core.nim, 64x64 grid, flat trivial-fixed-point
+    ## start, deposit coverage matched to the scattered baseline, deposit folded
+    ## once per frame ahead of RD_STEPS_PER_FRAME substeps). Minimum igniting
+    ## (radius, amplitude) at the shipped Pearson defaults:
+    ##
+    ##   Gaussian profile: radius 5 at amplitude 0.02 — ignites on frame 12
+    ##   Top-hat profile:  radius 8 at amplitude 0.02 — ignites on frame 9
+    ##   radius 3:         does not ignite at 0.02; needs 0.04
+    ##   radius 1:         does not ignite at ANY amplitude up to
+    ##                     RD_DEPOSIT_MAX, over 120 frames
+    ##
+    ## 5 is therefore the floor at the shipped deposit, and the Gaussian profile
+    ## is what buys it: at radius 5 the top-hat does NOT ignite at 0.02, because
+    ## the same total weight spread flat reaches a lower peak. The measurement
+    ## uses uniform particle coverage, so it is a lower bound — a real colony
+    ## concentrates deposits far above the uniform mask and ignites sooner.
+    ##
+    ## Traded against cost: the splat costs one atomic per covered cell per
+    ## particle, so ~79 atomics here versus ~201 at radius 8. Radius 5 is the
+    ## smallest measured radius that ignites at the default deposit, which is
+    ## the cheapest honest choice.
+  RD_DEPOSIT_SPLAT_SIGMA_FRACTION* = 0.5
+    ## Sigma as a fraction of the splat radius, so the width scales with any
+    ## radius `depositSplatWeight` is handed rather than only with the shipped
+    ## one.
+  RD_DEPOSIT_SPLAT_SIGMA* = RD_DEPOSIT_SPLAT_RADIUS * RD_DEPOSIT_SPLAT_SIGMA_FRACTION
+    ## Gaussian falloff width. Half the radius puts the truncation at 2 sigma,
+    ## where the weight has fallen to ~13% of the peak — far enough out that
+    ## the cut does not visibly square off the splat, close enough that the
+    ## kernel stays compact.
+
+func depositSplatWeight*(distance, radius: float): float =
+  ## Unnormalized weight one cell receives from a particle `distance` cells
+  ## away. Gaussian out to the radius, zero beyond it. Truncation keeps the
+  ## covered-cell count finite and the shader's loop bounded.
+  if distance > radius: return 0.0
+  let sigma = radius * RD_DEPOSIT_SPLAT_SIGMA_FRACTION
+  exp(-(distance * distance) / (2.0 * sigma * sigma))
+
+func depositSplatNormalization*(radius: float): float =
+  ## Total unnormalized weight the kernel places, summed over the same integer
+  ## cell offsets the shader visits. Dividing by this is what conserves a
+  ## particle's total deposit across radii.
+  ##
+  ## Summed rather than integrated on purpose: the continuous Gaussian integral
+  ## would disagree with the discrete sum the shader actually performs, and the
+  ## disagreement grows as the radius shrinks toward a single cell.
+  let extent = int(radius)
+  for dy in -extent .. extent:
+    for dx in -extent .. extent:
+      result += depositSplatWeight(
+        sqrt((dx * dx + dy * dy).float), radius)
+
+# ==============================================================================
+# SPECIES CHEMISTRY
+# ==============================================================================
+#
+# Each species couples to the field through two signed scalars. SECRETION
+# scales what it deposits: positive builds inhibitor structure, negative erodes
+# it, zero leaves no mark. TROPISM scales the gradient force it feels:
+# NEGATIVE moves a particle DOWN the inhibitor gradient, away from its own
+# deposits; POSITIVE moves it UP, toward them.
+#
+# The sign convention is not arbitrary and the two directions are not
+# symmetric. Climbing a self-deposited gradient is a positive feedback loop —
+# the Keller-Segel chemotactic-collapse threshold chi*M > 8*pi applies to
+# exactly that sign, while negative chemosensitivity is stabilizing
+# (docs/research/chemotaxis-stability.md). That asymmetry is why TROPISM_MAX in
+# config_ranges is half of |TROPISM_MIN|, and why tests/test_field_core.nim
+# measures the collapse point rather than assuming one.
+#
+# web/shaders/src/field-deposit.wgsl and field-force.wgsl mirror the two
+# functions below; gpu_types.SpeciesChemistryLayout is how the values reach
+# them.
+
+const
+  SPECIES_CHEMISTRY_STRIDE* = 2
+    ## Values per species in the CPU-side chemistry array: secretion, then
+    ## tropism. The GPU packs the same data as two parallel channels
+    ## (gpu_types.SpeciesChemistryLayout); this stride is the interleaved
+    ## CPU-side layout the UI edits in place.
+  SPECIES_SECRETION_SLOT* = 0
+  SPECIES_TROPISM_SLOT* = 1
+  RD_DEFAULT_SECRETION* = 1.0
+    ## Full positive secretion: a species deposits exactly RD_DEFAULT_DEPOSIT,
+    ## which is what the field ships doing today. Every measurement behind
+    ## RD_DEPOSIT_MAX and RD_DEPOSIT_SPLAT_RADIUS was taken at this value.
+  RD_DEFAULT_TROPISM* = -1.0
+    ## Full DOWN-gradient response, the stabilizing sign and the behavior the
+    ## field shipped before species chemistry existed: particles are pushed
+    ## away from their own deposits, spreading across the pattern instead of
+    ## piling onto one seed. The default sits at the bound because the bound is
+    ## the safe end of an asymmetric range, not the risky one.
+
+func speciesDeposit*(depositAmount, secretion: float): float =
+  ## What one species folds into the field per frame, before the splat kernel
+  ## redistributes it. Signed: a negative secretion removes inhibitor.
+  ## Mirrors field-deposit.wgsl.
+  depositAmount * secretion
+
+func speciesTropismForce*(gradient, fieldForceScale, tropism: float): float =
+  ## One axis of the velocity impulse a species feels from the field gradient.
+  ## Mirrors field-force.wgsl. The sign lives entirely in `tropism`: negative
+  ## descends the inhibitor gradient, positive climbs it.
+  gradient * fieldForceScale * tropism
 
 # ==============================================================================
 # FIELD SEED

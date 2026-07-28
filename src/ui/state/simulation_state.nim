@@ -13,6 +13,7 @@
 # ==============================================================================
 
 import ../../field_core
+import ../../climate_core  # CLIMATE_DEFAULT_SPEED, the drift-rate authority
 
 type
   SimulationState* = object
@@ -49,6 +50,12 @@ type
     rdFieldForce*: float      ## Gain converting the sampled field gradient
                               ## into a per-frame velocity impulse. Zero
                               ## leaves particles blind to the field.
+    climateDrift*: bool       ## Whether the climate wanders on its own. Off by
+                              ## default: the weather is something a user turns
+                              ## on, never something that moves their sliders
+                              ## unasked.
+    climateSpeed*: float      ## Tours of the named regimes per minute, when
+                              ## drift is on. See climate_core.
 
 func initSimulationState*(): SimulationState =
   ## The authoritative physics defaults (copied into CONFIG by createConfig).
@@ -73,5 +80,7 @@ func initSimulationState*(): SimulationState =
     rdFeed: RD_DEFAULT_FEED,
     rdKill: RD_DEFAULT_KILL,
     rdDeposit: RD_DEFAULT_DEPOSIT,
-    rdFieldForce: RD_DEFAULT_FIELD_FORCE
+    rdFieldForce: RD_DEFAULT_FIELD_FORCE,
+    climateDrift: false,     # Weather is opt-in; nothing moves unasked.
+    climateSpeed: CLIMATE_DEFAULT_SPEED
   )

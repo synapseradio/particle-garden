@@ -49,6 +49,7 @@ when defined(js):
   import field_core
   import preset
   import canvas_input
+  import camera_core
   import ui/api/param_descriptor
   import ui/state/matrix_state
   import ui/state/palette_state
@@ -96,6 +97,8 @@ when defined(js):
     CONFIG.rdKill = simState.rdKill
     CONFIG.rdDeposit = simState.rdDeposit
     CONFIG.rdFieldForce = simState.rdFieldForce
+    CONFIG.climateDrift = simState.climateDrift
+    CONFIG.climateSpeed = simState.climateSpeed
 
   proc applyRenderToConfig(renderState: RenderState) =
     CONFIG.particleSize = renderState.particleSize
@@ -148,6 +151,7 @@ when defined(js):
     of psSimulation: cstring"sim"
     of psRender: cstring"render"
     of psPalette: cstring"palette"
+    of psCamera: cstring"camera"
 
   proc descriptorToJs(descriptor: ParamDescriptor): JsObject =
     result = newJsObject()
@@ -164,12 +168,59 @@ when defined(js):
     result["store"] = toJs(storeName(descriptor.store))
     result["reinitOnCommit"] = toJs(descriptor.reinitOnCommit)
     result["hint"] = toJs(cstring(descriptor.hint))
+    # Labelled positions worth stopping at. Empty for most parameters; the
+    # panel renders whatever arrives and invents none of its own.
+    let notchArray = newJsArray()
+    for entry in descriptor.notches:
+      let notchObj = newJsObject()
+      notchObj["value"] = toJs(entry.value)
+      notchObj["label"] = toJs(cstring(entry.label))
+      notchArray.push(notchObj)
+    result["notches"] = toJs(notchArray)
 
   let descriptorArray = block:
     let jsArray = newJsArray()
     for descriptor in paramDescriptors:
       jsArray.push(descriptorToJs(descriptor))
     jsArray
+
+  # Per-species chemistry: its own small table, because there is one value per
+  # species rather than one per id. The panel loops over it and uses `slot` to
+  # index the live chemistry array, so no stride arithmetic crosses the
+  # boundary as a literal.
+  let chemistryFields = buildChemistryFields()
+
+  let chemistryFieldsById: Table[string, ChemistryField] = block:
+    var lookup = initTable[string, ChemistryField]()
+    for field in chemistryFields:
+      lookup[field.id] = field
+    lookup
+
+  let chemistryFieldArray = block:
+    let jsArray = newJsArray()
+    for field in chemistryFields:
+      let entry = newJsObject()
+      entry["id"] = toJs(cstring(field.id))
+      entry["label"] = toJs(cstring(field.label))
+      entry["slot"] = toJs(field.slot)
+      entry["min"] = toJs(field.minValue)
+      entry["max"] = toJs(field.maxValue)
+      entry["step"] = toJs(field.step)
+      entry["precision"] = toJs(field.precision)
+      entry["defaultValue"] = toJs(field.defaultValue)
+      entry["hint"] = toJs(cstring(field.hint))
+      jsArray.push(entry)
+    jsArray
+
+  proc clampChemistryImpl(id: string; value: float): float =
+    ## Clamp a chemistry edit against its field's range. An unknown id returns
+    ## the value untouched and warns, the same shape setParamImpl uses — the
+    ## panel builds its inputs from the served table, so an unknown id means
+    ## the two sides have drifted rather than that a user typed something odd.
+    if id notin chemistryFieldsById:
+      consoleWarn(toJs("[gardenAPI] unknown chemistry field: " & id))
+      return value
+    clampChemistryValue(chemistryFieldsById[id], value)
 
   # ============================================================================
   # SECTION 3: PALETTE EDITOR STATE
@@ -241,8 +292,10 @@ when defined(js):
       canvas_input.onReseedField()
 
   proc setTrailsImpl(enabled: bool) =
+    ## Delegates to render_state.withTrails, which is where the "a toggle must
+    ## do something" rule lives and where it is natively tested.
     updateRender(proc(renderState: var RenderState) =
-      renderState.trails = enabled)
+      renderState = renderState.withTrails(enabled))
 
   proc setBloomImpl*(enabled: bool) =
     ## Exported for app.nim's ?bloom= machine override.
@@ -252,6 +305,10 @@ when defined(js):
   proc setForceModelImpl(model: int) =
     updateSimulation(proc(simState: var SimulationState) =
       simState.forceModel = clamp(model, 0, 1))
+
+  proc setClimateDriftImpl(enabled: bool) =
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.climateDrift = enabled)
 
   proc setColormapImpl(index: int) =
     updateRender(proc(renderState: var RenderState) =
@@ -336,7 +393,13 @@ when defined(js):
     of "rdKill": CONFIG.rdKill
     of "rdDeposit": CONFIG.rdDeposit
     of "rdFieldForce": CONFIG.rdFieldForce
+    of "climateSpeed": CONFIG.climateSpeed
     of "fieldOpacity": CONFIG.fieldOpacity
+    # Read back from the live camera, not from CONFIG — it is not there. The
+    # panel needs this so the slider tracks a zoom the WHEEL performed.
+    of "cameraZoom":
+      if canvas_input.cameraGetter.isNil: CAMERA_DEFAULT_ZOOM.float
+      else: canvas_input.cameraGetter().zoom.float
     else:
       consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
       0.0
@@ -419,9 +482,104 @@ when defined(js):
       proc(simState: var SimulationState) = simState.rdDeposit = value)
     of "rdFieldForce": updateSimulation(
       proc(simState: var SimulationState) = simState.rdFieldForce = value)
+    of "climateSpeed": updateSimulation(
+      proc(simState: var SimulationState) = simState.climateSpeed = value)
     of "fieldOpacity": updateRender(
       proc(renderState: var RenderState) = renderState.fieldOpacity = value)
+    # psCamera: writes the live view, never CONFIG. Reached through a hook
+    # because webgpu_render sits a layer above this file in app.nim's import
+    # order, the same wiring canvas_input's wheel and key handlers use. Nil
+    # until app.nim wires it, so a write arriving before the render pipeline
+    # initializes is dropped rather than crashing.
+    of "cameraZoom":
+      # Reuses canvas_input's camera hooks rather than declaring a second pair:
+      # webgpu_render sits a layer above both files, and one wiring point means
+      # the slider and the wheel cannot end up pointed at different cameras.
+      if not canvas_input.cameraGetter.isNil and
+          not canvas_input.cameraSetter.isNil:
+        let current = canvas_input.cameraGetter()
+        # Anchored at the view CENTRE, like the +/- keys and unlike the wheel.
+        # A slider has no cursor position to zoom toward.
+        canvas_input.cameraSetter(current.zoomedAt(
+          clampZoom(value.float32, CAMERA_ZOOM_MIN.float32,
+            CAMERA_ZOOM_MAX.float32),
+          0.0'f32, 0.0'f32,
+          float32(config.WORLD_W), float32(config.WORLD_H)))
     else: discard
+
+  # The named regimes, and what selecting one does. A regime is a POINT in the
+  # feed/kill plane, so both axes move together — a notch on one axis alone
+  # does not locate one.
+  let regimeArray = block:
+    let jsArray = newJsArray()
+    for regime in RD_REGIMES:
+      let entry = newJsObject()
+      entry["id"] = toJs(cstring(regime.id))
+      entry["label"] = toJs(cstring(regime.label))
+      entry["feed"] = toJs(regime.feed)
+      entry["kill"] = toJs(regime.kill)
+      entry["minDeposit"] = toJs(regime.minDeposit)
+      jsArray.push(entry)
+    jsArray
+
+  proc applyRegimeImpl(id: string) =
+    ## Set feed and kill to a named regime's coordinates, through the ordinary
+    ## descriptor-clamped setParam path so the sliders read back what landed.
+    ##
+    ## THE DEPOSIT FLOOR. Two regimes (Worms, Coral) do not ignite at the
+    ## default deposit at all — measured in tests/test_field_core.nim and
+    ## recorded at RD_REGIMES — so setting only feed and kill would leave the
+    ## field blank and the button looking broken. Their `minDeposit` is applied
+    ## as a FLOOR, never a set: a user who has deliberately raised the deposit
+    ## keeps their value, and a regime that ignites at the default (minDeposit
+    ## 0) never touches it.
+    for regime in RD_REGIMES:
+      if regime.id == id:
+        setParamImpl("rdFeed", regime.feed)
+        setParamImpl("rdKill", regime.kill)
+        if regime.minDeposit > CONFIG.rdDeposit:
+          setParamImpl("rdDeposit", regime.minDeposit)
+        return
+    consoleWarn(toJs("[gardenAPI] unknown regime id: " & id))
+
+  proc activeRegimeImpl(): string =
+    ## The regime whose coordinates the current feed and kill both match, or
+    ## "" between regimes. Compared at slider precision rather than exactly:
+    ## the value that came back from setParam is what the slider holds, and
+    ## asking for bit equality against the table would leave every button
+    ## unlit.
+    const REGIME_EPSILON = 1e-6
+    for regime in RD_REGIMES:
+      if abs(CONFIG.rdFeed - regime.feed) < REGIME_EPSILON and
+          abs(CONFIG.rdKill - regime.kill) < REGIME_EPSILON:
+        return regime.id
+    ""
+
+  # Resolved once at module scope. The climate writes these two every frame,
+  # and a string lookup per parameter per frame buys nothing when the pair
+  # never varies.
+  let rdFeedDescriptor = paramsById["rdFeed"]
+  let rdKillDescriptor = paramsById["rdKill"]
+
+  proc setClimateFromSimulation*(feed, kill: float) =
+    ## The parameter path for writes the SIMULATION originates rather than the
+    ## user — the drifting climate advancing feed and kill each frame.
+    ##
+    ## Deliberately the same clamped path a slider drag takes, not a shortcut
+    ## into CONFIG: the panel reads its values back through getParam, so a
+    ## direct CONFIG write would move the simulation while leaving the sliders
+    ## showing the old numbers. Watching the controls move is what makes the
+    ## weather legible instead of mysterious.
+    ##
+    ## Both axes land in ONE mirror cycle. A climate point is a coordinate in
+    ## the feed/kill plane, so the two halves belong to the same write, and
+    ## running the store copy and the CONFIG mirror once per frame instead of
+    ## twice is what keeps that write off the frame budget.
+    let clampedFeed = clampParamValue(rdFeedDescriptor, feed)
+    let clampedKill = clampParamValue(rdKillDescriptor, kill)
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.rdFeed = clampedFeed
+      simState.rdKill = clampedKill)
 
   proc commitParamImpl(id: string) =
     ## The slider-release side effect (the old "change" event): only the two
@@ -640,7 +798,7 @@ when defined(js):
       # decision (sim_registry.controlGroupsFor, tested against the mode's own
       # frame) and the panel decides only where each group sits on screen.
       let groups = newJsArray()
-      for group in controlGroupsFor(kind):
+      for group in controlGroupsFor(couplingsFor(kind)):
         groups.push(toJs(cstring(group)))
       mode["groups"] = groups
       jsArray.push(mode)
@@ -709,10 +867,17 @@ when defined(js):
 
   let builtinPresetArray = block:
     let jsArray = newJsArray()
-    # (F, k) coordinates as published for each named Gray-Scott regime; see the
-    # rdFeed/rdKill hints in param_descriptor.nim for the sources. Every value
-    # is a position its slider can land on, so loading a starter and then
-    # nudging the slider behaves the way the reading suggests.
+    # (F, k) coordinates as published for each named Gray-Scott regime; the
+    # sources live with `RD_REGIMES` in config_ranges.nim, which is also what
+    # the rdFeed/rdKill NOTCHES are built from. Every value is a position its
+    # slider can land on, so loading a starter and then nudging the slider
+    # behaves the way the reading suggests.
+    #
+    # These coordinates are a SECOND COPY of values `RD_REGIMES` already holds,
+    # free to disagree with it. Reading the regime table directly would close
+    # that, but it changes what a starter preset contains, so it belongs with
+    # the preset work in group 9 rather than here. Note the names differ too:
+    # this list's "Stripes" carries Labyrinth's coordinates.
     for (id, label, feed, kill) in [
         ("rd-spots", "Spots", 0.035, 0.065),
         ("rd-stripes", "Stripes", 0.029, 0.057),
@@ -776,6 +941,16 @@ when defined(js):
         setPaletteSchemeImpl(parsePaletteScheme($id))
       except ValueError:
         consoleWarn(toJs("[gardenAPI] unknown palette scheme id: " & $id)))
+    # Named reaction-diffusion regimes (feed/kill points, with the measured
+    # deposit floor each needs to appear at all)
+    result["getClimateDrift"] = toJs(proc(): bool = CONFIG.climateDrift)
+    result["setClimateDrift"] = toJs(proc(enabled: bool) =
+      setClimateDriftImpl(enabled))
+
+    result["rdRegimes"] = toJs(proc(): JsObject = regimeArray)
+    result["getRdRegime"] = toJs(proc(): cstring = cstring(activeRegimeImpl()))
+    result["applyRdRegime"] = toJs(proc(id: cstring) = applyRegimeImpl($id))
+
     result["colormaps"] = toJs(proc(): JsObject = colormapArray)
     result["getColormap"] = toJs(proc(): int = CONFIG.colormapIndex)
     result["setColormap"] = toJs(proc(index: int) = setColormapImpl(index))
@@ -793,6 +968,15 @@ when defined(js):
         channels[channelIndex] = COLORS[channelIndex]
       cstring(toRgbaString(speciesColorFromIndex(index, channels))))
     result["randomizeMatrix"] = toJs(proc() = randomizeMatrix())
+
+    # Species chemistry (live Float32Array, same contract as the matrix: the
+    # frame loop copies it into the SpeciesChemistry uniform every frame, so an
+    # edit written straight into the array lands on the next frame).
+    result["chemistry"] = toJs(proc(): Float32Array = config.SPECIES_CHEMISTRY)
+    result["chemistryStride"] = toJs(proc(): int = SPECIES_CHEMISTRY_STRIDE)
+    result["chemistryFields"] = toJs(proc(): JsObject = chemistryFieldArray)
+    result["clampChemistry"] = toJs(proc(id: cstring; value: float): float =
+      clampChemistryImpl($id, value))
 
     # Particles
     result["resetParticles"] = toJs(proc() = triggerParticleReinit())

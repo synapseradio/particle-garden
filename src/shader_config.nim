@@ -181,6 +181,10 @@ import bloom_core
 # coefficients (and the two-tone constants), so colormap.wgsl's ramps are
 # native-tested and single-sourced rather than hand-written in WGSL.
 import colormap_core
+# camera_core is pure; it owns CAMERA_SIZE_FLOOR, the floor the shader's
+# apparent-scale mirror must share with the native-tested one. Substituted
+# rather than restated so the two cannot drift.
+import camera_core
 
 proc getPlaceholderMap*(): Table[string, string] =
   ## Generate placeholder substitutions for the shader bundler
@@ -217,6 +221,18 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["RD_SEED_BLOB_RADIUS"] = fmt"{RD_SEED_BLOB_RADIUS:.1f}"
   result["RD_SEED_CORE_ACTIVATOR"] = fmt"{RD_SEED_CORE_ACTIVATOR:.2f}"
   result["RD_SEED_CORE_INHIBITOR"] = fmt"{RD_SEED_CORE_INHIBITOR:.2f}"
+
+  # Deposit splat kernel (consumed by field-deposit.wgsl, which mirrors
+  # field_core.depositSplatWeight). The radius is the measured ignition floor
+  # and the normalization is the discrete sum of weights over exactly the cell
+  # offsets the shader visits — computing it here rather than in WGSL is what
+  # keeps the shader's conservation identical to the tested oracle's, since a
+  # continuous-Gaussian approximation would disagree with the discrete sum.
+  result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
+  result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)
+  result["RD_DEPOSIT_SPLAT_SIGMA"] = fmt"{RD_DEPOSIT_SPLAT_SIGMA:.4f}"
+  result["RD_DEPOSIT_SPLAT_NORMALIZATION"] =
+    fmt"{depositSplatNormalization(RD_DEPOSIT_SPLAT_RADIUS):.6f}"
 
   # Tunable constants (formatted as WGSL float literals)
   result["TUNABLE_MIN_DISTANCE_SQ"] = fmt"{activeConfig.tuning.minDistanceSq:.1f}"
@@ -259,6 +275,8 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["COLORMAP_INFERNO_COEFFS"] = colormapCoeffsWgsl(INFERNO_COEFFS)
   result["COLORMAP_VIRIDIS_COEFFS"] = colormapCoeffsWgsl(VIRIDIS_COEFFS)
   result["COLORMAP_FIELD_GAIN"] = wgslScalar(COLORMAP_FIELD_GAIN)
+  result["FIELD_LIGHT_STRENGTH"] = wgslScalar(FIELD_LIGHT_STRENGTH)
+  result["CAMERA_SIZE_FLOOR"] = wgslScalar(CAMERA_SIZE_FLOOR.float)
   result["COLORMAP_TWO_TONE_WARM"] = wgslVec3(TWO_TONE_WARM)
   result["COLORMAP_TWO_TONE_COOL"] = wgslVec3(TWO_TONE_COOL)
   result["COLORMAP_TWO_TONE_INHIBITOR_GAIN"] = wgslScalar(TWO_TONE_INHIBITOR_GAIN)

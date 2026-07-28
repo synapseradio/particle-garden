@@ -19,6 +19,7 @@
 from std/jsffi import JsObject
 import bindings/typed_arrays
 import memory_layout
+import field_core
 import palette
 import ui/state/simulation_state
 import ui/state/render_state
@@ -67,6 +68,8 @@ type
     rdKill* {.exportc.}: float            # Gray-Scott kill rate k
     rdDeposit* {.exportc.}: float         # Inhibitor deposited per particle per frame
     rdFieldForce* {.exportc.}: float      # Field-gradient to velocity-impulse gain
+    climateDrift* {.exportc.}: bool       # Whether the climate wanders on its own
+    climateSpeed* {.exportc.}: float      # Regime tours per minute while drifting
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -196,6 +199,8 @@ proc createConfig(): ConfigObject =
   result.rdKill = sim.rdKill
   result.rdDeposit = sim.rdDeposit
   result.rdFieldForce = sim.rdFieldForce
+  result.climateDrift = sim.climateDrift
+  result.climateSpeed = sim.climateSpeed
   result.particleSize = visual.particleSize
   result.trails = visual.trails
   result.trailLength = visual.trailLength
@@ -227,3 +232,25 @@ var CONFIG* {.exportc.}: ConfigObject = createConfig()
 
 var COLORS* {.exportc.}: Float32Array =
   newFloat32Array(flattenPalette(generatePalette(MAX_SPECIES, psOpenColor)))
+
+# ==============================================================================
+# SECTION 8: SPECIES CHEMISTRY
+# ==============================================================================
+#
+# SPECIES_CHEMISTRY holds one (secretion, tropism) pair per species slot, up to
+# MAX_SPECIES, interleaved at SPECIES_CHEMISTRY_STRIDE. It sits beside COLORS
+# rather than in the SharedArrayBuffer because no worker reads it: the frame
+# loop copies it into the SpeciesChemistry uniform, and the control panel edits
+# it in place through gardenAPI, exactly as it edits the attraction matrix.
+#
+# Every slot carries field_core's defaults, including the ones above the active
+# speciesCount — growing the species count then exposes a defaulted species
+# rather than one coupled to the field by whatever was left in memory.
+
+var SPECIES_CHEMISTRY* {.exportc.}: Float32Array = block:
+  let values = newFloat32Array(MAX_SPECIES * SPECIES_CHEMISTRY_STRIDE)
+  for speciesIndex in 0 ..< MAX_SPECIES:
+    let base = speciesIndex * SPECIES_CHEMISTRY_STRIDE
+    values[base + SPECIES_SECRETION_SLOT] = RD_DEFAULT_SECRETION
+    values[base + SPECIES_TROPISM_SLOT] = RD_DEFAULT_TROPISM
+  values

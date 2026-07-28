@@ -9,7 +9,17 @@
 // web_api.nim). Never wrap these calls in deferred/microtask plumbing.
 
 export type ParamKind = "int" | "float";
-export type ParamStore = "sim" | "render" | "palette";
+// "camera" writes the live view rather than CONFIG, and is excluded from
+// preset serialization: a preset restores a world, not where the user stands
+// to look at it.
+export type ParamStore = "sim" | "render" | "palette" | "camera";
+
+// A labelled position on a slider worth stopping at. Nim decides which values
+// earn one and what to call them; this file never invents a notch.
+export interface ParamNotch {
+  value: number;
+  label: string;
+}
 
 export interface ParamDescriptor {
   id: string;
@@ -25,6 +35,19 @@ export interface ParamDescriptor {
   reinitOnCommit: boolean;
   // Guidance shown beside the label; empty for parameters that need none.
   hint: string;
+  // Labelled tick positions. Empty for most parameters.
+  notches: ParamNotch[];
+}
+
+// A named Gray-Scott regime: a POINT in the feed/kill plane, not a region.
+// `minDeposit` is the measured deposit floor the regime needs to appear at all
+// on the shipped path — 0 where the default already ignites it.
+export interface RdRegime {
+  id: string;
+  label: string;
+  feed: number;
+  kill: number;
+  minDeposit: number;
 }
 
 export interface SimMode {
@@ -35,6 +58,23 @@ export interface SimMode {
   // when the active mode lists its group — see lib/mode-gating.ts, which
   // still renders everything if an older app.js omits the field.
   groups: string[];
+}
+
+// One editable column of the per-species chemistry grid. Its own table rather
+// than a ParamDescriptor because there is one value per SPECIES, not one per
+// id: `slot` is the offset inside a species' stride, so the panel indexes the
+// live array as species * chemistryStride() + slot without owning either
+// number.
+export interface ChemistryField {
+  id: string;
+  label: string;
+  slot: number;
+  min: number;
+  max: number;
+  step: number;
+  precision: number;
+  defaultValue: number;
+  hint: string;
 }
 
 export interface PaletteSchemeEntry {
@@ -114,6 +154,15 @@ export interface GardenAPI {
   getPaletteScheme(): string;
   isPaletteCustom(): boolean;
   setPaletteScheme(id: string): void;
+  // Named reaction-diffusion regimes
+  rdRegimes(): RdRegime[];
+  getRdRegime(): string;
+  applyRdRegime(id: string): void;
+
+  // Drifting climate ("weather")
+  getClimateDrift(): boolean;
+  setClimateDrift(enabled: boolean): void;
+
   colormaps(): ColormapEntry[];
   getColormap(): number;
   setColormap(index: number): void;
@@ -125,6 +174,14 @@ export interface GardenAPI {
   matrixStride(): number;
   speciesColor(index: number): string;
   randomizeMatrix(): void;
+
+  // Per-species field chemistry (live reference, same contract as matrix():
+  // the frame loop copies the array into the SpeciesChemistry uniform every
+  // frame, so a write lands on the next frame with no upload call)
+  chemistry(): Float32Array;
+  chemistryStride(): number;
+  chemistryFields(): ChemistryField[];
+  clampChemistry(id: string, value: number): number;
 
   // Particles
   resetParticles(): void;

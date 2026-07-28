@@ -35,6 +35,7 @@ import buffers
 # Layer 3: Browser integration modules
 import grid
 import canvas_input
+import climate_core
 import web_api
 
 # Layer 4: WebGPU modules
@@ -95,6 +96,11 @@ var frameCount {.exportc.}: int = 0
 var lastFpsTime {.exportc.}: float = 0
 var computeTimeMs {.exportc.}: float = 0
 var gpuLogCounter {.exportc.}: int = 0
+var climatePhase {.exportc.}: float = 0
+  ## Position on the closed regime tour, when climate drift is on. Kept here
+  ## rather than in the typed state because it is loop bookkeeping like
+  ## lastTime: nothing reads it but the loop, no preset saves it, and it wraps
+  ## rather than accumulating.
 
 # Per-frame timing staging; folded into runtimeState via withTiming each frame
 var currentTiming* = initTimingState()
@@ -141,14 +147,6 @@ proc initParticles*() {.exportc.} =
   # Upload to GPU if using WebGPU (ensures GPU has current particle data)
   if useWebGPU:
     discard webgpu_compute.uploadInitialData(newCount)
-
-  # Resetting the particles resets the field with them. Without this, Reset in
-  # reaction-diffusion mode would scatter the particles across a pattern that
-  # kept every trace of where the old ones had been depositing. The nonce makes
-  # each reset a genuinely new pattern rather than the same one again. Covers
-  # the particle-count commit path too, which routes through here.
-  if sim_config.activeSimKind.get() == skReactionDiffusion:
-    webgpu_compute.requestFieldSeed()
 
 proc resetParticles*() {.exportc.} =
   ## Reset particles to initial random state.
@@ -233,6 +231,22 @@ proc loop(now: float): Future[void] {.async.} =
   let dt = cappedDt * config.CONFIG.timeScale
   lastTime = now
 
+  # The weather, when it is switched on. Advanced by WALL-CLOCK seconds
+  # (cappedDt) rather than by the timeScale-scaled dt: "one tour of the regimes
+  # a minute" should mean a minute, not a minute divided by how fast the
+  # simulation happens to be running.
+  #
+  # It writes through web_api's ordinary setParam path, so the feed and kill
+  # sliders visibly move and the panel keeps telling the truth about the state.
+  # Writing CONFIG directly here would be a frame cheaper and would leave the
+  # UI lying — the climate-drift spec requires the visible path for that
+  # reason.
+  if config.CONFIG.climateDrift:
+    climatePhase = climateAdvance(
+      climatePhase, config.CONFIG.climateSpeed, cappedDt)
+    let climate = climateAt(climatePhase)
+    web_api.setClimateFromSimulation(climate.feed, climate.kill)
+
   await physics(dt)
 
   # Render using WebGPU - data stays on GPU, no readback needed. Render/glow
@@ -264,7 +278,12 @@ proc loop(now: float): Future[void] {.async.} =
       # of the two, and the separate slots are what keep either number from
       # standing in for the other.
       gpuGridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
-      gpuPhysicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
+      # Force pass plus integrate. They are separate slots because composable
+      # frames put the field passes between them, but "physics" has always
+      # meant both, and splitting the reported number would silently break
+      # every comparison against a baseline recorded before the merge.
+      gpuPhysicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics) +
+        gpu_profiler.passTimeMs(gpu_profiler.passIntegrate)
       gpuDrawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
       gpuPresentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
       gpuFieldMs = gpu_profiler.passTimeMs(gpu_profiler.passField)
@@ -346,10 +365,14 @@ proc init(): Future[void] {.async, exportc.} =
   canvas_input.setInitParticlesCallback(initParticles)
   canvas_input.setResizeCallback(webgpu_render.resize)
   canvas_input.setReseedFieldCallback(webgpu_compute.requestFieldSeed)
+  # Camera hooks. canvas_input sits a layer below webgpu_render and cannot read
+  # the camera directly, so the wheel and key handlers reach it through these.
+  # Wired BEFORE setupEvents, so no event can arrive against a nil hook.
+  canvas_input.cameraGetter = webgpu_render.camera
+  canvas_input.cameraSetter = webgpu_render.setCamera
   canvas_input.setupEvents(cast[JsObject](webgpu_render.canvas))
 
   # Mode selector drives the compute executor's frame description
-  # (qualified: webgpu_compute also exports a var named activeSimKind)
   subscribeSimple(sim_config.activeSimKind, proc(kind: SimKind) =
     webgpu_compute.setActiveSimKind(kind))
 

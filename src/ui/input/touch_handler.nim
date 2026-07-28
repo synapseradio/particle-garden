@@ -61,6 +61,23 @@ func handleTouchCancel*(state: InputState): InputState =
   ## Releases all touch state.
   state.withAllButtonsUp()
 
+func handleTwoFingerTap*(state: InputState; event: TouchEventData): InputState =
+  ## Two fingers down fires a blast at their midpoint — the touch equivalent of
+  ## the mouse's double-click blast.
+  ##
+  ## The midpoint rather than either finger: a blast at one of two touch points
+  ## would place the effect off to the side of the gesture, and which side would
+  ## depend on the undefined order the browser reports touches in.
+  ##
+  ## Also clears mouseDown, for the same reason handleDoubleClick does — the
+  ## first finger already registered as a press, and leaving it set strands the
+  ## state as held after the fingers lift.
+  if event.touches.len < 2:
+    return state
+  let midpointX = (event.touches[0].clientX + event.touches[1].clientX) * 0.5
+  let midpointY = (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+  state.withBlast(midpointX, midpointY).withMouseDown(false)
+
 # ==============================================================================
 # SECTION 3: DOM EVENT EXTRACTION (JS-only)
 # ==============================================================================

@@ -65,3 +65,33 @@ fn applyColormap(colormapIndex: u32, activator: f32, inhibitor: f32) -> vec3f {
   }
   return colormapPolyEval(COLORMAP_INFERNO, colormapFieldScalar(inhibitor));
 }
+
+// How much field is PRESENT at this sample, in [0,1] — the scalar the ramp
+// turns into a colour, read before it becomes one. Mirrors
+// colormap_core.fieldIntensity. Two-tone renders the activator substrate as
+// well as the inhibitor pattern, so it counts whichever claims the pixel more
+// strongly; the single-scalar ramps do not draw the activator and stay blind
+// to it.
+fn colormapFieldIntensity(colormapIndex: u32, activator: f32, inhibitor: f32) -> f32 {
+  if (colormapIndex == 2u) {
+    return max(clamp(inhibitor * COLORMAP_TWO_TONE_INHIBITOR_GAIN, 0.0, 1.0),
+               clamp(activator, 0.0, 1.0) * COLORMAP_TWO_TONE_COOL_LEVEL);
+  }
+  return colormapFieldScalar(inhibitor);
+}
+
+// The alpha the field contributes. Mirrors colormap_core.fieldCoverage, and
+// both render paths call it — tonemap.wgsl with bloom on, field-composite.wgsl
+// with it off — which is what keeps the two in parity.
+//
+// COVERAGE FOLLOWS INTENSITY, NOT THE EMITTED COLOUR'S LUMINANCE. A ramp's
+// colour at zero field is a property of the ramp, not evidence that field is
+// there: viridis reads dark purple at zero (luminance 0.087), so
+// luminance-driven coverage would paint 7.4% purple over an EMPTY field and let
+// a display choice decide what is opaque. tests/test_colormap_core.nim measures
+// all three ramps' zero-field luminance and holds this apart from it.
+fn colormapFieldCoverage(colormapIndex: u32, activator: f32, inhibitor: f32,
+                         fieldOpacity: f32) -> f32 {
+  return clamp(colormapFieldIntensity(colormapIndex, activator, inhibitor) *
+    fieldOpacity, 0.0, 1.0);
+}

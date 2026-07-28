@@ -7,13 +7,30 @@
 //
 // FadeParams comes from the generated fade_params module (FadeParamsLayout in
 // src/gpu_types.nim); fadeAmount is 0.0 = instant clear, 1.0 = keep previous.
+//
+// THE TRAIL DRIFTS ALONG THE FIELD. Binding 3 is the reaction-diffusion field;
+// the trail is re-sampled a hair along its gradient, so a trail decaying near
+// the pattern bends around it rather than fading straight back. fieldDriftScale
+// is 0 in a world without a field, which collapses the displacement to zero and
+// leaves the fade byte-identical to what it was before.
 // =============================================================================
 
 //! import fade_params
+//! import camera_transform
 
 @group(0) @binding(0) var prevFrame: texture_2d<f32>;
 @group(0) @binding(1) var prevSampler: sampler;
 @group(0) @binding(2) var<uniform> params: FadeParams;
+@group(0) @binding(3) var fieldTexture: texture_2d<f32>;
+@group(0) @binding(4) var<uniform> cam: Camera;
+
+const FADE_FIELD_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
+
+fn fadeFieldInhibitor(cell: vec2<i32>) -> f32 {
+  // The field wraps, so the gradient is continuous across the seam.
+  let wrapped = (cell + FADE_FIELD_DIMS) % FADE_FIELD_DIMS;
+  return textureLoad(fieldTexture, wrapped, 0).y;
+}
 
 // Fullscreen triangle (3 vertices cover entire screen)
 const POSITIONS = array<vec2f, 3>(
@@ -39,7 +56,51 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  let prev = textureSample(prevFrame, prevSampler, input.uv);
+  let worldSize = vec2f(params.worldWidth, params.worldHeight);
+
+  // REPROJECT THE TRAIL. The trail texture is in SCREEN space, so without this
+  // the trails stay welded to the screen while the world moves under them —
+  // pan and the whole history smears sideways. Ask where the world point now
+  // under this pixel sat on the previous frame's screen, and read the trail
+  // there.
+  //
+  // Both cameras are needed, not a single UV offset: an offset is exact only
+  // while the zoom is unchanged, and during a zoom the correct mapping is a
+  // scale about a point. At a still camera the two transforms are inverses and
+  // this returns input.uv exactly, so a stationary view fades as it always did.
+  let worldHere = cameraScreenUvToWorld(input.uv, cam, worldSize);
+  // Positional, because WGSL has no named-field constructors — the field order
+  // here must match the Camera struct that camera.wgsl generates from
+  // CameraLayout: centerX, centerY, zoom, pad0.
+  let prevCam = Camera(params.prevCenterX, params.prevCenterY,
+    params.prevZoom, 0.0);
+  let reprojectedUv = cameraWorldToScreenUv(worldHere, prevCam, worldSize);
+
+  // Displace the sample along the field gradient. The whole term is multiplied
+  // by fieldDriftScale, which is 0 without a field, so this reduces to the
+  // reprojected UV exactly — and the guard skips the four texture loads that
+  // would build a gradient about to be multiplied by zero. fieldDriftScale comes
+  // from a uniform, so the branch is coherent across the draw and costs nothing
+  // in the worlds that do drift.
+  //
+  // The field cell comes from the WORLD position, not from the screen UV: the
+  // field lives in the world, so a camera that has panned or zoomed must read
+  // the same field cell for the same world point.
+  var fieldGradient = vec2f(0.0);
+  if (params.fieldDriftScale != 0.0) {
+    let fieldUv = worldHere / worldSize;
+    let fieldCell = vec2<i32>(
+      i32(floor(fieldUv.x * f32(FADE_FIELD_DIMS.x))),
+      i32(floor(fieldUv.y * f32(FADE_FIELD_DIMS.y))));
+    let east = fadeFieldInhibitor(fieldCell + vec2<i32>(1, 0));
+    let west = fadeFieldInhibitor(fieldCell - vec2<i32>(1, 0));
+    let south = fadeFieldInhibitor(fieldCell + vec2<i32>(0, 1));
+    let north = fadeFieldInhibitor(fieldCell - vec2<i32>(0, 1));
+    fieldGradient = vec2f((east - west) * 0.5, (south - north) * 0.5);
+  }
+  let driftUv = reprojectedUv + fieldGradient * params.fieldDriftScale;
+
+  let prev = textureSample(prevFrame, prevSampler, driftUv);
 
   // Fade toward transparent (glow shows through from present pass)
   // Higher fadeAmount = MORE of previous frame = LONGER trails

@@ -14,6 +14,7 @@
 import std/unittest
 import std/strutils
 import ../src/gpu_types
+import ../src/memory_layout  # MAX_SPECIES, the ceiling the chemistry packing holds
 
 const GPU_TYPES_TESTS_LOADED* = true
 
@@ -53,6 +54,29 @@ suite "GPU Struct Layouts Are Non-Overlapping And Contiguous":
       check struct.totalSize >= last.offset + last.size
 
 
+suite "Every Generated Layout Agrees With WGSL's Offset Algorithm":
+  # ONE relation over every layout the tables generate: the offset WGSL's own
+  # layout algorithm assigns must equal the offset the table declares, or a
+  # uniform write lands on the wrong field and corrupts whatever it hits in
+  # silence. gpu_types.nim asserts the same thing statically for the render-path
+  # structs; this sweeps all of them at once, so a new layout joins the relation
+  # by being added to this list rather than by someone remembering to write the
+  # loop again.
+  const generatedLayouts = [
+    SimParamsLayout, RenderParamsLayout, FieldParamsLayout,
+    ReactionParamsLayout, SpeciesChemistryLayout, BloomParamsLayout,
+    TonemapParamsLayout]
+
+  test "every layout's declared offsets are the ones WGSL computes":
+    for layout in generatedLayouts:
+      let computedOffsets = wgslComputedOffsets(layout)
+      for fieldIndex in 0 ..< layout.fields.len:
+        if computedOffsets[fieldIndex] != layout.fields[fieldIndex].offset:
+          checkpoint(layout.name & "." & layout.fields[fieldIndex].name &
+            " offset drift")
+        check computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset
+
+
 suite "GPU Field Accessors":
   test "fieldOffset returns the declared byte offset for a named field":
     check ParticleLayout.fieldOffset("species") == 16
@@ -79,13 +103,11 @@ suite "WGSL Struct Codegen Matches The Layout Table":
   # both to the same byte layout: a drift between them corrupts physics silently,
   # so it must fail here (and the mirrored static asserts fail the build).
 
-  test "wgslComputedOffsets equals every declared field offset for SimParams":
-    # The offset WGSL's own layout algorithm assigns must match what we declared,
-    # or a uniform write lands on the wrong field.
-    let computedOffsets = wgslComputedOffsets(SimParamsLayout)
-    check computedOffsets.len == SimParamsLayout.fields.len
-    for fieldIndex in 0 ..< SimParamsLayout.fields.len:
-      check computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset
+  test "wgslComputedOffsets accounts for every declared SimParams field":
+    # The offsets themselves are swept for every layout above; what this adds is
+    # that the algorithm returns one per declared field — a short result would
+    # leave the tail of the struct unchecked there.
+    check wgslComputedOffsets(SimParamsLayout).len == SimParamsLayout.fields.len
 
   test "SimParams is 248 bytes written and 256 bytes allocated (16-byte round-up)":
     check SimParamsLayout.totalSize == 248
@@ -165,11 +187,6 @@ suite "Generated Render Struct Layouts":
     check RenderParamsLayout.totalSize == 64
     check wgslUniformSize(RenderParamsLayout) == 64
 
-  test "RenderParamsLayout offsets match WGSL's own layout algorithm":
-    let computedOffsets = wgslComputedOffsets(RenderParamsLayout)
-    for fieldIndex in 0 ..< RenderParamsLayout.fields.len:
-      check computedOffsets[fieldIndex] == RenderParamsLayout.fields[fieldIndex].offset
-
   test "vec2 fields generate _X and _Y indices at offset/4 and offset/4 + 1":
     check RENDER_RESOLUTION_X == 0
     check RENDER_RESOLUTION_Y == 1
@@ -183,11 +200,14 @@ suite "Generated Render Struct Layouts":
     check RENDER_MAX_VELOCITY == 7
     check RENDER_TRAIL_LENGTH_SCALE == 8
 
-  test "FadeParamsLayout is 4 floats and generates FADE_ indices":
-    check FadeParamsLayout.totalSize == 16
-    check wgslUniformSize(FadeParamsLayout) == 16
+  test "FadeParamsLayout is 8 floats and generates FADE_ indices":
+    # Grown from 16 bytes to 32 to carry the previous frame's camera, which the
+    # trail reprojection needs — see the layout's own comment for why a pure UV
+    # translation in the old pads would not have been correct under zoom.
+    check FadeParamsLayout.totalSize == 32
+    check wgslUniformSize(FadeParamsLayout) == 32
     check FADE_AMOUNT == 0
-    check FADE_PARAMS_F32_COUNT == 4
+    check FADE_PARAMS_F32_COUNT == 8
 
   test "a field name that begins with the prefix does not double the prefix":
     # fadeAmount under prefix FADE must emit FADE_AMOUNT, not FADE_FADE_AMOUNT.
@@ -228,11 +248,6 @@ suite "Generated FieldParams Layout (Reaction-Diffusion)":
     check FieldParamsLayout.totalSize == 32
     check wgslUniformSize(FieldParamsLayout) == 32
 
-  test "FieldParamsLayout offsets match WGSL's own layout algorithm":
-    let computedOffsets = wgslComputedOffsets(FieldParamsLayout)
-    for fieldIndex in 0 ..< FieldParamsLayout.fields.len:
-      check computedOffsets[fieldIndex] == FieldParamsLayout.fields[fieldIndex].offset
-
   test "the generated FIELD_ indices reproduce the declared field order":
     check FIELD_FEED == 0
     check FIELD_KILL == 1
@@ -258,6 +273,93 @@ suite "Generated FieldParams Layout (Reaction-Diffusion)":
     check generated.strip.endsWith("}")
 
 
+suite "Generated ReactionParams Layout (Reserved Reaction Slot)":
+  # ReactionParams reserves an addressable slot: it carries which reaction the
+  # field runs plus the parameters a kernel-and-growth reaction would need.
+  # Gray-Scott reads reactionKind and ignores the rest. These tests pin the
+  # layout, not a capability — nothing here claims a second reaction exists.
+
+  test "ReactionParamsLayout is 8 floats, 32 bytes written and allocated":
+    check ReactionParamsLayout.totalSize == 32
+    check wgslUniformSize(ReactionParamsLayout) == 32
+
+  test "the generated REACTION_ indices reproduce the declared field order":
+    # REACTION_KIND, not REACTION_REACTION_KIND: reactionKind already begins
+    # with the prefix, and the macro collapses the duplicate.
+    check REACTION_KIND == 0
+    check REACTION_KERNEL_RADIUS == 1
+    check REACTION_GROWTH_MU == 2
+    check REACTION_GROWTH_SIGMA == 3
+    check REACTION_GROWTH_DT == 4
+    check REACTION_PARAMS_F32_COUNT == 8
+
+  test "FieldParams stays closed at 32 bytes":
+    # The reason ReactionParams exists as its own uniform rather than as four
+    # more FieldParams members: that table is full, and its static assertions
+    # reject a ninth field. If this ever passes at a larger size, the split
+    # lost its justification.
+    check FieldParamsLayout.totalSize == 32
+    check FieldParamsLayout.fields.len == 8
+
+  test "toWgslStruct renders ReactionParams with WGSL scalar types":
+    let generated = toWgslStruct(ReactionParamsLayout)
+    check generated.startsWith("struct ReactionParams {")
+    check "reactionKind: f32," in generated
+    check "kernelRadius: f32," in generated
+    check "growthMu: f32," in generated
+    check generated.strip.endsWith("}")
+
+
+suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
+  # SpeciesChemistry is what makes speciesCount change the chemical world's
+  # dynamics rather than only its palette: field-deposit scales by a species'
+  # secretion, field-force by its tropism. Both passes bind this one uniform,
+  # so a drift here corrupts the deposit and the force together.
+
+  test "SpeciesChemistryLayout is 16 floats, 64 bytes written and allocated":
+    check SpeciesChemistryLayout.totalSize == 64
+    check wgslUniformSize(SpeciesChemistryLayout) == 64
+
+  test "the generated CHEM_ indices bracket two contiguous channels":
+    # The Nim writer reaches species i at CHEM_SECRETION_START + i; the shader
+    # reaches the same value at secretion[i / 4u][i % 4u]. Both are the same
+    # arithmetic over one contiguous f32 run, which is what lets the two sides
+    # agree without a second table.
+    check CHEM_SECRETION_START == 0
+    check CHEM_SECRETION_END == 7
+    check CHEM_TROPISM_START == 8
+    check CHEM_TROPISM_END == 15
+    check CHEM_PARAMS_F32_COUNT == 16
+    # The channels must not overlap, or a secretion write lands on a tropism.
+    check CHEM_SECRETION_END < CHEM_TROPISM_START
+
+  test "every species slot the ceiling allows is addressable in both channels":
+    # CONTRACT: the packing holds four species per vec4, two vec4s per channel.
+    # Raising MAX_SPECIES past that must widen the struct, not silently drop
+    # the species that no longer fit. gpu_types asserts this statically; this
+    # states the same relation where a reader can see it.
+    check MAX_SPECIES <= CHEMISTRY_SPECIES_SLOTS
+    check CHEM_SECRETION_START + CHEMISTRY_SPECIES_SLOTS - 1 == CHEM_SECRETION_END
+    check CHEM_TROPISM_START + CHEMISTRY_SPECIES_SLOTS - 1 == CHEM_TROPISM_END
+
+  test "toWgslStruct renders SpeciesChemistry as two vec4 arrays":
+    # Two parallel arrays rather than MAX_SPECIES interleaved pairs, because
+    # WGSL's uniform address space rounds an array element's stride up to 16
+    # bytes: array<vec2<f32>, 6> would occupy 96 bytes, not 48.
+    let generated = toWgslStruct(SpeciesChemistryLayout)
+    check generated.startsWith("struct SpeciesChemistry {")
+    check "secretion: array<vec4<f32>, 2>," in generated
+    check "tropism: array<vec4<f32>, 2>," in generated
+    check generated.strip.endsWith("}")
+
+  test "FieldParams stays closed while chemistry grows beside it":
+    # The reason SpeciesChemistry is its own uniform: FieldParamsLayout is full
+    # at 32 bytes and its static assertions reject a ninth field. If this ever
+    # passes at a larger size, the split lost its justification.
+    check FieldParamsLayout.totalSize == 32
+    check FieldParamsLayout.fields.len == 8
+
+
 suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
   # S9: BloomParams and TonemapParams join the layout-table-generated structs.
   # The blur pass writes bloomParamsData[BLOOM_*]; the tonemap pass writes
@@ -267,11 +369,6 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check BloomParamsLayout.totalSize == 16
     check wgslUniformSize(BloomParamsLayout) == 16
 
-  test "BloomParamsLayout offsets match WGSL's own layout algorithm":
-    let computedOffsets = wgslComputedOffsets(BloomParamsLayout)
-    for fieldIndex in 0 ..< BloomParamsLayout.fields.len:
-      check computedOffsets[fieldIndex] == BloomParamsLayout.fields[fieldIndex].offset
-
   test "the two vec2 bloom fields generate _X and _Y write indices":
     check BLOOM_DIRECTION_X == 0
     check BLOOM_DIRECTION_Y == 1
@@ -279,14 +376,13 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check BLOOM_TEXEL_SIZE_Y == 3
     check BLOOM_PARAMS_F32_COUNT == 4
 
-  test "TonemapParamsLayout is 8 floats, 32 bytes written and allocated":
-    check TonemapParamsLayout.totalSize == 32
-    check wgslUniformSize(TonemapParamsLayout) == 32
-
-  test "TonemapParamsLayout offsets match WGSL's own layout algorithm":
-    let computedOffsets = wgslComputedOffsets(TonemapParamsLayout)
-    for fieldIndex in 0 ..< TonemapParamsLayout.fields.len:
-      check computedOffsets[fieldIndex] == TonemapParamsLayout.fields[fieldIndex].offset
+  test "TonemapParamsLayout is 12 floats, 48 bytes written and allocated":
+    # Grown from 32 to 48 by the camera work: both composite paths map screen UV
+    # into field space, which needs the world extent. The camera itself is bound
+    # from the shared camera buffer rather than copied in here, so this grew by
+    # two live fields and the padding to the next 16-byte boundary.
+    check TonemapParamsLayout.totalSize == 48
+    check wgslUniformSize(TonemapParamsLayout) == 48
 
   test "the generated TONEMAP_ indices follow the declared field order":
     check TONEMAP_EXPOSURE == 0
@@ -297,8 +393,11 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     # S10 claims two former pad slots for the field-visualization pair.
     check TONEMAP_COLORMAP_INDEX == 5
     check TONEMAP_FIELD_OPACITY == 6
-    check TONEMAP_PAD2 == 7
-    check TONEMAP_PARAMS_F32_COUNT == 8
+    # The camera work claims two more for the world extent the UV mapping needs.
+    check TONEMAP_WORLD_WIDTH == 7
+    check TONEMAP_WORLD_HEIGHT == 8
+    check TONEMAP_PAD2 == 9
+    check TONEMAP_PARAMS_F32_COUNT == 12
 
   test "toWgslStruct renders both layouts with WGSL types":
     let bloomStruct = toWgslStruct(BloomParamsLayout)

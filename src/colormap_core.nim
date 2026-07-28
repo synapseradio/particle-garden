@@ -50,12 +50,45 @@ const
   COLORMAP_DEFAULT_INDEX* = COLORMAP_INDEX_INFERNO
     ## The field's default colormap.
 
-  FIELD_OPACITY_DEFAULT* = 0.85
-    ## Default scale on the field's contribution to the rendered image. BLIND
-    ## VISUAL PICK: chosen without a display; the user's visual pass owns the
-    ## final value. 1.0 = full contribution, 0.0 = field invisible.
+  FIELD_OPACITY_DEFAULT* = 1.0
+    ## Default scale on the field's contribution to the rendered image.
+    ## 1.0 = full contribution, 0.0 = field invisible.
+    ##
+    ## RAISED FROM 0.85 WHEN THE FIELD BECAME LIGHT. The old value was
+    ## compensating for a field that claimed every pixel whether or not any
+    ## field was there: holding it under 1 was the only way to keep particles
+    ## visible through what was effectively an opaque sheet. fieldCoverage now
+    ## does that job properly and proportionally, so keeping the dimming as well
+    ## would pay for the same problem twice — darkening the pattern cores while
+    ## still never letting them be fully present.
+    ##
+    ## The change makes particles MORE visible on balance, not less: the field
+    ## reaches full coverage only where its intensity is full, which is the
+    ## bright cores of the pattern, and contributes nothing at all across the
+    ## dark majority of the frame that used to sit at 85%.
+
+    # BLIND VISUAL PICK, like the value it replaces — reasoned from the coverage
+    # change rather than seen. The user's visual pass owns the final number.
   FIELD_OPACITY_MIN* = 0.0
   FIELD_OPACITY_MAX* = 1.0
+
+  FIELD_LIGHT_STRENGTH* = 0.55
+    ## How far a particle's colour is pulled toward the field's colour where the
+    ## field is at full intensity — the "field as light" coupling, applied in
+    ## render.wgsl's vertex stage. 0 leaves species colours untouched (the
+    ## behaviour before the field was light), 1 replaces them entirely with the
+    ## colormapped field. BLIND VISUAL PICK, deliberately below half-and-half so
+    ## species stay tellable apart inside a bright pattern; the calibration pass
+    ## owns the final value.
+
+  FIELD_DRIFT_SCALE* = 0.02
+    ## How far the fade pass displaces its trail sample along the field
+    ## gradient, in UV units per unit of gradient. The inhibitor gradient runs
+    ## to roughly 0.05 per cell in the spot regimes, so this is a shift of about
+    ## a thousandth of the screen — one or two pixels at 1080p. BLIND VISUAL
+    ## PICK, deliberately tiny: the effect wanted is trails bending around the
+    ## pattern, and anything large enough to notice directly reads as a smear.
+    ## The calibration pass owns the final value.
 
   COLORMAP_FIELD_GAIN* = 3.0
     ## Maps the field's inhibitor concentration (roughly [0, 0.4] in the
@@ -152,6 +185,48 @@ func evalColormap*(index: int, activator, inhibitor: float): array[3, float] =
   of COLORMAP_INDEX_VIRIDIS: evalViridis(fieldScalar(inhibitor))
   of COLORMAP_INDEX_TWO_TONE: evalTwoTone(activator, inhibitor)
   else: evalInferno(fieldScalar(inhibitor))
+
+# ==============================================================================
+# FIELD COVERAGE
+# ==============================================================================
+#
+# How much of a pixel the field claims, which is what lets the field read as
+# light rather than as a backdrop. Mirrored by colormapFieldIntensity /
+# colormapFieldCoverage in web/shaders/modules/colormap.wgsl, and consumed by
+# BOTH render paths — tonemap.wgsl when bloom is on, field-composite.wgsl when
+# it is off. One function for both is what keeps those paths in parity.
+#
+# COVERAGE FOLLOWS INTENSITY, NOT THE RAMP'S LUMINANCE, and the difference is
+# not cosmetic. A ramp's colour at zero field is a property of the ramp, not a
+# statement that field is present: measured with the Rec.709 weights
+# tonemap_grade.wgsl uses, `evalColormap(index, 0, 0)` has luminance 0.00123
+# for inferno, 0.08703 for viridis, and 0.0 for two-tone. Luminance-driven
+# coverage would therefore paint 7.4% viridis purple over a field that is
+# EMPTY, and would let a display choice silently decide what is opaque.
+# Intensity is exactly zero at zero field for all three ramps.
+
+func fieldIntensity*(index: int, activator, inhibitor: float): float =
+  ## How much field is PRESENT at this sample, in [0,1] — the scalar the ramp
+  ## turns into a colour, read before it becomes one. The single-scalar ramps
+  ## are driven by the inhibitor (the pattern) alone; two-tone also renders the
+  ## activator substrate, so its intensity is whichever of the two channels
+  ## claims the pixel more strongly.
+  case index
+  of COLORMAP_INDEX_TWO_TONE:
+    max(clamp01(inhibitor * TWO_TONE_INHIBITOR_GAIN),
+        clamp01(activator) * TWO_TONE_COOL_LEVEL)
+  else: fieldScalar(inhibitor)
+
+func fieldCoverage*(index: int, activator, inhibitor, fieldOpacity: float):
+    float =
+  ## The alpha the field contributes at this sample. Zero where no field is
+  ## present, so empty field leaves the pixel to the particles and the clear;
+  ## one where the field is fully present at full opacity. `fieldOpacity`
+  ## scales coverage as well as brightness, so turning the field down fades it
+  ## out rather than leaving an invisible-but-opaque sheet over the world — and
+  ## an opacity of zero contributes nothing at all, which is the condition the
+  ## shaders used to spell as `if (fieldOpacity > 0.0)`.
+  clamp01(fieldIntensity(index, activator, inhibitor) * fieldOpacity)
 
 # ==============================================================================
 # WGSL EMISSION (feeds shader_config.nim -> colormap.wgsl placeholders)

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Native desktop wrapper for a particle simulator with WebGPU compute physics, offering three modes: particle life, SPH fluid, and Gray-Scott reaction-diffusion. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
+Native desktop wrapper for a particle simulator with WebGPU compute physics. A world composes three independent couplings — species forces, SPH fluid pressure, and a Gray-Scott chemical field — and any combination of them runs in one frame. The simulation, WebGPU pipeline, and native server are Nim; the control panel is SolidJS/TypeScript (`web-ui/`); WGSL shaders are the only other non-Nim source.
 
 ## Golden rules
 
@@ -44,7 +44,7 @@ Two components, because browsers require Cross-Origin-Opener-Policy and Cross-Or
 
 ### The gardenAPI boundary
 
-`src/web_api.nim` installs a single `window.gardenAPI` object at `app.js` module-eval time — before the Solid bundle evaluates. The Solid panel (`web-ui/`) drives everything through it: descriptor-driven sliders (`descriptor()`/`setParam`/`commitParam`, clamped in Nim against `ui/api/param_descriptor.nim`), mode/palette/colormap catalogs, a live `matrix()` Float32Array reference gated behind `onReady` (buffers exist only after `init()`), a pushed stats stream (`onStats`, cadence set loop-side in `app.nim`), and hybrid presets (`exportPresetJson`/`applyPresetJson` keep schema, validation, and `presetApplySteps` order in Nim; the UI owns localStorage under `preset_store_core`'s `pg.presets.*` keys, so presets saved before the port keep loading). One JS-backend caveat lives at this boundary: `std/json.parseJson` delegates to `JSON.parse`, whose SyntaxError is a foreign exception Nim's `except ValueError` cannot catch — `applyPresetJson` pre-checks parseability instead.
+`src/web_api.nim` installs a single `window.gardenAPI` object at `app.js` module-eval time — before the Solid bundle evaluates. The Solid panel (`web-ui/`) drives everything through it: descriptor-driven sliders (`descriptor()`/`setParam`/`commitParam`, clamped in Nim against `ui/api/param_descriptor.nim`), mode/palette/colormap catalogs, the named reaction-diffusion regimes (`rdRegimes`/`applyRdRegime`), live `matrix()` and `chemistry()` Float32Array references gated behind `onReady` (buffers exist only after `init()`), a pushed stats stream (`onStats`, cadence set loop-side in `app.nim`), and hybrid presets (`exportPresetJson`/`applyPresetJson` keep schema, validation, and `presetApplySteps` order in Nim; the UI owns localStorage under `preset_store_core`'s `pg.presets.*` keys, so presets saved before the port keep loading). One JS-backend caveat lives at this boundary: `std/json.parseJson` delegates to `JSON.parse`, whose SyntaxError is a foreign exception Nim's `except ValueError` cannot catch — `applyPresetJson` pre-checks parseability instead.
 
 ### Particle buffer
 
@@ -64,21 +64,24 @@ All particle data lives in a SharedArrayBuffer with AoS (Array of Structures) la
 
 All physics runs on WebGPU compute shaders — there is no CPU physics path. Particles stay on the GPU from initialization through rendering; there is no CPU readback.
 
-Three simulation modes exist (`SimKind` in `sim_registry.nim`): `skParticleLife`, `skSph`, and `skReactionDiffusion`. Particle-life and SPH share the grid-build prefix and differ only in the force pass that follows. Reaction-diffusion shares none of it — it runs no spatial-hash passes at all, because its particles never search for neighbors, and substitutes the field passes. `sim_registry.nim` holds each mode's frame as data and `webgpu_compute.nim` dispatches it, so the pass list lives in one place rather than in prose here.
+A world is a set of independent **couplings**, not one of several modes. `WorldCouplings` in `sim_registry.nim` holds three booleans — `forces` (species attraction over the spatial hash), `sph` (smoothed-particle pressure and viscosity), and `field` (the Gray-Scott chemical field) — and `buildFrame(couplings)` composes the GPU frame from whichever are active. All eight combinations are meaningful and none is enumerated anywhere; a world running forces and field together falls out of two booleans being true rather than being a fourth mode someone wrote.
 
-`sim_registry.nim` also holds `controlGroupsFor`, the descriptor groups each mode's control panel shows. It lives beside `buildFrame` because what a mode dispatches decides which knobs can affect it, and a native test asserts that relation directly — a mode with no `forces` dispatch cannot offer the attraction matrix or the force-model controls.
+`SimKind` survives as the preset compatibility layer and nothing else. Presets serialize stable mode ids and `couplingsFor` maps each to the triple it always meant; nothing in the frame path consults it.
 
-Particle-life runs five passes per frame:
+`sim_registry.nim` holds the frame as data and `webgpu_compute.nim` dispatches it, so the pass list lives in one place rather than in prose here. It also holds `controlGroupsFor`, which unions the descriptor groups of every active coupling — a union rather than a per-mode list because couplings compose and `grid` belongs to both force couplings. A native test asserts the relation directly: a world with no `forces` dispatch cannot offer the attraction matrix or the force-model controls.
 
-1. **bin-count** — count particles per grid cell.
-2. **prefix-sum** — compute cell offsets via parallel scan (three shaders: local, blocks, final).
-3. **bin-scatter** — scatter particles to a sorted buffer by cell.
-4. **forces** — compute inter-particle forces from the sorted buffer.
-5. **integrate** — apply velocity deltas, update positions.
+**Delta-buffer ownership belongs to the frame, and this is the invariant that makes composition work.** `buildFrame` clears `velocityDelta` and `densityDelta` once at the top of every frame, and every contributing pass — `forces`, `forces-sph`, `field-force` — accumulates into them with `atomicAdd` and never stores. Each pass used to reset the buffer in its own prologue, which is exactly why only one coupling could run at a time: with two contributors, whichever ran second erased the first. Any new pass that writes a delta buffer must accumulate. `field-deposit` is the exception and stays self-resetting, because `field-resolve` zeroes each cell as it consumes it.
 
-SPH substitutes `forces-sph` for the forces pass.
+A frame composes in this order:
 
-Reaction-diffusion drops all five and runs `field-deposit`, `field-resolve`, `RD_STEPS_PER_FRAME` alternating `rd-step` substeps, and `field-force`, ahead of a physics pass that only integrates. A sixth shader, `field-seed`, writes the initial pattern; it is a one-shot the executor encodes on mode entry and on reset, never a frame node. That seed is what makes the mode do anything at all — the field textures clear to Gray-Scott's trivial fixed point, which is inert for every feed/kill, and particle deposits alone cannot leave it.
+1. Clear `velocityDelta` and `densityDelta` — always, whatever is coupled.
+2. If `forces or sph`: clear `gridCounts`, run **bin-count**, the three **prefix-sum** stages (local, blocks, final), copy `gridOffsets` into `fillPointers`, then one force pass containing **bin-scatter** followed by whichever of `forces` and `forces-sph` are active.
+3. If `field`: one pass containing **field-deposit**, **field-resolve**, `RD_STEPS_PER_FRAME` alternating **rd-step** substeps, and **field-force**.
+4. **integrate**, always last — the one pass that reads the summed deltas and moves particles, so every contributor must already have run.
+
+`field-seed` writes a pattern into the field and is a one-shot the executor encodes on reset and on the deliberate "scatter spores" action, never a frame node. Nothing seeds the field automatically: it clears to Gray-Scott's trivial fixed point and is lifted off it by particle deposits alone, which is what makes the pattern a record of where colonies lived. Ignition depends on coherence rather than magnitude — a single-cell deposit fails at any amplitude the slider offers, so `field-deposit` splats each particle's deposit over a normalized kernel.
+
+`docs/one-world.md` is the guide to adding a fourth coupling.
 
 `field-resolve` is itself one stage of the field ping-pong, so `1 + RD_STEPS_PER_FRAME` must be even for the live field to end each frame on the texture the renderer samples. `field_core.nim` asserts that parity statically.
 
@@ -97,7 +100,11 @@ WGSL shaders use a module system with build-time preprocessing. Layout under `we
 - **Compute shaders** are listed in `shader_manifest.nim`, fetched over HTTP at pipeline-init time, and therefore must be registered in the `StaticFiles` table in `main.nim`. Unregistered means unserved means a failed fetch.
 - **Render shaders** (`render`, `glow`, `fade`, `composite`, `field-composite`, `blur`, `tonemap`) are `staticRead` into `app.js` by `webgpu_render.nim` at Nim-compile time. They are deliberately absent from `StaticFiles` — serving them would ship the same bytes twice.
 
-**Add a compute shader:** create `web/shaders/src/my-shader.wgsl`, add `//! import particle` (and any other modules) at the top, run `just happen`, add it to `shader_manifest.nim` for the modes that need it, and register it in `StaticFiles`.
+**The render path has no compile-time bind-group check, and this is the sharpest edge in the codebase.** `render.wgsl` and `glow.wgsl` share ONE explicit bind group layout. Nothing verifies that layout, the bind-group entries built against it, and the two shaders' `@binding` numbers agree — not the Nim compiler, not `just happen`, not `just check`. All of them pass green while the app fails GPU validation in the browser and draws nothing. The compute path is protected by the `EXPECTED_BIND_GROUP_ENTRIES_*` constants and `validateBindGroupEntryCount`; the render path has no equivalent.
+
+So when you touch a render binding, change all four together and verify in a running app: the layout in `webgpu_render.nim`, every bind group built from it, and the `@binding` numbers in BOTH shaders that share it. A binding added to one shader and not the other is not a compile error — it is a blank canvas.
+
+**Add a compute shader:** create `web/shaders/src/my-shader.wgsl`, add `//! import particle` (and any other modules) at the top, run `just happen`, add it to `shader_manifest.nim` for the couplings that need it, and register it in `StaticFiles`. Add an `EXPECTED_BIND_GROUP_ENTRIES_*` constant and a case in `expectedBindGroupEntries` — a bind group whose entry count disagrees with its shader's bindings fails validation at runtime, and that constant is what turns it into a loud failure instead.
 
 **Modify a shared struct:** edit the WGSL side in `web/shaders/modules/particle.wgsl` and the Nim side in `src/gpu_types.nim` to match. Compile-time validation in `gpu_types.nim` catches mismatches.
 
@@ -163,11 +170,13 @@ Module inventory:
 | `config_ranges.nim` | Single source of truth for every user-facing tunable's range. |
 | `gpu_types.nim` | Type-safe GPU struct layouts with compile-time validation, named buffer indices. |
 | `webgpu_init.nim` | GPU device init, feature detection, buffer allocation. |
-| `webgpu_compute.nim` | Builds each mode's frame from `sim_registry` and dispatches the compute passes. |
+| `webgpu_compute.nim` | Builds the active couplings' frame from `sim_registry` and dispatches the compute passes. |
 | `webgpu_render.nim` | GPU rendering: instanced quads, trail effects, glow, HDR bloom and tonemap. |
 | `gpu_profiler.nim` | Per-pass GPU timing via timestamp queries; inert when the adapter lacks the feature. |
-| `sim_registry.nim` | The frame as data: which passes each simulation kind dispatches, in order. |
-| `shader_manifest.nim` | The compute shaders each simulation kind needs, as data. Companion to `sim_registry`. |
+| `sim_registry.nim` | The frame as data: `WorldCouplings`, `buildFrame`, and the descriptor groups each coupling contributes. |
+| `shader_manifest.nim` | The compute shaders each coupling needs, as data. Companion to `sim_registry`. |
+| `climate_core.nim` | Pure drifting-climate path: the closed tour of named regimes feed and kill follow. |
+| `camera_core.nim` | Pure toroidal camera: nearest-image offset, clip mapping, zoom anchoring, apparent scale. |
 | `web_api.nim` | The `window.gardenAPI` boundary: typed-state → CONFIG bridge (synchronous mirror), descriptor-clamped parameter writes, palette/matrix/mode logic, preset snapshot/apply. |
 | `canvas_input.nim` | Canvas mouse/touch input → physics (currentInput observable), resize and particle-reinit callbacks. |
 | `ui/api/param_descriptor.nim` | Pure descriptor table for every tunable (id, range, step, precision, default, store routing); natively tested; served to TS via `gardenAPI.descriptor()`. |
@@ -192,3 +201,6 @@ Physics that runs in WGSL cannot be executed by the native test suite, so severa
 | `field_core.nim` | `rd-step.wgsl` Gray-Scott reaction-diffusion and the 9-point Laplacian |
 | `bloom_core.nim` | `blur.wgsl` separable Gaussian kernel and bloom/grade defaults |
 | `colormap_core.nim` | `colormap.wgsl` field colormap ramps |
+| `camera_core.nim` | `camera_transform.wgsl` toroidal camera, clip mapping, apparent scale |
+
+`climate_core.nim` sits beside these without belonging to the table: it is pure and natively tested the same way, but it mirrors no shader. It owns the drifting climate's path — a closed tour of the named regimes that the frame loop walks, writing feed and kill through the ordinary `setParam` path so the sliders visibly move.

@@ -16,6 +16,11 @@
 import std/macros
 import std/strutils
 
+# MAX_SPECIES is the cross-language species ceiling. SpeciesChemistryLayout
+# sizes its arrays against it, so a raise that outgrows the packing fails the
+# static assertion below rather than silently truncating a species.
+import memory_layout
+
 # =============================================================================
 # GPU TYPE SYSTEM
 # =============================================================================
@@ -164,8 +169,15 @@ const
   # glowDensityFloor (S10) lifts the glow's density factor to a per-mode floor.
   # Reaction-diffusion leaves particle density stale at ~0 (no forces pass), so
   # without a floor its glow reads flat; the render loop sets this per active
-  # mode (RD lifts it, the density-driven modes leave it at 0). Three trailing
-  # pads round the struct to 64 bytes.
+  # mode (RD lifts it, the density-driven modes leave it at 0).
+  #
+  # fieldOpacity and colormapIndex are duplicated here from TonemapParams so the
+  # VERTEX stage can light each particle by the field it is standing in
+  # (render.wgsl), which the composite stages cannot do — they only ever see the
+  # field per screen pixel, after the particles are already coloured. They spend
+  # two of the three pads that rounded the struct to 64 bytes, so the field
+  # reaches the render stage without growing or reallocating the uniform. One
+  # pad remains.
   RenderParamsLayout* = GpuStruct(
     name: "RenderParams",
     fields: @[
@@ -180,21 +192,58 @@ const
       GpuField(name: "glowFalloff",       kind: gtF32, offset: 40, size: 4, count: 1),
       GpuField(name: "glowWarmth",        kind: gtF32, offset: 44, size: 4, count: 1),
       GpuField(name: "glowDensityFloor",  kind: gtF32, offset: 48, size: 4, count: 1),
-      GpuField(name: "_pad0",             kind: gtF32, offset: 52, size: 4, count: 1),
-      GpuField(name: "_pad1",             kind: gtF32, offset: 56, size: 4, count: 1),
-      GpuField(name: "_pad2",             kind: gtF32, offset: 60, size: 4, count: 1),
+      GpuField(name: "fieldOpacity",      kind: gtF32, offset: 52, size: 4, count: 1),
+      GpuField(name: "colormapIndex",     kind: gtF32, offset: 56, size: 4, count: 1),
+      GpuField(name: "_pad0",             kind: gtF32, offset: 60, size: 4, count: 1),
     ],
     totalSize: 64
   )
 
-  # FadeParams struct (16 bytes, generated into web/shaders/modules/fade_params.wgsl)
+  # FadeParams struct (32 bytes, generated into web/shaders/modules/fade_params.wgsl)
+  #
+  # Carries the PREVIOUS frame's camera as well as the current fade settings.
+  # The trail texture is in screen space, so when the camera moves the trail has
+  # to be reprojected or it stays welded to the screen and smears across the
+  # world. Reprojecting needs both cameras: where a world point is now, and
+  # where it sat on the frame the trail texture was drawn.
+  #
+  # Grown from 16 bytes to 32 to hold them. A pure UV translation would have fit
+  # in the old pads, but it is only exact while the zoom is unchanged — during a
+  # zoom the correct mapping is a scale about a point, and a single offset would
+  # smear exactly when the user is moving fastest.
+  #
+  # worldWidth/worldHeight ride along so the fade pass can run the camera
+  # transform without also binding the whole of RenderParams for two numbers.
   FadeParamsLayout* = GpuStruct(
     name: "FadeParams",
     fields: @[
       GpuField(name: "fadeAmount", kind: gtF32, offset: 0,  size: 4, count: 1),
-      GpuField(name: "pad0",       kind: gtF32, offset: 4,  size: 4, count: 1),
-      GpuField(name: "pad1",       kind: gtF32, offset: 8,  size: 4, count: 1),
-      GpuField(name: "pad2",       kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "fieldDriftScale", kind: gtF32, offset: 4, size: 4, count: 1),
+      GpuField(name: "prevCenterX", kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "prevCenterY", kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "prevZoom",   kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "worldWidth", kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "worldHeight", kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "pad1",       kind: gtF32, offset: 28, size: 4, count: 1),
+    ],
+    totalSize: 32
+  )
+
+  # Camera struct (16 bytes, generated into web/shaders/modules/camera.wgsl)
+  # Where the view sits over the toroidal world and how close it is, mirroring
+  # camera_core.Camera. Its own uniform rather than more RenderParams fields
+  # because RenderParams has one pad left and this needs three slots — and
+  # because glow.wgsl needs the camera without needing the rest of RenderParams.
+  #
+  # centerX/centerY are always wrapped into [0, worldSize); the shaders' nearest
+  # -image arithmetic depends on that, exactly as camera_core documents.
+  CameraLayout* = GpuStruct(
+    name: "Camera",
+    fields: @[
+      GpuField(name: "centerX", kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "centerY", kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "zoom",    kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "pad0",    kind: gtF32, offset: 12, size: 4, count: 1),
     ],
     totalSize: 16
   )
@@ -222,6 +271,64 @@ const
       GpuField(name: "seedNonce",       kind: gtF32, offset: 28, size: 4, count: 1),
     ],
     totalSize: 32
+  )
+
+  # ReactionParams struct (32 bytes, generated into
+  # web/shaders/modules/reaction_params.wgsl)
+  #
+  # WHICH reaction the field runs, and the parameters a kernel-and-growth
+  # reaction would need. Separate from FieldParamsLayout because that table is
+  # full at 32 bytes and its static assertions reject a ninth field — and
+  # because the two answer different questions: FieldParams carries the values
+  # a user drags, ReactionParams carries the reaction's identity.
+  #
+  # RESERVED, NOT DELIVERED. Gray-Scott reads `reactionKind` and ignores every
+  # other member. The uniform exists now because adding it later would mean
+  # revisiting rd-step's bind group, its layout, its entry-count constant, and
+  # the shader manifest — a sweeping edit at a moment when nothing else is
+  # open. Adding it while those files are already open costs one layout table
+  # and one buffer write. This reserves an addressable slot; no second reaction
+  # is implemented and none is claimed.
+  ReactionParamsLayout* = GpuStruct(
+    name: "ReactionParams",
+    fields: @[
+      GpuField(name: "reactionKind", kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "kernelRadius", kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "growthMu",     kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "growthSigma",  kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "growthDt",     kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "pad0",         kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "pad1",         kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "pad2",         kind: gtF32, offset: 28, size: 4, count: 1),
+    ],
+    totalSize: 32
+  )
+
+  # SpeciesChemistry struct (64 bytes, generated into
+  # web/shaders/modules/species_chemistry.wgsl)
+  #
+  # Per-species coupling to the field: what a species SECRETES into it (the
+  # signed scale on its deposit) and its TROPISM (the signed scale on the
+  # gradient force it feels). This is what makes speciesCount change the
+  # chemical world's dynamics rather than only its palette — two species with
+  # opposite secretion signs push the field in opposite directions at their own
+  # locations, and a species with zero on both is inert in the chemistry while
+  # still obeying every other coupling.
+  #
+  # PACKING. Two parallel `array<vec4<f32>, 2>` rather than MAX_SPECIES
+  # interleaved pairs, because WGSL's uniform address space rounds an array's
+  # element stride up to 16 bytes: `array<vec2<f32>, 6>` would occupy 96 bytes,
+  # not 48, and blow the 64-byte budget. Packing four species per vec4 gives
+  # eight slots per array in exactly 32 bytes each, so both channels fit in 64
+  # with room for MAX_SPECIES up to 8. Shaders index a species the same way
+  # forces.wgsl indexes the attraction matrix: `secretion[i / 4u][i % 4u]`.
+  SpeciesChemistryLayout* = GpuStruct(
+    name: "SpeciesChemistry",
+    fields: @[
+      GpuField(name: "secretion", kind: gtArray, offset: 0,  size: 32, count: 2, elemKind: gtVec4F32),
+      GpuField(name: "tropism",   kind: gtArray, offset: 32, size: 32, count: 2, elemKind: gtVec4F32),
+    ],
+    totalSize: 64
   )
 
   # BloomParams struct (16 bytes, generated into web/shaders/modules/bloom_params.wgsl)
@@ -257,9 +364,18 @@ const
       GpuField(name: "temperature",    kind: gtF32, offset: 16, size: 4, count: 1),
       GpuField(name: "colormapIndex",  kind: gtF32, offset: 20, size: 4, count: 1),
       GpuField(name: "fieldOpacity",   kind: gtF32, offset: 24, size: 4, count: 1),
-      GpuField(name: "pad2",           kind: gtF32, offset: 28, size: 4, count: 1),
+      # World extent, so the composite passes can map screen UV through the
+      # camera into field space. The camera itself is NOT duplicated here — it
+      # is bound from the one shared camera buffer, because render, glow, fade,
+      # tonemap and field-composite must all agree about the view within a
+      # frame, and five copies is five chances to disagree.
+      GpuField(name: "worldWidth",     kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "worldHeight",    kind: gtF32, offset: 32, size: 4, count: 1),
+      GpuField(name: "pad2",           kind: gtF32, offset: 36, size: 4, count: 1),
+      GpuField(name: "pad3",           kind: gtF32, offset: 40, size: 4, count: 1),
+      GpuField(name: "pad4",           kind: gtF32, offset: 44, size: 4, count: 1),
     ],
-    totalSize: 32
+    totalSize: 48
   )
 
 # =============================================================================
@@ -510,23 +626,31 @@ const
 # RENDERPARAMS / FADEPARAMS FIELD INDICES (webgpu_render.nim)
 # =============================================================================
 # Generated from the layout tables by genFieldIndices, like SIM_* above.
-# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_DENSITY_FLOOR=12 (then three pad
-# slots through 15), RENDER_PARAMS_F32_COUNT=16 (totalSize 64);
-# FADE_AMOUNT=0 ... FADE_PAD2=3, FADE_PARAMS_F32_COUNT=4.
+# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_DENSITY_FLOOR=12, then
+# RENDER_FIELD_OPACITY=13 and RENDER_COLORMAP_INDEX=14 (the field reaching the
+# vertex stage) and one pad at 15, RENDER_PARAMS_F32_COUNT=16 (totalSize 64);
+# FADE_AMOUNT=0, FADE_FIELD_DRIFT_SCALE=1 ... FADE_PAD2=3,
+# FADE_PARAMS_F32_COUNT=4.
 
 genFieldIndices(RenderParamsLayout, "RENDER")
 genFieldIndices(FadeParamsLayout, "FADE")
+genFieldIndices(CameraLayout, "CAMERA")
 
 static:
-  # The generated WGSL and the Nim writer must agree on every offset for the
-  # render-path structs, exactly as asserted for SimParams above.
-  for layout in [RenderParamsLayout, FadeParamsLayout]:
+  # The generated WGSL and the Nim writer must agree on every offset, exactly as
+  # asserted for SimParams above. One sweep over every layout that shares the
+  # check: a layout added to this list is checked, and the per-struct size
+  # assertions stay beside the struct they size.
+  for layout in [RenderParamsLayout, FadeParamsLayout, CameraLayout,
+      FieldParamsLayout, ReactionParamsLayout, SpeciesChemistryLayout]:
     let computedOffsets = layout.wgslComputedOffsets
     for fieldIndex in 0 ..< layout.fields.len:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
         layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
   assert RenderParamsLayout.wgslUniformSize == 64, "RenderParams allocates 64 bytes"
-  assert FadeParamsLayout.wgslUniformSize == 16, "FadeParams allocates 16 bytes"
+  assert FadeParamsLayout.wgslUniformSize == 32, "FadeParams allocates 32 bytes"
+  assert CameraLayout.totalSize == 16, "Camera must be 16 bytes"
+  assert CameraLayout.wgslUniformSize == 16, "Camera allocates 16 bytes"
 
 # =============================================================================
 # FIELDPARAMS FIELD INDICES (reaction-diffusion mode, webgpu_compute.nim)
@@ -538,15 +662,54 @@ static:
 genFieldIndices(FieldParamsLayout, "FIELD")
 
 static:
-  # Same offset-agreement invariant as SimParams/RenderParams/FadeParams: a
-  # drift here would corrupt every reaction-diffusion uniform write.
-  block:
-    let computedOffsets = FieldParamsLayout.wgslComputedOffsets
-    for fieldIndex in 0 ..< FieldParamsLayout.fields.len:
-      assert computedOffsets[fieldIndex] == FieldParamsLayout.fields[fieldIndex].offset,
-        "FieldParams." & FieldParamsLayout.fields[fieldIndex].name & " offset drift"
+  # Offset agreement is covered by the shared sweep above; the sizes stay
+  # beside the struct they size.
   assert FieldParamsLayout.totalSize == 32, "FieldParams must be 32 bytes"
   assert FieldParamsLayout.wgslUniformSize == 32, "FieldParams allocates 32 bytes"
+
+# =============================================================================
+# REACTIONPARAMS FIELD INDICES (which reaction the field runs)
+# =============================================================================
+# REACTION_KIND=0 (the macro collapses the duplicated prefix),
+# REACTION_KERNEL_RADIUS=1, ... REACTION_PAD2=7,
+# REACTION_PARAMS_F32_COUNT=8.
+
+genFieldIndices(ReactionParamsLayout, "REACTION")
+
+static:
+  # Offset agreement rides the layout sweep above; the size this struct must
+  # hold is its own.
+  assert ReactionParamsLayout.totalSize == 32, "ReactionParams must be 32 bytes"
+  assert ReactionParamsLayout.wgslUniformSize == 32, "ReactionParams allocates 32 bytes"
+
+# =============================================================================
+# SPECIESCHEMISTRY FIELD INDICES (per-species field coupling)
+# =============================================================================
+# CHEM_SECRETION_START=0 / _END=7, CHEM_TROPISM_START=8 / _END=15,
+# CHEM_PARAMS_F32_COUNT=16. Both arrays are contiguous f32 runs, so species i
+# writes at CHEM_SECRETION_START + i and CHEM_TROPISM_START + i — the same
+# arithmetic the shader's `[i / 4u][i % 4u]` performs on the vec4 side.
+
+genFieldIndices(SpeciesChemistryLayout, "CHEM")
+
+const CHEMISTRY_SPECIES_SLOTS* = 8
+  ## Species slots each chemistry channel holds: two vec4s of four. The
+  ## assertion below ties this to the packing rather than leaving it a literal.
+
+static:
+  # Offset agreement rides the layout sweep above; the size, the slot count, and
+  # what must fit in it are this struct's own.
+  assert SpeciesChemistryLayout.totalSize == 64, "SpeciesChemistry must be 64 bytes"
+  assert SpeciesChemistryLayout.wgslUniformSize == 64, "SpeciesChemistry allocates 64 bytes"
+  # Both channels hold the same number of slots, and MAX_SPECIES must fit in
+  # them. Raising MAX_SPECIES past 8 means widening the arrays (and the struct
+  # past 64 bytes), not silently dropping the species that no longer fit.
+  assert SpeciesChemistryLayout.fieldByName("secretion").count * 4 ==
+    CHEMISTRY_SPECIES_SLOTS
+  assert SpeciesChemistryLayout.fieldByName("tropism").count * 4 ==
+    CHEMISTRY_SPECIES_SLOTS
+  assert MAX_SPECIES <= CHEMISTRY_SPECIES_SLOTS,
+    "SpeciesChemistry holds 8 species slots; MAX_SPECIES exceeds them"
 
 # =============================================================================
 # BLOOMPARAMS / TONEMAPPARAMS FIELD INDICES (HDR bloom, webgpu_render.nim)
@@ -568,4 +731,4 @@ static:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
         layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
   assert BloomParamsLayout.wgslUniformSize == 16, "BloomParams allocates 16 bytes"
-  assert TonemapParamsLayout.wgslUniformSize == 32, "TonemapParams allocates 32 bytes"
+  assert TonemapParamsLayout.wgslUniformSize == 48, "TonemapParams allocates 48 bytes"

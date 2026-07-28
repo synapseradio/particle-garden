@@ -10,6 +10,7 @@
 
 //! import particle
 //! import render_params
+//! import camera_transform
 
 const OFFSETS = array<vec2f, 6>(
   vec2f(-1.0, -1.0),
@@ -24,6 +25,11 @@ const OFFSETS = array<vec2f, 6>(
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
 @group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors (vertex-only visibility)
+// Binding 4, not 3: the bind group layout is SHARED with render.wgsl, where
+// binding 3 is the field texture used for particle lighting. This shader does
+// not read the field, but it cannot reuse its slot — the layout is one object
+// and the numbering belongs to it, not to either shader individually.
+@group(0) @binding(4) var<uniform> cam: Camera;              // Same view render.wgsl draws through
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -71,7 +77,8 @@ const WARMTH_GREEN: f32 = {{TUNABLE_GLOW_WARMTH_GREEN}};
 const WARMTH_BLUE: f32 = {{TUNABLE_GLOW_WARMTH_BLUE}};
 
 @vertex
-fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) id: u32,
+    @builtin(instance_index) tile: u32) -> VertexOutput {
   var output: VertexOutput;
   let particleId = id / 6u;
   let cornerId = id % 6u;
@@ -92,13 +99,24 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let baseRadius = params.baseSize * params.glowRadiusScale;
   let velocityBoost = velocityNorm * params.velocityGlowScale * 0.5;
   let glowRadius = baseRadius * (1.0 + velocityBoost);
-  let worldPos = p.pos + offset * glowRadius / scale;
+  // The same size correction render.wgsl applies, so glow radius tracks
+  // particle size and trail length rather than drifting out of step with them
+  // at low zoom (design D9: all three move together or none does).
+  let worldOffset = offset * glowRadius / scale * cameraSizeCorrection(cam);
 
   // Species tint (colors has vertex-only visibility; interpolate to fragment)
   let speciesIndex = min(p.species, MAX_SPECIES - 1u);
   output.tint = colors[speciesIndex].rgb;
 
-  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
+  // Through the camera, at the particle's nearest toroidal image — the image
+  // chosen from the centre, exactly as render.wgsl does it. If these two
+  // shaders disagreed about which image a particle occupies, its glow would
+  // detach and appear on the far side of the world.
+  // The tile displacement must match render.wgsl's instance for instance, or a
+  // tiled world shows glow copies where no particle copies are.
+  let tileOffset = cameraTileOffset(cam, tile, params.worldSize);
+  let normalizedPos = cameraToClip(p.pos, cam, params.worldSize) +
+    cameraOffsetToClip(worldOffset + tileOffset, cam, params.worldSize);
 
   // Z-ordering: FAST particles go BEHIND (higher Z), SLOW in front (lower Z)
   // Position hash prevents z-fighting between similar particles

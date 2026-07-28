@@ -19,11 +19,26 @@
 // +-------+---------------------------+-----------------+--------+
 // |   0   | storage array<Particle>   | particles       | read   |
 // |   1   | uniform RenderParams      | renderParams    | read   |
+// |   2   | uniform array<vec4f, 6>   | colors          | read   |
+// |   3   | texture_2d<f32>           | fieldA view     | load   |
 // +-------+---------------------------+-----------------+--------+
-// =============================================================================
+//
+// THE FIELD LIGHTS THE PARTICLES. Binding 3 is the reaction-diffusion field,
+// read in the VERTEX stage at each particle's own cell, so a particle standing
+// in a bright region of the pattern is lit by it. This is the one stage that
+// can do that: the composite stages see the field per screen pixel, long after
+// the particles have been coloured, so there they can only ever lie behind or
+// in front of the particles rather than illuminate them.
+//
+// textureLoad, not textureSample: the vertex stage has no implicit derivatives,
+// and the read is at an exact cell anyway. In a world without a field, binding 3
+// holds a harmless placeholder view and RenderParams.fieldOpacity is 0, which
+// guards the lookup out entirely and leaves the species colour standing.
 
 //! import particle
 //! import render_params
+//! import colormap
+//! import camera_transform
 
 // Quad corner offsets (2 triangles = 6 vertices)
 // Unit quad: corners at distance sqrt(2) from center
@@ -59,6 +74,11 @@ const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full bright
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
 @group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors from config.nim
+@group(0) @binding(3) var fieldTexture: texture_2d<f32>;     // RD field (activator, inhibitor)
+@group(0) @binding(4) var<uniform> cam: Camera;              // View over the toroidal world
+
+const FIELD_LIGHT_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
+const FIELD_LIGHT_STRENGTH: f32 = {{FIELD_LIGHT_STRENGTH}};
 
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -71,7 +91,8 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) id: u32,
+    @builtin(instance_index) tile: u32) -> VertexOutput {
   var output: VertexOutput;
 
   // Particle index = vertex_index / 6, quad corner = vertex_index % 6
@@ -131,13 +152,28 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   }
   let acrossVel = cornerOffset.y * halfSize;
 
-  // Compute world offset using velocity-aligned axes
-  let worldOffset = (velDir * alongVel + velPerp * acrossVel) / scale;
-  let worldPos = p.pos + worldOffset;
+  // Compute world offset using velocity-aligned axes. The size correction is
+  // what ties particle size and trail length to the FLOORED apparent scale:
+  // both quantities reach clip space through this one offset, so one factor
+  // moves them together or not at all (design D9).
+  let worldOffset =
+    (velDir * alongVel + velPerp * acrossVel) / scale * cameraSizeCorrection(cam);
 
-  // Transform to clip space: world coords -> normalized device coords
-  // World (0,0) maps to clip (-1,1), World (worldW, worldH) maps to clip (1,-1)
-  let normalizedPos = (worldPos / params.worldSize) * 2.0 - 1.0;
+  // Transform to clip space through the camera, drawing the particle at its
+  // nearest toroidal image so the world seam never shows. Reduces to the old
+  // (worldPos / worldSize) * 2 - 1 exactly at the default camera.
+  //
+  // The image is chosen from the particle CENTRE and the corner offset added
+  // afterwards. Wrapping the already-offset corner instead would tear a quad in
+  // half whenever its particle sat near the half-world line.
+  //
+  // The tile offset rides along with the quad offset for the same reason: it is
+  // a displacement, not a position, so it must not be wrapped. Instance 0 is a
+  // corner of the ring and the middle instance is the undisplaced world; at
+  // zoom 1 and closer there is exactly one instance and this term is zero.
+  let tileOffset = cameraTileOffset(cam, tile, params.worldSize);
+  let normalizedPos = cameraToClip(p.pos, cam, params.worldSize) +
+    cameraOffsetToClip(worldOffset + tileOffset, cam, params.worldSize);
 
   // Z-ordering: Species-based layers with stable particle hash
   // Each species occupies its own depth band (0.1-0.9 divided into 6 bands)
@@ -165,7 +201,34 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // Look up species color from uniform buffer
   let speciesIdx = min(p.species, 5u);
-  output.color = vec4f(colors[speciesIdx].rgb, 1.0);
+  let speciesColor = colors[speciesIdx].rgb;
+
+  // Light the particle by the field it is standing in. Sampled at the
+  // particle's OWN position (p.pos, not the quad corner worldPos) so every
+  // vertex of one particle agrees and the quad is lit as one thing rather than
+  // gradient-shaded across itself.
+  //
+  // fieldOpacity is 0 in a world without a field, which zeroes the pull, and
+  // mix at 0 returns the species colour untouched — so the guard skips the
+  // whole lookup rather than running it for all six vertices of every particle
+  // on every tile instance. It reads from a uniform, so the branch is coherent
+  // across the draw and costs nothing where a field exists.
+  var particleColor = speciesColor;
+  if (params.fieldOpacity > 0.0) {
+    let fieldCellX = clamp(i32(p.pos.x / params.worldSize.x * f32(FIELD_LIGHT_DIMS.x)),
+      0, FIELD_LIGHT_DIMS.x - 1);
+    let fieldCellY = clamp(i32(p.pos.y / params.worldSize.y * f32(FIELD_LIGHT_DIMS.y)),
+      0, FIELD_LIGHT_DIMS.y - 1);
+    let fieldHere = textureLoad(fieldTexture, vec2<i32>(fieldCellX, fieldCellY), 0).xy;
+    let colormapIndex = u32(params.colormapIndex + 0.5);
+    // Pull toward the field's colour in proportion to how much field is actually
+    // here, so a particle in a dark region keeps its species colour exactly.
+    let fieldPull = colormapFieldIntensity(colormapIndex, fieldHere.x, fieldHere.y) *
+      params.fieldOpacity * FIELD_LIGHT_STRENGTH;
+    let fieldTint = applyColormap(colormapIndex, fieldHere.x, fieldHere.y);
+    particleColor = mix(speciesColor, fieldTint, fieldPull);
+  }
+  output.color = vec4f(particleColor, 1.0);
 
   return output;
 }

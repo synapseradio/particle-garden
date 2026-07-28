@@ -5,7 +5,7 @@
 // screen. All state flows through the controller; no component touches
 // gardenAPI numbers directly.
 
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PanelController } from "../state";
 import {
   filterVisibleIds,
@@ -16,6 +16,8 @@ import {
 import { Section } from "./Section";
 import { ParamSlider } from "./ParamSlider";
 import { MatrixEditor } from "./MatrixEditor";
+import { RegimeSelector } from "./RegimeSelector";
+import { ChemistryEditor } from "./ChemistryEditor";
 import { PresetsSection } from "./PresetsSection";
 import { StatsPanel } from "./StatsPanel";
 
@@ -23,6 +25,17 @@ export function Panel(props: { ctrl: PanelController }) {
   const ctrl = props.ctrl;
   const [collapsed, setCollapsed] = createSignal(false);
   const toggleCollapsed = () => setCollapsed(!collapsed());
+
+  // The drifting climate moves feed and kill from the frame loop, which has no
+  // way to push at the panel. Poll while it is on, and only while it is on —
+  // an always-running timer would re-read every frame's worth of state for a
+  // feature that is off by default. Four reads a second is enough for a slider
+  // to look like it is moving without the panel doing work between them.
+  createEffect(() => {
+    if (!ctrl.climateDrift()) return;
+    const timer = setInterval(() => ctrl.syncDriftingParams(), 250);
+    onCleanup(() => clearInterval(timer));
+  });
 
   // Mode gating. Solid's JSX transform reads each/when through getters, so
   // every call below re-runs on a mode switch with no further plumbing.
@@ -165,6 +178,27 @@ export function Panel(props: { ctrl: PanelController }) {
 
         <Show when={shows("rd")}>
           <Section title="Reaction-Diffusion" defaultOpen={opensFor("rd")}>
+            {/* Regimes first: they are how someone who does not know the
+                literature finds the living settings, and the sliders below
+                read as adjustments to a named starting point rather than as
+                bare numbers over a mostly-dead plane. */}
+            <RegimeSelector ctrl={ctrl} />
+            <div class="control-group">
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={ctrl.climateDrift()}
+                  onChange={(event) =>
+                    ctrl.setClimateDrift(event.currentTarget.checked)
+                  }
+                />
+                Weather
+                <span class="param-hint">
+                  {" "}
+                  — the climate tours the regimes on its own
+                </span>
+              </label>
+            </div>
             <For each={groupIds("rd")}>
               {(id) => <ParamSlider ctrl={ctrl} id={id} />}
             </For>
@@ -188,11 +222,14 @@ export function Panel(props: { ctrl: PanelController }) {
               {(id) => <ParamSlider ctrl={ctrl} id={id} />}
             </For>
             <div class="control-group model-selector">
+              {/* A deliberate action, never automatic: the field otherwise
+                  only ever lights where colonies deposit. */}
               <button
                 class="model-btn"
                 onClick={() => ctrl.api.reseedField?.()}
+                title="Scatter a pattern across the field by hand, instead of waiting for colonies to grow one"
               >
-                ↻ Reseed Field
+                ✦ Scatter Spores
               </button>
             </div>
           </Section>
@@ -200,6 +237,13 @@ export function Panel(props: { ctrl: PanelController }) {
 
         <Show when={shows("matrix")}>
           <MatrixEditor ctrl={ctrl} />
+        </Show>
+
+        {/* Beside the attraction matrix, and gated on the same group the rest
+            of the field controls use: chemistry only means something where a
+            field exists for a species to secrete into. */}
+        <Show when={shows("rd")}>
+          <ChemistryEditor ctrl={ctrl} />
         </Show>
 
         <Section title="Palette">

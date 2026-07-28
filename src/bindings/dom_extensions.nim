@@ -40,6 +40,29 @@ type
     width* {.importjs: "width".}: int
     height* {.importjs: "height".}: int
 
+# ==============================================================================
+# WHEEL EVENT - Not in std/dom
+# ==============================================================================
+
+type
+  WheelEvent* = ref object of Event
+    ## DOM WheelEvent. Declared here rather than derived from std/dom's
+    ## MouseEvent because std/dom has no WheelEvent at all, and the three fields
+    ## the camera needs are the only ones read.
+    deltaY* {.importjs: "deltaY".}: float
+      ## Vertical scroll amount. Positive scrolls down/away, which zooms OUT.
+    deltaX* {.importjs: "deltaX".}: float
+      ## Horizontal scroll amount. Unused today; present so a trackpad's
+      ## horizontal axis is reachable without another binding change.
+    offsetX* {.importjs: "offsetX".}: float
+      ## Cursor x relative to the target element's padding edge — canvas
+      ## coordinates, not page coordinates, which is what the zoom anchor needs.
+    offsetY* {.importjs: "offsetY".}: float
+      ## Cursor y relative to the target element's padding edge.
+
+proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: WheelEvent)) {.importjs: "#.addEventListener(#, #)".}
+  ## Add event listener with WheelEvent callback
+
 proc getContext*(canvas: HTMLCanvasElement, contextType: cstring): JsObject {.importjs: "#.getContext(#)".}
   ## Get a rendering context from canvas (e.g., "2d")
 

@@ -112,6 +112,89 @@ suite "Defaults Are Consistent And In Range":
     check FIELD_OPACITY_DEFAULT <= FIELD_OPACITY_MAX
 
 
+suite "The Field Covers What It Lights":
+  # Why this suite exists: the field used to claim EVERY pixel whenever it was
+  # enabled at all — tonemap.wgsl set `fieldCoverage = 1.0` inside
+  # `if (params.fieldOpacity > 0.0)`, regardless of whether any field was
+  # actually there. That is what made the field read as a backdrop the
+  # particles sit on rather than as light in the world. Coverage now follows
+  # how much field is present, and these tests are what hold it there.
+
+  const RAMPS = [COLORMAP_INDEX_INFERNO, COLORMAP_INDEX_VIRIDIS,
+                 COLORMAP_INDEX_TWO_TONE]
+
+  test "field coverage is zero where field intensity is zero":
+    # THE BUG THIS GROUP FIXES, as an executable fact. Empty field, full
+    # opacity: the pixel must be left entirely to the particles.
+    for ramp in RAMPS:
+      check fieldIntensity(ramp, 0.0, 0.0) == 0.0
+      check fieldCoverage(ramp, 0.0, 0.0, FIELD_OPACITY_MAX) == 0.0
+      check fieldCoverage(ramp, 0.0, 0.0, FIELD_OPACITY_DEFAULT) == 0.0
+    # And a field that IS present contributes nothing when turned off, which is
+    # the condition the shaders used to spell as `if (fieldOpacity > 0.0)`.
+    for ramp in RAMPS:
+      check fieldCoverage(ramp, 1.0, 1.0, 0.0) == 0.0
+
+  test "field coverage rises monotonically with intensity and saturates at one":
+    # Swept at full opacity, where saturation is reachable: coverage scales by
+    # opacity, so at the 0.85 default it saturates at 0.85, not at 1.
+    const STEPS = 60
+    for ramp in RAMPS:
+      var previous = -1.0
+      for step in 0 .. STEPS:
+        let inhibitor = step.float / STEPS.float
+        let coverage = fieldCoverage(ramp, 0.0, inhibitor, FIELD_OPACITY_MAX)
+        check coverage >= previous
+        check coverage >= 0.0
+        check coverage <= 1.0
+        previous = coverage
+      check previous == 1.0
+
+  test "opacity scales coverage, so a dimmed field is also less covering":
+    # The invariant that stops fieldOpacity from leaving an invisible but
+    # opaque sheet over the world.
+    #
+    # Deliberately an explicit half rather than FIELD_OPACITY_DEFAULT: the
+    # default is a tunable that may legitimately sit anywhere in range,
+    # including at the maximum, and an invariant about what opacity DOES must
+    # not depend on where the shipped default happens to be parked.
+    const DIMMED_OPACITY = 0.5
+    for ramp in RAMPS:
+      let full = fieldCoverage(ramp, 0.0, 1.0, FIELD_OPACITY_MAX)
+      let dimmed = fieldCoverage(ramp, 0.0, 1.0, DIMMED_OPACITY)
+      check dimmed < full
+      check abs(dimmed - DIMMED_OPACITY) < 1e-12
+
+  test "two-tone counts its activator substrate as present field":
+    # Two-tone is the one ramp that renders the activator, so an
+    # inhibitor-only intensity would leave its cool substrate visible but
+    # transparent. The single-scalar ramps do not draw the activator and must
+    # stay blind to it.
+    check fieldIntensity(COLORMAP_INDEX_TWO_TONE, 1.0, 0.0) > 0.0
+    check fieldIntensity(COLORMAP_INDEX_INFERNO, 1.0, 0.0) == 0.0
+    check fieldIntensity(COLORMAP_INDEX_VIRIDIS, 1.0, 0.0) == 0.0
+
+  test "an out-of-range colormap index falls back to inferno's intensity":
+    # Matches evalColormap's fallback arm, so a bad index cannot make coverage
+    # and colour disagree about which ramp is in play.
+    check fieldIntensity(99, 1.0, 0.3) == fieldIntensity(COLORMAP_INDEX_INFERNO, 1.0, 0.3)
+    check fieldIntensity(-1, 1.0, 0.3) == fieldIntensity(COLORMAP_INDEX_INFERNO, 1.0, 0.3)
+
+  test "the ramps are not black at zero field, which is why coverage cannot follow luminance":
+    # THE MEASUREMENT BEHIND THE DESIGN, kept executable so the reasoning
+    # cannot rot. Were coverage driven by the emitted colour's luminance, these
+    # are the alphas an EMPTY field would paint. Viridis's zero is dark purple,
+    # not black, so luminance-driven coverage would tint the whole world.
+    check abs(luminance(evalColormap(COLORMAP_INDEX_INFERNO, 0.0, 0.0)) -
+      0.00123) < 1e-4
+    check abs(luminance(evalColormap(COLORMAP_INDEX_VIRIDIS, 0.0, 0.0)) -
+      0.08703) < 1e-4
+    check luminance(evalColormap(COLORMAP_INDEX_TWO_TONE, 0.0, 0.0)) == 0.0
+    # Coverage, by contrast, is zero for all three. This is the whole argument.
+    for ramp in RAMPS:
+      check fieldCoverage(ramp, 0.0, 0.0, FIELD_OPACITY_MAX) == 0.0
+
+
 suite "WGSL Coefficient Emission":
   test "colormapCoeffsWgsl emits one vec3f literal per Horner term":
     let emitted = colormapCoeffsWgsl(INFERNO_COEFFS)

@@ -36,32 +36,36 @@ test "computeMemoryOffsets adds padding correctly":
 | File | Purpose | Compilation |
 |------|---------|-------------|
 | `test_all.nim` | Entry point that imports every test module | Native (`nim c`) |
+| `coupling_space.nim` | Shared fixture: `ALL_COUPLINGS`, every combination of the three coupling booleans. Declares no suite, so it needs no `test_all.nim` entry — the modules that sweep the space import it | Native |
 | `test_memory_layout.nim` | Memory layout constants, alignment, AoS structure, `align4` | Native |
 | `test_grid.nim` | Pure grid algorithms (cell indexing, prefix sums, offset validation) | Native |
 | `test_physics.nim` | Pure physics math (forces, wrapping, density, neighbor cells) | Native |
 | `test_config.nim` | Configuration constraint invariants derived from the layout limits | Native |
-| `test_gpu_types.nim` | GPU struct layout helpers (type sizes, field offsets, accessors) | Native |
+| `test_gpu_types.nim` | GPU struct layout helpers (type sizes, field offsets, accessors) and every generated layout's agreement with WGSL's own offset algorithm | Native |
 | `test_shader_config.nim` | Shader workgroup-size and tunable-constant accessors, and the placeholders the bundler emits | Native |
-| `test_shader_manifest.nim` | The compute shaders each simulation kind declares | Native |
-| `test_sim_registry.nim` | Each mode's frame description: which passes run, in what order | Native |
+| `test_shader_manifest.nim` | The compute shaders each coupling declares, and the union an active set composes | Native |
+| `test_sim_registry.nim` | The frame each couplings set composes: which passes run, in what order, that the delta clears precede every contributor, and which worlds compute particle density | Native |
 | `test_sim_config.nim` | Simulation-kind config and the active-kind observable | Native |
 | `test_observable.nim` | Observable primitive (construct, read, set, subscribe) | Native |
 | `test_input.nim` | Input handling logic | Native |
 | `test_matrix.nim` | Attraction matrix state plus cell and species colors | Native |
 | `test_app_state.nim` | App runtime and profiling-average accumulators | Native |
-| `test_param_descriptor.nim` | The descriptor table: ranges, defaults, store routing, clamping | Native |
+| `test_param_descriptor.nim` | The descriptor table: ranges, defaults, store routing, clamping, the per-species chemistry fields, and that every notch is a position its slider can reach | Native |
 | `test_palette.nim` | HSL-to-RGB conversion, palette generation schemes, flat encoding | Native |
 | `test_palette_state.nim` | Palette editor state and scheme selection | Native |
 | `test_preset.nim` | Versioned preset schema: round-trip, version rejection, clamp/default degradation, migration hook | Native |
 | `test_preset_store_core.nim` | Preset name normalization, storage keys, apply-order contract | Native |
 | `test_sph_core.nim` | SPH math: 2D smoothing kernels, Tait equation, XSPH term | Native |
-| `test_field_core.nim` | Gray-Scott step, the 9-point Laplacian, the field seed, and whether a seed ignites the pattern at all | Native |
+| `test_field_core.nim` | Gray-Scott step, the 9-point Laplacian, the field seed, what ignites the pattern, the species chemistry coupling, the chemotactic-collapse bound, and that a regime's deposit floor preserves its morphology | Native |
 | `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
-| `test_colormap_core.nim` | Reaction-diffusion field colormap ramps | Native |
+| `test_colormap_core.nim` | Reaction-diffusion field colormap ramps, and the coverage the field claims as light | Native |
+| `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, the shared apparent-scale factor | Native |
+| `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
+| `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, and tours every named regime | Native |
 
-Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage and formatting; `just check` runs both.
+Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, mode gating, and notch geometry and snapping; `just check` runs both.
 
-Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, and `test_colormap_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Their subject modules have no importer in `src/` by design; see the reference-oracle table in the root `CLAUDE.md`.
+Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, and `test_camera_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Their subject modules have no importer in `src/` by design; see the reference-oracle table in the root `CLAUDE.md`.
 
 ### Test Architecture
 
@@ -74,8 +78,8 @@ test_all.nim (runner)
     ├── test_physics.nim        → physics_core.nim (forces, wrapping, neighbors)
     ├── test_gpu_types.nim      → gpu_types.nim (struct layout helpers)
     ├── test_shader_config.nim  → shader_config.nim (workgroup/tuning accessors)
-    ├── test_shader_manifest.nim→ shader_manifest.nim (per-kind shader sets)
-    ├── test_sim_registry.nim   → sim_registry.nim (per-kind frame description)
+    ├── test_shader_manifest.nim→ shader_manifest.nim (per-coupling shader sets)
+    ├── test_sim_registry.nim   → sim_registry.nim (composed frame description)
     ├── test_sim_config.nim     → ui/state/sim_config.nim (active kind)
     ├── test_observable.nim     → ui/core/observable.nim
     ├── test_input.nim          → ui/input (input logic)
@@ -89,7 +93,10 @@ test_all.nim (runner)
     ├── test_sph_core.nim       → sph_core.nim (kernels, Tait, XSPH)
     ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian, seeding)
     ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
-    └── test_colormap_core.nim  → colormap_core.nim (field colormap ramps)
+    ├── test_colormap_core.nim  → colormap_core.nim (field colormap ramps, coverage)
+    ├── test_camera_core.nim    → camera_core.nim (toroidal camera, apparent scale)
+    ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
+    └── test_climate_core.nim   → climate_core.nim (drifting climate path)
 ```
 
 ## Running Tests
@@ -467,6 +474,6 @@ The browser-dependent modules have no separate test target. Their correctness is
 
 ## Coverage Summary
 
-The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, the SPH kernels and Tait equation, the Gray-Scott reaction-diffusion step and Laplacian, the bloom blur kernel and field colormap ramps, GPU struct layouts and field accessors, shader workgroup and tuning configuration and the placeholders the bundler emits, each simulation kind's frame description and shader set, the `Observable` primitive, the UI state models (simulation, render, matrix and its colors, palette editor, and profiling averages), the parameter descriptor table (ranges, defaults, store routing, clamping), palette generation (HSL conversion, scheme distinctness, flat encoding), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook) alongside preset name normalization and apply order. Run `just test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
+The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, the SPH kernels and Tait equation, the Gray-Scott reaction-diffusion step and Laplacian, the bloom blur kernel and field colormap ramps, GPU struct layouts and field accessors, shader workgroup and tuning configuration and the placeholders the bundler emits, the frame description and shader set each couplings combination composes, the drifting climate's path, the `Observable` primitive, the UI state models (simulation, render, matrix and its colors, palette editor, and profiling averages), the parameter descriptor table (ranges, defaults, store routing, clamping), palette generation (HSL conversion, scheme distinctness, flat encoding), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook) alongside preset name normalization and apply order. Run `just test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
 
 Browser integration (WebGPU, DOM, the FFI bindings) is not covered by this suite. It is exercised by the application build and by manual testing in the browser.

@@ -17,12 +17,14 @@
 // =============================================================================
 
 //! import colormap
+//! import camera_transform
 //! import tonemap_params
 //! import tonemap_grade
 
 @group(0) @binding(0) var fieldTexture: texture_2d<f32>;
 @group(0) @binding(1) var fieldSampler: sampler;
 @group(0) @binding(2) var<uniform> params: TonemapParams;
+@group(0) @binding(3) var<uniform> cam: Camera;
 
 const POSITIONS = array<vec2f, 3>(
   vec2f(-1.0, -1.0),
@@ -47,11 +49,21 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  let field = textureSample(fieldTexture, fieldSampler, input.uv).xy;
+  // Through the camera into field space, the same mapping tonemap.wgsl uses —
+  // the two paths must agree about where the field is, not merely about how it
+  // is graded. Reduces to input.uv at the default camera.
+  let fieldUv = cameraScreenUvToFieldUv(input.uv, cam,
+    vec2f(params.worldWidth, params.worldHeight));
+  let field = textureSample(fieldTexture, fieldSampler, fieldUv).xy;
   let colormapIndex = u32(params.colormapIndex + 0.5);
   // The field's light contribution, exactly as the bloom-on path forms it.
   let fieldLight = applyColormap(colormapIndex, field.x, field.y) * params.fieldOpacity;
-  // Opaque backdrop: graded through the shared tonemap_grade authority so
-  // toggling bloom never shifts the field's tonality; alpha stays 1.
-  return vec4f(tonemapGrade(fieldLight, params), 1.0);
+  // Graded through the shared tonemap_grade authority so toggling bloom never
+  // shifts the field's tonality, and covered by the shared coverage authority
+  // so toggling it never shifts what the field OCCLUDES either. Alpha used to
+  // be a flat 1.0 here, which made the field an opaque backdrop even where no
+  // field was present.
+  let coverage = colormapFieldCoverage(colormapIndex, field.x, field.y,
+    params.fieldOpacity);
+  return vec4f(tonemapGrade(fieldLight, params), coverage);
 }

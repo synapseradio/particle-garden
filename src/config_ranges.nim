@@ -81,7 +81,13 @@ const
     ## The substep ceiling is sph_core's SPH_MAX_SUBSTEPS, not a bare literal —
     ## the executor loop and the slider bound stay one value.
   RD_FEED_MIN* = 0.010
-  RD_FEED_MAX* = 0.080
+  RD_FEED_MAX* = 0.085
+    ## Raised from 0.080 for Coral, whose feed coordinate is 0.082 (design D4).
+    ## Shipping a labelled notch outside its own slider's range would be the
+    ## same defect the named regimes exist to fix — a position the panel names
+    ## and the user cannot reach. The static assertion below ties the ceiling
+    ## to the regime table, so the next coordinate past it fails the build
+    ## rather than shipping an unreachable label.
   RD_KILL_MIN* = 0.040
   RD_KILL_MAX* = 0.075
   RD_DEPOSIT_MIN* = 0.0
@@ -106,6 +112,167 @@ const
     ## negative scale pulls particles up-gradient, concentrating their deposits
     ## on inhibitor ridges into a positive-feedback loop nothing here has
     ## checked for stability.
+  RD_REGIME_HIGH_FEED_DEPOSIT* = 0.040
+    ## The deposit the high-feed regimes need, as a notch on the Deposit slider
+    ## as well as a floor the regime buttons apply. RD_REGIMES' `minDeposit`
+    ## reads it for the worms and coral rows, so the slider and the button
+    ## cannot come to disagree about it.
+    ##
+    ## THE MINIMUM IS ALSO THE GENTLEST, which is the argument against ever
+    ## "simplifying" this into one deposit applied to every regime. Measured
+    ## against each regime's unforced attractor (tests/test_field_core.nim,
+    ## "The Regime Deposit Floor Preserves The Regime"), Coral at this floor
+    ## sits 0.10 from its own attractor while Coral at RD_DEPOSIT_MAX sits
+    ## 0.42 from it — four times further. A larger deposit does not merely cost
+    ## nothing extra, it actively distorts the regime it was meant to reveal.
+    ## Raising this constant, or flattening the per-regime `minDeposit` into a
+    ## single value, trades morphology fidelity for a simpler table.
+  # Named reaction-diffusion regimes. Representative (feed, kill) points for
+  # the classic Gray-Scott morphologies, transcribed from
+  # docs/research/pearson-map.md's practitioner table (source [5] there).
+  #
+  # THEY ARE POINTS, NOT REGIONS. Pearson publishes only a graphical phase map
+  # and no numeric boundaries, so labelling representative points is honest and
+  # drawing borders would be fabrication. That is also why the sliders stay
+  # continuous — a notch marks the map, it does not fence the road.
+  #
+  # They live here, beside RD_FEED_MIN/MAX and RD_KILL_MIN/MAX, because a
+  # labelled value outside its own slider's range is an unreachable label. The
+  # static assertions at the bottom of this file make that a build failure
+  # rather than a shipped dead button.
+  RD_REGIMES* = [
+    (id: "waves",     label: "Waves",     feed: 0.014, kill: 0.054, minDeposit: 0.0),
+    (id: "mitosis",   label: "Mitosis",   feed: 0.028, kill: 0.062, minDeposit: 0.0),
+    (id: "labyrinth", label: "Labyrinth", feed: 0.029, kill: 0.057, minDeposit: 0.0),
+    (id: "spots",     label: "Spots",     feed: 0.035, kill: 0.065, minDeposit: 0.0),
+    (id: "worms",     label: "Worms",     feed: 0.078, kill: 0.061,
+     minDeposit: RD_REGIME_HIGH_FEED_DEPOSIT),
+    (id: "coral",     label: "Coral",     feed: 0.082, kill: 0.059,
+     minDeposit: RD_REGIME_HIGH_FEED_DEPOSIT),
+  ]
+    ## `minDeposit` is the MEASURED floor for a regime to appear at all on the
+    ## shipped path — no seed, colonies depositing through the splat kernel.
+    ## Zero means the default deposit already ignites it.
+    ##
+    ## MEASURED (tests/test_field_core.nim, frame of ignition against deposit,
+    ## 64x64 grid, Gaussian splat at RD_DEPOSIT_SPLAT_RADIUS, budget 60 frames):
+    ##
+    ##   regime     0.020   0.030   0.040   0.080
+    ##   Waves          4       -       -       1
+    ##   Mitosis        7       -       -       1
+    ##   Labyrinth      6       -       -       1
+    ##   Spots         11       -       -       1
+    ##   Worms         NO      15       4       1
+    ##   Coral         NO      21       4       1
+    ##
+    ## Worms and Coral do not ignite at RD_DEFAULT_DEPOSIT (0.02) at ALL — not
+    ## slowly, not in 600 frames. Their high feed rate depletes a nucleus faster
+    ## than the default deposit builds one. Selecting either regime without
+    ## raising the deposit would leave the field blank, which is exactly the
+    ## "no way to find the living parts except by accident" failure the named
+    ## regimes exist to fix. 0.040 ignites both on frame 4, comfortably above
+    ## the 0.030 boundary where they first ignite at all.
+  COUPLING_PARTICLE_CEILING* = SPH_PARTICLE_CEILING
+    ## The particle count the heavier couplings cap at, as one name. Routed
+    ## through the range authority rather than read from sph_core directly —
+    ## the same pattern SPH_SUBSTEPS_MAX uses — so the descriptor table needs
+    ## only this module.
+    ##
+    ## It is ONE constant because SPH and the field cap at the same count. The
+    ## static assertion below is what makes that safe to assume: if they ever
+    ## diverge, this name stops meaning anything and the build says so rather
+    ## than the panel silently labelling a tick with the wrong ceiling.
+  CLIMATE_SPEED_MIN* = 0.05
+    ## Slowest weather: one tour of the regimes every twenty minutes. Not zero —
+    ## zero is what the drift toggle is for, and a speed slider that can also
+    ## stop the drift would give the same state two controls.
+  CLIMATE_SPEED_MAX* = 2.0
+    ## Fastest weather: two tours a minute. Bounded by CLIMATE_MAX_STEP rather
+    ## than by taste — tests/test_climate_core.nim sweeps the loop at this speed
+    ## and fails if any single frame moves a slider further than that ceiling.
+  # Camera (S6). The bounds camera_core.clampZoom is called with — they live
+  # here rather than beside the camera maths because this file is the single
+  # source of truth for every user-facing range, and camera_core takes them as
+  # parameters precisely so that stays true.
+  CAMERA_ZOOM_MIN* = 0.25
+    ## Four worlds across the window. Below one the world tiles, which is why
+    ## the render path samples the field with repeat addressing and draws each
+    ## particle at its nearest toroidal image — a zoom this far out shows the
+    ## seam if either is missing. camera_core.CAMERA_SIZE_FLOOR is what keeps
+    ## particles legible here rather than a quarter-size and sub-pixel.
+  CAMERA_ZOOM_MAX* = 8.0
+    ## Close enough that a single particle and its immediate neighbours fill the
+    ## view — the scale at which the attraction matrix's behaviour is legible as
+    ## individual motion rather than as bulk texture.
+  # Camera zoom notches. The camera's own descriptor belongs to the camera
+  # work; these are its labelled positions, kept beside CAMERA_ZOOM_MIN/MAX
+  # above so the same range assertions cover them.
+  CAMERA_ZOOM_NOTCH_TILED* = CAMERA_ZOOM_MIN
+    ## Four tiles visible — the infinity read, and the far end of the zoom
+    ## range.
+  CAMERA_ZOOM_NOTCH_WORLD* = 1.0
+    ## One world to one screen: the view every pre-camera build had.
+  CAMERA_ZOOM_NOTCH_CREATURE* = CAMERA_ZOOM_MAX
+    ## Close enough to watch one particle, and the near end of the zoom range.
+  # Per-species field chemistry. Not sliders on a single CONFIG field — one
+  # value per species, edited in the chemistry grid — but clamped through the
+  # same range authority as everything else.
+  SECRETION_MIN* = -1.0
+    ## Full erosion: the species subtracts inhibitor wherever it sits. The
+    ## magnitude matches the positive bound because both directions carry the
+    ## same risk profile — the deposit's total is conserved by the splat
+    ## kernel's normalization either way, and RD_DEPOSIT_MAX already bounds
+    ## the amplitude both signs scale.
+  SECRETION_MAX* = 1.0
+    ## Full construction, and the default: a species deposits exactly the
+    ## Deposit slider's value. Every measurement behind RD_DEPOSIT_MAX and
+    ## RD_DEPOSIT_SPLAT_RADIUS was taken here, so the ceiling is the value
+    ## those measurements describe rather than a multiple of it.
+  TROPISM_MIN* = -1.0
+    ## Full DOWN-gradient authority. Negative chemosensitivity is stabilizing:
+    ## particles pushed away from their own deposits spread across the pattern,
+    ## and no feedback loop closes. There is no measured hazard to bound.
+  TROPISM_MAX* = 0.5
+    ## Half authority UP-gradient, per design D5. Climbing a self-deposited
+    ## gradient closes a positive feedback loop — deposit raises the peak, the
+    ## peak steepens the gradient, the gradient pulls harder — which is the
+    ## Keller-Segel collapse mechanism (chi*M > 8*pi in 2D,
+    ## docs/research/chemotaxis-stability.md). The bound is asymmetric by
+    ## design, not by oversight.
+    ##
+    ## MEASURED COLLAPSE POINT: tropism 4.0 (8x this bound), at deposit 0.8
+    ## (10x RD_DEPOSIT_MAX) and fieldForceScale 150. There the field diverges
+    ## to infinity and every particle ends in a single field cell. At the same
+    ## deposit and field force, this bound stays finite (maxB 0.886), so the
+    ## collapse point is bracketed in (1x, 8x] of 0.5 under those conditions.
+    ## tests/test_field_core.nim's "Chemotactic Collapse Bound" suite holds the
+    ## measurement and the bracket.
+    ##
+    ## THE COLLAPSE IS CHEMOTACTIC, not the deposit flooding on its own. The
+    ## control settles it: the same 0.8 deposit laid down by a FROZEN
+    ## population stays finite and saturates at maxB 0.856. Only the
+    ## up-gradient motion, concentrating that deposit into one place, diverges
+    ## the field. Concentration is the variable, not amplitude.
+    ##
+    ## WHAT BOUNDS THE REACHABLE RANGE IS RD_DEPOSIT_MAX, NOT THIS CONSTANT.
+    ## Inside the deposit range the slider offers, no tropism collapses the
+    ## field at all — 1024x this bound stays finite and bounded (maxB 0.803,
+    ## peak cell 0.102 of the population). Collapse lives in the PRODUCT of
+    ## tropism and deposit, and the deposit ceiling is already far enough below
+    ## it that tropism has a thousandfold margin. This bound is the second line
+    ## of defence, and it is worth keeping precisely because the two multiply:
+    ## anything that later raises RD_DEPOSIT_MAX spends this margin too.
+    ##
+    ## Gray-Scott's (feed+kill)*B sink is what saturates the field against
+    ## deposit AMPLITUDE — 1x and 10x the ceiling land within 0.1 of each other
+    ## when the deposit is uniform. It does not saturate it against
+    ## CONCENTRATION: raising the rate per cell lets the autocatalytic A*B^2
+    ## term outrun the sink. Do not reason from "Gray-Scott bounds its own
+    ## inhibitor" to "no collapse is possible"; the measurement above is what
+    ## that reasoning misses.
+    ##
+    ## If the finite half of the bracket ever goes red, halve this constant and
+    ## record the failing value here. Never widen the test's ceiling instead.
   # HDR bloom + colour grade (S9). bloomEnabled is a toggle, not a slider, so
   # it has no range here. Temperature is signed (warm/cool), centred on 0.
   BLOOM_INTENSITY_MIN* = 0.0
@@ -152,6 +319,53 @@ static:
   # range fails the build here rather than shipping an out-of-bounds slider.
   doAssert RD_DEFAULT_FEED >= RD_FEED_MIN and RD_DEFAULT_FEED <= RD_FEED_MAX
   doAssert RD_DEFAULT_KILL >= RD_KILL_MIN and RD_DEFAULT_KILL <= RD_KILL_MAX
+  # Every named regime must be a position both its sliders can reach. A notch
+  # the panel labels and the slider cannot land on is an unreachable label —
+  # the exact defect the named regimes exist to remove — so this is a build
+  # failure rather than a test. Narrowing RD_FEED_MAX below 0.082 strands
+  # Coral and fails here.
+  for regime in RD_REGIMES:
+    doAssert regime.feed >= RD_FEED_MIN and regime.feed <= RD_FEED_MAX,
+      "regime " & regime.id & " has a feed outside the feed slider's range"
+    doAssert regime.kill >= RD_KILL_MIN and regime.kill <= RD_KILL_MAX,
+      "regime " & regime.id & " has a kill outside the kill slider's range"
+    doAssert regime.minDeposit >= RD_DEPOSIT_MIN and
+      regime.minDeposit <= RD_DEPOSIT_MAX,
+      "regime " & regime.id & " needs a deposit outside the deposit range"
+  doAssert RD_REGIME_HIGH_FEED_DEPOSIT >= RD_DEPOSIT_MIN and
+    RD_REGIME_HIGH_FEED_DEPOSIT <= RD_DEPOSIT_MAX
+  # COUPLING_PARTICLE_CEILING is one name for two constants. It is only honest
+  # while they agree.
+  doAssert SPH_PARTICLE_CEILING == RD_PARTICLE_CEILING,
+    "SPH and field particle ceilings have diverged; COUPLING_PARTICLE_CEILING " &
+    "can no longer name both"
+  doAssert COUPLING_PARTICLE_CEILING >= PARTICLE_COUNT_MIN and
+    COUPLING_PARTICLE_CEILING <= PARTICLE_COUNT_MAX
+  # The camera zoom notches are positions on the camera slider, so the same
+  # reachability rule covers them.
+  for zoomNotch in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,
+      CAMERA_ZOOM_NOTCH_CREATURE]:
+    doAssert zoomNotch >= CAMERA_ZOOM_MIN and zoomNotch <= CAMERA_ZOOM_MAX
+  # Species chemistry: non-empty ranges, and field_core's defaults inside the
+  # range they are the default of — the same guard as the RD pair above. The
+  # tropism range is asymmetric on purpose (design D5); the assertion below
+  # states that as a checked property so a future "tidying" to [-1, +1] fails
+  # here rather than shipping unmeasured up-gradient authority.
+  doAssert SECRETION_MIN < SECRETION_MAX
+  doAssert TROPISM_MIN < TROPISM_MAX
+  doAssert TROPISM_MAX < -TROPISM_MIN,
+    "tropism is bounded asymmetrically: up-gradient authority must stay " &
+    "below down-gradient authority (design D5)"
+  doAssert RD_DEFAULT_SECRETION >= SECRETION_MIN and
+    RD_DEFAULT_SECRETION <= SECRETION_MAX
+  doAssert RD_DEFAULT_TROPISM >= TROPISM_MIN and
+    RD_DEFAULT_TROPISM <= TROPISM_MAX
+  # Camera zoom is a non-empty range straddling 1.0, and it must: 1.0 is the
+  # view that reproduces the pre-camera framing exactly, so a range excluding it
+  # would make the default view unreachable.
+  doAssert CAMERA_ZOOM_MIN < CAMERA_ZOOM_MAX
+  doAssert CAMERA_ZOOM_MIN <= 1.0 and CAMERA_ZOOM_MAX >= 1.0,
+    "zoom range must contain 1.0, the framing the renderer had before a camera"
   # Bloom/grade ranges are non-empty and their bloom_core defaults sit inside
   # the slider range they are the default of — the same guard as the RD pair,
   # so a future default change that escapes its range fails the build here.

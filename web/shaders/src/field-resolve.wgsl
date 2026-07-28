@@ -61,18 +61,26 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   }
 
   let coord = vec2<i32>(i32(cellX), i32(cellY));
-  let current = textureLoad(srcField, coord, 0).xy;  // .x = activator, .y = inhibitor
+  // .x = activator, .y = inhibitor, .zw = reserved state channels.
+  let current = textureLoad(srcField, coord, 0);
 
-  // One i32 per cell, the inhibitor deposit — see field-deposit.wgsl for why
-  // there is no activator slot.
+  // One i32 per cell, so the cell index IS the buffer index — the same
+  // addressing field-deposit.wgsl writes with. See that file for what a second
+  // channel would cost and what it would change on both sides.
   let cellIndex = cellY * FIELD_W + cellX;
   let depositB = f32(atomicLoad(&fieldDeposit[cellIndex])) * INV_FIXED_POINT_SCALE;
 
-  // Reset the deposit buffer for next frame. One thread owns each cell, so a
-  // plain store is race-free (no encoder-level clearBuffer needed — the same
-  // self-reset convention forces.wgsl uses for the velocity/density deltas).
+  // This pass is the deposit buffer's single reset owner: it consumes each
+  // cell and zeroes it in the same invocation. One thread owns each cell, so a
+  // plain store is race-free and no frame-level clear is needed.
   atomicStore(&fieldDeposit[cellIndex], 0);
 
-  let updated = vec2<f32>(current.x, current.y + depositB);
-  textureStore(dstField, coord, vec4<f32>(updated, 0.0, 1.0));
+  // RESERVED STATE CHANNELS. The ping-pong textures are rgba16float because
+  // WebGPU does not permit rg16float as a write-only storage format, so .b and
+  // .a are already allocated and already paid for. They are carried through
+  // rather than overwritten with literals, so a future multi-channel reaction
+  // can occupy them without a format change. Nothing reads or writes them
+  // meaningfully today — this reserves an addressable slot, nothing more.
+  textureStore(dstField, coord,
+    vec4<f32>(current.x, current.y + depositB, current.z, current.w));
 }

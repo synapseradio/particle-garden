@@ -32,6 +32,10 @@ import test_field_core
 import test_bloom_core
 import test_colormap_core
 import test_param_descriptor
+import test_camera_core
+import test_climate_core
+import test_camera_input
+import test_wgsl_lint
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -58,3 +62,7 @@ static:
   discard test_bloom_core.BLOOM_CORE_TESTS_LOADED
   discard test_colormap_core.COLORMAP_CORE_TESTS_LOADED
   discard test_param_descriptor.PARAM_DESCRIPTOR_TESTS_LOADED
+  discard test_camera_core.CAMERA_CORE_TESTS_LOADED
+  discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
+  discard test_camera_input.CAMERA_INPUT_TESTS_LOADED
+  discard test_wgsl_lint.WGSL_LINT_TESTS_LOADED

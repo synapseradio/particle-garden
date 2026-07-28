@@ -19,16 +19,9 @@
 import std/[unittest, sets, strutils]
 import ../src/sim_registry
 import ../src/shader_manifest
+import coupling_space  # ALL_COUPLINGS, the eight worlds every sweep covers
 
 const SHADER_MANIFEST_TESTS_LOADED* = true
-
-proc buildFrameRaises(kind: SimKind): bool =
-  ## True when a kind's frame is not implemented yet (buildFrame raises).
-  try:
-    discard buildFrame(kind)
-    false
-  except ValueError:
-    true
 
 proc dispatchKeysOf(frame: FrameDescription): seq[string] =
   ## Every pipeline key the frame's compute passes dispatch, in order.
@@ -41,26 +34,54 @@ proc dispatchKeysOf(frame: FrameDescription): seq[string] =
 suite "Every Dispatched Pipeline Has A Registered Shader Spec":
   test "each frame's dispatch keys all resolve to a manifest spec key":
     # THE red light: a pipelineKey dispatched by a frame with no matching
-    # ShaderSpec means the pipeline is never loaded or created.
-    for kind in SimKind:
-      if buildFrameRaises(kind):
-        continue
+    # ShaderSpec means the pipeline is never loaded or created. Swept over
+    # every couplings combination, so a composed world cannot dispatch a
+    # pipeline its own manifest union forgot to register.
+    for couplings in ALL_COUPLINGS:
       let specKeys = block:
         var keys: HashSet[string]
-        for spec in shaderSpecsFor(kind):
+        for spec in shaderSpecsFor(couplings):
           keys.incl spec.key
         keys
-      for dispatchKey in dispatchKeysOf(buildFrame(kind)):
+      for dispatchKey in dispatchKeysOf(buildFrame(couplings)):
         check dispatchKey in specKeys
 
-  test "at least the three implemented kinds are covered by this relation":
-    # Guards against the relation silently testing nothing: particle-life,
-    # SPH, and reaction-diffusion all have frames as of S8a.
-    var implementedKinds = 0
-    for kind in SimKind:
-      if not buildFrameRaises(kind):
-        inc implementedKinds
-    check implementedKinds >= 3
+  test "the relation covers every couplings combination":
+    # Guards against the relation silently testing nothing.
+    check ALL_COUPLINGS.len == 8
+
+  test "a composed world registers the union of its couplings' specs":
+    # The specific thing a per-mode manifest could not express: chemistry needs
+    # forces' grid triad AND the field's six shaders, from one call.
+    let chemistry = shaderSpecsFor(WorldCouplings(forces: true, field: true))
+    var keys: HashSet[string]
+    for spec in chemistry:
+      keys.incl spec.key
+    for forcesKey in ["binCount", "binScatter", "forces"]:
+      check forcesKey in keys
+    for fieldKey in ["fieldDeposit", "fieldResolve", "fieldForce"]:
+      check fieldKey in keys
+    check "integrate" in keys
+    check "forcesSph" notin keys
+
+  test "a world coupling nothing still registers integrate":
+    # Its frame dispatches integrate and nothing else, so the manifest has to
+    # carry the pipeline that frame needs.
+    let specs = shaderSpecsFor(
+      WorldCouplings(forces: false, sph: false, field: false))
+    check specs.len == 1
+    check specs[0].key == "integrate"
+
+  test "the union registers no key twice":
+    # A duplicate key would create the same pipeline twice under one dictionary
+    # entry. integrate and the grid triad each belong to more than one
+    # coupling, so this is the case the union exists to handle.
+    for couplings in ALL_COUPLINGS:
+      let specs = shaderSpecsFor(couplings)
+      var keys: HashSet[string]
+      for spec in specs:
+        keys.incl spec.key
+      check keys.len == specs.len
 
 
 suite "Shader Spec Manifests Are Well-Formed":
@@ -125,7 +146,8 @@ suite "Shader Spec Manifests Are Well-Formed":
         keys.incl spec.key
       keys
     check "fieldSeed" in rdSpecKeys
-    check "fieldSeed" notin dispatchKeysOf(buildFrame(skReactionDiffusion))
+    check "fieldSeed" notin dispatchKeysOf(
+      buildFrame(couplingsFor(skReactionDiffusion)))
 
   test "rdStepToFront and rdStepToTrail share one shader path and entry point":
     let specs = shaderSpecsFor(skReactionDiffusion)

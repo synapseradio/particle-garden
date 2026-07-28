@@ -141,11 +141,9 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var externalForceThisX = 0.0;
   var externalForceThisY = 0.0;
 
-  // ATOMIC INITIALIZATION: reset delta buffers for this particle (replaces a
-  // clearBuffer to avoid racing the atomic writes; each thread owns its slot).
-  atomicStore(&velocityDeltaFixed[thisOriginalIdx * 2u], 0);
-  atomicStore(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], 0);
-  atomicStore(&densityDeltaFixed[thisOriginalIdx], 0);
+  // THIS PASS ACCUMULATES ONLY — the frame owns the delta resets. See the same
+  // note in forces.wgsl: with both force models coupled, whichever ran second
+  // would otherwise erase the first.
 
   // Find this particle's grid cell
   var cellX = i32(thisParticle.pos.x * invCellWidth);

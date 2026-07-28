@@ -48,6 +48,13 @@ const SEED_BLOB_RADIUS: f32 = {{RD_SEED_BLOB_RADIUS}};
 const SEED_CORE_ACTIVATOR: f32 = {{RD_SEED_CORE_ACTIVATOR}};
 const SEED_CORE_INHIBITOR: f32 = {{RD_SEED_CORE_INHIBITOR}};
 
+// The initial condition for the two reserved state channels a multi-channel
+// reaction would occupy. The ping-pong textures are rgba16float because WebGPU
+// does not permit rg16float as a write-only storage format, so these channels
+// are already allocated at no additional cost. Gray-Scott uses neither.
+const RESERVED_CHANNEL_B_INITIAL: f32 = 0.0;
+const RESERVED_CHANNEL_A_INITIAL: f32 = 1.0;
+
 // Mirrors field_core.rdSeedHash (the lowbias32 xor-shift/multiply chain).
 fn seedHash(value: u32) -> u32 {
   var mixed = value;
@@ -97,6 +104,15 @@ fn seedField(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   let activator = 1.0 + (SEED_CORE_ACTIVATOR - 1.0) * coverage;
   let inhibitor = SEED_CORE_INHIBITOR * coverage;
+  // RESERVED STATE CHANNELS — INITIALIZED, not preserved. field-resolve and
+  // rd-step carry .b/.a through untouched because they advance a running
+  // field. This pass does the opposite: it is the deliberate "scatter spores"
+  // reset, and it binds its target write-only with no source to carry
+  // anything from. A multi-channel reaction wants its channels ESTABLISHED
+  // here, exactly as the reacting channels are — preserving stale values
+  // across a reset would be the bug, not the feature. The values are named so
+  // that a reaction adding state has one place to set its initial condition.
   textureStore(dstField, vec2<i32>(i32(cellX), i32(cellY)),
-    vec4<f32>(activator, inhibitor, 0.0, 1.0));
+    vec4<f32>(activator, inhibitor,
+      RESERVED_CHANNEL_B_INITIAL, RESERVED_CHANNEL_A_INITIAL));
 }

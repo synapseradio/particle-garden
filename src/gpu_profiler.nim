@@ -38,7 +38,13 @@ const
     ## field time under "GPU grid" made the two modes' numbers mean different
     ## things under one label. The honest consequence is that grid time now
     ## reads 0 in reaction-diffusion, which is what it genuinely is.
-  numPasses* = 6
+  passIntegrate* = 6
+    ## The integrate pass, which left the physics pass when frames became
+    ## composable: it must run after the field passes, and the field passes
+    ## must run after forces, so it needed a node — and therefore a slot — of
+    ## its own. app.nim adds this back into the physics figure it reports, so
+    ## the stat keeps meaning what it meant before the split.
+  numPasses* = 7
   numQueries = numPasses * 2
 
 proc createJsObject(): JsObject {.importjs: "({})".}

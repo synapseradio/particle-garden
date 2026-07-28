@@ -16,6 +16,9 @@ import std/unittest
 import std/math
 import ../src/field_core
 import ../src/config_ranges
+# The wrap integrate.wgsl performs, taken from the suite's own tested oracle
+# rather than reimplemented beside it.
+from ../src/physics_core import wrapPosition
 
 const FIELD_CORE_TESTS_LOADED* = true
 
@@ -54,8 +57,22 @@ const
   ALIVE_THRESHOLD = 0.15
     ## Inhibitor concentration above which a cell reads as pattern rather than
     ## background. Gray-Scott's background sits at ~0 inhibitor.
+  IGNITION_FRAME_BUDGET = 30
+    ## Frames a colony may take to lift the field off the trivial fixed point
+    ## before the cold start reads as a bug rather than a dawn.
+    ##
+    ## OBSERVED at the shipped radius and deposit: ignition on frame 12 (and on
+    ## frame 4 at radius 8). The budget sits at 2.5x the observation so that
+    ## retuning a diffusion or climate constant has to slow ignition
+    ## substantially before this flakes. It also caps the sweep runs below:
+    ## anything that has not ignited by here is counted as not igniting.
 
 type
+  DepositProfile = enum
+    ## The two seed families the reaction-diffusion literature sweeps when
+    ## locating a critical nucleus, since no closed-form 2D critical radius
+    ## exists (docs/research/ignition-threshold.md).
+    dpTopHat, dpGaussian
   HarnessField = array[HARNESS_GRID, array[HARNESS_GRID, float]]
   FieldStats = object
     ## Summary of the inhibitor channel after a run. std/mean is the structure
@@ -66,17 +83,39 @@ type
     maxB: float
     aliveFraction: float
 
-func harnessWrap(i: int): int = (i + HARNESS_GRID) mod HARNESS_GRID
+func grayScottDiscriminant(feed, kill: float): float =
+  ## Discriminant of (F+k)*V^2 - F*V + F*(F+k) = 0, the quadratic whose roots
+  ## are the nontrivial fixed points' inhibitor concentrations. Non-negative
+  ## exactly where a nontrivial homogeneous fixed point exists.
+  feed * (feed - 4.0 * (feed + kill) * (feed + kill))
+
+const
+  HARNESS_PREV = block:
+    ## Wrapped index of the cell before each row/column, resolved at compile
+    ## time. The stencil needs eight wrapped lookups per cell per channel, and
+    ## a runtime `mod` in that position dominated the sweep's cost.
+    var table: array[HARNESS_GRID, int]
+    for i in 0 ..< HARNESS_GRID:
+      table[i] = (i + HARNESS_GRID - 1) mod HARNESS_GRID
+    table
+  HARNESS_NEXT = block:
+    var table: array[HARNESS_GRID, int]
+    for i in 0 ..< HARNESS_GRID:
+      table[i] = (i + 1) mod HARNESS_GRID
+    table
 
 func harnessStencil(field: HarnessField, x, y: int): float =
+  let
+    north = HARNESS_PREV[y]
+    south = HARNESS_NEXT[y]
+    east = HARNESS_NEXT[x]
+    west = HARNESS_PREV[x]
   laplacian9(
     center = field[y][x],
-    north = field[harnessWrap(y - 1)][x], south = field[harnessWrap(y + 1)][x],
-    east = field[y][harnessWrap(x + 1)], west = field[y][harnessWrap(x - 1)],
-    ne = field[harnessWrap(y - 1)][harnessWrap(x + 1)],
-    nw = field[harnessWrap(y - 1)][harnessWrap(x - 1)],
-    se = field[harnessWrap(y + 1)][harnessWrap(x + 1)],
-    sw = field[harnessWrap(y + 1)][harnessWrap(x - 1)])
+    north = field[north][x], south = field[south][x],
+    east = field[y][east], west = field[y][west],
+    ne = field[north][east], nw = field[north][west],
+    se = field[south][east], sw = field[south][west])
 
 func depositMask(): HarnessField =
   ## Static particle coverage: the cells a stationary particle population
@@ -87,6 +126,66 @@ func depositMask(): HarnessField =
       result[y][x] =
         if (y * HARNESS_GRID + x) mod HARNESS_DEPOSIT_COVERAGE == 0: 1.0
         else: 0.0
+
+func maskTotal(mask: HarnessField): float =
+  for y in 0 ..< HARNESS_GRID:
+    for x in 0 ..< HARNESS_GRID:
+      result += mask[y][x]
+
+const SCATTERED_MASK_TOTAL = (HARNESS_GRID * HARNESS_GRID) div
+  HARNESS_DEPOSIT_COVERAGE
+  ## depositMask()'s total weight: one cell in HARNESS_DEPOSIT_COVERAGE holds
+  ## 1.0. The clustered masks normalize to this so the comparison isolates
+  ## coherence from magnitude.
+
+func clusteredDepositMask(radius: float, profile: DepositProfile):
+    HarnessField =
+  ## depositMask()'s total deposit, gathered into discs of `radius` instead of
+  ## scattered one cell in HARNESS_DEPOSIT_COVERAGE.
+  ##
+  ## The total mask weight is normalized to match depositMask() EXACTLY. That
+  ## is what makes the comparison mean anything: the two masks place the same
+  ## deposit, so a difference in outcome is a difference in spatial coherence
+  ## and nothing else. Without the normalization a wider kernel would simply be
+  ## depositing more, and "clustering ignites" would be an artifact.
+  ##
+  ## Disc centers sit on a square lattice — deterministic, so a failing
+  ## threshold means the physics moved and never the placement.
+  ##
+  ## Only each disc's own bounding box is visited, wrapping into the grid.
+  ## Both profiles are exactly zero beyond the radius, so this touches the same
+  ## cells a full-grid scan would have written and skips the ones it would have
+  ## added zero to.
+  let target = SCATTERED_MASK_TOTAL.float
+  let perDisc = max(1.0, PI * radius * radius)
+  let discCount = max(1, int(round(target / perDisc)))
+  let side = max(1, int(ceil(sqrt(discCount.float))))
+  let spacing = HARNESS_GRID.float / side.float
+  let extent = int(ceil(radius))
+  var placed = 0
+  for gridY in 0 ..< side:
+    for gridX in 0 ..< side:
+      if placed >= discCount: break
+      let centerX = int((gridX.float + 0.5) * spacing)
+      let centerY = int((gridY.float + 0.5) * spacing)
+      for dy in -extent .. extent:
+        for dx in -extent .. extent:
+          let distance = sqrt((dx * dx + dy * dy).float)
+          let weight =
+            case profile
+            of dpTopHat: (if distance <= radius: 1.0 else: 0.0)
+            of dpGaussian: depositSplatWeight(distance, radius)
+          if weight == 0.0: continue
+          let y = (centerY + dy + HARNESS_GRID) mod HARNESS_GRID
+          let x = (centerX + dx + HARNESS_GRID) mod HARNESS_GRID
+          result[y][x] = result[y][x] + weight
+      inc placed
+  let actual = maskTotal(result)
+  if actual > 0.0:
+    let scale = target / actual
+    for y in 0 ..< HARNESS_GRID:
+      for x in 0 ..< HARNESS_GRID:
+        result[y][x] = result[y][x] * scale
 
 func flatSeed(): tuple[a, b: HarnessField] =
   ## The state createFieldResources clears the field textures to: activator 1,
@@ -105,32 +204,54 @@ func blobSeed(nonce: uint32): tuple[a, b: HarnessField] =
       result.a[y][x] = cell.activator
       result.b[y][x] = cell.inhibitor
 
+func substep(sourceA, sourceB: HarnessField, targetA, targetB: var HarnessField,
+    feed, kill: float) =
+  ## One Gray-Scott substep over the whole grid, reading one field pair and
+  ## writing the other.
+  for y in 0 ..< HARNESS_GRID:
+    for x in 0 ..< HARNESS_GRID:
+      let (a, b) = grayScottStep(
+        activator = sourceA[y][x], inhibitor = sourceB[y][x],
+        laplacianA = harnessStencil(sourceA, x, y),
+        laplacianB = harnessStencil(sourceB, x, y),
+        diffusionA = RD_DIFFUSION_A, diffusionB = RD_DIFFUSION_B,
+        feed = feed, kill = kill, deltaT = RD_DELTA_T)
+      targetA[y][x] = a
+      targetB[y][x] = b
+
+func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
+    mask: HarnessField, deposit, feed, kill: float) =
+  ## One shipped frame in the order webgpu_compute encodes it: fieldResolve
+  ## folds every particle's deposit into the inhibitor channel once, then
+  ## RD_STEPS_PER_FRAME Gray-Scott substeps run.
+  ##
+  ## The substeps ping-pong between the field pair and a caller-owned scratch
+  ## pair, exactly as the GPU ping-pongs its two field textures. Because
+  ## RD_STEPS_PER_FRAME is odd — asserted in field_core.nim, and the same
+  ## parity the real frame depends on — the live state lands in scratch, so
+  ## the frame closes with one copy back rather than one per substep.
+  for y in 0 ..< HARNESS_GRID:
+    for x in 0 ..< HARNESS_GRID:
+      fieldB[y][x] = fieldB[y][x] + mask[y][x] * deposit
+  for index in 0 ..< RD_STEPS_PER_FRAME:
+    if index mod 2 == 0:
+      substep(fieldA, fieldB, scratchA, scratchB, feed, kill)
+    else:
+      substep(scratchA, scratchB, fieldA, fieldB, feed, kill)
+  fieldA = scratchA
+  fieldB = scratchB
+
 func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
-    feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL): FieldStats =
+    feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL,
+    mask = depositMask()): FieldStats =
   ## Run `frames` shipped frames from a seed and summarize the inhibitor
-  ## channel. One deposit fold per frame, RD_STEPS_PER_FRAME substeps after it.
+  ## channel.
   var fieldA = seedA
   var fieldB = seedB
-  let mask = depositMask()
+  var scratchA, scratchB: HarnessField
 
   for _ in 0 ..< frames:
-    for y in 0 ..< HARNESS_GRID:
-      for x in 0 ..< HARNESS_GRID:
-        fieldB[y][x] = fieldB[y][x] + mask[y][x] * deposit
-    for _ in 0 ..< RD_STEPS_PER_FRAME:
-      var nextA, nextB: HarnessField
-      for y in 0 ..< HARNESS_GRID:
-        for x in 0 ..< HARNESS_GRID:
-          let (a, b) = grayScottStep(
-            activator = fieldA[y][x], inhibitor = fieldB[y][x],
-            laplacianA = harnessStencil(fieldA, x, y),
-            laplacianB = harnessStencil(fieldB, x, y),
-            diffusionA = RD_DIFFUSION_A, diffusionB = RD_DIFFUSION_B,
-            feed = feed, kill = kill, deltaT = RD_DELTA_T)
-          nextA[y][x] = a
-          nextB[y][x] = b
-      fieldA = nextA
-      fieldB = nextB
+    advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill)
 
   const CELLS = HARNESS_GRID * HARNESS_GRID
   var total = 0.0
@@ -153,6 +274,299 @@ func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
     std: sqrt(variance / CELLS.float),
     maxB: peak,
     aliveFraction: alive.float / CELLS.float)
+
+func framesToIgnite(mask: HarnessField, deposit: float,
+    budget = IGNITION_FRAME_BUDGET,
+    feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL): int =
+  ## Frame on which the field first crosses ALIVE_THRESHOLD anywhere, starting
+  ## from the trivial fixed point, or -1 if it never does within `budget`.
+  ##
+  ## Returning the frame rather than a bool is what lets one sweep answer both
+  ## "does this radius ignite" and "does it ignite fast enough", and it stops
+  ## early on success — which is most of why the sweep below is affordable.
+  let seed = flatSeed()
+  var fieldA = seed.a
+  var fieldB = seed.b
+  var scratchA, scratchB: HarnessField
+  for frame in 0 ..< budget:
+    advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill)
+    for y in 0 ..< HARNESS_GRID:
+      for x in 0 ..< HARNESS_GRID:
+        if fieldB[y][x] > ALIVE_THRESHOLD: return frame + 1
+  -1
+
+
+# ==============================================================================
+# THE CHEMOTAXIS HARNESS
+# ==============================================================================
+#
+# The field harness above holds its deposit mask fixed. This one lets the
+# particles move, which is what a tropism bound is a claim about: deposit
+# raises the field, the field's gradient moves the particle, the moved particle
+# deposits again. Positive tropism closes that loop with the sign that
+# Keller-Segel says admits chemotactic collapse.
+#
+# It reuses advanceFrame, so the field advances through exactly the shipped
+# frame order. The particle half mirrors field-force.wgsl's gradient sample and
+# integrate.wgsl's friction, soft velocity cap, and toroidal wrap.
+#
+# UNITS. field-force.wgsl computes an impulse in WORLD pixels from a gradient
+# per FIELD CELL, so how many pixels a cell spans decides how far a given
+# fieldForceScale actually moves a particle. The harness therefore runs in
+# pixels with the same pixels-per-cell the shipped field has at a reference
+# window width: 1920 px across FIELD_W cells is 3.75 px per cell, so a 64-cell
+# harness world is 240 px wide. Everything below is that geometry, and the
+# collapse point measured here is a statement about it.
+
+const
+  CHEMOTAXIS_PARTICLES = 256
+    ## Particles the harness carries. Enough that a collapse concentrates a
+    ## measurable mass, few enough that the splat stays cheaper than the field.
+  CHEMOTAXIS_FRAMES = 120
+    ## Frames per run. Long enough for the field to ignite (measured at frame
+    ## 12 under uniform coverage) and for aggregation to develop and settle
+    ## after it. Held down deliberately: the field half of a frame is the
+    ## suite's most expensive operation, and these runs are its heaviest user.
+  CHEMOTAXIS_REFERENCE_WORLD_WIDTH = 1920.0
+    ## Reference window width the harness geometry is derived from. Only the
+    ## ratio to FIELD_W matters: it sets how many pixels one field cell spans,
+    ## and therefore how far one unit of fieldForceScale carries a particle
+    ## across the pattern.
+  CHEMOTAXIS_WORLD_PX =
+    HARNESS_GRID.float * CHEMOTAXIS_REFERENCE_WORLD_WIDTH / FIELD_W.float
+    ## Harness world width in pixels: 240, giving the shipped 3.75 px per cell.
+  CHEMOTAXIS_FRICTION = 0.95
+    ## The multiplier integrate.wgsl applies, at simulation_state's default
+    ## friction of 0.05 (app.nim passes 1 - friction).
+  CHEMOTAXIS_MAX_VELOCITY = 50.0
+    ## simulation_state's default maxVelocity, in px per frame.
+  CHEMOTAXIS_TILE = 8
+    ## Side of the occupancy tile, in field cells. Wider than the deposit splat
+    ## radius, so one tile is about the scale at which a cluster's deposits
+    ## fully overlap and reinforce each other.
+  CHEMOTAXIS_TILES = HARNESS_GRID div CHEMOTAXIS_TILE
+  CHEMOTAXIS_UNIFORM_OCCUPANCY = 1.0 / (CHEMOTAXIS_TILES * CHEMOTAXIS_TILES).float
+    ## Peak tile occupancy a perfectly uniform population would show: 1/64.
+
+type
+  ChemotaxisParticle = object
+    x, y: float    ## World position in pixels
+    vx, vy: float  ## Velocity in pixels per frame
+  ChemotaxisRun = object
+    ## What one run reports, at two spatial scales. peakTile is clustering:
+    ## the fraction of the population inside the most crowded CHEMOTAXIS_TILE
+    ## square. peakCell is concentration: the fraction inside a single field
+    ## cell. The pair is what separates a colony pooling in a spot — high tile,
+    ## low cell — from a chemotactic collapse, which drives BOTH toward 1
+    ## because collapse concentrates mass to a point.
+    peakTile: float
+    peakCell: float
+    maxB: float
+    finite: bool
+
+func chemotaxisSeed(count: int): seq[ChemotaxisParticle] =
+  ## Deterministic scatter across the harness world. A fixed LCG rather than a
+  ## lattice: a lattice would place every particle on a tile boundary, which is
+  ## the one arrangement that flatters an occupancy metric.
+  var state = 0x9E3779B9'u32
+  for _ in 0 ..< count:
+    state = state * 1664525'u32 + 1013904223'u32
+    let sampleX = (state shr 8).float / 16777216.0
+    state = state * 1664525'u32 + 1013904223'u32
+    let sampleY = (state shr 8).float / 16777216.0
+    result.add ChemotaxisParticle(
+      x: sampleX * CHEMOTAXIS_WORLD_PX, y: sampleY * CHEMOTAXIS_WORLD_PX)
+
+func chemotaxisCell(position: float): int =
+  ## World pixel -> field cell, the mapping field-deposit.wgsl and
+  ## field-force.wgsl both perform.
+  clamp(int(position / CHEMOTAXIS_WORLD_PX * HARNESS_GRID.float),
+    0, HARNESS_GRID - 1)
+
+func chemotaxisMask(particles: seq[ChemotaxisParticle], secretion: float):
+    HarnessField =
+  ## This frame's deposit mask: every particle's normalized splat kernel,
+  ## scaled by its species' signed secretion. advanceFrame multiplies the
+  ## result by the deposit amplitude, so mask * deposit is speciesDeposit
+  ## spread over the kernel.
+  let normalization = depositSplatNormalization(RD_DEPOSIT_SPLAT_RADIUS)
+  let extent = int(RD_DEPOSIT_SPLAT_RADIUS)
+  for particle in particles:
+    let cellX = chemotaxisCell(particle.x)
+    let cellY = chemotaxisCell(particle.y)
+    for dy in -extent .. extent:
+      for dx in -extent .. extent:
+        let weight = depositSplatWeight(
+          sqrt((dx * dx + dy * dy).float), RD_DEPOSIT_SPLAT_RADIUS)
+        if weight == 0.0: continue
+        let y = (cellY + dy + HARNESS_GRID) mod HARNESS_GRID
+        let x = (cellX + dx + HARNESS_GRID) mod HARNESS_GRID
+        result[y][x] = result[y][x] + weight / normalization * secretion
+
+func chemotaxisAdvanceParticles(particles: var seq[ChemotaxisParticle],
+    inhibitor: HarnessField, fieldForceScale, tropism: float) =
+  ## One particle step: sample the inhibitor gradient, convert it to an impulse
+  ## through the species' tropism, then apply integrate.wgsl's friction, soft
+  ## velocity cap and toroidal wrap.
+  for particle in particles.mitems:
+    let cellX = chemotaxisCell(particle.x)
+    let cellY = chemotaxisCell(particle.y)
+    let east = inhibitor[cellY][HARNESS_NEXT[cellX]]
+    let west = inhibitor[cellY][HARNESS_PREV[cellX]]
+    let north = inhibitor[HARNESS_PREV[cellY]][cellX]
+    let south = inhibitor[HARNESS_NEXT[cellY]][cellX]
+    let gradX = (east - west) * 0.5
+    let gradY = (south - north) * 0.5
+
+    var velocityX = (particle.vx +
+      speciesTropismForce(gradX, fieldForceScale, tropism)) * CHEMOTAXIS_FRICTION
+    var velocityY = (particle.vy +
+      speciesTropismForce(gradY, fieldForceScale, tropism)) * CHEMOTAXIS_FRICTION
+
+    let speed = sqrt(velocityX * velocityX + velocityY * velocityY)
+    let softCap = CHEMOTAXIS_MAX_VELOCITY * 0.5
+    if speed > softCap:
+      let compressed = softCap + ln(1.0 + (speed - softCap))
+      let scale = min(compressed, CHEMOTAXIS_MAX_VELOCITY) / speed
+      velocityX = velocityX * scale
+      velocityY = velocityY * scale
+
+    particle.vx = velocityX
+    particle.vy = velocityY
+    # wrapPosition carries a position across at most one world span, which is
+    # all a step here can cross: the soft cap holds each velocity component at
+    # or below CHEMOTAXIS_MAX_VELOCITY, itself a fraction of
+    # CHEMOTAXIS_WORLD_PX. f32 at the boundary because f32 is the width
+    # integrate.wgsl wraps in.
+    particle.x = wrapPosition(
+      float32(particle.x + velocityX), float32(CHEMOTAXIS_WORLD_PX)).float
+    particle.y = wrapPosition(
+      float32(particle.y + velocityY), float32(CHEMOTAXIS_WORLD_PX)).float
+
+func chemotaxisPeakOccupancy(particles: seq[ChemotaxisParticle]):
+    tuple[tile, cell: float] =
+  ## Fraction of the population inside the most crowded tile, and inside the
+  ## most crowded single field cell. Uniform gives 1/64 and roughly 1/4096;
+  ## a collapse drives both toward 1.
+  var tiles: array[CHEMOTAXIS_TILES, array[CHEMOTAXIS_TILES, int]]
+  var cells: array[HARNESS_GRID, array[HARNESS_GRID, int]]
+  for particle in particles:
+    let cellX = chemotaxisCell(particle.x)
+    let cellY = chemotaxisCell(particle.y)
+    inc tiles[cellY div CHEMOTAXIS_TILE][cellX div CHEMOTAXIS_TILE]
+    inc cells[cellY][cellX]
+  var peakTile = 0
+  for row in tiles:
+    for count in row:
+      if count > peakTile: peakTile = count
+  var peakCell = 0
+  for row in cells:
+    for count in row:
+      if count > peakCell: peakCell = count
+  (tile: peakTile.float / particles.len.float,
+   cell: peakCell.float / particles.len.float)
+
+proc runChemotaxis(tropism: float, deposit = RD_DEPOSIT_MAX,
+    fieldForceScale = RD_DEFAULT_FIELD_FORCE,
+    secretion = SECRETION_MAX, frames = CHEMOTAXIS_FRAMES): ChemotaxisRun =
+  ## One full run from the trivial fixed point with a scattered population.
+  ## Reports the WORST aggregation seen at any point in the run, not the final
+  ## frame's: a collapse that forms and then scatters is still a collapse, and
+  ## reading only the last frame would miss it.
+  let seed = flatSeed()
+  var fieldA = seed.a
+  var fieldB = seed.b
+  var scratchA, scratchB: HarnessField
+  var particles = chemotaxisSeed(CHEMOTAXIS_PARTICLES)
+  result.finite = true
+  for _ in 0 ..< frames:
+    advanceFrame(fieldA, fieldB, scratchA, scratchB,
+      chemotaxisMask(particles, secretion), deposit,
+      RD_DEFAULT_FEED, RD_DEFAULT_KILL)
+    chemotaxisAdvanceParticles(particles, fieldB, fieldForceScale, tropism)
+    let occupancy = chemotaxisPeakOccupancy(particles)
+    if occupancy.tile > result.peakTile: result.peakTile = occupancy.tile
+    if occupancy.cell > result.peakCell: result.peakCell = occupancy.cell
+    for y in 0 ..< HARNESS_GRID:
+      for x in 0 ..< HARNESS_GRID:
+        let value = fieldB[y][x]
+        # NaN fails both comparisons with itself; an infinity fails neither,
+        # so both have to be named to catch a diverged field.
+        if value != value or value > 1.0e30: result.finite = false
+        if value > result.maxB: result.maxB = value
+    # A diverged field has already answered the question, and every later
+    # frame only propagates infinities. Stopping here is what keeps the
+    # divergence-locating runs cheap enough to ship in the suite.
+    if not result.finite: return
+
+
+suite "Gray-Scott Fixed-Point Structure":
+  # Why this suite exists: the whole one-world design rests on the claim that
+  # the shipped climate CANNOT produce a pattern from the uniform state, so any
+  # pattern the user sees was nucleated by particles. That claim is analytic,
+  # and these tests make it executable rather than a paragraph in a design doc.
+
+  test "the nontrivial fixed points exist exactly where F >= 4*(F+k)^2":
+    # CONTRACT: substituting the second fixed-point equation U*V = F+k into the
+    # first, F*(1-U) = U*V^2, yields (F+k)*V^2 - F*V + F*(F+k) = 0. Its
+    # discriminant factors to F*(F - 4*(F+k)^2), so with F > 0 a real nontrivial
+    # V exists exactly where F >= 4*(F+k)^2.
+    #
+    # The test asserts the EQUIVALENCE, not just the algebra: where the
+    # condition holds it constructs the root and checks grayScottStep maps it to
+    # itself, and where it fails it checks no real root exists to construct.
+    # That ties the inequality to the function it is a claim about.
+    for feedStep in 0 .. 14:
+      for killStep in 0 .. 14:
+        let feed = RD_FEED_MIN +
+          (RD_FEED_MAX - RD_FEED_MIN) * feedStep.float / 14.0
+        let kill = RD_KILL_MIN +
+          (RD_KILL_MAX - RD_KILL_MIN) * killStep.float / 14.0
+        let discriminant = grayScottDiscriminant(feed, kill)
+        let conditionHolds = feed >= 4.0 * (feed + kill) * (feed + kill)
+        check (discriminant >= 0.0) == conditionHolds
+
+        if conditionHolds:
+          # The larger root, and the activator that pairs with it.
+          let inhibitor = (feed + sqrt(discriminant)) / (2.0 * (feed + kill))
+          let activator = (feed + kill) / inhibitor
+          let (nextA, nextB) = grayScottStep(
+            activator = activator, inhibitor = inhibitor,
+            laplacianA = 0.0, laplacianB = 0.0,
+            diffusionA = RD_DIFFUSION_A, diffusionB = RD_DIFFUSION_B,
+            feed = feed, kill = kill, deltaT = RD_DELTA_T)
+          check abs(nextA - activator) < 1e-12
+          check abs(nextB - inhibitor) < 1e-12
+
+  test "the shipped defaults sit where only the trivial fixed point exists":
+    # CONTRACT: this is why deleting the automatic seed is safe. At F = 0.030,
+    # k = 0.062, 4*(F+k)^2 = 0.033856 > 0.030 — the trivial state is the only
+    # homogeneous fixed point, and it is linearly stable. No pattern can arise
+    # from the uniform field at all; one must be nucleated. That is the
+    # guarantee that the field records life rather than decorating it.
+    #
+    # If a future default moves into the self-starting region this test goes
+    # red, and it should: the field would then paint itself with no particles.
+    check grayScottDiscriminant(RD_DEFAULT_FEED, RD_DEFAULT_KILL) < 0.0
+    check 4.0 * (RD_DEFAULT_FEED + RD_DEFAULT_KILL) *
+      (RD_DEFAULT_FEED + RD_DEFAULT_KILL) > RD_DEFAULT_FEED
+
+  test "the self-starting region stays reachable from the shipped sliders":
+    # CONTRACT: the default is deliberately outside the self-starting region,
+    # but a user who wants spontaneous chemistry must still be able to choose
+    # it. If no reachable (feed, kill) satisfies the condition, the sliders have
+    # locked away a whole regime and the notch tables in group 8 would be
+    # labelling a place the user cannot go.
+    var anyReachable = false
+    for feedStep in 0 .. 20:
+      for killStep in 0 .. 20:
+        let feed = RD_FEED_MIN +
+          (RD_FEED_MAX - RD_FEED_MIN) * feedStep.float / 20.0
+        let kill = RD_KILL_MIN +
+          (RD_KILL_MAX - RD_KILL_MIN) * killStep.float / 20.0
+        if grayScottDiscriminant(feed, kill) >= 0.0:
+          anyReachable = true
+    check anyReachable
 
 
 suite "9-Point Laplacian Stencil":
@@ -345,6 +759,507 @@ suite "Reaction-Diffusion Ignition":
           feed = feed, kill = kill)
         check stats.maxB == stats.maxB  # false for NaN under IEEE 754
         check stats.maxB < 1.5
+
+
+suite "Ignition From Coherent Deposits":
+  # THE MEASUREMENT GATE. RD_DEPOSIT_SPLAT_RADIUS is not a taste pick — it is
+  # whatever this sweep says the floor is. The literature offers no closed-form
+  # 2D critical radius (docs/research/ignition-threshold.md), so sweeping
+  # top-hat and Gaussian seeds over radius and amplitude IS the field's own
+  # method rather than a workaround for not having found the formula.
+  #
+  # Every run below starts from the flat trivial fixed point with no seed. That
+  # is the state the app now opens in.
+
+  test "a clustered deposit ignites where a scattered deposit of equal coverage does not":
+    # CONTRACT: same total deposit, different spatial arrangement, different
+    # outcome. clusteredDepositMask normalizes to depositMask()'s total, so the
+    # only variable is coherence.
+    #
+    # OBSERVED at the shipped defaults (frame of ignition, -1 for none):
+    #   radius   1     2     3     5     8
+    #   top-hat  -1    -1    -1    -1     9
+    #   gaussian -1    -1    -1    12     4
+    # and at amplitude 0.04 radius 3 top-hat ignites, at 0.08 radius 2 does.
+    # The scattered baseline ignites at no amplitude in the range.
+    for amplitude in [RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
+      check framesToIgnite(depositMask(), amplitude) == -1
+
+    var anyClusteredIgnited = false
+    for radius in [1.0, 2.0, 3.0, 5.0, 8.0]:
+      for profile in [dpTopHat, dpGaussian]:
+        for amplitude in [RD_DEPOSIT_MIN, RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
+          let ignitedOn = framesToIgnite(
+            clusteredDepositMask(radius, profile), amplitude)
+          if ignitedOn > 0:
+            anyClusteredIgnited = true
+            # Nothing ignites on zero deposit, whatever its shape — the field
+            # is being asked to pattern with no input at all.
+            check amplitude > 0.0
+            # Nothing below the shipped radius may ignite at the shipped
+            # deposit, or the radius is larger than the measurement warrants.
+            if amplitude <= RD_DEFAULT_DEPOSIT:
+              check radius >= RD_DEPOSIT_SPLAT_RADIUS
+    check anyClusteredIgnited
+
+  test "the shipped splat radius ignites at the shipped deposit":
+    # CONTRACT: this is the warrant for RD_DEPOSIT_SPLAT_RADIUS's value, and
+    # the test that goes red if a later change shrinks the kernel for cost or
+    # weakens the deposit default. The pairing is what matters — neither
+    # constant is meaningful alone.
+    check framesToIgnite(
+      clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+      RD_DEFAULT_DEPOSIT) > 0
+
+  test "a clustered deposit below the critical radius relaxes to background":
+    # THE NEGATIVE CONTROL. Without it "clustering ignites" could be satisfied
+    # by a kernel so wide that everything ignites, which would prove nothing
+    # about coherence. Radius 1 is a splat in name only — it covers one cell —
+    # and it must stay dead even at the deposit ceiling.
+    #
+    # Run to twice the budget, because "has not ignited yet" is a weaker claim
+    # than "has relaxed to background". OBSERVED: no ignition at any amplitude
+    # over 120 frames; the field decays to a trace.
+    for profile in [dpTopHat, dpGaussian]:
+      let mask = clusteredDepositMask(1.0, profile)
+      check framesToIgnite(mask, RD_DEPOSIT_MAX,
+        budget = IGNITION_FRAME_BUDGET * 2) == -1
+      let seed = flatSeed()
+      let stats = evolve(seed.a, seed.b, HARNESS_FRAMES, RD_DEPOSIT_MAX,
+        mask = mask)
+      check stats.aliveFraction == 0.0
+      check stats.maxB < 0.05
+
+  test "ignition completes within the cold-start budget at the shipped defaults":
+    # CONTRACT: the cold start must read as a dawn, not as a hang. This is the
+    # budget D10 commits to — the app opens dark and chemistry arrives visibly.
+    # OBSERVED: frame 12 against a budget of 30.
+    let ignitedOn = framesToIgnite(
+      clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+      RD_DEFAULT_DEPOSIT)
+    check ignitedOn > 0
+    check ignitedOn <= IGNITION_FRAME_BUDGET
+
+  test "ignition survives the weakest climate corner the sliders offer":
+    # CONTRACT: the shipped radius is measured at the Pearson defaults, but a
+    # user may drag feed and kill anywhere. The corner where the (feed+kill)*B
+    # depletion opposing the deposit is weakest must not be the corner that
+    # breaks ignition. OBSERVED: frame 4 at radius 5.
+    check framesToIgnite(
+      clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+      RD_DEFAULT_DEPOSIT, feed = RD_FEED_MIN, kill = RD_KILL_MIN) > 0
+
+  test "the splat kernel conserves a particle's total deposit at every radius":
+    # CONTRACT: normalization is what keeps widening the kernel from becoming a
+    # backdoor amplitude increase — which would flood the field past the
+    # ceiling RD_DEPOSIT_MAX was measured against. The shader divides by
+    # depositSplatNormalization, so the sum of normalized weights must be 1.
+    for radius in [1.0, 2.0, 3.0, RD_DEPOSIT_SPLAT_RADIUS, 8.0]:
+      let normalization = depositSplatNormalization(radius)
+      check normalization > 0.0
+      var summed = 0.0
+      let extent = int(radius)
+      for dy in -extent .. extent:
+        for dx in -extent .. extent:
+          summed += depositSplatWeight(
+            sqrt((dx * dx + dy * dy).float), radius) / normalization
+      check abs(summed - 1.0) < 1e-12
+
+  test "the splat weight falls monotonically to zero at the radius":
+    # CONTRACT: a falloff kernel that rose anywhere, or that cut off at a
+    # nonzero weight, would put a visible ring or square edge on every colony's
+    # deposit.
+    var previous = depositSplatWeight(0.0, RD_DEPOSIT_SPLAT_RADIUS)
+    check previous > 0.0
+    for step in 1 .. 20:
+      let distance = RD_DEPOSIT_SPLAT_RADIUS * step.float / 20.0
+      let weight = depositSplatWeight(distance, RD_DEPOSIT_SPLAT_RADIUS)
+      check weight <= previous
+      previous = weight
+    check depositSplatWeight(
+      RD_DEPOSIT_SPLAT_RADIUS * 1.001, RD_DEPOSIT_SPLAT_RADIUS) == 0.0
+
+
+suite "Species Chemistry Coupling":
+  # The two shader expressions species chemistry adds, as pure functions. These
+  # pin the SIGN CONVENTION, which is the part a later edit is most likely to
+  # invert: config_ranges' asymmetric tropism range, design D5's reasoning, and
+  # field-force.wgsl's direction all depend on positive meaning up-gradient.
+
+  test "opposite secretion signs push the field in opposite directions":
+    # SPEC SCENARIO "Builder and grazer diverge": two species carrying opposite
+    # secretion signs must deposit with opposite signs at their own locations.
+    let builder = speciesDeposit(RD_DEFAULT_DEPOSIT, SECRETION_MAX)
+    let grazer = speciesDeposit(RD_DEFAULT_DEPOSIT, SECRETION_MIN)
+    check builder > 0.0
+    check grazer < 0.0
+    check abs(builder + grazer) < EPSILON  # equal and opposite at equal magnitude
+
+  test "zero secretion leaves no mark whatever the deposit amount":
+    # SPEC SCENARIO "An inert species", the deposit half.
+    for deposit in [RD_DEPOSIT_MIN, RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
+      check speciesDeposit(deposit, 0.0) == 0.0
+
+  test "negative tropism descends the gradient and positive climbs it":
+    # SPEC SCENARIO "Tropism steers", and the convention the asymmetric range
+    # is a claim about. With a positive inhibitor gradient (concentration
+    # rising toward +x), a climbing species must be pushed toward +x and a
+    # fleeing one toward -x.
+    const RISING_GRADIENT = 0.05  # inhibitor gradients peak near this per cell
+    let climbing = speciesTropismForce(
+      RISING_GRADIENT, RD_DEFAULT_FIELD_FORCE, TROPISM_MAX)
+    let fleeing = speciesTropismForce(
+      RISING_GRADIENT, RD_DEFAULT_FIELD_FORCE, TROPISM_MIN)
+    check climbing > 0.0
+    check fleeing < 0.0
+    # The shipped default is the fleeing sign — the behavior the field had
+    # before species chemistry existed, at full strength.
+    check RD_DEFAULT_TROPISM < 0.0
+    check speciesTropismForce(
+      RISING_GRADIENT, RD_DEFAULT_FIELD_FORCE, RD_DEFAULT_TROPISM) < 0.0
+
+  test "zero tropism leaves a species blind to any gradient":
+    # SPEC SCENARIO "An inert species", the force half.
+    for gradient in [-0.5, -0.05, 0.0, 0.05, 0.5]:
+      check speciesTropismForce(gradient, RD_FIELD_FORCE_MAX, 0.0) == 0.0
+
+  test "the chemistry stride names two distinct slots":
+    # CONTRACT: config.nim lays the CPU-side array out at this stride and the
+    # panel indexes it through the served slot numbers. Two fields sharing a
+    # slot would silently alias secretion onto tropism.
+    check SPECIES_CHEMISTRY_STRIDE == 2
+    check SPECIES_SECRETION_SLOT != SPECIES_TROPISM_SLOT
+    check SPECIES_SECRETION_SLOT >= 0
+    check SPECIES_SECRETION_SLOT < SPECIES_CHEMISTRY_STRIDE
+    check SPECIES_TROPISM_SLOT >= 0
+    check SPECIES_TROPISM_SLOT < SPECIES_CHEMISTRY_STRIDE
+
+  test "the tropism range grants less authority up-gradient than down":
+    # CONTRACT: design D5's asymmetry, as an executable claim rather than a
+    # comment. A future tidy-up to a symmetric [-1, +1] fails here.
+    check TROPISM_MAX < abs(TROPISM_MIN)
+    check TROPISM_MIN < 0.0
+    check TROPISM_MAX > 0.0
+    # Secretion carries no such hazard, so its range stays symmetric.
+    check SECRETION_MAX == abs(SECRETION_MIN)
+
+
+suite "Chemotactic Collapse Bound":
+  # THE MEASUREMENT GATE FOR TROPISM_MAX. Design D5 bounds tropism
+  # asymmetrically because Keller-Segel gives a chemotactic-collapse threshold
+  # (chi*M > 8*pi in 2D) for POSITIVE chemosensitivity only — agents climbing
+  # their own deposited gradient — while negative chemosensitivity is
+  # stabilizing (docs/research/chemotaxis-stability.md).
+  #
+  # THE COLLAPSE IS REAL AND WAS LOCATED. An earlier reading of a narrower
+  # sweep concluded no collapse existed, because sweeping tropism alone at the
+  # shipped deposit ceiling never diverges however far it is pushed. That
+  # conclusion was wrong: collapse lives in the PRODUCT of tropism and deposit,
+  # so a scan that holds one at its ceiling cannot find it. Widening the
+  # deposit axis found the boundary immediately, and the control below proves
+  # the divergence belongs to the chemotaxis rather than to the deposit.
+  #
+  # Every run starts from the trivial fixed point with a scattered population
+  # and every species at SECRETION_MAX. The deposit is stated per test, in
+  # multiples of RD_DEPOSIT_MAX — the most the slider can produce.
+
+  const CHEMOTAXIS_CONCENTRATION_CEILING = 0.25
+    ## Fraction of the population one field cell may hold before the
+    ## aggregation reads as collapse rather than as a colony pooling in a spot.
+    ## A colony spreads over a spot several cells across; a collapse drives
+    ## this to 1.0 exactly, which is what the divergent runs below report.
+    ## Inside the reachable range nothing exceeds 0.11, so this sits at
+    ## roughly 2.5x the worst reachable measurement.
+
+  # The shared runs, evaluated once for the suite rather than per test: each is
+  # 120 frames of the field, the most expensive operation in the suite.
+  let frozenRun = runChemotaxis(0.0, secretion = SECRETION_MAX)
+  let boundRunDefault = runChemotaxis(TROPISM_MAX)
+  let boundRunMaxForce = runChemotaxis(
+    TROPISM_MAX, fieldForceScale = RD_FIELD_FORCE_MAX)
+  let downRun = runChemotaxis(TROPISM_MIN, fieldForceScale = RD_FIELD_FORCE_MAX)
+  let reachableExtremeRun = runChemotaxis(
+    TROPISM_MAX * 1024.0, fieldForceScale = RD_FIELD_FORCE_MAX)
+  # The divergence bracket, both at ten times the deposit ceiling.
+  let boundAtTenfoldDeposit = runChemotaxis(
+    TROPISM_MAX, deposit = RD_DEPOSIT_MAX * 10.0,
+    fieldForceScale = RD_FIELD_FORCE_MAX)
+  let collapsedRun = runChemotaxis(
+    TROPISM_MAX * 8.0, deposit = RD_DEPOSIT_MAX * 10.0,
+    fieldForceScale = RD_FIELD_FORCE_MAX)
+  let frozenAtTenfoldDeposit = runChemotaxis(
+    0.0, deposit = RD_DEPOSIT_MAX * 10.0)
+
+  test "positive tropism at its bound does not produce unbounded aggregation over N steps":
+    # CONTRACT: the first half of task 5.5's warrant for TROPISM_MAX. At the
+    # positive bound with the maximum deposit, neither the population nor the
+    # field may run away — at the default field force and at the strongest the
+    # slider offers.
+    # OBSERVED over 120 frames (peak tile / peak cell / maxB):
+    #   fieldForceScale 30:  0.102 / 0.051 / 0.786
+    #   fieldForceScale 150: 0.211 / 0.039 / 0.793
+    for run in [boundRunDefault, boundRunMaxForce]:
+      check run.finite
+      check run.maxB < 1.5
+      check run.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
+
+  test "the configured tropism bound sits below the measured collapse point":
+    # CONTRACT: task 5.5's second test, and the reason the bound is a measured
+    # quantity rather than a taste pick. THE MEASURED COLLAPSE POINT: holding
+    # the deposit at ten times its ceiling and the field force at its maximum,
+    # the field stays finite at the shipped bound and DIVERGES at eight times
+    # it. The collapse point is therefore bracketed in (1x, 8x] of TROPISM_MAX
+    # under those conditions, and the shipped bound sits below it.
+    #
+    # OBSERVED at deposit 0.8 (10x RD_DEPOSIT_MAX), fieldForceScale 150:
+    #   tropism 0.5  (1x the bound): maxB 0.886, peak cell 0.023, finite
+    #   tropism 4.0  (8x the bound): maxB inf, DIVERGED
+    # The field is what is asserted, not the population: runChemotaxis stops at
+    # the frame the field goes infinite, and the particles are still piling in
+    # at that moment (peak cell 0.094 and climbing there). Run to the full 120
+    # frames without that early exit and the collapse completes literally —
+    # every particle in ONE field cell, peak cell 1.000 — but the frame the
+    # divergence is DETECTED on is not a stable place to measure a population,
+    # so only the field's divergence is checked.
+    #
+    # IF THE FINITE HALF EVER GOES RED, the collapse point has moved below the
+    # shipped bound: halve TROPISM_MAX and record the failing value here.
+    # Never widen the ceiling or the deposit multiple to make it pass.
+    check boundAtTenfoldDeposit.finite
+    check boundAtTenfoldDeposit.maxB < 1.5
+    check boundAtTenfoldDeposit.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
+    check not collapsedRun.finite
+
+  test "the collapse belongs to the chemotaxis, not to the deposit alone":
+    # THE CONTROL THAT MAKES THE PREVIOUS TEST MEAN ANYTHING. Ten times the
+    # deposit ceiling is far outside the slider range, so a divergence there
+    # could plausibly be the deposit flooding the field on its own — which
+    # would say nothing about tropism. It is not: with the SAME deposit and no
+    # chemotaxis at all, the field stays finite and saturates where it always
+    # does. Only the up-gradient motion, concentrating that deposit into one
+    # place, diverges it.
+    # OBSERVED: frozen population at deposit 0.8 gives maxB 0.856, finite.
+    check frozenAtTenfoldDeposit.finite
+    check frozenAtTenfoldDeposit.maxB < 1.5
+    # Same deposit, same field, chemotaxis added -> divergence. The pair is the
+    # claim; neither run alone supports it.
+    check not collapsedRun.finite
+
+  test "no tropism collapses the field at any deposit the sliders allow":
+    # CONTRACT: the bound the user can actually reach. Inside the deposit
+    # range, tropism has enormous margin — a thousandfold over the bound stays
+    # finite and bounded. This is why RD_DEPOSIT_MAX carries more of the safety
+    # than TROPISM_MAX does, and it is the honest scope of the tropism bound's
+    # protection.
+    # OBSERVED at RD_DEPOSIT_MAX, fieldForceScale 150, tropism 512 (1024x the
+    # bound): maxB 0.803, peak cell 0.102, finite.
+    check reachableExtremeRun.finite
+    check reachableExtremeRun.maxB < 1.5
+    check reachableExtremeRun.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
+
+  test "the field saturates against deposit magnitude but not against concentration":
+    # THE MECHANISM, stated as a checkable relation rather than as prose. The
+    # inhibitor's linear (feed+kill)*B sink grows with B while the deposit rate
+    # per cell does not, so raising the deposit UNIFORMLY only moves the
+    # saturation point a little: 1x and 10x the ceiling land within 0.1 of each
+    # other. Concentrating the same deposit is a different matter — that raises
+    # the rate PER CELL, and past a threshold the autocatalytic A*B^2 term
+    # outruns the sink and the peak runs away.
+    #
+    # This is what corrects the tempting explanation that "Gray-Scott bounds
+    # its own inhibitor, so no collapse is possible". Gray-Scott bounds it
+    # against amplitude, not against concentration.
+    # OBSERVED (frozen, uniform deposits): 1x -> maxB 0.015 (never ignites),
+    # 10x -> maxB 0.856. Under chemotaxis at 10x -> divergent.
+    check frozenAtTenfoldDeposit.maxB < 1.5
+    check boundAtTenfoldDeposit.maxB < 1.5
+    # A tenfold uniform deposit and a tenfold deposit under bounded chemotaxis
+    # land in the same saturated band; only unbounded concentration escapes it.
+    check abs(frozenAtTenfoldDeposit.maxB - boundAtTenfoldDeposit.maxB) < 0.3
+
+  test "the down-gradient sign does not aggregate beyond the scattering floor":
+    # CONTRACT: this is what makes the asymmetric bound mean something. If both
+    # signs behaved alike, granting one full authority and the other half would
+    # be arbitrary.
+    #
+    # Measured against the FROZEN control rather than against the uniform
+    # ideal. 256 particles dropped into 64 tiles already put twice the uniform
+    # share in the fullest tile purely by sampling, so a bare comparison
+    # against 1/64 would read that noise as chemotaxis. The claim is that
+    # down-gradient motion leaves the population no more clustered than never
+    # moving it at all — and it holds exactly, to the particle.
+    # OBSERVED: frozen 0.031 / 0.008, down-gradient 0.031 / 0.008.
+    #
+    # The sampling floor, asserted rather than asserted-about: the frozen
+    # control really does sit above the uniform ideal, which is precisely why
+    # the comparisons below are drawn against it and not against 1/64.
+    check frozenRun.peakTile > CHEMOTAXIS_UNIFORM_OCCUPANCY
+    check downRun.finite
+    check downRun.peakTile <= frozenRun.peakTile
+    check downRun.peakCell <= frozenRun.peakCell
+    # And the up-gradient sign, at the very same magnitude, does aggregate —
+    # which is the asymmetry the range encodes.
+    check boundRunMaxForce.peakTile > frozenRun.peakTile * 2.0
+
+  test "up-gradient motion nucleates the field where a scattered deposit cannot":
+    # A REAL FINDING, not merely a safety property. A frozen population laying
+    # down a uniform scatter never ignites the field — the group 1 result, in a
+    # moving-particle harness — and neither does a down-gradient one, because
+    # fleeing its own trail keeps the deposit scattered. Up-gradient motion
+    # concentrates that same deposit into a coherent nucleus and ignites it.
+    # Coherence is what crosses Gray-Scott's threshold, and chemotaxis is a way
+    # of manufacturing coherence out of a uniform scatter.
+    #
+    # NOTE ON SCOPE: this harness runs no inter-particle forces, so a scattered
+    # start stays scattered unless the field itself gathers it. In a world
+    # coupling forces alongside the field, particle-life colonies supply the
+    # coherence instead — which is the path task 4.1 measured and D10 describes.
+    # The shipped default tropism is negative, so the field ignites from
+    # COLONIES, never from the chemistry alone.
+    # OBSERVED: frozen maxB 0.015, down-gradient 0.013, up-gradient 0.793.
+    check frozenRun.maxB < 0.05
+    check downRun.maxB < 0.05
+    check boundRunMaxForce.maxB > 0.5
+
+
+suite "The Regime Deposit Floor Preserves The Regime":
+  # WHY THIS SUITE EXISTS. Two named regimes (Worms, Coral) do not ignite at the
+  # default deposit, so the regime buttons raise it to
+  # RD_REGIME_HIGH_FEED_DEPOSIT. That fix carries its own risk: more inhibitor
+  # is not neutral, and a deposit large enough to ignite a regime could push it
+  # into a NEIGHBOURING morphology. Replacing a dead button with a lying one
+  # would be worse — a dead button says the feature is unfinished, a lying one
+  # says the vocabulary is meaningless.
+  #
+  # THE REFERENCE IS THE UNFORCED ATTRACTOR: the pattern Gray-Scott settles into
+  # at a regime's own (F, k) from a supercritical nucleus with NO particle
+  # deposit at all. That is what D4's coordinates name. Comparing two elevated
+  # deposits against each other would show only that two high deposits resemble
+  # each other, which is not the claim.
+  #
+  # TWO CONTROLS MAKE THE COMPARISON MEAN SOMETHING, and without them it would
+  # be vacuous:
+  #   - A regime that gets NO floor (Labyrinth) run through the identical
+  #     procedure, so a pass cannot come from the procedure itself.
+  #   - A separation check: two DIFFERENT regimes must be further apart in this
+  #     statistic than any regime is from its own floored self. A statistic that
+  #     cannot tell Coral from Labyrinth would "prove" anything.
+  #
+  # SETTLING TIME IS LOAD-BEARING. At 60 frames the shipped path has not settled
+  # and Coral reads as a different morphology entirely — that measurement is an
+  # artifact of stopping early, not a real divergence. Both sides run the same
+  # number of frames for this reason.
+
+  const SETTLE_FRAMES = 150
+    ## Frames both sides settle for. Long enough that the shipped path has
+    ## converged (at 60 it has not), short enough to stay affordable.
+  const NUCLEUS_RADIUS = 16.0
+  const NUCLEUS_INHIBITOR = 0.25
+  const NUCLEUS_ACTIVATOR = 0.75
+    ## A FLAT-TOPPED supercritical nucleus. rdSeedCell's blob tapers from half
+    ## its radius and is too weak to ignite the high-feed regimes at all, and at
+    ## activator 0.5 even a flat disc dies there — the basin at those
+    ## coordinates is narrow. This seed exists to reach the attractor, not to
+    ## model anything the app does.
+
+  type Morphology = tuple[alive, structure: float]
+
+  func morphologyOf(stats: FieldStats): Morphology =
+    ## What fraction of the field is pattern, and how structured it is.
+    ## std/mean separates real morphology from a flat flood — the same
+    ## discriminator the ignition suite uses.
+    (alive: stats.aliveFraction,
+     structure: (if stats.mean > 1e-12: stats.std / stats.mean else: 0.0))
+
+  func morphologyDistance(a, b: Morphology): float =
+    abs(a.alive - b.alive) + abs(a.structure - b.structure)
+
+  proc unforcedMorphology(feed, kill: float): Morphology =
+    ## The regime's own attractor: nucleus, no deposit, nothing but the reaction.
+    var seedA, seedB: HarnessField
+    for y in 0 ..< HARNESS_GRID:
+      for x in 0 ..< HARNESS_GRID:
+        let dx = float(x - HARNESS_GRID div 2)
+        let dy = float(y - HARNESS_GRID div 2)
+        let inside = sqrt(dx * dx + dy * dy) <= NUCLEUS_RADIUS
+        seedA[y][x] = if inside: NUCLEUS_ACTIVATOR else: 1.0
+        seedB[y][x] = if inside: NUCLEUS_INHIBITOR else: 0.0
+    morphologyOf(evolve(seedA, seedB, SETTLE_FRAMES, RD_DEPOSIT_MIN,
+      feed = feed, kill = kill))
+
+  proc shippedMorphology(feed, kill, deposit: float): Morphology =
+    ## What a user actually gets after pressing the button: no seed, flat
+    ## trivial start, colonies depositing through the splat kernel.
+    let flat = flatSeed()
+    morphologyOf(evolve(flat.a, flat.b, SETTLE_FRAMES, deposit,
+      feed = feed, kill = kill,
+      mask = clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian)))
+
+  # Computed once for the suite; each is SETTLE_FRAMES of the field.
+  let wormsUnforced = unforcedMorphology(0.078, 0.061)
+  let coralUnforced = unforcedMorphology(0.082, 0.059)
+  let labyrinthUnforced = unforcedMorphology(0.029, 0.057)
+  let wormsFloored = shippedMorphology(0.078, 0.061, RD_REGIME_HIGH_FEED_DEPOSIT)
+  let coralFloored = shippedMorphology(0.082, 0.059, RD_REGIME_HIGH_FEED_DEPOSIT)
+  let labyrinthUnfloored = shippedMorphology(0.029, 0.057, RD_DEFAULT_DEPOSIT)
+
+  test "the statistic separates different regimes from each other":
+    # THE VACUITY GUARD, and it runs first on purpose. If this fails, every
+    # agreement below is meaningless — a statistic that cannot tell two regimes
+    # apart would report any two patterns as the same morphology.
+    # OBSERVED separations: Worms/Coral 1.25, Worms/Labyrinth 1.65,
+    # Coral/Labyrinth 0.40. The tightest pair is four times the largest
+    # within-regime distance measured below.
+    let separations = [
+      morphologyDistance(wormsUnforced, coralUnforced),
+      morphologyDistance(wormsUnforced, labyrinthUnforced),
+      morphologyDistance(coralUnforced, labyrinthUnforced)]
+    for separation in separations:
+      check separation > 0.35
+
+  test "a floored regime settles into its own unforced morphology":
+    # CONTRACT: the button is honest. Each floored regime must land closer to
+    # ITS OWN unforced attractor than to any other regime's.
+    # OBSERVED (alive / std-over-mean), 150 frames:
+    #   Worms unforced 0.188 / 1.90   floored 0.177 / 2.02   distance 0.13
+    #   Coral unforced 0.497 / 0.96   floored 0.448 / 1.01   distance 0.10
+    # Against nearest-other-regime distances of 0.40 and above.
+    #
+    # IF THIS GOES RED the floor has moved a regime into a neighbouring
+    # morphology: the button would be lying, and the fix is to find a deposit
+    # that ignites without distorting — NOT to widen the tolerance here.
+    for (floored, own, other) in [
+        (wormsFloored, wormsUnforced, coralUnforced),
+        (coralFloored, coralUnforced, labyrinthUnforced)]:
+      check floored.alive > 0.05  # a dead field would "match" nothing
+      check morphologyDistance(floored, own) < morphologyDistance(floored, other)
+      check morphologyDistance(floored, own) <
+        morphologyDistance(own, other) * 0.5
+
+  test "a regime that gets no floor behaves the same way under the same procedure":
+    # THE NEGATIVE CONTROL ON THE PROCEDURE. Labyrinth needs no deposit floor —
+    # it ignites at the default — so running it through the identical comparison
+    # shows what agreement looks like when nothing was raised. If the floored
+    # regimes matched their attractors but this did not, the procedure would be
+    # measuring the floor rather than the morphology.
+    # OBSERVED: unforced 0.539 / 0.60, shipped at the default 0.535 / 0.62 —
+    # distance 0.02, the tightest agreement in the suite, as it should be.
+    # Labyrinth rather than Spots: Spots, Mitosis and Waves have no unforced
+    # attractor to compare against in this harness. At their low feed a nucleus
+    # cannot sustain itself without continuous deposit, so their pattern is
+    # deposit-sustained by nature and "unforced Spots" does not exist.
+    check morphologyDistance(labyrinthUnfloored, labyrinthUnforced) <
+      morphologyDistance(labyrinthUnforced, coralUnforced)
+
+  test "every regime the buttons can select settles into something alive":
+    # The plainest statement of what a regime button promises, across all six —
+    # each at whatever deposit its own entry says it needs.
+    for regime in RD_REGIMES:
+      let deposit =
+        if regime.minDeposit > 0.0: regime.minDeposit else: RD_DEFAULT_DEPOSIT
+      let settled = shippedMorphology(regime.feed, regime.kill, deposit)
+      check settled.alive > 0.05
+      check settled.structure > 0.3
 
 
 suite "Reaction-Diffusion Tuning Constants":

@@ -15,23 +15,46 @@
 #
 # ==============================================================================
 
-from std/dom import Event, MouseEvent, TouchEvent, preventDefault
+from std/dom import Event, MouseEvent, TouchEvent, KeyboardEvent, preventDefault
 
 from std/jsffi import JsObject
 
 from bindings/dom_extensions import
-  HTMLCanvasElement, domWindow, addEventListener
+  HTMLCanvasElement, WheelEvent, domWindow, addEventListener
 
 import ui/core/observable
 import ui/state/input_state
 import ui/input/mouse_handler
 import ui/input/touch_handler
+import ui/input/wheel_handler
+import ui/input/key_handler
+import camera_core
+import config
+import config_ranges
 
 # ==============================================================================
 # SECTION 1: INPUT STATE
 # ==============================================================================
 
 var currentInput* = newObservable(initInputState())
+
+# ==============================================================================
+# CAMERA HOOKS
+# ==============================================================================
+#
+# The camera lives in webgpu_render.nim, which is a layer ABOVE this file in
+# app.nim's import order — so it cannot be read from here directly. app.nim
+# wires these two, exactly as it wires onResize below. Nil until it does, and
+# every camera handler no-ops while they are, so input arriving before the
+# render pipeline finishes initializing is ignored rather than crashing.
+
+var cameraGetter*: proc(): Camera = nil
+  ## Reads the live camera. Set by app.nim to webgpu_render.camera.
+var cameraSetter*: proc(next: Camera) = nil
+  ## Replaces the live camera. Set by app.nim to webgpu_render.setCamera.
+
+proc cameraHooksReady(): bool =
+  not cameraGetter.isNil and not cameraSetter.isNil
 
 proc getMouseX*(): float = currentInput.get().mouseX
 proc getMouseY*(): float = currentInput.get().mouseY
@@ -130,7 +153,18 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
   canvasEl.addEventListener("touchstart", proc(event: TouchEvent) =
     preventDefault(event)
     let eventData = extractTouchData(event)
-    currentInput.set(handleTouchStart(currentInput.get(), eventData))
+    # Two fingers down is the touch equivalent of the double-click blast; one
+    # finger is an ordinary press.
+    if eventData.touches.len >= 2:
+      currentInput.set(handleTwoFingerTap(currentInput.get(), eventData))
+    else:
+      currentInput.set(handleTouchStart(currentInput.get(), eventData))
+  )
+
+  # touchcancel had a pure handler and no listener, so an interrupted touch (an
+  # incoming call, a system gesture) left the press stuck down forever.
+  canvasEl.addEventListener("touchcancel", proc(event: TouchEvent) =
+    currentInput.set(handleTouchCancel(currentInput.get()))
   )
 
   canvasEl.addEventListener("touchend", proc(event: TouchEvent) =
@@ -143,4 +177,45 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     preventDefault(event)
     let eventData = extractTouchData(event)
     currentInput.set(handleTouchMove(currentInput.get(), eventData))
+  )
+
+  # Wheel zooms at the cursor. preventDefault stops the page from scrolling
+  # underneath the canvas, which in a desktop window reads as the whole app
+  # jumping.
+  canvasEl.addEventListener("wheel", proc(event: WheelEvent) =
+    preventDefault(cast[Event](event))
+    if not cameraHooksReady():
+      return
+    # Cursor position in clip space: x right-positive, y UP-positive. The y
+    # inversion here is what undoes the renderer's own flip, so the anchor
+    # handed to the handler is in the same space camera_core.toClip returns.
+    let width = float(canvasEl.width)
+    let height = float(canvasEl.height)
+    if width <= 0.0 or height <= 0.0:
+      return
+    let wheelData = WheelEventData(
+      deltaY: float(event.deltaY),
+      clipX: (float(event.offsetX) / width) * 2.0 - 1.0,
+      clipY: 1.0 - (float(event.offsetY) / height) * 2.0)
+    cameraSetter(handleWheel(cameraGetter(), wheelData,
+      float32(config.WORLD_W), float32(config.WORLD_H),
+      float32(CAMERA_ZOOM_MIN), float32(CAMERA_ZOOM_MAX)))
+  )
+
+  # Keyboard navigation. Listens on the WINDOW rather than the canvas: a canvas
+  # only receives key events when focused, and this one is never clicked into
+  # deliberately, so canvas-scoped bindings would appear dead until the user
+  # happened to click the world first.
+  domWindow.addEventListener("keydown", proc(event: KeyboardEvent) =
+    if not cameraHooksReady():
+      return
+    let action = cameraKeyFor($event.key)
+    if action == ckNone:
+      return
+    # Only swallow the event once it is known to be a camera binding, so
+    # ordinary typing elsewhere in the panel is untouched.
+    preventDefault(cast[Event](event))
+    cameraSetter(handleCameraKey(cameraGetter(), action,
+      float32(config.WORLD_W), float32(config.WORLD_H),
+      float32(CAMERA_ZOOM_MIN), float32(CAMERA_ZOOM_MAX)))
   )

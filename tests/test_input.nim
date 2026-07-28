@@ -280,3 +280,55 @@ suite "TouchHandler - Touch Cancel":
     check state.mouseDown == false
     # Position is preserved
     check state.mouseX == 100.0
+
+
+suite "TouchHandler - Two Finger Tap":
+  test "two fingers fire a blast at their midpoint":
+    # The midpoint, not either finger: a blast at one of two touch points sits
+    # off to the side of the gesture, and WHICH side would depend on the
+    # undefined order the browser reports touches in.
+    let event = TouchEventData(touches: @[
+      TouchPoint(clientX: 100.0, clientY: 200.0),
+      TouchPoint(clientX: 300.0, clientY: 400.0)])
+    let state = handleTwoFingerTap(initInputState(), event)
+
+    check state.blastX == 200.0
+    check state.blastY == 300.0
+    check state.blastStrength > 0.0
+
+  test "the midpoint does not depend on which finger is reported first":
+    # Guards the property the comment above claims: the browser may report the
+    # two touches in either order.
+    let forward = TouchEventData(touches: @[
+      TouchPoint(clientX: 10.0, clientY: 20.0),
+      TouchPoint(clientX: 90.0, clientY: 60.0)])
+    let reversed = TouchEventData(touches: @[
+      TouchPoint(clientX: 90.0, clientY: 60.0),
+      TouchPoint(clientX: 10.0, clientY: 20.0)])
+
+    check handleTwoFingerTap(initInputState(), forward).blastX ==
+      handleTwoFingerTap(initInputState(), reversed).blastX
+    check handleTwoFingerTap(initInputState(), forward).blastY ==
+      handleTwoFingerTap(initInputState(), reversed).blastY
+
+  test "two fingers clear the press the first finger registered":
+    # Without this the state is stranded as held after the fingers lift, the
+    # same failure handleDoubleClick guards against on the mouse path.
+    let event = TouchEventData(touches: @[
+      TouchPoint(clientX: 100.0, clientY: 100.0),
+      TouchPoint(clientX: 200.0, clientY: 200.0)])
+    let state = handleTwoFingerTap(
+      initInputState().withMouseDown(true), event)
+
+    check state.mouseDown == false
+
+  test "a single finger is not a blast":
+    let event = TouchEventData(touches: @[
+      TouchPoint(clientX: 100.0, clientY: 100.0)])
+    let state = handleTwoFingerTap(initInputState(), event)
+
+    check state.blastStrength == 0.0
+
+  test "no touches at all leaves the state untouched":
+    let before = initInputState().withMouseDown(true)
+    check handleTwoFingerTap(before, TouchEventData(touches: @[])) == before

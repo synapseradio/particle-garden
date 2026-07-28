@@ -12,9 +12,11 @@
 #
 # ==============================================================================
 
-import std/[unittest, sets, math, strutils]
+import std/[unittest, sets, math, strutils, sequtils]
 import ../src/ui/api/param_descriptor
 import ../src/config_ranges
+import ../src/field_core  # SPECIES_CHEMISTRY_STRIDE, RD_PARTICLE_CEILING
+import ../src/sph_core    # SPH_PARTICLE_CEILING, the other coupling ceiling
 import ../src/ui/state/simulation_state
 import ../src/ui/state/render_state
 import ../src/palette
@@ -43,7 +45,15 @@ suite "Descriptor Table Covers The Full Slider Inventory":
       "expAttractionBeta",
       "paletteSaturation", "paletteLightness",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
-      "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity"])
+      "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
+      # climateSpeed has no ui.nim ancestor — the drifting climate is new, not
+      # a port of an existing slider. It is listed because this set is the
+      # interface contract with the panel, not a historical inventory.
+      "climateSpeed",
+      # cameraZoom has no ui.nim ancestor either — it is view state, routed
+      # through psCamera to the live camera rather than to CONFIG, which is
+      # also why it never reaches the preset schema.
+      "cameraZoom"])
     var seenIds = initHashSet[string]()
     for descriptor in descriptors:
       check descriptor.id notin seenIds
@@ -99,11 +109,17 @@ suite "Hints Name Only Reachable Slider Positions":
     # Guards against the loop above silently checking nothing.
     check checkedNumerals > 0
 
-  test "the reaction-diffusion regime hints are the ones carrying numerals":
-    # Pins which hints the reachability test above is actually exercising, so
-    # deleting a hint cannot quietly empty it.
-    check numeralsIn(byId("rdFeed").hint).len == 4
-    check numeralsIn(byId("rdKill").hint).len == 4
+  test "the regime coordinates are no longer carried as hint numerals":
+    # They used to be: the feed and kill hints listed four coordinates each,
+    # and this suite existed to keep those numbers reachable. They are notches
+    # now, checked by "Notches Mark Only Reachable Positions" below under the
+    # same reachability rule plus a label. A hint restating them would be a
+    # second copy free to drift — and the old one had drifted, naming a coral
+    # at (0.055, 0.062) against the regime table's (0.082, 0.059).
+    check numeralsIn(byId("rdFeed").hint).len == 0
+    check numeralsIn(byId("rdKill").hint).len == 0
+    check byId("rdFeed").notches.len == RD_REGIMES.len
+    check byId("rdKill").notches.len == RD_REGIMES.len
 
   test "hints that name no numeral are plain guidance":
     # The deposit and field-force hints describe direction, not coordinates.
@@ -138,142 +154,142 @@ suite "Every Descriptor Is Internally Coherent":
       check (descriptor.kind == pkInt) == expectInt
 
 suite "Descriptors Agree With The Range Authority":
-  test "simulation ranges match config_ranges":
-    check byId("particleCount").minValue == PARTICLE_COUNT_MIN.float
-    check byId("particleCount").maxValue == PARTICLE_COUNT_MAX.float
-    check byId("speciesCount").minValue == SPECIES_COUNT_MIN.float
-    check byId("speciesCount").maxValue == SPECIES_COUNT_MAX.float
-    check byId("interactionRadius").minValue == INTERACTION_RADIUS_MIN.float
-    check byId("interactionRadius").maxValue == INTERACTION_RADIUS_MAX.float
-    check byId("forceStrength").minValue == FORCE_STRENGTH_MIN
-    check byId("forceStrength").maxValue == FORCE_STRENGTH_MAX
-    check byId("friction").minValue == FRICTION_MIN
-    check byId("friction").maxValue == FRICTION_MAX
-    check byId("timeScale").minValue == TIME_SCALE_MIN
-    check byId("timeScale").maxValue == TIME_SCALE_MAX
-    check byId("ruleTemperature").minValue == RULE_TEMPERATURE_MIN
-    check byId("ruleTemperature").maxValue == RULE_TEMPERATURE_MAX
-    check byId("maxVelocity").minValue == MAX_VELOCITY_MIN
-    check byId("maxVelocity").maxValue == MAX_VELOCITY_MAX
+  # One row per parameter, against the constant config_ranges holds for it. The
+  # relation is identical for every id, so it is stated once and the table
+  # carries what differs — which is also what a new parameter adds here.
+  let rangeExpectations: seq[(string, float, float)] = @[
+    # Simulation
+    ("particleCount", PARTICLE_COUNT_MIN.float, PARTICLE_COUNT_MAX.float),
+    ("speciesCount", SPECIES_COUNT_MIN.float, SPECIES_COUNT_MAX.float),
+    ("interactionRadius", INTERACTION_RADIUS_MIN.float,
+      INTERACTION_RADIUS_MAX.float),
+    ("forceStrength", FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX),
+    ("friction", FRICTION_MIN, FRICTION_MAX),
+    ("timeScale", TIME_SCALE_MIN, TIME_SCALE_MAX),
+    ("ruleTemperature", RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX),
+    ("maxVelocity", MAX_VELOCITY_MIN, MAX_VELOCITY_MAX),
+    # Render and glow
+    ("particleSize", PARTICLE_SIZE_MIN.float, PARTICLE_SIZE_MAX.float),
+    ("trailLength", TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX),
+    ("glowIntensity", GLOW_INTENSITY_MIN, GLOW_INTENSITY_MAX),
+    ("velocityGlowScale", VELOCITY_GLOW_SCALE_MIN, VELOCITY_GLOW_SCALE_MAX),
+    ("glowRadiusScale", GLOW_RADIUS_SCALE_MIN, GLOW_RADIUS_SCALE_MAX),
+    ("glowFalloff", GLOW_FALLOFF_MIN, GLOW_FALLOFF_MAX),
+    ("glowWarmth", GLOW_WARMTH_MIN, GLOW_WARMTH_MAX),
+    # Bloom and grade
+    ("bloomIntensity", BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX),
+    ("exposure", EXPOSURE_MIN, EXPOSURE_MAX),
+    ("saturation", SATURATION_MIN, SATURATION_MAX),
+    ("contrast", CONTRAST_MIN, CONTRAST_MAX),
+    ("temperature", TEMPERATURE_MIN, TEMPERATURE_MAX),
+    # Force model
+    ("repulsionEnd", REPULSION_END_MIN, REPULSION_END_MAX),
+    ("attractionPeak", ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX),
+    ("expRepulsionAlpha", EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX),
+    ("expAttractionBeta", EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX),
+    # Palette, SPH, and the reaction-diffusion field
+    ("paletteSaturation", PALETTE_SATURATION_MIN, PALETTE_SATURATION_MAX),
+    ("paletteLightness", PALETTE_LIGHTNESS_MIN, PALETTE_LIGHTNESS_MAX),
+    ("sphRestDensity", SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX),
+    ("sphStiffness", SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX),
+    ("sphViscosity", SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX),
+    ("sphSubsteps", SPH_SUBSTEPS_MIN.float, SPH_SUBSTEPS_MAX.float),
+    ("rdFeed", RD_FEED_MIN, RD_FEED_MAX),
+    ("rdKill", RD_KILL_MIN, RD_KILL_MAX),
+    ("rdDeposit", RD_DEPOSIT_MIN, RD_DEPOSIT_MAX),
+    ("rdFieldForce", RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX),
+    ("fieldOpacity", FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX),
+  ]
 
-  test "render and glow ranges match config_ranges":
-    check byId("particleSize").minValue == PARTICLE_SIZE_MIN.float
-    check byId("particleSize").maxValue == PARTICLE_SIZE_MAX.float
-    check byId("trailLength").minValue == TRAIL_LENGTH_MIN
-    check byId("trailLength").maxValue == TRAIL_LENGTH_MAX
-    check byId("glowIntensity").minValue == GLOW_INTENSITY_MIN
-    check byId("glowIntensity").maxValue == GLOW_INTENSITY_MAX
-    check byId("velocityGlowScale").minValue == VELOCITY_GLOW_SCALE_MIN
-    check byId("velocityGlowScale").maxValue == VELOCITY_GLOW_SCALE_MAX
-    check byId("glowRadiusScale").minValue == GLOW_RADIUS_SCALE_MIN
-    check byId("glowRadiusScale").maxValue == GLOW_RADIUS_SCALE_MAX
-    check byId("glowFalloff").minValue == GLOW_FALLOFF_MIN
-    check byId("glowFalloff").maxValue == GLOW_FALLOFF_MAX
-    check byId("glowWarmth").minValue == GLOW_WARMTH_MIN
-    check byId("glowWarmth").maxValue == GLOW_WARMTH_MAX
-
-  test "bloom and grade ranges match config_ranges":
-    check byId("bloomIntensity").minValue == BLOOM_INTENSITY_MIN
-    check byId("bloomIntensity").maxValue == BLOOM_INTENSITY_MAX
-    check byId("exposure").minValue == EXPOSURE_MIN
-    check byId("exposure").maxValue == EXPOSURE_MAX
-    check byId("saturation").minValue == SATURATION_MIN
-    check byId("saturation").maxValue == SATURATION_MAX
-    check byId("contrast").minValue == CONTRAST_MIN
-    check byId("contrast").maxValue == CONTRAST_MAX
-    check byId("temperature").minValue == TEMPERATURE_MIN
-    check byId("temperature").maxValue == TEMPERATURE_MAX
-
-  test "force model ranges match config_ranges":
-    check byId("repulsionEnd").minValue == REPULSION_END_MIN
-    check byId("repulsionEnd").maxValue == REPULSION_END_MAX
-    check byId("attractionPeak").minValue == ATTRACTION_PEAK_MIN
-    check byId("attractionPeak").maxValue == ATTRACTION_PEAK_MAX
-    check byId("expRepulsionAlpha").minValue == EXP_REPULSION_ALPHA_MIN
-    check byId("expRepulsionAlpha").maxValue == EXP_REPULSION_ALPHA_MAX
-    check byId("expAttractionBeta").minValue == EXP_ATTRACTION_BETA_MIN
-    check byId("expAttractionBeta").maxValue == EXP_ATTRACTION_BETA_MAX
-
-  test "palette, sph, and rd ranges match config_ranges":
-    check byId("paletteSaturation").minValue == PALETTE_SATURATION_MIN
-    check byId("paletteSaturation").maxValue == PALETTE_SATURATION_MAX
-    check byId("paletteLightness").minValue == PALETTE_LIGHTNESS_MIN
-    check byId("paletteLightness").maxValue == PALETTE_LIGHTNESS_MAX
-    check byId("sphRestDensity").minValue == SPH_REST_DENSITY_MIN
-    check byId("sphRestDensity").maxValue == SPH_REST_DENSITY_MAX
-    check byId("sphStiffness").minValue == SPH_STIFFNESS_MIN
-    check byId("sphStiffness").maxValue == SPH_STIFFNESS_MAX
-    check byId("sphViscosity").minValue == SPH_VISCOSITY_MIN
-    check byId("sphViscosity").maxValue == SPH_VISCOSITY_MAX
-    check byId("sphSubsteps").minValue == SPH_SUBSTEPS_MIN.float
-    check byId("sphSubsteps").maxValue == SPH_SUBSTEPS_MAX.float
-    check byId("rdFeed").minValue == RD_FEED_MIN
-    check byId("rdFeed").maxValue == RD_FEED_MAX
-    check byId("rdKill").minValue == RD_KILL_MIN
-    check byId("rdKill").maxValue == RD_KILL_MAX
-    check byId("rdDeposit").minValue == RD_DEPOSIT_MIN
-    check byId("rdDeposit").maxValue == RD_DEPOSIT_MAX
-    check byId("rdFieldForce").minValue == RD_FIELD_FORCE_MIN
-    check byId("rdFieldForce").maxValue == RD_FIELD_FORCE_MAX
-    check byId("fieldOpacity").minValue == FIELD_OPACITY_RANGE_MIN
-    check byId("fieldOpacity").maxValue == FIELD_OPACITY_RANGE_MAX
+  test "every listed parameter's range is the one config_ranges holds":
+    for (id, expectedMin, expectedMax) in rangeExpectations:
+      let descriptor = byId(id)
+      if descriptor.minValue != expectedMin or
+          descriptor.maxValue != expectedMax:
+        checkpoint("range drift for " & id)
+      check descriptor.minValue == expectedMin
+      check descriptor.maxValue == expectedMax
 
 suite "Descriptors Agree With The Default Authority":
   let simDefaults = initSimulationState()
   let renderDefaults = initRenderState()
 
-  test "simulation-store defaults come from initSimulationState":
-    check byId("particleCount").defaultValue == simDefaults.particleCount.float
-    check byId("speciesCount").defaultValue == simDefaults.speciesCount.float
-    check byId("interactionRadius").defaultValue ==
-      simDefaults.interactionRadius.float
-    check byId("forceStrength").defaultValue == simDefaults.forceStrength
-    check byId("friction").defaultValue == simDefaults.friction
-    check byId("timeScale").defaultValue == simDefaults.timeScale
-    check byId("ruleTemperature").defaultValue == simDefaults.ruleTemperature
-    check byId("maxVelocity").defaultValue == simDefaults.maxVelocity
-    check byId("repulsionEnd").defaultValue == simDefaults.repulsionEnd
-    check byId("attractionPeak").defaultValue == simDefaults.attractionPeak
-    check byId("expRepulsionAlpha").defaultValue ==
-      simDefaults.expRepulsionAlpha
-    check byId("expAttractionBeta").defaultValue ==
-      simDefaults.expAttractionBeta
-    check byId("sphRestDensity").defaultValue == simDefaults.sphRestDensity
-    check byId("sphStiffness").defaultValue == simDefaults.sphStiffness
-    check byId("sphViscosity").defaultValue == simDefaults.sphViscosity
-    check byId("sphSubsteps").defaultValue == simDefaults.sphSubsteps.float
-    check byId("rdFeed").defaultValue == simDefaults.rdFeed
-    check byId("rdKill").defaultValue == simDefaults.rdKill
-    check byId("rdDeposit").defaultValue == simDefaults.rdDeposit
-    check byId("rdFieldForce").defaultValue == simDefaults.rdFieldForce
+  # One row per parameter, against the authority that owns its default: the
+  # typed simulation state, the typed render state, or palette.nim. Reading a
+  # row tells you which of the three a parameter answers to.
+  let defaultExpectations: seq[(string, float)] = @[
+    # initSimulationState
+    ("particleCount", simDefaults.particleCount.float),
+    ("speciesCount", simDefaults.speciesCount.float),
+    ("interactionRadius", simDefaults.interactionRadius.float),
+    ("forceStrength", simDefaults.forceStrength),
+    ("friction", simDefaults.friction),
+    ("timeScale", simDefaults.timeScale),
+    ("ruleTemperature", simDefaults.ruleTemperature),
+    ("maxVelocity", simDefaults.maxVelocity),
+    ("repulsionEnd", simDefaults.repulsionEnd),
+    ("attractionPeak", simDefaults.attractionPeak),
+    ("expRepulsionAlpha", simDefaults.expRepulsionAlpha),
+    ("expAttractionBeta", simDefaults.expAttractionBeta),
+    ("sphRestDensity", simDefaults.sphRestDensity),
+    ("sphStiffness", simDefaults.sphStiffness),
+    ("sphViscosity", simDefaults.sphViscosity),
+    ("sphSubsteps", simDefaults.sphSubsteps.float),
+    ("rdFeed", simDefaults.rdFeed),
+    ("rdKill", simDefaults.rdKill),
+    ("rdDeposit", simDefaults.rdDeposit),
+    ("rdFieldForce", simDefaults.rdFieldForce),
+    # initRenderState
+    ("particleSize", renderDefaults.particleSize.float),
+    ("trailLength", renderDefaults.trailLength),
+    ("glowIntensity", renderDefaults.glowIntensity),
+    ("velocityGlowScale", renderDefaults.velocityGlowScale),
+    ("glowRadiusScale", renderDefaults.glowRadiusScale),
+    ("glowFalloff", renderDefaults.glowFalloff),
+    ("glowWarmth", renderDefaults.glowWarmth),
+    ("bloomIntensity", renderDefaults.bloomIntensity),
+    ("exposure", renderDefaults.exposure),
+    ("saturation", renderDefaults.saturation),
+    ("contrast", renderDefaults.contrast),
+    ("temperature", renderDefaults.temperature),
+    ("fieldOpacity", renderDefaults.fieldOpacity),
+    # palette.nim
+    ("paletteSaturation", DEFAULT_SATURATION),
+    ("paletteLightness", DEFAULT_LIGHTNESS),
+  ]
 
-  test "render-store defaults come from initRenderState":
-    check byId("particleSize").defaultValue == renderDefaults.particleSize.float
-    check byId("trailLength").defaultValue == renderDefaults.trailLength
-    check byId("glowIntensity").defaultValue == renderDefaults.glowIntensity
-    check byId("velocityGlowScale").defaultValue ==
-      renderDefaults.velocityGlowScale
-    check byId("glowRadiusScale").defaultValue == renderDefaults.glowRadiusScale
-    check byId("glowFalloff").defaultValue == renderDefaults.glowFalloff
-    check byId("glowWarmth").defaultValue == renderDefaults.glowWarmth
-    check byId("bloomIntensity").defaultValue == renderDefaults.bloomIntensity
-    check byId("exposure").defaultValue == renderDefaults.exposure
-    check byId("saturation").defaultValue == renderDefaults.saturation
-    check byId("contrast").defaultValue == renderDefaults.contrast
-    check byId("temperature").defaultValue == renderDefaults.temperature
-    check byId("fieldOpacity").defaultValue == renderDefaults.fieldOpacity
-
-  test "palette-store defaults come from palette.nim":
-    check byId("paletteSaturation").defaultValue == DEFAULT_SATURATION
-    check byId("paletteLightness").defaultValue == DEFAULT_LIGHTNESS
+  test "every listed parameter's default is the one its authority holds":
+    for (id, expectedDefault) in defaultExpectations:
+      let descriptor = byId(id)
+      if descriptor.defaultValue != expectedDefault:
+        checkpoint("default drift for " & id)
+      check descriptor.defaultValue == expectedDefault
 
 suite "Store Routing Sends Each Parameter To Its Mutation Path":
   test "palette knobs route to the palette store, everything else to CONFIG":
+    # cameraZoom is the one parameter that reaches NEITHER CONFIG nor the
+    # palette: it writes the live view. That is the whole reason psCamera
+    # exists, and the reason a preset cannot carry it — so it is named here
+    # explicitly rather than folded into the CONFIG arm, which would quietly
+    # let a future descriptor escape the routing contract.
     for descriptor in descriptors:
       if descriptor.id in ["paletteSaturation", "paletteLightness"]:
         check descriptor.store == psPalette
+      elif descriptor.id == "cameraZoom":
+        check descriptor.store == psCamera
       else:
         check descriptor.store in [psSimulation, psRender]
+
+  test "the camera is the only parameter that never reaches CONFIG":
+    # Stated as its own claim because it is a boundary, not a detail: anything
+    # routed through psCamera is absent from the preset schema by construction,
+    # and a second one appearing silently would widen that hole without anyone
+    # deciding to.
+    var cameraRouted: seq[string]
+    for descriptor in descriptors:
+      if descriptor.store == psCamera:
+        cameraRouted.add descriptor.id
+    check cameraRouted == @["cameraZoom"]
 
   test "render-pipeline parameters route to the render store":
     for id in ["particleSize", "trailLength", "glowIntensity",
@@ -306,3 +322,160 @@ suite "Clamping Is The Descriptor's Job":
     # that exact behavior so a drag position lands on the same value.
     check clampParamValue(byId("speciesCount"), 4.9) == 4.0
     check clampParamValue(byId("particleSize"), 2.2) == 2.0
+
+
+suite "The Chemistry Field Table Is Its Own Small Contract":
+  # Secretion and tropism are per-species, so they cannot live in the slider
+  # table (every consumer of that table assumes one value per id). They get
+  # their own table, and it owes the panel the same guarantees: a range to
+  # clamp against, a default inside it, and a distinct slot to index by.
+
+  test "the table names exactly secretion and tropism":
+    var ids: HashSet[string]
+    for field in buildChemistryFields():
+      ids.incl field.id
+    check ids == toHashSet(["secretion", "tropism"])
+
+  test "every chemistry field carries a non-empty range holding its default":
+    # The same relation the slider table asserts against config_ranges: a
+    # default outside its own range would mean the panel opens on a value it
+    # will not let the user return to.
+    for field in buildChemistryFields():
+      check field.minValue < field.maxValue
+      check field.defaultValue >= field.minValue
+      check field.defaultValue <= field.maxValue
+
+  test "chemistry ranges come from the range authority":
+    for field in buildChemistryFields():
+      case field.id
+      of "secretion":
+        check field.minValue == SECRETION_MIN
+        check field.maxValue == SECRETION_MAX
+      of "tropism":
+        check field.minValue == TROPISM_MIN
+        check field.maxValue == TROPISM_MAX
+      else:
+        check false  # a new field needs its range relation stated here
+
+  test "each field occupies a distinct slot inside one species' stride":
+    # The panel computes an index as species * stride + slot. Two fields
+    # sharing a slot, or a slot past the stride, would alias or overrun.
+    var slots: HashSet[int]
+    for field in buildChemistryFields():
+      check field.slot >= 0
+      check field.slot < SPECIES_CHEMISTRY_STRIDE
+      slots.incl field.slot
+    check slots.len == buildChemistryFields().len
+
+  test "every chemistry field carries a hint, because neither name explains itself":
+    # "Secretion" and "Tropism" are the field's own vocabulary, not the user's,
+    # and both are signed — which direction a negative value means is exactly
+    # what a bare label cannot say.
+    for field in buildChemistryFields():
+      check field.hint.len > 0
+
+  test "the step is one unit of the field's own display precision":
+    for field in buildChemistryFields():
+      check field.precision > 0
+      check abs(field.step - pow(10.0, -float(field.precision))) < 1e-12
+
+  test "clamping holds a chemistry value inside its range":
+    for field in buildChemistryFields():
+      check clampChemistryValue(field, field.minValue - 100.0) == field.minValue
+      check clampChemistryValue(field, field.maxValue + 100.0) == field.maxValue
+      check clampChemistryValue(field, field.defaultValue) == field.defaultValue
+
+
+suite "Notches Mark Only Reachable Positions":
+  # A notch is a claim that a value is worth stopping at. A notch outside its
+  # own slider's range is a labelled position the user cannot reach — the same
+  # defect class as a hint naming an unreachable number, and the reason the
+  # regime coordinates live beside the ranges they must satisfy.
+
+  test "every notch value lies inside its parameter's range":
+    for descriptor in buildParamDescriptors():
+      for entry in descriptor.notches:
+        check entry.value >= descriptor.minValue
+        check entry.value <= descriptor.maxValue
+
+  test "every notch sits on a position the slider can actually land on":
+    # In-range is not enough. A notch off the step grid is a tick the handle
+    # slides past without ever stopping on, so snapping to it would leave the
+    # readout showing a value the slider cannot hold. Same rule the hint
+    # numerals above are held to, for the same reason.
+    var checkedNotches = 0
+    for descriptor in buildParamDescriptors():
+      for entry in descriptor.notches:
+        inc checkedNotches
+        let steps = (entry.value - descriptor.minValue) / descriptor.step
+        check abs(steps - round(steps)) < 1e-6
+        # And unchanged by the rounding the readout applies.
+        check abs(entry.value - parseFloat(formatFloat(
+          entry.value, ffDecimal, descriptor.precision))) < 1e-9
+    check checkedNotches > 0
+
+  test "every notch carries a label":
+    # An unlabelled tick is a mark with no claim attached — it tells the user
+    # to stop somewhere without saying why.
+    for descriptor in buildParamDescriptors():
+      for entry in descriptor.notches:
+        check entry.label.len > 0
+
+  test "no parameter declares the same notch value twice":
+    # Two labels on one position is a contradiction the panel cannot render,
+    # and usually means a default coincides with a named value.
+    for descriptor in buildParamDescriptors():
+      var seen: HashSet[float]
+      for entry in descriptor.notches:
+        check entry.value notin seen
+        seen.incl entry.value
+
+  test "feed and kill each carry all six named regimes":
+    # A regime is a POINT, so both axes must offer the same six labels — a
+    # notch on one axis alone does not locate one.
+    for id in ["rdFeed", "rdKill"]:
+      let labels = byId(id).notches.mapIt(it.label)
+      check labels.len == RD_REGIMES.len
+      for regime in RD_REGIMES:
+        check regime.label in labels
+
+  test "each regime's notch values are the coordinates the range authority holds":
+    # The panel must not be able to show a coordinate the regime buttons do not
+    # set, so both read RD_REGIMES rather than restating numbers.
+    for regime in RD_REGIMES:
+      var feedFound, killFound = false
+      for entry in byId("rdFeed").notches:
+        if entry.label == regime.label and entry.value == regime.feed:
+          feedFound = true
+      for entry in byId("rdKill").notches:
+        if entry.label == regime.label and entry.value == regime.kill:
+          killFound = true
+      check feedFound
+      check killFound
+
+  test "the high-feed deposit notch is the floor the regime table measured":
+    # One measurement, two consumers: the Deposit slider's notch and the floor
+    # the regime buttons raise the deposit to. If they drift, a user could pick
+    # Coral, land on the notch, and still see nothing.
+    for regime in RD_REGIMES:
+      if regime.minDeposit > 0.0:
+        check regime.minDeposit == RD_REGIME_HIGH_FEED_DEPOSIT
+    check byId("rdDeposit").notches.anyIt(
+      it.value == RD_REGIME_HIGH_FEED_DEPOSIT)
+
+  test "the particle-count ceiling notch tracks both coupling ceilings":
+    # It is one notch because SPH and the field cap at the same count. If a
+    # later change moves one of them, this goes red rather than silently
+    # mislabelling the other.
+    check SPH_PARTICLE_CEILING == RD_PARTICLE_CEILING
+    check COUPLING_PARTICLE_CEILING == SPH_PARTICLE_CEILING
+    check byId("particleCount").notches.anyIt(
+      it.value == COUPLING_PARTICLE_CEILING.float)
+
+  test "the camera zoom notches lie inside the camera range":
+    # The camera's descriptor belongs to the camera work; its notch values sit
+    # beside the range here so this relation holds before the slider exists.
+    for value in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,
+        CAMERA_ZOOM_NOTCH_CREATURE]:
+      check value >= CAMERA_ZOOM_MIN
+      check value <= CAMERA_ZOOM_MAX

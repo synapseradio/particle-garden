@@ -41,6 +41,31 @@ type
     colormapIndex*: int
     fieldOpacity*: float
 
+const TRAIL_LENGTH_WHEN_ENABLED* = 25.0
+  ## The length the Trails toggle lifts a zero-length trail to.
+  ##
+  ## Trails are two controls over one effect: a boolean that decides whether the
+  ## fade pass runs at all, and a length that decides how much of the previous
+  ## frame it keeps. At length 0 the fade pass retains nothing, so the toggle
+  ## switches on a pass that clears — a control that visibly does nothing, which
+  ## is how it read to the user.
+  ##
+  ## 25 diameters decays the trail to 5% over roughly 50 frames, a little under
+  ## a second at 60fps. Long enough to read as motion, short enough that the
+  ## screen does not turn into a smear.
+
+func withTrails*(state: RenderState, enabled: bool): RenderState =
+  ## The render state with trails switched on or off.
+  ##
+  ## Enabling lifts a zero length so the toggle always produces trails; it never
+  ## overwrites a length the user chose. Disabling leaves the length alone, so
+  ## toggling off and back on returns the trail the user last had rather than
+  ## the default.
+  result = state
+  result.trails = enabled
+  if enabled and state.trailLength <= 0.0:
+    result.trailLength = TRAIL_LENGTH_WHEN_ENABLED
+
 func initRenderState*(): RenderState =
   ## The authoritative render defaults (copied into CONFIG by createConfig).
   ## (particleSize + 1) * glowRadiusScale must stay 12.0 to reproduce the

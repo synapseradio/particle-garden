@@ -17,16 +17,37 @@ import std/sets
 import ../src/sim_registry
 import ../src/field_core
 import ../src/ui/api/param_descriptor
+import coupling_space  # ALL_COUPLINGS, the eight worlds every sweep covers
 
 const SIM_REGISTRY_TESTS_LOADED* = true
 
-proc dispatchesPipeline(kind: SimKind; pipelineKey: string): bool =
-  for node in buildFrame(kind):
+proc dispatchesPipeline(couplings: WorldCouplings; pipelineKey: string): bool =
+  for node in buildFrame(couplings):
     if node.kind == fnkComputePass:
       for step in node.dispatches:
         if step.pipelineKey == pipelineKey:
           return true
   false
+
+proc dispatchSequence(couplings: WorldCouplings): seq[string] =
+  ## Every pipeline key the frame dispatches, in encoded order. This is the
+  ## thing that must not change for the legacy triples: pass grouping and
+  ## profiler slots are presentation, but the order work reaches the GPU in is
+  ## the behavior.
+  for node in buildFrame(couplings):
+    if node.kind == fnkComputePass:
+      for step in node.dispatches:
+        result.add step.pipelineKey
+
+proc clearedBuffers(couplings: WorldCouplings): seq[SimBuffer] =
+  for node in buildFrame(couplings):
+    if node.kind == fnkClearBuffer:
+      result.add node.clearTarget
+
+func rdStepKeys(): seq[string] =
+  for stepIndex in 0 ..< RD_STEPS_PER_FRAME:
+    result.add(
+      if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail")
 
 suite "SimKind Serialization Contract":
   test "mode ids are stable strings, never ordinals":
@@ -42,190 +63,230 @@ suite "SimKind Serialization Contract":
     expect ValueError:
       discard parseSimKind("no-such-mode")
 
+suite "Legacy Couplings Reproduce Today's Frames":
+  # THE REGRESSION CHECK FOR THE WHOLE RESTRUCTURE. These three ran before any
+  # shader was touched and must still run after. What they pin is the DISPATCH
+  # SEQUENCE — the order work reaches the GPU in. Pass grouping and profiler
+  # slots did move: integrate left the physics pass because the field passes
+  # have to sit between the two, and the frame gained explicit delta clears
+  # because the shaders no longer self-reset. Neither changes what executes,
+  # or in what order.
 
-suite "Particle-Life Frame Description":
-  # The exact sequence the hand-coded runPhysicsFrame executed:
-  #   clear gridCounts;
-  #   compute "Grid Build" [binCount, prefixLocal, prefixBlocks, prefixFinal];
-  #   copy gridOffsets -> fillPointers;
-  #   compute "Physics (AoS)" [binScatter, forces, integrate];
-  # and NO delta-buffer clears (forces.wgsl self-resets them via atomicStore).
+  test "forces-only couplings produce exactly today's particle-life pass list":
+    check dispatchSequence(couplingsFor(skParticleLife)) == @[
+      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
+      "binScatter", "forces", "integrate"]
 
-  let frame = buildFrame(skParticleLife)
+  test "sph-only couplings produce exactly today's SPH pass list":
+    check dispatchSequence(couplingsFor(skSph)) == @[
+      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
+      "binScatter", "forcesSph", "integrate"]
 
-  test "the frame has exactly four nodes in order":
-    check frame.len == 4
-    check frame[0].kind == fnkClearBuffer
-    check frame[1].kind == fnkComputePass
-    check frame[2].kind == fnkCopyBuffer
-    check frame[3].kind == fnkComputePass
+  test "field-only couplings produce exactly today's reaction-diffusion pass list":
+    check dispatchSequence(couplingsFor(skReactionDiffusion)) ==
+      @["fieldDeposit", "fieldResolve"] & rdStepKeys() &
+      @["fieldForce", "integrate"]
 
-  test "node 0 clears gridCounts":
-    check frame[0].clearTarget == sbGridCounts
+  test "the legacy triples build no spatial hash they did not build before":
+    # RD never ran a neighbor search and must not start: fieldForce reads a
+    # texture, not sorted neighbor particles.
+    check buildsSpatialHash(couplingsFor(skParticleLife))
+    check buildsSpatialHash(couplingsFor(skSph))
+    check not buildsSpatialHash(couplingsFor(skReactionDiffusion))
 
-  test "node 1 is the Grid Build pass with the profiler's grid slot":
-    check frame[1].label == "Grid Build"
-    check frame[1].profilerSlot == PROFILER_SLOT_GRID_BUILD
-    check frame[1].dispatches.len == 4
-    check frame[1].dispatches[0] == Dispatch(pipelineKey: "binCount", size: dsParticleWorkgroups)
-    check frame[1].dispatches[1] == Dispatch(pipelineKey: "prefixLocal", size: dsScanBlocks)
-    check frame[1].dispatches[2] == Dispatch(pipelineKey: "prefixBlocks", size: dsOne)
-    check frame[1].dispatches[3] == Dispatch(pipelineKey: "prefixFinal", size: dsScanBlocks)
-
-  test "node 2 copies gridOffsets into fillPointers":
-    check frame[2].copySource == sbGridOffsets
-    check frame[2].copyDest == sbFillPointers
-
-  test "node 3 is the Physics pass with the profiler's physics slot":
-    check frame[3].label == "Physics (AoS)"
-    check frame[3].profilerSlot == PROFILER_SLOT_PHYSICS
-    check frame[3].dispatches.len == 3
-    check frame[3].dispatches[0] == Dispatch(pipelineKey: "binScatter", size: dsParticleWorkgroups)
-    check frame[3].dispatches[1] == Dispatch(pipelineKey: "forces", size: dsParticleWorkgroups)
-    check frame[3].dispatches[2] == Dispatch(pipelineKey: "integrate", size: dsParticleWorkgroups)
-
-  test "no node clears a delta buffer":
-    # forces.wgsl self-resets velocityDelta/densityDelta via atomicStore; an
-    # accidental clear here would race the atomics (the bug the old comment
-    # in runPhysicsFrame warned about).
-    for node in frame:
-      if node.kind == fnkClearBuffer:
-        check node.clearTarget == sbGridCounts
-
-  test "the monolithic prefix-sum pipeline is gone from the frame":
-    for node in frame:
-      if node.kind == fnkComputePass:
-        for dispatch in node.dispatches:
-          check dispatch.pipelineKey != "prefixSum"
+  test "the legacy force pass labels are unchanged":
+    # A profile taken before the merge must read against one taken after.
+    proc labelOf(couplings: WorldCouplings, slot: int): string =
+      for node in buildFrame(couplings):
+        if node.kind == fnkComputePass and node.profilerSlot == slot:
+          return node.label
+      ""
+    check labelOf(couplingsFor(skParticleLife), PROFILER_SLOT_PHYSICS) ==
+      "Physics (AoS)"
+    check labelOf(couplingsFor(skSph), PROFILER_SLOT_PHYSICS) ==
+      "Physics (SPH)"
 
 
-suite "SPH Frame Description":
-  # SPH reuses particle-life's grid-build structure verbatim, then runs an SPH
-  # physics pass. The only differences from particle-life are the physics pass
-  # label ("Physics (SPH)") and its force dispatch ("forcesSph" for "forces").
-  # Substepping is an executor loop, not frame nodes, so the description holds
-  # exactly one substep's work — the same four-node shape as particle-life.
+suite "Composed Frames":
+  test "chemistry runs the grid triad, forces, the field passes, then integrate":
+    # The world this whole change exists to make possible: particles that feel
+    # each other AND write the field, in one frame.
+    check dispatchSequence(WorldCouplings(forces: true, field: true)) ==
+      @["binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
+        "binScatter", "forces",
+        "fieldDeposit", "fieldResolve"] & rdStepKeys() &
+      @["fieldForce", "integrate"]
 
-  let frame = buildFrame(skSph)
+  test "forces and field together dispatch the grid build exactly once":
+    # Both couplings want a spatial hash; building it twice would be pure waste
+    # and would double-count every particle into gridCounts.
+    for couplings in ALL_COUPLINGS:
+      var gridBuilds = 0
+      for key in dispatchSequence(couplings):
+        if key == "binCount": inc gridBuilds
+      check gridBuilds == (if buildsSpatialHash(couplings): 1 else: 0)
 
-  test "the frame has exactly four nodes in the same shape as particle-life":
-    check frame.len == 4
-    check frame[0].kind == fnkClearBuffer
-    check frame[1].kind == fnkComputePass
-    check frame[2].kind == fnkCopyBuffer
-    check frame[3].kind == fnkComputePass
+  test "fluid chemistry runs both force models over one shared grid":
+    let sequence = dispatchSequence(
+      WorldCouplings(forces: true, sph: true, field: true))
+    check sequence == @[
+      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal",
+      "binScatter", "forces", "forcesSph",
+      "fieldDeposit", "fieldResolve"] & rdStepKeys() &
+      @["fieldForce", "integrate"]
 
-  test "node 0 clears gridCounts":
-    check frame[0].clearTarget == sbGridCounts
-
-  test "node 1 is the shared Grid Build pass":
-    check frame[1].label == "Grid Build"
-    check frame[1].profilerSlot == PROFILER_SLOT_GRID_BUILD
-    check frame[1].dispatches.len == 4
-    check frame[1].dispatches[0] == Dispatch(pipelineKey: "binCount", size: dsParticleWorkgroups)
-    check frame[1].dispatches[1] == Dispatch(pipelineKey: "prefixLocal", size: dsScanBlocks)
-    check frame[1].dispatches[2] == Dispatch(pipelineKey: "prefixBlocks", size: dsOne)
-    check frame[1].dispatches[3] == Dispatch(pipelineKey: "prefixFinal", size: dsScanBlocks)
-
-  test "node 2 copies gridOffsets into fillPointers":
-    check frame[2].copySource == sbGridOffsets
-    check frame[2].copyDest == sbFillPointers
-
-  test "node 3 is the SPH physics pass dispatching forcesSph in the physics slot":
-    check frame[3].label == "Physics (SPH)"
-    check frame[3].profilerSlot == PROFILER_SLOT_PHYSICS
-    check frame[3].dispatches.len == 3
-    check frame[3].dispatches[0] == Dispatch(pipelineKey: "binScatter", size: dsParticleWorkgroups)
-    check frame[3].dispatches[1] == Dispatch(pipelineKey: "forcesSph", size: dsParticleWorkgroups)
-    check frame[3].dispatches[2] == Dispatch(pipelineKey: "integrate", size: dsParticleWorkgroups)
-
-  test "no node clears a delta buffer":
-    # forcesSph self-resets velocityDelta/densityDelta via atomicStore, the same
-    # binding contract as forces; an encoder-level clear here would race them.
-    for node in frame:
-      if node.kind == fnkClearBuffer:
-        check node.clearTarget == sbGridCounts
+  test "couplings with nothing active dispatch only the clears and integrate":
+    # The degenerate world still has to be a valid frame: particles keep their
+    # velocity and drift. A frame that dispatched nothing would freeze them,
+    # and one that skipped the clears would integrate last frame's deltas
+    # forever.
+    let empty = WorldCouplings(forces: false, sph: false, field: false)
+    check dispatchSequence(empty) == @["integrate"]
+    check clearedBuffers(empty) == @[sbVelocityDelta, sbDensityDelta]
 
 
-suite "Reaction-Diffusion Frame Description":
-  # S8a: no grid triad and no gridOffsets->fillPointers copy — RD never runs a
-  # spatial-hash neighbor search. The exact sequence:
-  #   compute "Field (RD)" [fieldDeposit, fieldResolve,
-  #     RD_STEPS_PER_FRAME alternating rdStepToFront/rdStepToTrail
-  #     (starting and ending ToFront, so the chain closes),
-  #     fieldForce];
-  #   clear sbDensityDelta (no pass in this frame self-resets it, unlike
-  #     forces.wgsl/forces-sph.wgsl for particle-life/SPH);
-  #   compute "Physics (RD)" [integrate].
+suite "Delta Buffers Have One Reset Owner":
+  test "every frame clears velocityDelta and densityDelta before any pass that writes them":
+    # THE INVARIANT THAT MAKES COMPOSITION POSSIBLE. While forces.wgsl and
+    # forces-sph.wgsl self-reset these buffers in their prologues, a frame
+    # running two contributors erased the first one's work. The reset moved to
+    # the frame; the contributors accumulate only.
+    for couplings in ALL_COUPLINGS:
+      let frame = buildFrame(couplings)
+      var clearedAt: array[SimBuffer, int]
+      for buffer in SimBuffer:
+        clearedAt[buffer] = -1
+      for index, node in frame:
+        if node.kind == fnkClearBuffer and clearedAt[node.clearTarget] < 0:
+          clearedAt[node.clearTarget] = index
+      check clearedAt[sbVelocityDelta] >= 0
+      check clearedAt[sbDensityDelta] >= 0
 
-  let frame = buildFrame(skReactionDiffusion)
+      for index, node in frame:
+        if node.kind != fnkComputePass: continue
+        for step in node.dispatches:
+          if step.pipelineKey in ["forces", "forcesSph", "fieldForce"]:
+            check clearedAt[sbVelocityDelta] < index
+          if step.pipelineKey in ["forces", "forcesSph"]:
+            check clearedAt[sbDensityDelta] < index
 
-  test "the frame has exactly three nodes in order":
-    check frame.len == 3
-    check frame[0].kind == fnkComputePass
-    check frame[1].kind == fnkClearBuffer
-    check frame[2].kind == fnkComputePass
+  test "no delta buffer is cleared twice in a frame":
+    # Two clears would be harmless but would mean two owners, which is the
+    # state this change exists to leave.
+    for couplings in ALL_COUPLINGS:
+      let cleared = clearedBuffers(couplings)
+      check toHashSet(cleared).len == cleared.len
 
-  test "node 0 is the Field (RD) pass with the profiler's own field slot":
-    check frame[0].label == "Field (RD)"
-    check frame[0].profilerSlot == PROFILER_SLOT_FIELD
-    check frame[0].dispatches.len == 2 + RD_STEPS_PER_FRAME + 1
+  test "integrate runs last in every couplings combination":
+    # integrate reads the summed deltas and moves particles, so every
+    # contributor must already have run.
+    for couplings in ALL_COUPLINGS:
+      let sequence = dispatchSequence(couplings)
+      check sequence.len > 0
+      check sequence[^1] == "integrate"
+      var integrations = 0
+      for key in sequence:
+        if key == "integrate": inc integrations
+      check integrations == 1
 
-  test "the Field (RD) pass opens with fieldDeposit then fieldResolve":
-    check frame[0].dispatches[0] == Dispatch(pipelineKey: "fieldDeposit", size: dsParticleWorkgroups)
-    check frame[0].dispatches[1] == Dispatch(pipelineKey: "fieldResolve", size: dsFieldWorkgroups)
 
-  test "the seven rd-step dispatches alternate, start ToFront, and end ToFront":
-    # CONTRACT: fieldResolve is the frame's first ping-pong swap (front ->
-    # trail), so the substeps must start by writing back to the front and must
-    # END on the front — that is the texture fieldForce, the renderer, and the
-    # next frame's resolve all read. An even step count ends on the trail
-    # instead and throws the last substep away every frame, which is precisely
-    # what the old Forward/Reverse sequence did.
-    let stepDispatches = frame[0].dispatches[2 ..< 2 + RD_STEPS_PER_FRAME]
-    check stepDispatches.len == 7
-    for stepIndex, stepDispatch in stepDispatches:
-      let expectedKey = if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail"
-      check stepDispatch == Dispatch(pipelineKey: expectedKey, size: dsFieldWorkgroups)
-    check stepDispatches[^1].pipelineKey == "rdStepToFront"
+suite "Which Worlds Compute Particle Density":
+  test "computesDensity holds exactly for the worlds that run a force pass":
+    # forces.wgsl and forces-sph.wgsl are the only passes that write
+    # densityDelta; field-force.wgsl writes velocityDelta and nothing else. So
+    # a world's density comes from its force couplings, and a field-only world
+    # carries a stale ~0 density however much of a pattern it grows.
+    #
+    # webgpu_render.nim reads exactly this to decide whether the glow needs its
+    # density floor: with no density source the density term reads flat and the
+    # velocity term has to drive the glow instead. Stating the predicate against
+    # the frame keeps the renderer's gate and the frame's contributors from
+    # drifting apart.
+    for couplings in ALL_COUPLINGS:
+      let writesDensity = dispatchesPipeline(couplings, "forces") or
+        dispatchesPipeline(couplings, "forcesSph")
+      if computesDensity(couplings) != writesDensity:
+        checkpoint("density claim disagrees with the frame for forces=" &
+          $couplings.forces & " sph=" & $couplings.sph &
+          " field=" & $couplings.field)
+      check computesDensity(couplings) == writesDensity
+      # The same relation over the booleans themselves: the field contributes
+      # no density, so coupling it changes nothing here.
+      check computesDensity(couplings) == (couplings.forces or couplings.sph)
 
-  test "the Field (RD) pass closes with fieldForce":
-    check frame[0].dispatches[^1] == Dispatch(pipelineKey: "fieldForce", size: dsParticleWorkgroups)
 
-  test "node 1 explicitly clears densityDelta (no pass in this frame self-resets it)":
-    check frame[1].clearTarget == sbDensityDelta
+suite "Field Passes Compose Safely":
+  test "the field ping-pong parity holds for every couplings combination containing field":
+    # fieldResolve is itself one swap, so 1 + RD_STEPS_PER_FRAME swaps happen
+    # per frame. The substeps must start ToFront and end ToFront, or the live
+    # field lands on the texture nothing reads and the last substep is thrown
+    # away every frame.
+    for couplings in ALL_COUPLINGS:
+      if not couplings.field: continue
+      var steps: seq[string]
+      for key in dispatchSequence(couplings):
+        if key in ["rdStepToFront", "rdStepToTrail"]: steps.add key
+      check steps.len == RD_STEPS_PER_FRAME
+      check steps[0] == "rdStepToFront"
+      check steps[^1] == "rdStepToFront"
+      for stepIndex, key in steps:
+        check key == (
+          if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail")
 
-  test "node 2 is the Physics (RD) pass dispatching only integrate":
-    check frame[2].label == "Physics (RD)"
-    check frame[2].profilerSlot == PROFILER_SLOT_PHYSICS
-    check frame[2].dispatches == @[Dispatch(pipelineKey: "integrate", size: dsParticleWorkgroups)]
+  test "the field passes appear exactly when the field is coupled":
+    for couplings in ALL_COUPLINGS:
+      for fieldKey in ["fieldDeposit", "fieldResolve", "fieldForce"]:
+        check dispatchesPipeline(couplings, fieldKey) == couplings.field
 
-  test "no node clears gridCounts, gridOffsets, or fillPointers (no spatial hash in this mode)":
-    for node in frame:
-      if node.kind == fnkClearBuffer:
-        check node.clearTarget notin {sbGridCounts, sbGridOffsets, sbFillPointers}
-      check node.kind != fnkCopyBuffer
+  test "fieldDeposit precedes fieldResolve which precedes every substep":
+    # fieldResolve consumes the deposit buffer and zeroes it; a substep running
+    # first would evolve a field the frame's deposits never reached.
+    for couplings in ALL_COUPLINGS:
+      if not couplings.field: continue
+      let sequence = dispatchSequence(couplings)
+      let depositAt = sequence.find("fieldDeposit")
+      let resolveAt = sequence.find("fieldResolve")
+      let firstStepAt = sequence.find("rdStepToFront")
+      check depositAt >= 0
+      check depositAt < resolveAt
+      check resolveAt < firstStepAt
+
+  test "no couplings combination dispatches an unknown pipeline key":
+    # A typo'd key reaches the executor as a missing dictionary entry at
+    # runtime, in a browser, with no native test between it and the user.
+    const KNOWN = [
+      "binCount", "prefixLocal", "prefixBlocks", "prefixFinal", "binScatter",
+      "forces", "forcesSph", "integrate",
+      "fieldDeposit", "fieldResolve", "rdStepToFront", "rdStepToTrail",
+      "fieldForce"]
+    for couplings in ALL_COUPLINGS:
+      for key in dispatchSequence(couplings):
+        check key in KNOWN
+
+  test "the monolithic prefix-sum pipeline is gone from every frame":
+    for couplings in ALL_COUPLINGS:
+      check not dispatchesPipeline(couplings, "prefixSum")
 
 
 suite "Profiler Slot Constants":
-  test "the three slot constants are distinct":
+  test "the slot constants are distinct":
     # They index one query set. Two passes sharing a slot would overwrite each
     # other's timestamps and report a meaningless delta — which is exactly what
     # the field pass did while it borrowed the grid-build slot.
-    check PROFILER_SLOT_GRID_BUILD != PROFILER_SLOT_PHYSICS
-    check PROFILER_SLOT_GRID_BUILD != PROFILER_SLOT_FIELD
-    check PROFILER_SLOT_PHYSICS != PROFILER_SLOT_FIELD
+    let slots = [PROFILER_SLOT_GRID_BUILD, PROFILER_SLOT_PHYSICS,
+      PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE]
+    check toHashSet(slots).len == slots.len
 
   test "every frame's compute passes hold distinct profiler slots":
-    for kind in SimKind:
+    for couplings in ALL_COUPLINGS:
       var seenSlots: HashSet[int]
-      for node in buildFrame(kind):
+      for node in buildFrame(couplings):
         if node.kind == fnkComputePass:
           check node.profilerSlot notin seenSlots
           seenSlots.incl node.profilerSlot
 
 
-suite "Per-Mode Control Groups":
+suite "Control Groups Follow The Couplings":
   let sectionOnly = toHashSet(@SECTION_ONLY_GROUPS)
   let descriptorGroups = block:
     var groups: HashSet[string]
@@ -233,61 +294,94 @@ suite "Per-Mode Control Groups":
       groups.incl descriptor.group
     groups
 
-  test "every group a mode lists either owns descriptors or is declared section-only":
+  test "every group a world lists either owns descriptors or is declared section-only":
     # THE red light: a typo'd group id would silently hide a whole section
     # instead of failing anywhere. Section-only ids (the matrix editor, the
     # force-model button row) are legitimately descriptor-free, so they are
     # declared rather than inferred.
-    for kind in SimKind:
-      for group in controlGroupsFor(kind):
+    for couplings in ALL_COUPLINGS:
+      for group in controlGroupsFor(couplings):
         check group in descriptorGroups or group in sectionOnly
 
-  test "every descriptor group is listed by at least one mode":
-    # The converse red light: an unlisted group vanishes from every mode's
-    # panel, so its sliders become unreachable without any error.
+  test "every descriptor group is reachable from some couplings":
+    # The converse red light: an unreachable group vanishes from every panel,
+    # so its sliders become unreachable without any error.
     var listed: HashSet[string]
-    for kind in SimKind:
-      for group in controlGroupsFor(kind):
+    for couplings in ALL_COUPLINGS:
+      for group in controlGroupsFor(couplings):
         listed.incl group
     for group in descriptorGroups:
       check group in listed
 
-  test "no mode lists a group twice":
-    for kind in SimKind:
-      let groups = controlGroupsFor(kind)
+  test "no world lists a group twice":
+    # "grid" belongs to both the forces and sph coupling sets, so the union has
+    # to deduplicate — a plain concatenation would render that slider twice in
+    # a world coupling both.
+    for couplings in ALL_COUPLINGS:
+      let groups = controlGroupsFor(couplings)
       check toHashSet(groups).len == groups.len
 
-  test "only modes that dispatch the forces pass offer the force-model groups":
-    # The relation the co-location buys: forces.wgsl is the sole reader of the
-    # attraction matrix and the force-model selector, so a mode without that
-    # dispatch must not present either. SPH's forces-sph reads neither, and RD
-    # runs no force pass at all.
-    for kind in SimKind:
-      let groups = toHashSet(controlGroupsFor(kind))
-      let runsForces = dispatchesPipeline(kind, "forces")
+  test "controlGroupsFor unions the groups of active couplings":
+    # The relation stated directly: every active coupling contributes all of
+    # its groups, and an inactive one contributes none of its exclusive ones.
+    for couplings in ALL_COUPLINGS:
+      let groups = toHashSet(controlGroupsFor(couplings))
+      if couplings.forces:
+        for group in FORCES_GROUPS: check group in groups
+      if couplings.sph:
+        for group in SPH_GROUPS: check group in groups
+      if couplings.field:
+        for group in FIELD_GROUPS: check group in groups
+      for universal in UNIVERSAL_GROUPS: check universal in groups
+
+  test "only worlds that dispatch the forces pass offer the force-model groups":
+    # forces.wgsl is the sole reader of the attraction matrix and the
+    # force-model selector, so a world without that dispatch must not present
+    # either. forces-sph reads neither, and the field runs no force pass.
+    for couplings in ALL_COUPLINGS:
+      let groups = toHashSet(controlGroupsFor(couplings))
+      let runsForces = dispatchesPipeline(couplings, "forces")
       for forceGroup in ["matrix", "force-model", "force-polynomial",
           "force-exponential", "particle-life"]:
         check (forceGroup in groups) == runsForces
 
-  test "the grid group appears exactly for the modes that build a spatial hash":
+  test "the grid group appears exactly for the worlds that build a spatial hash":
     # interactionRadius is the neighbor-search radius binCount bins by, and
-    # SPH's smoothing radius. Reaction-diffusion dispatches no binCount, so
-    # the control would be inert there.
-    for kind in SimKind:
-      check ("grid" in controlGroupsFor(kind)) ==
-        dispatchesPipeline(kind, "binCount")
+    # SPH's smoothing radius. A field-only world dispatches no binCount, so the
+    # control would be inert there.
+    for couplings in ALL_COUPLINGS:
+      check ("grid" in controlGroupsFor(couplings)) ==
+        dispatchesPipeline(couplings, "binCount")
 
-  test "the reaction-diffusion groups appear only in reaction-diffusion":
-    for kind in SimKind:
-      let groups = toHashSet(controlGroupsFor(kind))
-      let isField = kind == skReactionDiffusion
-      check ("rd" in groups) == isField
-      check ("rd-field" in groups) == isField
+  test "the field groups appear exactly when the field is coupled":
+    for couplings in ALL_COUPLINGS:
+      let groups = toHashSet(controlGroupsFor(couplings))
+      check ("rd" in groups) == couplings.field
+      check ("rd-field" in groups) == couplings.field
 
-  test "every mode offers the universal groups":
-    # simulation/render/glow/bloom/palette touch every mode's pipeline, so a
-    # mode that dropped one would hide a control that still works.
-    for kind in SimKind:
-      let groups = toHashSet(controlGroupsFor(kind))
+  test "every world offers the universal groups":
+    # simulation/render/glow/bloom/palette touch every world's pipeline, so a
+    # world that dropped one would hide a control that still works.
+    for couplings in ALL_COUPLINGS:
+      let groups = toHashSet(controlGroupsFor(couplings))
       for universal in ["simulation", "render", "glow", "bloom", "palette"]:
         check universal in groups
+
+  test "the legacy modes still present exactly the groups they always did":
+    # The compatibility layer has to hold on the panel too, not only in the
+    # frame: a preset that reopens particle life must show the same panel.
+    #
+    # "camera" joins every list because it is UNIVERSAL, and that is the point
+    # of the change rather than a drift in it: no coupling can take away where
+    # the viewer is standing. What this test still pins is the part that must
+    # not move — which groups each COUPLING contributes.
+    check toHashSet(controlGroupsFor(couplingsFor(skParticleLife))) ==
+      toHashSet(@["simulation", "grid", "particle-life", "matrix",
+        "force-model", "force-polynomial", "force-exponential",
+        "render", "glow", "bloom", "palette", "camera"])
+    check toHashSet(controlGroupsFor(couplingsFor(skSph))) ==
+      toHashSet(@["simulation", "grid", "sph",
+        "render", "glow", "bloom", "palette", "camera"])
+    check toHashSet(controlGroupsFor(couplingsFor(skReactionDiffusion))) ==
+      toHashSet(@["simulation", "rd", "rd-field",
+        "render", "glow", "bloom", "palette", "camera"])

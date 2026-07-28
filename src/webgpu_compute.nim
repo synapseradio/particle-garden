@@ -66,10 +66,10 @@ const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: clones the forc
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 4          # AoS: + densityDelta for temporal smoothing
 # Reaction-diffusion passes (S8). See the four field shaders' binding manifests.
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED* = 2         # dstField(storage) + fieldParams (for the nonce)
-const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 4      # gridParams + particles + deposit + fieldParams
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particles + deposit + fieldParams + speciesChemistry
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 3      # srcField(sample) + dstField(storage) + deposit (deposit amount already applied in field-deposit)
-const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 3            # srcField(sample) + dstField(storage) + fieldParams
-const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 5        # gridParams + particles + field(sample) + velocityDelta + fieldParams
+const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 4            # srcField(sample) + dstField(storage) + fieldParams + reactionParams
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 6        # gridParams + particles + field(sample) + velocityDelta + fieldParams + speciesChemistry
 
 proc getExpectedEntryCount(passName: cstring): int =
   ## Get expected bind group entry count for a pass name.
@@ -107,7 +107,7 @@ var isPipelineReady* {.exportc.}: bool = false
 # The frame description the executor walks. Built once per structural change
 # (mode switch), never per frame — see sim_registry.nim.
 var activeFrame: FrameDescription = @[]
-var activeSimKind*: SimKind = skParticleLife
+var activeCouplings*: WorldCouplings = couplingsFor(skParticleLife)
 
 const prewarmedKinds = {skParticleLife, skSph, skReactionDiffusion}
   ## Kinds whose compute shaders exist on disk this build and pre-warm at init.
@@ -128,6 +128,22 @@ var fieldSeedNonce = 0
   ## its blobs. Incrementing it is what makes each re-seed a DIFFERENT pattern
   ## rather than the same one again.
 
+# Staging arrays for the per-frame uniform uploads, allocated once and refilled
+# in place. Every slot each one carries is written unconditionally before its
+# upload, so nothing survives a frame; the slots no writer touches stay at the
+# zero they were allocated with, exactly as a freshly allocated array gave them.
+# A pair of views over one buffer (the *Uint aliases) lets a layout mix u32 and
+# f32 members without a second allocation.
+let gridParamsData = newUint32Array(GRID_PARAMS_U32_COUNT)
+let gridParamsFloat = newFloat32Array(gridParamsData.buffer)
+let scanParamsData = newUint32Array(SCAN_PARAMS_U32_COUNT)
+let simParamsData = newFloat32Array(SIM_PARAMS_F32_COUNT)
+let simParamsUint = newUint32Array(simParamsData.buffer)
+let integrationParamsData = newFloat32Array(INTEG_PARAMS_F32_COUNT)
+let integrationParamsUint = newUint32Array(integrationParamsData.buffer)
+let fieldParamsData = newFloat32Array(FIELD_PARAMS_F32_COUNT)
+let chemistryData = newFloat32Array(CHEM_PARAMS_F32_COUNT)
+
 proc requestFieldSeed*() =
   ## Ask for the field to be re-seeded on the next frame. Synchronous and
   ## fire-and-forget, so it is callable straight from an Observable
@@ -136,27 +152,27 @@ proc requestFieldSeed*() =
   inc fieldSeedNonce
   pendingFieldSeed = true
 
+proc setCouplings*(couplings: WorldCouplings) =
+  ## Switch the executor to the frame these couplings compose.
+  ##
+  ## Nothing is seeded here. The field starts at its trivial fixed point and
+  ## ignites where colonies deposit — that is what makes the pattern a record
+  ## of the particles rather than a backdrop they happen to sit on. Seeding is
+  ## now only ever a deliberate user action (requestFieldSeed).
+  activeCouplings = couplings
+  activeFrame = buildFrame(couplings)
+
 proc setActiveSimKind*(kind: SimKind) =
-  ## Switch the executor to another simulation's frame description. A kind whose
-  ## pipelines were not pre-warmed (its shaders do not exist on disk yet — see
+  ## Adopt the couplings a legacy mode id maps to. A kind whose pipelines were
+  ## not pre-warmed (its shaders do not exist on disk this build — see
   ## prewarmedKinds) is refused: the executor keeps its current frame rather
   ## than dispatching a pipeline that was never created. This keeps an imported
-  ## preset that carries a not-yet-runnable mode (e.g. "sph" from a future
-  ## build) from crashing the render loop; the mode becomes live once its
-  ## shaders land and it joins prewarmedKinds.
+  ## preset carrying a not-yet-runnable mode from crashing the render loop.
   if kind notin prewarmedKinds:
     consoleWarn(("[sim] mode \"" & simKindId(kind) &
       "\" is not runnable in this build yet - keeping the current mode").toJs)
     return
-  # Entering the field mode seeds it, so the pattern is there the moment the
-  # user selects it. The `kind != activeSimKind` guard is load-bearing:
-  # Observable.set notifies its subscribers unconditionally, so without it
-  # re-clicking the already-active Reaction-Diffusion button would wipe
-  # whatever pattern had grown.
-  if kind == skReactionDiffusion and kind != activeSimKind:
-    requestFieldSeed()
-  activeSimKind = kind
-  activeFrame = buildFrame(kind)
+  setCouplings(couplingsFor(kind))
 
 # ==============================================================================
 # SECTION 4: SHADER VALIDATION
@@ -420,6 +436,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard fieldDepositEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
   discard fieldDepositEntries.push(createBindGroupEntry(2, fieldDepositBuf))
   discard fieldDepositEntries.push(createBindGroupEntry(3, uniformBuffers["fieldParams"]))
+  discard fieldDepositEntries.push(createBindGroupEntry(4, uniformBuffers["speciesChemistry"]))
   validateBindGroupEntryCount(fieldDepositEntries, "fieldDeposit", "bind group creation")
   bindGroups["fieldDeposit"] = await createBindGroupWithValidation(
     "Field Deposit",
@@ -448,6 +465,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard rdToFrontEntries.push(createBindGroupResourceEntry(0, fieldViewTrail))
   discard rdToFrontEntries.push(createBindGroupResourceEntry(1, fieldViewFront))
   discard rdToFrontEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
+  discard rdToFrontEntries.push(createBindGroupEntry(3, uniformBuffers["reactionParams"]))
   validateBindGroupEntryCount(rdToFrontEntries, "rdStepToFront", "bind group creation")
   bindGroups["rdStepToFront"] = await createBindGroupWithValidation(
     "RD Step To Front",
@@ -461,6 +479,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard rdToTrailEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
   discard rdToTrailEntries.push(createBindGroupResourceEntry(1, fieldViewTrail))
   discard rdToTrailEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
+  discard rdToTrailEntries.push(createBindGroupEntry(3, uniformBuffers["reactionParams"]))
   validateBindGroupEntryCount(rdToTrailEntries, "rdStepToTrail", "bind group creation")
   bindGroups["rdStepToTrail"] = await createBindGroupWithValidation(
     "RD Step To Trail",
@@ -491,6 +510,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard fieldForceEntries.push(createBindGroupResourceEntry(2, fieldViewFront))
   discard fieldForceEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.velocityDelta)))
   discard fieldForceEntries.push(createBindGroupEntry(4, uniformBuffers["fieldParams"]))
+  discard fieldForceEntries.push(createBindGroupEntry(5, uniformBuffers["speciesChemistry"]))
   validateBindGroupEntryCount(fieldForceEntries, "fieldForce", "bind group creation")
   bindGroups["fieldForce"] = await createBindGroupWithValidation(
     "Field Force",
@@ -605,8 +625,31 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     # Reaction-diffusion field uniform (feed/kill/diffusion/deltaT/deposit/force).
     uniformBuffers["fieldParams"] = device.createBufferLabeled(
       wgslUniformSize(FieldParamsLayout), uniformUsage, "Field Parameters Uniform (RD)")
+    # Which reaction the field runs. Separate from fieldParams because that
+    # layout is full at 32 bytes; see gpu_types.ReactionParamsLayout for why
+    # the slot is reserved now rather than when a second reaction lands.
+    uniformBuffers["reactionParams"] = device.createBufferLabeled(
+      wgslUniformSize(ReactionParamsLayout), uniformUsage, "Reaction Parameters Uniform")
+    # Per-species field coupling: secretion (fieldDeposit) and tropism
+    # (fieldForce). Both passes read the same buffer, so a chemistry edit
+    # reaches deposit and force in the same frame.
+    uniformBuffers["speciesChemistry"] = device.createBufferLabeled(
+      wgslUniformSize(SpeciesChemistryLayout), uniformUsage,
+      "Species Chemistry Uniform")
 
-    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 5 uniform buffers created".toJs)
+    # Which reaction rd-step runs. Gray-Scott is the only implemented value, so
+    # the contents never vary and the upload belongs here rather than in the
+    # frame path. The remaining members stay zero — no reaction reads them.
+    # When a second reaction gains a selector, this write moves into whatever
+    # handles that selection (the setter, or runPhysicsFrame's field block
+    # beside the fieldParams upload), so choosing a reaction stays a value
+    # change rather than a bind-group change.
+    let reactionParamsData = newFloat32Array(REACTION_PARAMS_F32_COUNT)
+    reactionParamsData[REACTION_KIND] = float32(0)
+    queue.writeBufferTyped(
+      cast[GPUBuffer](uniformBuffers["reactionParams"]), 0, reactionParamsData)
+
+    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 7 uniform buffers created".toJs)
 
     # =========================================================================
     # PHASE: PIPELINE CREATION + LAYOUT EXTRACTION
@@ -699,17 +742,14 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
 
   # Grid parameters (used by bin-count and bin-scatter)
   # Layout matches GridParamsLayout in gpu_types.nim
-  let gridParamsData = newUint32Array(GRID_PARAMS_U32_COUNT)
   gridParamsData[GRID_W] = gridW
   gridParamsData[GRID_H] = gridH
   gridParamsData[GRID_PARTICLE_COUNT] = particleCount
-  let gridParamsFloat = newFloat32Array(gridParamsData.buffer)
   gridParamsFloat[GRID_CANVAS_WIDTH] = width
   gridParamsFloat[GRID_CANVAS_HEIGHT] = height
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["gridParams"]), 0, gridParamsData)
 
   # Scan parameters (used by the prefix-sum passes)
-  let scanParamsData = newUint32Array(SCAN_PARAMS_U32_COUNT)
   scanParamsData[SCAN_NUM_CELLS] = numCells
   scanParamsData[SCAN_NUM_BLOCKS] = scanBlocks
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
@@ -719,19 +759,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # substep advancing dt/substepCount. Particle-life always runs a single step.
   # sphSubsteps is clamped to sph_core's SPH_MAX_SUBSTEPS ceiling.
   let substepCount =
-    if activeSimKind == skSph: clamp(config.CONFIG.sphSubsteps, 1, SPH_MAX_SUBSTEPS)
+    if activeCouplings.sph: clamp(config.CONFIG.sphSubsteps, 1, SPH_MAX_SUBSTEPS)
     else: 1
   let substepDt = dt / substepCount.float
 
   # Simulation parameters (used by forces)
   # Layout matches SimParamsLayout in gpu_types.nim
-  let simParamsData = newFloat32Array(SIM_PARAMS_F32_COUNT)
   simParamsData[SIM_DT] = substepDt
   simParamsData[SIM_WORLD_WIDTH] = width
   simParamsData[SIM_WORLD_HEIGHT] = height
   simParamsData[SIM_INTERACTION_RADIUS] = rMax
   simParamsData[SIM_FORCE_MULTIPLIER] = fMul
-  let simParamsUint = newUint32Array(simParamsData.buffer)
   simParamsUint[SIM_GRID_CELLS_X] = gridW
   simParamsUint[SIM_GRID_CELLS_Y] = gridH
   simParamsData[SIM_MOUSE_X] = mouseX
@@ -764,12 +802,10 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
 
   # Integration parameters
   # Layout matches IntegrationParams indices in gpu_types.nim
-  let integrationParamsData = newFloat32Array(INTEG_PARAMS_F32_COUNT)
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
   integrationParamsData[INTEG_FRICTION] = friction
   integrationParamsData[INTEG_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
-  let integrationParamsUint = newUint32Array(integrationParamsData.buffer)
   integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
@@ -779,8 +815,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # (the natively-tested authority) because the shader's stability depends on
   # them and no slider offers them. Written each frame so a slider change lands
   # next frame, matching the SPH per-frame uniform pattern.
-  if activeSimKind == skReactionDiffusion:
-    let fieldParamsData = newFloat32Array(FIELD_PARAMS_F32_COUNT)
+  if activeCouplings.field:
     fieldParamsData[FIELD_FEED] = float32(config.CONFIG.rdFeed)
     fieldParamsData[FIELD_KILL] = float32(config.CONFIG.rdKill)
     fieldParamsData[FIELD_DIFFUSION_A] = float32(RD_DIFFUSION_A)
@@ -790,6 +825,21 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     fieldParamsData[FIELD_FORCE_SCALE] = float32(config.CONFIG.rdFieldForce)
     fieldParamsData[FIELD_SEED_NONCE] = float32(fieldSeedNonce)
     queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["fieldParams"]), 0, fieldParamsData)
+
+    # Per-species chemistry. The CPU array interleaves (secretion, tropism)
+    # per species; the uniform holds them as two parallel channels, so this
+    # write de-interleaves. Slots past the active speciesCount carry their
+    # defaults and are never indexed — no particle holds a species above the
+    # count — but they are written anyway so the uniform never contains
+    # whatever the buffer was allocated with.
+    for speciesIndex in 0 ..< config.MAX_SPECIES:
+      let base = speciesIndex * SPECIES_CHEMISTRY_STRIDE
+      chemistryData[CHEM_SECRETION_START + speciesIndex] =
+        config.SPECIES_CHEMISTRY[base + SPECIES_SECRETION_SLOT]
+      chemistryData[CHEM_TROPISM_START + speciesIndex] =
+        config.SPECIES_CHEMISTRY[base + SPECIES_TROPISM_SLOT]
+    queue.writeBufferTyped(
+      cast[GPUBuffer](uniformBuffers["speciesChemistry"]), 0, chemistryData)
 
   # =========================================================================
   # PHASE: BIND GROUP CREATION (cached by grid dimensions)
@@ -810,12 +860,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbGridCounts: cast[GPUBuffer](gpuBuffers.gridCounts)
     of sbGridOffsets: cast[GPUBuffer](gpuBuffers.gridOffsets)
     of sbFillPointers: cast[GPUBuffer](gpuBuffers.fillPointers)
+    of sbVelocityDelta: cast[GPUBuffer](gpuBuffers.velocityDelta)
     of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
     of sbFieldDeposit: webgpu_init.fieldDepositGpuBuffer()
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
     case simBuffer
     of sbGridCounts, sbGridOffsets, sbFillPointers: numCells * 4
+    of sbVelocityDelta: particleCount * 8
+      # TWO i32 per particle — x and y. Clearing only particleCount * 4 would
+      # zero every x and leave every y holding the previous frame's impulse,
+      # which reads as a world that drifts steadily downward.
     of sbDensityDelta: particleCount * 4  # i32 per particle
     of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
 
@@ -846,7 +901,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # profiler pass and deliberately NOT bumping fieldGeneration — the textures
   # are not recreated, and bumping would rebuild the render and tonemap bind
   # groups for nothing.
-  if pendingFieldSeed and activeSimKind == skReactionDiffusion:
+  if pendingFieldSeed and activeCouplings.field:
     pendingFieldSeed = false
     let seedPassDesc = createJsObject()
     seedPassDesc["label"] = "Field Seed Compute Pass".cstring.toJs

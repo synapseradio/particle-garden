@@ -125,3 +125,38 @@ suite "SimConfig Composition":
 
   test "activeSimKind observable starts in particle-life":
     check activeSimKind.get() == skParticleLife
+
+
+suite "The Trails Toggle Always Produces Trails":
+  # THE DEFECT THIS PINS. Trails are two controls over one effect: a boolean
+  # gating the fade pass, and a length deciding how much of the previous frame
+  # that pass keeps. At length 0 the pass keeps nothing, so switching the
+  # toggle on ran a pass that cleared — a control that does nothing, from the
+  # user's side indistinguishable from a broken one.
+
+  test "enabling trails from the shipped defaults yields a visible length":
+    let enabled = initRenderState().withTrails(true)
+    check enabled.trails
+    check enabled.trailLength > 0.0
+
+  test "enabling trails does not overwrite a length the user chose":
+    var chosen = initRenderState()
+    chosen.trailLength = 80.0
+    let enabled = chosen.withTrails(true)
+    check enabled.trailLength == 80.0
+
+  test "disabling trails leaves the length alone":
+    # So off-and-on-again returns the trail the user had, not the default.
+    let cycled = initRenderState().withTrails(true).withTrails(false)
+    check not cycled.trails
+    check cycled.trailLength > 0.0
+    check cycled.withTrails(true).trailLength == cycled.trailLength
+
+  test "the lifted length is inside the slider's own range":
+    # Otherwise the toggle writes a value the slider cannot represent and the
+    # descriptor clamps it back on the next touch.
+    check TRAIL_LENGTH_WHEN_ENABLED > TRAIL_LENGTH_MIN
+    check TRAIL_LENGTH_WHEN_ENABLED <= TRAIL_LENGTH_MAX
+
+  test "trails still ship off by default":
+    check not initRenderState().trails

@@ -26,6 +26,7 @@
 import std/[os, strutils, tables, sets, times, hashes]
 import shader_config
 import gpu_types
+import wgsl_lint
 
 const
   ModulesDir = "web/shaders/modules"
@@ -211,6 +212,20 @@ proc bundle(srcPath: string): string =
   # Substitute placeholders
   result = substitutePlaceholders(output, shaderName)
 
+  # Reject WGSL the browser will refuse to parse. The bundle is the last point
+  # where anything Nim-side sees this text; past here it is a string embedded in
+  # app.js and the only reader is the GPU, whose complaint arrives as a black
+  # window rather than as a build failure. See src/wgsl_lint.nim.
+  let offenders = namedFieldConstructorLines(result)
+  if offenders.len > 0:
+    let bundledLines = result.splitLines
+    var report = "Error: named-field struct constructor in " & shaderName &
+      " — WGSL constructors are positional only.\n"
+    for lineNumber in offenders:
+      report &= "  bundled line " & $lineNumber & ": " &
+        bundledLines[lineNumber - 1].strip & "\n"
+    quit report
+
 # ==============================================================================
 # INCREMENTAL BUILD SUPPORT
 # ==============================================================================
@@ -220,6 +235,7 @@ const PlaceholderSources = [
   "src/field_core.nim",
   "src/bloom_core.nim",
   "src/colormap_core.nim",
+  "src/camera_core.nim",
 ]
   ## The Nim modules whose constants feed {{PLACEHOLDER}} substitution
   ## (shader_config.getPlaceholderMap and the pure modules it draws from).
@@ -288,9 +304,18 @@ proc generateStructModules() =
   generateStructModule("fade_params",
     structModuleHeader("fade_params", "FadeParamsLayout"),
     toWgslStruct(FadeParamsLayout))
+  generateStructModule("camera",
+    structModuleHeader("camera", "CameraLayout"),
+    toWgslStruct(CameraLayout))
   generateStructModule("field_params",
     structModuleHeader("field_params", "FieldParamsLayout"),
     toWgslStruct(FieldParamsLayout))
+  generateStructModule("reaction_params",
+    structModuleHeader("reaction_params", "ReactionParamsLayout"),
+    toWgslStruct(ReactionParamsLayout))
+  generateStructModule("species_chemistry",
+    structModuleHeader("species_chemistry", "SpeciesChemistryLayout"),
+    toWgslStruct(SpeciesChemistryLayout))
   generateStructModule("bloom_params",
     structModuleHeader("bloom_params", "BloomParamsLayout"),
     toWgslStruct(BloomParamsLayout))
