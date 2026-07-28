@@ -55,15 +55,15 @@ func cameraKeyFor*(key: string): CameraKey =
 const
   KEY_ZOOM_STEP* = 1.2'f32
     ## Multiplier per zoom keypress. Coarser than a wheel notch because a key
-    ## is a discrete act rather than a continuous gesture — roughly twelve
-    ## presses cross the full zoom range.
+    ## is a discrete act rather than a continuous gesture — roughly eleven
+    ## presses cross config_ranges.CAMERA_ZOOM_MIN to CAMERA_ZOOM_MAX.
   KEY_PAN_FRACTION* = 0.1'f32
     ## Fraction of the VISIBLE span one arrow keypress moves.
     ##
-    ## A fraction of what is visible, not a fixed world distance: at 8x zoom a
-    ## fixed step would throw the view most of the way across the screen, and
-    ## at 0.25x it would barely move. Dividing by zoom makes one press always
-    ## move a tenth of the frame.
+    ## A fraction of what is visible, not a fixed world distance: at the zoom
+    ## ceiling a fixed step would throw the view most of the way across the
+    ## screen, and at the floor it would crawl. Dividing by zoom makes one press
+    ## always move a tenth of the frame.
 
 # ==============================================================================
 # SECTION 3: HANDLERS (pure state transitions)
