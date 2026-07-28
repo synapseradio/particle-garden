@@ -7,8 +7,9 @@
 # Zero CPU readback - all data stays on GPU.
 #
 # ARCHITECTURE:
-# - Uses instanced quads (6 vertices per particle)
-# - Vertex shader pulls data from storage buffers via instance_index
+# - One quad per particle, six vertices each, drawn as a single instance
+# - Vertex shader splits vertex_index into particle (id / 6) and corner
+#   (id % 6), then reads that particle from the storage buffer
 # - Fragment shader creates circular point sprites with soft edges
 #
 # ==============================================================================
