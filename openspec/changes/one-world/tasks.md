@@ -656,7 +656,7 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       32 bytes) so every camera-binding pass gets it free, bind the previous frame's view as a
       second `Camera` uniform record for fade, and delete the loose scalars from both param
       layouts.
-- [ ] 7.14 Teach the lint the binding manifest. The render path's bind groups agree with their
+- [x] 7.14 Teach the lint the binding manifest. The render path's bind groups agree with their
       shaders' `@binding` numbers by comment alone (7.3's runtime-only hazard, and the surface
       has since more than doubled); entry-count validation mirrors the compute path only if the
       cleanup pass's `webgpu_render.nim` guards landed — and a count cannot see two swapped
@@ -664,6 +664,17 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       `namedFieldConstructorLines` in `src/wgsl_lint.nim`, have `tools/wgsl_bundle.nim` compare
       each bundled shader's declared set against an expected table, and the blank-canvas
       failure class becomes a build failure instead of a runtime hazard note.
+      DONE (commit cb3e60c, delegated, lead-verified). `bindingsDeclared` returns sorted, deduped
+      `@binding` numbers with trailing line comments stripped; block comments are a PINNED blind
+      spot — a test asserts the limitation — rather than one left for rediscovery, matching the
+      module's philosophy. `ExpectedShaderBindings`: one table in `wgsl_lint.nim`, all 20 bundled
+      shaders, values read off a fresh bundle and never assumed contiguous — glow is @[0,1,2,4],
+      legally skipping the field texture on the layout it shares with render. The bundler quits
+      on a mismatch OR an unregistered shader (the `getExpectedEntryCount` -1 pattern), so a new
+      shader must register its bindings before it builds at all. Nine tests, including the
+      non-vacuous directory sweep. No live defect existed at landing — every shader's declared
+      bindings agreed with its bind group. The blank-canvas class 7.3 recorded is now a build
+      failure.
 - [ ] 7.15 **Zoom floor 1.0; the tiling machinery goes** — user decision, design D15.
       `CAMERA_ZOOM_MIN` 0.25 → 1.0; `CAMERA_ZOOM_NOTCH_TILED` deleted (at the new floor it
       collides with the world notch); `tileRing`/`tileCount`/`tileOffsetSteps` deleted from
