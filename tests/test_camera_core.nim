@@ -244,61 +244,6 @@ suite "Zoom Clamps And Anchors":
       check camera.centerY < WORLD_H
 
 
-suite "Apparent Scale Moves As One":
-  test "particle size, trail length, and glow radius scale by the same factor at every zoom":
-    # CONTRACT: one function serves all three. Three quantities that disagree at
-    # any zoom other than 1.0 is the specific failure that makes zoom read as
-    # broken rather than merely different, so the test asserts they are the
-    # SAME NUMBER rather than three separately-correct numbers.
-    const BASE_SIZE = 6.0'f32
-    const TRAIL_LENGTH = 20.0'f32
-    const GLOW_RADIUS = 14.0'f32
-    for zoomStep in 0 .. 20:
-      let zoom = TEST_ZOOM_MIN +
-        (TEST_ZOOM_MAX - TEST_ZOOM_MIN) * zoomStep.float32 / 20.0'f32
-      let camera = Camera(centerX: 0.0'f32, centerY: 0.0'f32, zoom: zoom)
-      let factor = apparentScale(camera)
-      check closeTo(BASE_SIZE * factor / BASE_SIZE, factor)
-      check closeTo(TRAIL_LENGTH * factor / TRAIL_LENGTH, factor)
-      check closeTo(GLOW_RADIUS * factor / GLOW_RADIUS, factor)
-      # The ratios between the three are what must not move with zoom.
-      check closeTo(
-        (TRAIL_LENGTH * factor) / (BASE_SIZE * factor), TRAIL_LENGTH / BASE_SIZE)
-      check closeTo(
-        (GLOW_RADIUS * factor) / (BASE_SIZE * factor), GLOW_RADIUS / BASE_SIZE)
-
-  test "apparent scale tracks zoom above the floor":
-    for zoom in [1.0'f32, 2.0'f32, 4.0'f32, 8.0'f32]:
-      check closeTo(
-        apparentScale(Camera(centerX: 0, centerY: 0, zoom: zoom)), zoom)
-
-  test "the size floor keeps particles visible at minimum zoom":
-    # CONTRACT on the pure function, checked below the shipped zoom floor on
-    # purpose: TEST_ZOOM_MIN stands in for a range that descends past
-    # CAMERA_SIZE_FLOOR, which is the only condition under which the branch
-    # runs at all. camera_core.CAMERA_SIZE_FLOOR records that it lies dormant
-    # at the range the app currently ships.
-    let minimal = Camera(centerX: 0, centerY: 0, zoom: TEST_ZOOM_MIN)
-    check apparentScale(minimal) == CAMERA_SIZE_FLOOR
-    check apparentScale(minimal) > TEST_ZOOM_MIN
-
-  test "apparent scale never falls below the floor at any zoom in range":
-    for zoomStep in 0 .. 40:
-      let zoom = TEST_ZOOM_MIN +
-        (TEST_ZOOM_MAX - TEST_ZOOM_MIN) * zoomStep.float32 / 40.0'f32
-      let factor = apparentScale(Camera(centerX: 0, centerY: 0, zoom: zoom))
-      check factor >= CAMERA_SIZE_FLOOR
-
-  test "apparent scale rises monotonically with zoom":
-    var previous = 0.0'f32
-    for zoomStep in 0 .. 40:
-      let zoom = TEST_ZOOM_MIN +
-        (TEST_ZOOM_MAX - TEST_ZOOM_MIN) * zoomStep.float32 / 40.0'f32
-      let factor = apparentScale(Camera(centerX: 0, centerY: 0, zoom: zoom))
-      check factor >= previous
-      previous = factor
-
-
 suite "Screen UV And World Are Exact Inverses":
   # WHY THIS SUITE EXISTS: fade.wgsl reprojects the trail by mapping a screen
   # pixel to a world point through the CURRENT camera and back to screen

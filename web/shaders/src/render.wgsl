@@ -151,12 +151,10 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   }
   let acrossVel = cornerOffset.y * halfSize;
 
-  // Compute world offset using velocity-aligned axes. The size correction is
-  // what ties particle size and trail length to the FLOORED apparent scale:
-  // both quantities reach clip space through this one offset, so one factor
-  // moves them together or not at all (design D9).
-  let worldOffset =
-    (velDir * alongVel + velPerp * acrossVel) / scale * cameraSizeCorrection(cam);
+  // Compute world offset using velocity-aligned axes. Particle size and trail
+  // length both reach clip space through this one offset, so they scale
+  // together by construction rather than by a shared factor (design D9).
+  let worldOffset = (velDir * alongVel + velPerp * acrossVel) / scale;
 
   // Transform to clip space through the camera, drawing the particle at its
   // nearest toroidal image so the world seam never shows. Reduces to the old

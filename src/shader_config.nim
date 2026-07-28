@@ -181,10 +181,6 @@ import bloom_core
 # coefficients (and the two-tone constants), so colormap.wgsl's ramps are
 # native-tested and single-sourced rather than hand-written in WGSL.
 import colormap_core
-# camera_core is pure; it owns CAMERA_SIZE_FLOOR, the floor the shader's
-# apparent-scale mirror must share with the native-tested one. Substituted
-# rather than restated so the two cannot drift.
-import camera_core
 # sph_core is pure; it derives the density accumulator's fixed-point scale from
 # the particle budget, so the scale the shader encodes with and the
 # native-tested one are one number.
@@ -291,7 +287,6 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["COLORMAP_VIRIDIS_COEFFS"] = colormapCoeffsWgsl(VIRIDIS_COEFFS)
   result["COLORMAP_FIELD_GAIN"] = wgslScalar(COLORMAP_FIELD_GAIN)
   result["FIELD_LIGHT_STRENGTH"] = wgslScalar(FIELD_LIGHT_STRENGTH)
-  result["CAMERA_SIZE_FLOOR"] = wgslScalar(CAMERA_SIZE_FLOOR.float)
   result["COLORMAP_TWO_TONE_WARM"] = wgslVec3(TWO_TONE_WARM)
   result["COLORMAP_TWO_TONE_COOL"] = wgslVec3(TWO_TONE_COOL)
   result["COLORMAP_TWO_TONE_INHIBITOR_GAIN"] = wgslScalar(TWO_TONE_INHIBITOR_GAIN)

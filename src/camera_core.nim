@@ -3,14 +3,13 @@
 # ==============================================================================
 #
 # Pure functions for the camera over the toroidal world: the world-to-clip
-# transform, the nearest-toroidal-image choice that keeps the seam invisible,
-# and the single scale factor that particle size, trail length, and glow radius
-# all follow.
+# transform and the nearest-toroidal-image choice that keeps the seam
+# invisible.
 #
 # None of this needs a GPU, which is why it lives here rather than in a shader.
-# render.wgsl and glow.wgsl mirror toClip and apparentScale; the pair is
-# hand-maintained with no compile-time link, the same contract grayScottStep and
-# rd-step.wgsl already have.
+# render.wgsl and glow.wgsl mirror toClip; the pair is hand-maintained with no
+# compile-time link, the same contract grayScottStep and rd-step.wgsl already
+# have.
 #
 # Used by:
 #   - tests/test_camera_core.nim (native tests)
@@ -27,22 +26,6 @@ import physics_core
 # ==============================================================================
 
 const
-  CAMERA_SIZE_FLOOR* = 0.5'f32
-    ## Lower bound on the apparent-scale factor that particle size, trail
-    ## length, and glow radius share.
-    ##
-    ## DORMANT AT THE SHIPPED RANGE, and the next reader should know it:
-    ## config_ranges.CAMERA_ZOOM_MIN floors zoom at 1.0, above this value, so
-    ## apparentScale returns raw zoom at every camera the slider can reach and
-    ## cameraSizeCorrection multiplies by exactly 1.0. The floor engages only
-    ## under a zoom range that descends past 0.5, where a shrinking particle
-    ## drops under a pixel. Retiring it means retiring the same three sites
-    ## together: this constant, the mirror in camera_transform.wgsl, and the
-    ## apparent-scale suite in tests/test_camera_core.nim.
-    ##
-    ## BLIND VISUAL PICK: the ratio that looks right is the user's call. What
-    ## is not a taste question is that a floor must exist and that all three
-    ## quantities share it.
   CAMERA_DEFAULT_ZOOM* = 1.0'f32
     ## The view that reproduces the pre-camera framing exactly: the whole world
     ## once, centred.
@@ -148,26 +131,6 @@ func worldToScreenUv*(worldX, worldY: float32, camera: Camera,
   ## Mirrors camera_transform.cameraWorldToScreenUv.
   (x: (worldX - camera.centerX) * camera.zoom / worldWidth + 0.5'f32,
    y: (worldY - camera.centerY) * camera.zoom / worldHeight + 0.5'f32)
-
-# ==============================================================================
-# APPARENT SCALE
-# ==============================================================================
-
-func apparentScale*(camera: Camera): float32 =
-  ## The factor particle size, trail length, and glow radius ALL multiply by.
-  ##
-  ## One function rather than three because three quantities that disagree at
-  ## any zoom other than 1.0 is the specific failure that makes zoom read as
-  ## broken rather than merely different — a world whose creatures stay the
-  ## same size while spreading apart reads as zooming a diagram, not as
-  ## approaching something alive.
-  ##
-  ## Floored at CAMERA_SIZE_FLOOR so a zoom small enough to drive particles
-  ## under a pixel cannot. That floor sits below the shipped zoom range, so
-  ## this branch stays untaken at every camera the slider reaches — see the
-  ## constant for what waking it would cost.
-  if camera.zoom < CAMERA_SIZE_FLOOR: CAMERA_SIZE_FLOOR
-  else: camera.zoom
 
 # ==============================================================================
 # MOVEMENT

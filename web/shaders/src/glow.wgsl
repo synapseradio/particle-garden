@@ -98,10 +98,10 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let baseRadius = params.baseSize * params.glowRadiusScale;
   let velocityBoost = velocityNorm * params.velocityGlowScale * 0.5;
   let glowRadius = baseRadius * (1.0 + velocityBoost);
-  // The same size correction render.wgsl applies, so glow radius tracks
-  // particle size and trail length rather than drifting out of step with them
-  // at low zoom (design D9: all three move together or none does).
-  let worldOffset = offset * glowRadius / scale * cameraSizeCorrection(cam);
+  // Reaches clip space by the same path render.wgsl's offset takes, so glow
+  // radius tracks particle size and trail length rather than drifting out of
+  // step with them (design D9: all three move together or none does).
+  let worldOffset = offset * glowRadius / scale;
 
   // Species tint (colors has vertex-only visibility; interpolate to fragment)
   let speciesIndex = min(p.species, MAX_SPECIES - 1u);

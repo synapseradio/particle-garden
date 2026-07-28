@@ -87,28 +87,7 @@ fn cameraScreenUvToFieldUv(uv: vec2f, cam: Camera, worldSize: vec2f) -> vec2f {
   return cameraScreenUvToWorld(uv, cam, worldSize) / worldSize;
 }
 
-// The factor particle size, trail length and glow radius ALL multiply by.
-// Mirrors camera_core.apparentScale, floor included.
-//
-// One function rather than three: three quantities that disagree at any zoom
-// other than 1.0 is the specific failure that makes zoom read as broken rather
-// than merely different. The floor keeps particles above a pixel at a zoom
-// small enough to sink them; the shipped zoom range starts above it, so it
-// stays inert here — camera_core.CAMERA_SIZE_FLOOR records what waking it costs.
-fn cameraApparentScale(cam: Camera) -> f32 {
-  return max(cam.zoom, {{CAMERA_SIZE_FLOOR}});
-}
-
-// The correction a quad's world-space offset needs so its ON-SCREEN size ends
-// up scaled by cameraApparentScale rather than by raw zoom.
-//
-// WHY THIS IS NOT JUST cameraApparentScale. A quad corner is built in pixels,
-// divided into world units, and then multiplied by zoom again inside
-// cameraToClip — so its screen size already tracks zoom with no help. Applying
-// the apparent scale on top would square it. What the floor actually needs to
-// change is only the ratio between the two, which is 1.0 everywhere above the
-// floor and rises below it, holding particles above a pixel exactly where zoom
-// alone would sink them.
-fn cameraSizeCorrection(cam: Camera) -> f32 {
-  return cameraApparentScale(cam) / cam.zoom;
-}
+// A quad corner is built in pixels, divided into world units, and multiplied by
+// zoom again inside cameraToClip, so its on-screen size tracks zoom with no
+// correcting factor of its own. Particle size, trail length and glow radius all
+// reach clip space through that one path, which is what keeps them in step.
