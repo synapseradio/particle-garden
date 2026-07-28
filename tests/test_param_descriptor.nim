@@ -463,10 +463,13 @@ suite "Notches Mark Only Reachable Positions":
     check byId("rdDeposit").notches.anyIt(
       it.value == RD_REGIME_HIGH_FEED_DEPOSIT)
 
-  test "the particle-count notch marks the world's one budget":
-    # One world, one budget, one tick.
-    check byId("particleCount").notches.anyIt(
-      it.value == PARTICLE_BUDGET.float)
+  test "the particle-count notch is only the default — its range ceiling is the one budget":
+    # PARTICLE_BUDGET is gone: PARTICLE_COUNT_MAX (the allocation capability)
+    # is the only ceiling this slider has, and "descriptors agree with the
+    # range authority" above already pins its max there. No second notch
+    # survives to drift from it.
+    check byId("particleCount").notches.len == 1
+    check byId("particleCount").notches[0].label == "default"
 
   test "every coupling strength offers a notch at zero":
     # Zero is an ordinary value of a coupling strength (design D13), and an

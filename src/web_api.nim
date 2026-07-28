@@ -725,18 +725,18 @@ when defined(js):
         applySpeciesCountChange(sourcePreset.settings.speciesCount,
           randomizeNew = false)
       of pasParticleCount:
-        # THE BUDGET APPLIES HERE. Slider bounds alone would let a preset —
-        # hand-edited, or saved by a build with a different budget — leave the
-        # world running above what this build affords, so the starter presets
-        # need no count clamp of their own.
+        # THE ALLOCATION CEILING APPLIES HERE. Slider bounds alone would let a
+        # preset — hand-edited, or saved by a build with a different buffer
+        # size — leave the world running above what this build's buffers can
+        # hold, so the starter presets need no count clamp of their own.
         #
         # A full reinit rather than a resize: applying a preset is adopting a
         # different world, so there is no population the user expects to
         # survive it.
-        let budgetedCount =
-          min(sourcePreset.settings.particleCount, PARTICLE_BUDGET)
+        let clampedCount =
+          min(sourcePreset.settings.particleCount, PARTICLE_COUNT_MAX)
         updateSimulation(proc(simState: var SimulationState) =
-          simState.particleCount = budgetedCount)
+          simState.particleCount = clampedCount)
         triggerParticleReinit()
       of pasMatrix:
         for matrixIdx in 0 ..< sourcePreset.matrix.len:

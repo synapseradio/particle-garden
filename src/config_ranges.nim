@@ -187,14 +187,6 @@ const
     ## "no way to find the living parts except by accident" failure the named
     ## regimes exist to fix. 0.040 ignites both on frame 4, comfortably above
     ## the 0.030 boundary where they first ignite at all.
-  PARTICLE_BUDGET* = 32000
-    ## The particle count this world runs. One number, because couplings compose
-    ## and a per-coupling ceiling describes neither a world running two of them
-    ## nor a world running none (design D11).
-    ##
-    ## INHERITED AND UNMEASURED: 32000 sizes a world running ONE heavy coupling.
-    ## Nothing measures what a world running all of them affords. Group 10
-    ## replaces it with a measured value.
   CLIMATE_SPEED_MIN* = 0.05
     ## Slowest weather: one tour of the regimes every twenty minutes. Not zero —
     ## zero is what the drift toggle is for, and a speed slider that can also
@@ -356,8 +348,6 @@ static:
       "regime " & regime.id & " needs a deposit outside the deposit range"
   doAssert RD_REGIME_HIGH_FEED_DEPOSIT >= RD_DEPOSIT_MIN and
     RD_REGIME_HIGH_FEED_DEPOSIT <= RD_DEPOSIT_MAX
-  doAssert PARTICLE_BUDGET >= PARTICLE_COUNT_MIN and
-    PARTICLE_BUDGET <= PARTICLE_COUNT_MAX
   # The camera zoom notches are positions on the camera slider, so the same
   # reachability rule covers them.
   for zoomNotch in [CAMERA_ZOOM_NOTCH_TILED, CAMERA_ZOOM_NOTCH_WORLD,

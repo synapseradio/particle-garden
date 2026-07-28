@@ -155,12 +155,7 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     # Main simulation sliders
     intParam("particleCount", "Particles", "simulation",
       PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX, sim.particleCount,
-      psSimulation, reinitOnCommit = true,
-      # The world's particle budget, so a user dragging past it can see where
-      # the frame stops keeping up. One tick, because one world has one budget.
-      notches = @[
-        notch(PARTICLE_BUDGET.float, "budget"),
-      ]).withDefaultNotch(1),
+      psSimulation, reinitOnCommit = true).withDefaultNotch(0),
     intParam("speciesCount", "Species", "simulation",
       SPECIES_COUNT_MIN, SPECIES_COUNT_MAX, sim.speciesCount,
       psSimulation, reinitOnCommit = true),
