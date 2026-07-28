@@ -409,6 +409,10 @@ Done here because the bind groups are already open. Implements no second reactio
       `fieldCellFor`, the central-difference gradient) and import it from fade, render, rd-step,
       field-force, and field-deposit, so the edge decision is made once. `cell_index.wgsl` is the
       precedent for a shared hand-written module.
+      RESCOPED BY DESIGN D15: at zoom floor 1.0 every reachable coordinate sits within one span of
+      a valid cell, so the out-of-range `textureLoad` this task opens with is no longer reachable
+      and the double-mod fix lands as hardening. The five-shader spelling divergence and the
+      `field_grid.wgsl` hoist remain the task's substance.
 
 ## 7. Camera, zoom, navigation (S6)
 
@@ -527,6 +531,10 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       window edge, and never one ring more than that. Cost is 1 instance at zoom 1 and closer, where
       the app spends nearly all its time, rising to 25 at `CAMERA_ZOOM_MIN`; that bound is asserted
       because it is the number deciding whether zooming out is affordable at all.
+      OVERTAKEN BY USER DECISION, recorded at design D15 and task 7.15: tiling below zoom 1 was
+      never intended — the comment this task honored promised something the user never asked for.
+      The machinery this record describes is deleted and the zoom floor rises to 1.0. The
+      nearest-image drawing this task preserved is exactly what survives.
 - [x] 7.7 `src/ui/input/wheel_handler.nim` and `key_handler.nim` (new, pure) with native tests, plus
       listeners in `src/canvas_input.nim`. Reuse the unused `KeyboardEvent` `addEventListener`
       overload at `bindings/dom_extensions.nim:89`. Bindings: wheel zooms at the cursor, arrows pan,
@@ -649,6 +657,22 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       `namedFieldConstructorLines` in `src/wgsl_lint.nim`, have `tools/wgsl_bundle.nim` compare
       each bundled shader's declared set against an expected table, and the blank-canvas
       failure class becomes a build failure instead of a runtime hazard note.
+- [ ] 7.15 **Zoom floor 1.0; the tiling machinery goes** — user decision, design D15.
+      `CAMERA_ZOOM_MIN` 0.25 → 1.0; `CAMERA_ZOOM_NOTCH_TILED` deleted (at the new floor it
+      collides with the world notch); `tileRing`/`tileCount`/`tileOffsetSteps` deleted from
+      `camera_core.nim` with their tests; the three particle draws revert to one instance;
+      `camera_transform.wgsl`'s tiling section and both shaders' instance displacement deleted.
+      The nearest-image logic is untouched — it is correct for a single world span and keeps
+      quads whole across the seam. 7.12's wrap fix lands beside this as invariant-pinning: at
+      floor 1.0 a zoom jump moves the centre well under one span, so the multi-span defect is
+      unreachable and the floor-mod is hardening.
+- [ ] 7.16 **Device-adaptive camera input, per design D15.** Plain scroll pans; pinch (arriving
+      as Ctrl/Cmd+wheel) zooms at the cursor; middle-button drag also pans; the 7.7 keyboard
+      bindings stay; left-drag remains the physics interaction. Pure handler logic in
+      `src/ui/input/` with native tests; DOM wiring in `canvas_input.nim`; `preventDefault`
+      suppresses each page gesture replaced — Ctrl+wheel page zoom above all, because the
+      browser is a portability runtime, not a website. The two-finger tap blast (7.8) is
+      untouched.
 
 ## 8. Notched sliders, regimes, and weather (S7)
 
@@ -707,6 +731,9 @@ same descriptor without conflicting.
       which the notches now carry; leaving both would be two copies free to drift, and they already
       had — the hint named a coral at (0.055, 0.062) from a different source than the (0.082, 0.059)
       the regime table transcribes. The suite that guarded those numerals now asserts the migration.
+      OVERTAKEN IN PART BY DESIGN D15 AND D16: `CAMERA_ZOOM_NOTCH_TILED` is deleted with the 1.0
+      floor (task 7.15) — the world and creature notches survive — and the particle-count budget
+      notch is deleted with `PARTICLE_BUDGET` itself, because no cap sits below capability.
 - [x] 8.5 `web-ui/src/`: render notches as labelled tick marks on every slider that declares them,
       snapping when dragged near. Every factor stays a slider.
       SNAPPING IS A SOFT MAGNET, not a hard stop — the invitation left that call open. The track stays
@@ -1146,6 +1173,9 @@ in this group:
       authority and not the mirror), and this group's own `climateSpeed: 1.0` against climate_core's
       0.25. `tests/test_preset.nim` now asserts every mirrored default equals its owning module, so
       the next drift fails instead of shipping.
+      OVERTAKEN IN PART BY DESIGN D16: `PARTICLE_BUDGET` is itself deleted — the collapse this
+      task performed was right, and its surviving number was struck by the user before group 10
+      measured it. Count bounds derive from `PARTICLE_COUNT_MAX`, the allocation capability.
 - [x] 9.4a **Two weather loops become one, per D11.** `climate_core`'s tour is written against the RD
       regimes specifically; the C family proposes a second loop of the same shape over force
       parameters. Generalise `climate_core` to a parameterised tour over a waypoint table — the RD
@@ -1190,6 +1220,9 @@ in this group:
         records the surviving value as inherited and unmeasured; this task is where it stops being
         inherited. The user wants the chemistry cap raised toward `MAX_PARTICLES` (128000,
         `src/memory_layout.nim:48`) — the measurement decides whether it goes there or short of it.
+        OVERTAKEN BY DESIGN D16: the user struck every cap below capability, so the count bound is
+        `PARTICLE_COUNT_MAX` and no measured budget replaces it. The measurement itself still
+        runs — its numbers inform defaults and the perf report, never a ceiling.
 - [ ] 10.2 If the deposit splat dominates, shrink the kernel or lower the field substep count before
       touching particle count. Note the known gap: bloom passes carry no timestamps
       (`webgpu_render.nim beginBloomPass`).

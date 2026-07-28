@@ -432,6 +432,34 @@ first colonies tighten. No pre-clumped spawn, no hidden warmup frames.
 *Rejected:* both shortcuts. Watching the field come into being is the clearest statement that the
 pattern belongs to the particles. If ignition reads as a bug rather than a dawn, D3's ladder applies.
 
+### D15. The viewport never exceeds one world, and the camera answers the pointer
+
+User decision (2026-07-28), reversing part of task 7.9's range and all of task 7.6a's tiling.
+`CAMERA_ZOOM_MIN` rises from 0.25 to 1.0: the view never spans more than one world, so below-1x
+tiling — built by 7.6a to honor the old constant's comment — was never intended and is deleted
+rather than left dormant (engineering principles, article 3). The nearest-toroidal-image logic is
+untouched; it is what keeps quads whole across the seam at every remaining zoom.
+
+Camera movement, clipping and zoom are pointer-first and device-adaptive (the user's chosen map):
+plain scroll pans; pinch — which reaches the runtime as Ctrl/Cmd+wheel — zooms at the cursor, as
+does Ctrl/Cmd+wheel from a mouse; middle-button drag also pans; the task 7.7 keyboard bindings
+stay. Left-drag remains the physics interaction. The browser is a portability runtime, not a
+website, so handlers `preventDefault` every page gesture they replace, page zoom on Ctrl+wheel
+above all.
+
+*Rejected:* keeping the tiling machinery dormant behind the raised floor (dead code teaching a
+dead promise), and a mouse-first map that preserves plain-wheel zoom (it would leave touchpad
+two-finger scroll zooming, which reads as broken on the device most users hold).
+
+### D16. No cap sits below capability
+
+User decision (2026-07-28), superseding the measured-budget half of task 10.1. `PARTICLE_BUDGET`
+(32000, inherited unmeasured from the pre-collapse ceilings) is deleted; the preset-apply clamp
+and every other count bound derive from `PARTICLE_COUNT_MAX = memory_layout.MAX_PARTICLES`
+(128000), the allocation bound. Performance at high counts is the user's tradeoff on a slider,
+never a cap's job. Group 10 still measures — its numbers inform defaults and the perf report, and
+place no ceiling below capability.
+
 ## Risks / Trade-offs
 
 - **Deposit splat cost** — one atomic per covered cell per particle. Mitigation: keep the kernel at
