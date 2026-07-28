@@ -142,6 +142,14 @@ proc initParticles*() {.exportc.} =
   if useWebGPU:
     discard webgpu_compute.uploadInitialData(newCount)
 
+  # Resetting the particles resets the field with them. Without this, Reset in
+  # reaction-diffusion mode would scatter the particles across a pattern that
+  # kept every trace of where the old ones had been depositing. The nonce makes
+  # each reset a genuinely new pattern rather than the same one again. Covers
+  # the particle-count commit path too, which routes through here.
+  if sim_config.activeSimKind.get() == skReactionDiffusion:
+    webgpu_compute.requestFieldSeed()
+
 proc resetParticles*() {.exportc.} =
   ## Reset particles to initial random state.
   initParticles()  # This now handles GPU upload internally
@@ -249,11 +257,17 @@ proc loop(now: float): Future[void] {.async.} =
     var gpuPhysicsMs = 0.0
     var gpuDrawMs = 0.0
     var gpuPresentMs = 0.0
+    var gpuFieldMs = 0.0
     if gpu_profiler.isActive():
+      # gpuGridMs reads 0 in reaction-diffusion and gpuFieldMs reads 0 in the
+      # other two modes. That is not a gap: each mode genuinely runs only one
+      # of the two, and the separate slots are what keep either number from
+      # standing in for the other.
       gpuGridMs = gpu_profiler.passTimeMs(gpu_profiler.passGridBuild)
       gpuPhysicsMs = gpu_profiler.passTimeMs(gpu_profiler.passPhysics)
       gpuDrawMs = gpu_profiler.passTimeMs(gpu_profiler.passDraw)
       gpuPresentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
+      gpuFieldMs = gpu_profiler.passTimeMs(gpu_profiler.passField)
       let bloomMs = gpu_profiler.passTimeMs(gpu_profiler.passBloom)
       # Leave a capturable baseline record in the console every ~5s
       gpuLogCounter = gpuLogCounter + 1
@@ -262,7 +276,8 @@ proc loop(now: float): Future[void] {.async.} =
         logGpuProfile(runtimeState.particleCount, gpuGridMs, gpuPhysicsMs,
           gpuDrawMs, gpuPresentMs, bloomMs)
     web_api.pushStats(runtimeState.fps, runtimeState.particleCount, 0,
-      computeTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs)
+      computeTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs,
+      gpuFieldMs)
 
   # Reset profiling accumulators every 60 frames
   if runtimeState.profiling.frameCount >= 60:
@@ -330,6 +345,7 @@ proc init(): Future[void] {.async, exportc.} =
   # Set up canvas input and lifecycle callbacks
   canvas_input.setInitParticlesCallback(initParticles)
   canvas_input.setResizeCallback(webgpu_render.resize)
+  canvas_input.setReseedFieldCallback(webgpu_compute.requestFieldSeed)
   canvas_input.setupEvents(cast[JsObject](webgpu_render.canvas))
 
   # Mode selector drives the compute executor's frame description

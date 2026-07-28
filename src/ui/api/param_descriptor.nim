@@ -38,7 +38,9 @@ type
   ParamDescriptor* = object
     id*: string           ## CONFIG field name (or palette state field)
     label*: string        ## Display label (verbatim from the control panel)
-    group*: string        ## Stable group id the UI sections key on
+    group*: string        ## Stable group id the UI sections key on, and the
+                          ## unit sim_registry's per-mode group lists gate on:
+                          ## a group belongs to a mode, or it does not appear.
     kind*: ParamKind
     minValue*: float
     maxValue*: float
@@ -47,6 +49,12 @@ type
     defaultValue*: float
     store*: ParamStore
     reinitOnCommit*: bool ## Commit triggers a particle re-initialization
+    hint*: string         ## Optional one-line guidance rendered under the
+                          ## slider. Empty for most parameters. Lives here, not
+                          ## in the panel, because any value a hint names has to
+                          ## be a position the slider can actually reach —
+                          ## a property only the range, step and precision
+                          ## beside it can settle.
 
 func paramStep(kind: ParamKind; precision: int): float =
   ## The step rule slider.nim's bindToDOM used: ints step by 1; floats step
@@ -67,13 +75,13 @@ func intParam(id, label, group: string; minValue, maxValue, defaultValue: int;
 
 func floatParam(id, label, group: string;
     minValue, maxValue, defaultValue: float; precision: int;
-    store: ParamStore): ParamDescriptor =
+    store: ParamStore; hint = ""): ParamDescriptor =
   ParamDescriptor(
     id: id, label: label, group: group, kind: pkFloat,
     minValue: minValue, maxValue: maxValue,
     step: paramStep(pkFloat, precision), precision: precision,
     defaultValue: defaultValue, store: store,
-    reinitOnCommit: false)
+    reinitOnCommit: false, hint: hint)
 
 func buildParamDescriptors*(): seq[ParamDescriptor] =
   ## The full tunable inventory, in the order the control panel presents it.
@@ -90,17 +98,24 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     intParam("speciesCount", "Species", "simulation",
       SPECIES_COUNT_MIN, SPECIES_COUNT_MAX, sim.speciesCount,
       psSimulation, reinitOnCommit = true),
-    intParam("interactionRadius", "Interaction Radius", "simulation",
+    # "grid" rather than "simulation": interactionRadius is the neighbor search
+    # radius forces.wgsl uses and the smoothing radius forces-sph.wgsl uses.
+    # Reaction-diffusion runs no spatial-hash pass at all, so the control does
+    # nothing there and the group keeps it off that mode's panel.
+    intParam("interactionRadius", "Interaction Radius", "grid",
       INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX, sim.interactionRadius,
       psSimulation),
-    floatParam("forceStrength", "Force Strength", "simulation",
+    # forceStrength and ruleTemperature drive the attraction matrix, which only
+    # forces.wgsl reads — forces-sph.wgsl ignores both, and RD has no force
+    # pass. Hence a particle-life-only group rather than "simulation".
+    floatParam("forceStrength", "Force Strength", "particle-life",
       FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX, sim.forceStrength, 1,
       psSimulation),
     floatParam("friction", "Friction", "simulation",
       FRICTION_MIN, FRICTION_MAX, sim.friction, 2, psSimulation),
     floatParam("timeScale", "Time Scale", "simulation",
       TIME_SCALE_MIN, TIME_SCALE_MAX, sim.timeScale, 1, psSimulation),
-    floatParam("ruleTemperature", "🌡️ Temperature", "simulation",
+    floatParam("ruleTemperature", "🌡️ Temperature", "particle-life",
       RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX, sim.ruleTemperature, 2,
       psSimulation),
     floatParam("maxVelocity", "Max Velocity", "simulation",
@@ -175,12 +190,31 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     intParam("sphSubsteps", "Substeps", "sph",
       SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX, sim.sphSubsteps, psSimulation),
 
-    # Reaction-Diffusion section
+    # Reaction-Diffusion section. The (F, k) values the two hints name are
+    # published Gray-Scott regime coordinates, chosen so that each is a
+    # position the slider can actually land on at this precision — the
+    # descriptor test checks exactly that, and it is why the hints live here
+    # beside the range rather than in the panel.
+    # Sources: spots/stripes/worms from the Gray-Scott parameter table at
+    # mysimulator.uk/content/articles/gray-scott-reaction-diffusion.html;
+    # coral (0.055, 0.062) from
+    # nils-olovsson.se/articles/reaction_diffusion_models_and_turing_patterns.
     floatParam("rdFeed", "Feed (F)", "rd",
-      RD_FEED_MIN, RD_FEED_MAX, sim.rdFeed, 3, psSimulation),
+      RD_FEED_MIN, RD_FEED_MAX, sim.rdFeed, 3, psSimulation,
+      hint = "spots .035, stripes .029, coral .055, worms .078"),
     floatParam("rdKill", "Kill (k)", "rd",
-      RD_KILL_MIN, RD_KILL_MAX, sim.rdKill, 3, psSimulation),
-    floatParam("fieldOpacity", "Field Opacity", "rd",
+      RD_KILL_MIN, RD_KILL_MAX, sim.rdKill, 3, psSimulation,
+      hint = "spots .065, stripes .057, coral .062, worms .061"),
+    floatParam("rdDeposit", "Deposit", "rd",
+      RD_DEPOSIT_MIN, RD_DEPOSIT_MAX, sim.rdDeposit, 3, psSimulation,
+      hint = "how hard particles stir the pattern; 0 leaves it undisturbed"),
+    floatParam("rdFieldForce", "Field Force", "rd",
+      RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX, sim.rdFieldForce, 0,
+      psSimulation,
+      hint = "how hard the pattern pushes particles; 0 leaves them blind"),
+    # "rd-field" rather than "rd": this is the field's appearance, not its
+    # physics, and the panel puts the colormap selector between the two groups.
+    floatParam("fieldOpacity", "Field Opacity", "rd-field",
       FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX, visual.fieldOpacity,
       2, psRender),
   ]

@@ -129,10 +129,13 @@ var blurBindGroupH: GPUBindGroup    # samples bloom A, writes bloom B (horizonta
 var blurBindGroupV: GPUBindGroup    # samples bloom B, writes bloom A (vertical)
 var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A + field
 var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A + field
-# The tonemap bind groups reference the RD field texture (binding 4); it is
-# (re)created on RD mode entry, so they are rebuilt when fieldGeneration changes,
-# mirroring cachedFieldGeneration for the field-composite bind group. Before the
-# field exists (non-RD, or first frames) binding 4 falls back to the bloom view,
+# The tonemap bind groups reference the RD field texture (binding 4). The
+# textures are created once, in webgpu_init's createFieldResources during
+# initWebGPU — NOT on RD mode entry, which only re-seeds their contents and
+# leaves the texture objects and this bind group alone. fieldGeneration bumps
+# only on an actual (re)creation, which is what these groups rebuild on,
+# mirroring cachedFieldGeneration for the field-composite bind group. Before
+# the field exists (first frames) binding 4 falls back to the bloom view,
 # harmless because fieldOpacity is 0 in the modes without a field. -1 forces a
 # first build.
 var cachedTonemapFieldGeneration: int = -1

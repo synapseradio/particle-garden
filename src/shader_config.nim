@@ -210,6 +210,14 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["FIELD_W"] = $FIELD_W
   result["FIELD_H"] = $FIELD_H
 
+  # Field seed geometry (consumed by field-seed.wgsl, which mirrors
+  # field_core.rdSeedCell). Sourced from field_core so the natively-tested
+  # oracle and the shader cannot be given different blob counts or radii.
+  result["RD_SEED_BLOB_COUNT"] = $RD_SEED_BLOB_COUNT
+  result["RD_SEED_BLOB_RADIUS"] = fmt"{RD_SEED_BLOB_RADIUS:.1f}"
+  result["RD_SEED_CORE_ACTIVATOR"] = fmt"{RD_SEED_CORE_ACTIVATOR:.2f}"
+  result["RD_SEED_CORE_INHIBITOR"] = fmt"{RD_SEED_CORE_INHIBITOR:.2f}"
+
   # Tunable constants (formatted as WGSL float literals)
   result["TUNABLE_MIN_DISTANCE_SQ"] = fmt"{activeConfig.tuning.minDistanceSq:.1f}"
   result["TUNABLE_MOUSE_RANGE_SQ"] = fmt"{activeConfig.tuning.mouseRangeSq:.1f}"

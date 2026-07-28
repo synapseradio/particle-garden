@@ -1,0 +1,57 @@
+schema: spec-driven
+
+context: |
+  Native desktop wrapper for a WebGPU particle simulator. Nim owns the
+  simulation, the WebGPU compute/render pipelines, and the native HTTP
+  server (src/*.nim); SolidJS/TypeScript owns only the control panel
+  (web-ui/); WGSL shaders are the only other source. Physics runs
+  entirely in GPU compute shaders — no CPU physics path, no readback.
+
+  The language boundary is window.gardenAPI (src/web_api.nim). Nim owns
+  every number: ranges, defaults, steps, ceilings, storage keys, preset
+  schema, and the labelled notches sliders display. TypeScript never
+  restates them.
+
+  Build discipline: everything goes through `just` (`just happen` to
+  build, `just check` for both test suites). nimble 0.22.x exits 0 on
+  failed task execs, so nimble-driven builds are forbidden. Generated
+  files are never edited: web/app.js, web/ui-bundle.*, and top-level
+  web/shaders/*.wgsl are build output.
+
+  Testing: pure Nim modules are native-tested (nim c); several exist
+  solely as reference oracles mirroring WGSL math and have no importer
+  in src/ by design. Browser/FFI/WebGPU code is verified by the build
+  itself, never mocked.
+
+  Dependencies: libraries pinned exactly (commit hashes, committed
+  nimble.lock and bun.lock, frozen-lockfile installs); the Nim compiler
+  is deliberately NOT pinned — system toolchain bounded by
+  ">= 2.0.0 & < 3.0.0".
+
+  Compile-time assertions are the preferred enforcement mechanism:
+  struct offsets (gpu_types.nim), range non-emptiness and
+  default-in-range (config_ranges.nim), ping-pong parity
+  (field_core.nim), buffer non-overlap (memory_layout.nim). A spec
+  requirement should point at an assertion, a test, or a build step
+  that enforces it.
+
+rules:
+  proposal:
+    - Cite the source file (and line where useful) for every claim about current behavior
+    - Mark user-visible behavior removals with **BREAKING**
+    - Name the measurement gate for any change whose feasibility is unproven
+  specs:
+    - Every requirement cites the code, test, or build step that enforces or will enforce it
+    - A requirement with no enforcement point is labelled "review-enforced" or "aspirational" explicitly
+    - Evergreen prose - no "currently", no migration narration, no dates
+    - One capability per spec; split a spec that describes two independently changing things
+    - Do not restate CLAUDE.md prose unless the requirement adds something a test or reviewer can check
+  design:
+    - Distinguish proven properties from designed-but-unexercised ones, with evidence for each
+    - Record rejected alternatives for each decision, with the reason
+    - Resolve every question before implementation begins; the implementer does not research
+  tasks:
+    - Every task group ends with `just happen` and `just check` green
+    - Each task names the exact files it touches
+    - Order groups so measurement gates precede the work they gate
+    - Lead each group with the tests that must fail first

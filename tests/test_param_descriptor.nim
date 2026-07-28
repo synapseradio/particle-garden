@@ -12,7 +12,7 @@
 #
 # ==============================================================================
 
-import std/[unittest, sets, math]
+import std/[unittest, sets, math, strutils]
 import ../src/ui/api/param_descriptor
 import ../src/config_ranges
 import ../src/ui/state/simulation_state
@@ -43,7 +43,7 @@ suite "Descriptor Table Covers The Full Slider Inventory":
       "expAttractionBeta",
       "paletteSaturation", "paletteLightness",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
-      "rdFeed", "rdKill", "fieldOpacity"])
+      "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity"])
     var seenIds = initHashSet[string]()
     for descriptor in descriptors:
       check descriptor.id notin seenIds
@@ -54,6 +54,63 @@ suite "Descriptor Table Covers The Full Slider Inventory":
     for descriptor in descriptors:
       check descriptor.label.len > 0
       check descriptor.group.len > 0
+
+
+suite "Hints Name Only Reachable Slider Positions":
+  # THE reason hints live in Nim rather than the panel. A hint that names a
+  # value the slider cannot land on sends the user hunting for a setting that
+  # does not exist — and TypeScript, which is handed the finished string, has
+  # nothing to check it against. Here the range, step and precision that decide
+  # reachability sit in the same object as the text.
+  #
+  # This caught a real defect: the panel's old kill-rate hint read
+  # "movers ~.0609" against a slider whose step is 0.001.
+
+  proc numeralsIn(hint: string): seq[float] =
+    ## Every decimal numeral appearing in a hint, e.g. ".035" or "0.062".
+    var current = ""
+    for character in hint & " ":
+      if character in {'0' .. '9', '.'}:
+        current.add character
+      else:
+        if current.len > 0 and current != ".":
+          try:
+            result.add parseFloat(current)
+          except ValueError:
+            discard
+        current = ""
+
+  test "every numeral a hint names is a value its slider can actually reach":
+    var checkedNumerals = 0
+    for descriptor in descriptors:
+      if descriptor.hint.len == 0:
+        continue
+      for named in numeralsIn(descriptor.hint):
+        inc checkedNumerals
+        # In range...
+        check named >= descriptor.minValue
+        check named <= descriptor.maxValue
+        # ...on a step boundary measured from the range's start...
+        let steps = (named - descriptor.minValue) / descriptor.step
+        check abs(steps - round(steps)) < 1e-6
+        # ...and unchanged by the rounding the readout applies.
+        check abs(named - parseFloat(formatFloat(
+          named, ffDecimal, descriptor.precision))) < 1e-9
+    # Guards against the loop above silently checking nothing.
+    check checkedNumerals > 0
+
+  test "the reaction-diffusion regime hints are the ones carrying numerals":
+    # Pins which hints the reachability test above is actually exercising, so
+    # deleting a hint cannot quietly empty it.
+    check numeralsIn(byId("rdFeed").hint).len == 4
+    check numeralsIn(byId("rdKill").hint).len == 4
+
+  test "hints that name no numeral are plain guidance":
+    # The deposit and field-force hints describe direction, not coordinates.
+    # They still mention 0, which must be a real slider position.
+    for id in ["rdDeposit", "rdFieldForce"]:
+      check byId(id).hint.len > 0
+      check byId(id).minValue == 0.0
 
 suite "Every Descriptor Is Internally Coherent":
   test "ranges are non-empty and defaults lie inside them":
@@ -154,6 +211,10 @@ suite "Descriptors Agree With The Range Authority":
     check byId("rdFeed").maxValue == RD_FEED_MAX
     check byId("rdKill").minValue == RD_KILL_MIN
     check byId("rdKill").maxValue == RD_KILL_MAX
+    check byId("rdDeposit").minValue == RD_DEPOSIT_MIN
+    check byId("rdDeposit").maxValue == RD_DEPOSIT_MAX
+    check byId("rdFieldForce").minValue == RD_FIELD_FORCE_MIN
+    check byId("rdFieldForce").maxValue == RD_FIELD_FORCE_MAX
     check byId("fieldOpacity").minValue == FIELD_OPACITY_RANGE_MIN
     check byId("fieldOpacity").maxValue == FIELD_OPACITY_RANGE_MAX
 
@@ -183,6 +244,8 @@ suite "Descriptors Agree With The Default Authority":
     check byId("sphSubsteps").defaultValue == simDefaults.sphSubsteps.float
     check byId("rdFeed").defaultValue == simDefaults.rdFeed
     check byId("rdKill").defaultValue == simDefaults.rdKill
+    check byId("rdDeposit").defaultValue == simDefaults.rdDeposit
+    check byId("rdFieldForce").defaultValue == simDefaults.rdFieldForce
 
   test "render-store defaults come from initRenderState":
     check byId("particleSize").defaultValue == renderDefaults.particleSize.float

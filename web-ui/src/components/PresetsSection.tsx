@@ -2,8 +2,13 @@
 // (Nim owns the schema and apply order), this component owns localStorage
 // under the same pg.presets.* keys the old panel used, so presets saved
 // before the port keep loading.
+//
+// Starter presets are the exception that proves the split: their JSON comes
+// from Nim and is applied straight through, never written to storage. That
+// is why they cannot collide with a saved name or be overwritten by one.
 
-import { createSignal, For } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
+import type { BuiltinPreset } from "../garden-api";
 import type { PanelController } from "../state";
 import {
   nameIsReserved,
@@ -22,6 +27,18 @@ export function PresetsSection(props: { ctrl: PanelController }) {
 
   const selectedOrDefault = () =>
     selected().length > 0 ? selected() : keys.defaultName;
+
+  const builtins = () => api.builtinPresets?.() ?? [];
+
+  const modeLabel = (id: string) =>
+    api.simModes().find((mode) => mode.id === id)?.label ?? id;
+
+  const applyBuiltin = (entry: BuiltinPreset) => {
+    const result = props.ctrl.applyPresetJson(entry.json);
+    if (!result.ok) {
+      window.alert(`Could not load "${entry.label}": ${result.error}`);
+    }
+  };
 
   const save = () => {
     const entered = window.prompt("Preset name:", selectedOrDefault());
@@ -77,6 +94,27 @@ export function PresetsSection(props: { ctrl: PanelController }) {
 
   return (
     <>
+      {/* Absent until the Nim side serves them; the group renders nothing
+          rather than an empty heading. */}
+      <Show when={builtins().length > 0}>
+        <div class="control-group">
+          <label>Starter Presets</label>
+          <div class="model-selector starter-presets">
+            <For each={builtins()}>
+              {(entry) => (
+                <button
+                  class="model-btn"
+                  title={`Switches to ${modeLabel(entry.mode)}`}
+                  onClick={() => applyBuiltin(entry)}
+                >
+                  {entry.label}
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
+
       <div class="control-group">
         <label>Saved Presets</label>
         <select

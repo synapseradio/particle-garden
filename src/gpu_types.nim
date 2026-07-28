@@ -202,10 +202,13 @@ const
   # FieldParams struct (32 bytes, generated into web/shaders/modules/field_params.wgsl)
   # The reaction-diffusion mode's uniform: the two Gray-Scott tunables (feed,
   # kill), the diffusion rates and timestep field_core.nim's grayScottStep
-  # takes as parameters, and the two live knobs (depositAmount,
-  # fieldForceScale) the next stage's fieldDeposit/fieldForce shaders read.
-  # depositAmount/fieldForceScale are layout slots only this stage — S8a's
-  # CONFIG plumbing does not wire them to a live tunable yet.
+  # takes as parameters, the two particle-coupling knobs (depositAmount,
+  # fieldForceScale) fieldDeposit/fieldForce read, and the seed nonce
+  # field-seed.wgsl hashes to place its blobs.
+  #
+  # The struct is FULL. A ninth field pushes it to 48 bytes and breaks the
+  # static offset assertions below along with every uniform write in
+  # webgpu_compute.
   FieldParamsLayout* = GpuStruct(
     name: "FieldParams",
     fields: @[
@@ -216,7 +219,7 @@ const
       GpuField(name: "deltaT",          kind: gtF32, offset: 16, size: 4, count: 1),
       GpuField(name: "depositAmount",   kind: gtF32, offset: 20, size: 4, count: 1),
       GpuField(name: "fieldForceScale", kind: gtF32, offset: 24, size: 4, count: 1),
-      GpuField(name: "padding0",        kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "seedNonce",       kind: gtF32, offset: 28, size: 4, count: 1),
     ],
     totalSize: 32
   )
@@ -529,7 +532,7 @@ static:
 # FIELDPARAMS FIELD INDICES (reaction-diffusion mode, webgpu_compute.nim)
 # =============================================================================
 # Generated from FieldParamsLayout by genFieldIndices, like SIM_*/RENDER_*/
-# FADE_* above: FIELD_FEED=0, FIELD_KILL=1, ... FIELD_PADDING0=7,
+# FADE_* above: FIELD_FEED=0, FIELD_KILL=1, ... FIELD_SEED_NONCE=7,
 # FIELD_PARAMS_F32_COUNT=8.
 
 genFieldIndices(FieldParamsLayout, "FIELD")

@@ -3,12 +3,18 @@
 // =============================================================================
 //
 // WHY THIS EXISTS:
-// Advances the two-channel field one explicit-Euler Gray-Scott step. The frame
-// runs eight of these per rendered frame, alternating orientation (Forward reads
-// fieldA writes fieldB, Reverse reads fieldB writes fieldA) because a shader cannot
-// read and write the same storage texture in one dispatch. Forward and Reverse are
-// the SAME pipeline (this file, entry rdStep); the executor gives each its own bind
-// group with the source/destination textures swapped.
+// Advances the two-channel field one explicit-Euler Gray-Scott step. The frame runs
+// RD_STEPS_PER_FRAME of these per rendered frame, alternating orientation because a
+// shader cannot read and write the same storage texture in one dispatch. The two
+// orientations are named for their DESTINATION: ToFront reads fieldB and writes
+// fieldA, ToTrail reads fieldA and writes fieldB. They are the SAME pipeline (this
+// file, entry rdStep); the executor gives each its own bind group with the
+// source/destination textures swapped.
+//
+// The sequence starts ToFront, because field-resolve.wgsl has already performed the
+// frame's first swap (front -> trail), and must END ToFront, because fieldA is what
+// field-force.wgsl, the renderer, and the next frame's resolve all read. That is why
+// src/field_core.nim statically asserts RD_STEPS_PER_FRAME is odd.
 //
 // THE MATH MIRRORS field_core.grayScottStep EXACTLY (the natively-tested authority):
 //   reaction = A * B^2

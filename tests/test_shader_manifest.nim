@@ -67,7 +67,7 @@ suite "Shader Spec Manifests Are Well-Formed":
   test "spec keys are unique within each kind":
     # A duplicate key would make the pipelines/bindGroups dictionaries
     # collide. Paths are NOT required to be unique: reaction-diffusion's
-    # rdStepForward and rdStepReverse deliberately share one path/entry
+    # rdStepToFront and rdStepToTrail deliberately share one path/entry
     # (one WGSL pipeline, two bind-group orientations over it) while keeping
     # distinct keys, so this only checks the keys.
     for kind in SimKind:
@@ -102,31 +102,45 @@ suite "Shader Spec Manifests Are Well-Formed":
                    "binScatter", "integrate"]:
       check shared in sphKeys
 
-  test "reaction-diffusion registers its five field shaders plus shared integrate":
+  test "reaction-diffusion registers its six field shaders plus shared integrate":
     let rdKeys = block:
       var keys: HashSet[string]
       for spec in shaderSpecsFor(skReactionDiffusion):
         keys.incl spec.key
       keys
-    check rdKeys.len == 6
-    for expectedKey in ["fieldDeposit", "fieldResolve", "rdStepForward",
-        "rdStepReverse", "fieldForce", "integrate"]:
+    check rdKeys.len == 7
+    for expectedKey in ["fieldSeed", "fieldDeposit", "fieldResolve",
+        "rdStepToFront", "rdStepToTrail", "fieldForce", "integrate"]:
       check expectedKey in rdKeys
 
-  test "rdStepForward and rdStepReverse share one shader path and entry point":
+  test "the one-shot seed shader is registered without any frame dispatching it":
+    # CONTRACT: fieldSeed runs on demand (mode entry, reset), never as a frame
+    # node, so it must be registered here to be fetched and pipelined even
+    # though dispatchKeysOf(buildFrame) never names it. That asymmetry is why
+    # the relation above checks dispatch keys are a SUBSET of spec keys rather
+    # than an equality.
+    let rdSpecKeys = block:
+      var keys: HashSet[string]
+      for spec in shaderSpecsFor(skReactionDiffusion):
+        keys.incl spec.key
+      keys
+    check "fieldSeed" in rdSpecKeys
+    check "fieldSeed" notin dispatchKeysOf(buildFrame(skReactionDiffusion))
+
+  test "rdStepToFront and rdStepToTrail share one shader path and entry point":
     let specs = shaderSpecsFor(skReactionDiffusion)
-    let forwardSpec = block:
+    let toFrontSpec = block:
       var found: ShaderSpec
       for spec in specs:
-        if spec.key == "rdStepForward": found = spec
+        if spec.key == "rdStepToFront": found = spec
       found
-    let reverseSpec = block:
+    let toTrailSpec = block:
       var found: ShaderSpec
       for spec in specs:
-        if spec.key == "rdStepReverse": found = spec
+        if spec.key == "rdStepToTrail": found = spec
       found
-    check forwardSpec.path == reverseSpec.path
-    check forwardSpec.entryPoint == reverseSpec.entryPoint
+    check toFrontSpec.path == toTrailSpec.path
+    check toFrontSpec.entryPoint == toTrailSpec.entryPoint
 
   test "reaction-diffusion's integrate spec is identical to particle-life's":
     # RD's fieldForce writes velocityDelta in the same layout integrate

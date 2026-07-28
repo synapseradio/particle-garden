@@ -105,6 +105,8 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.sphSubsteps = 2
     customPreset.settings.rdFeed = 0.045
     customPreset.settings.rdKill = 0.058
+    customPreset.settings.rdDeposit = 0.035
+    customPreset.settings.rdFieldForce = 80.0
     customPreset.settings.bloomEnabled = true
     customPreset.settings.bloomIntensity = 1.8
     customPreset.settings.exposure = 1.4
@@ -330,16 +332,25 @@ suite "Preset Clamp Behavior Contract":
   test "reaction-diffusion settings clamp into their ranges":
     let node = %*{"settings": {
       "rdFeed": 99.0,
-      "rdKill": -5.0
+      "rdKill": -5.0,
+      "rdDeposit": 99.0,
+      "rdFieldForce": -5.0
     }}
     let result = validate(node)
     check result.preset.settings.rdFeed == RD_FEED_MAX
     check result.preset.settings.rdKill == RD_KILL_MIN
+    check result.preset.settings.rdDeposit == RD_DEPOSIT_MAX
+    check result.preset.settings.rdFieldForce == RD_FIELD_FORCE_MIN
 
   test "a missing reaction-diffusion field defaults rather than crashing":
+    # The two coupling knobs arrived after v1 presets shipped. No schema bump
+    # covers that: validateSettings supplies the default for an absent field,
+    # so a preset saved before they existed still loads.
     let result = validate(%*{"settings": {}})
     check result.preset.settings.rdFeed == defaultSettings().rdFeed
     check result.preset.settings.rdKill == defaultSettings().rdKill
+    check result.preset.settings.rdDeposit == defaultSettings().rdDeposit
+    check result.preset.settings.rdFieldForce == defaultSettings().rdFieldForce
 
   test "bloom and grade settings clamp into their ranges":
     let node = %*{"settings": {

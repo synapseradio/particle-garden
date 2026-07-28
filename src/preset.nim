@@ -101,6 +101,8 @@ type
     sphSubsteps*: int
     rdFeed*: float
     rdKill*: float
+    rdDeposit*: float
+    rdFieldForce*: float
     bloomEnabled*: bool
     bloomIntensity*: float
     exposure*: float
@@ -199,12 +201,15 @@ func defaultSettings*(): PresetSettings =
     sphStiffness: 8.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
-    # Mirrors field_core.RD_DEFAULT_FEED/RD_DEFAULT_KILL as literals rather
-    # than an import: this module's dependencies are intentionally restricted
-    # to config_ranges and palette (see file header), the same reason
-    # sphRestDensity etc. above are literals rather than sph_core imports.
+    # Mirrors field_core.RD_DEFAULT_FEED/KILL/DEPOSIT/FIELD_FORCE as literals
+    # rather than an import: this module's dependencies are intentionally
+    # restricted to config_ranges and palette (see file header), the same
+    # reason sphRestDensity etc. above are literals rather than sph_core
+    # imports.
     rdFeed: 0.030,
     rdKill: 0.062,
+    rdDeposit: 0.02,
+    rdFieldForce: 30.0,
     # Mirrors bloom_core.BLOOM_DEFAULT_* as literals rather than an import,
     # for the same dependency-restriction reason as the sph/rd defaults above.
     bloomEnabled: false,
@@ -346,6 +351,12 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "rdFeed").getFloat(defaults.rdFeed), RD_FEED_MIN, RD_FEED_MAX)
   result.rdKill = clampFloat(
     field(node, "rdKill").getFloat(defaults.rdKill), RD_KILL_MIN, RD_KILL_MAX)
+  result.rdDeposit = clampFloat(
+    field(node, "rdDeposit").getFloat(defaults.rdDeposit),
+    RD_DEPOSIT_MIN, RD_DEPOSIT_MAX)
+  result.rdFieldForce = clampFloat(
+    field(node, "rdFieldForce").getFloat(defaults.rdFieldForce),
+    RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX)
   result.bloomEnabled = field(node, "bloomEnabled").getBool(defaults.bloomEnabled)
   result.bloomIntensity = clampFloat(
     field(node, "bloomIntensity").getFloat(defaults.bloomIntensity), BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX)
@@ -500,6 +511,8 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["sphSubsteps"] = %settings.sphSubsteps
   result["rdFeed"] = %settings.rdFeed
   result["rdKill"] = %settings.rdKill
+  result["rdDeposit"] = %settings.rdDeposit
+  result["rdFieldForce"] = %settings.rdFieldForce
   result["bloomEnabled"] = %settings.bloomEnabled
   result["bloomIntensity"] = %settings.bloomIntensity
   result["exposure"] = %settings.exposure

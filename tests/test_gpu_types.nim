@@ -241,7 +241,7 @@ suite "Generated FieldParams Layout (Reaction-Diffusion)":
     check FIELD_DELTA_T == 4
     check FIELD_DEPOSIT_AMOUNT == 5
     check FIELD_FORCE_SCALE == 6
-    check FIELD_PADDING0 == 7
+    check FIELD_SEED_NONCE == 7
     check FIELD_PARAMS_F32_COUNT == 8
 
   test "a field name that already begins with the prefix does not double it":

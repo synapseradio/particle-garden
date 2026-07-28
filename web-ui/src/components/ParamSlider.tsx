@@ -1,16 +1,13 @@
-// One range slider bound to a descriptor: min/max/step come from the Nim
-// side, input events write through setParam (clamped, synchronous mirror),
-// release fires commitParam (the old "change" event's side effects).
+// One range slider bound to a descriptor: min/max/step, label and hint all
+// come from the Nim side, input events write through setParam (clamped,
+// synchronous mirror), release fires commitParam (the old "change" event's
+// side effects).
 
 import { Show } from "solid-js";
 import type { PanelController } from "../state";
 import { formatParamValue } from "../lib/format";
 
-export function ParamSlider(props: {
-  ctrl: PanelController;
-  id: string;
-  hint?: string;
-}) {
+export function ParamSlider(props: { ctrl: PanelController; id: string }) {
   const descriptor = props.ctrl.byId.get(props.id);
   if (!descriptor) return null;
   const value = () => props.ctrl.params[props.id] ?? descriptor.defaultValue;
@@ -18,8 +15,8 @@ export function ParamSlider(props: {
     <div class="control-group">
       <label>
         {descriptor.label}
-        <Show when={props.hint}>
-          <span class="param-hint"> — {props.hint}</span>
+        <Show when={descriptor.hint}>
+          <span class="param-hint"> — {descriptor.hint}</span>
         </Show>
         <span class="value-display">
           {formatParamValue(value(), descriptor.kind, descriptor.precision)}

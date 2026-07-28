@@ -64,7 +64,9 @@ All particle data lives in a SharedArrayBuffer with AoS (Array of Structures) la
 
 All physics runs on WebGPU compute shaders — there is no CPU physics path. Particles stay on the GPU from initialization through rendering; there is no CPU readback.
 
-Three simulation modes exist (`SimKind` in `sim_registry.nim`): `skParticleLife`, `skSph`, and `skReactionDiffusion`. They share the grid-build prefix and differ in the physics passes that follow. `sim_registry.nim` holds each mode's frame as data and `webgpu_compute.nim` dispatches it, so the pass list lives in one place rather than in prose here.
+Three simulation modes exist (`SimKind` in `sim_registry.nim`): `skParticleLife`, `skSph`, and `skReactionDiffusion`. Particle-life and SPH share the grid-build prefix and differ only in the force pass that follows. Reaction-diffusion shares none of it — it runs no spatial-hash passes at all, because its particles never search for neighbors, and substitutes the field passes. `sim_registry.nim` holds each mode's frame as data and `webgpu_compute.nim` dispatches it, so the pass list lives in one place rather than in prose here.
+
+`sim_registry.nim` also holds `controlGroupsFor`, the descriptor groups each mode's control panel shows. It lives beside `buildFrame` because what a mode dispatches decides which knobs can affect it, and a native test asserts that relation directly — a mode with no `forces` dispatch cannot offer the attraction matrix or the force-model controls.
 
 Particle-life runs five passes per frame:
 
@@ -74,7 +76,11 @@ Particle-life runs five passes per frame:
 4. **forces** — compute inter-particle forces from the sorted buffer.
 5. **integrate** — apply velocity deltas, update positions.
 
-SPH substitutes `forces-sph` for the forces pass. Reaction-diffusion adds the field passes (`field-deposit`, `field-resolve`, `rd-step`, `field-force`) around a physics pass that only integrates.
+SPH substitutes `forces-sph` for the forces pass.
+
+Reaction-diffusion drops all five and runs `field-deposit`, `field-resolve`, `RD_STEPS_PER_FRAME` alternating `rd-step` substeps, and `field-force`, ahead of a physics pass that only integrates. A sixth shader, `field-seed`, writes the initial pattern; it is a one-shot the executor encodes on mode entry and on reset, never a frame node. That seed is what makes the mode do anything at all — the field textures clear to Gray-Scott's trivial fixed point, which is inert for every feed/kill, and particle deposits alone cannot leave it.
+
+`field-resolve` is itself one stage of the field ping-pong, so `1 + RD_STEPS_PER_FRAME` must be even for the live field to end each frame on the texture the renderer samples. `field_core.nim` asserts that parity statically.
 
 ## Shaders
 

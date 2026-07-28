@@ -13,10 +13,20 @@
 # ==============================================================================
 
 import std/unittest
+import std/sets
 import ../src/sim_registry
 import ../src/field_core
+import ../src/ui/api/param_descriptor
 
 const SIM_REGISTRY_TESTS_LOADED* = true
+
+proc dispatchesPipeline(kind: SimKind; pipelineKey: string): bool =
+  for node in buildFrame(kind):
+    if node.kind == fnkComputePass:
+      for step in node.dispatches:
+        if step.pipelineKey == pipelineKey:
+          return true
+  false
 
 suite "SimKind Serialization Contract":
   test "mode ids are stable strings, never ordinals":
@@ -141,7 +151,8 @@ suite "Reaction-Diffusion Frame Description":
   # S8a: no grid triad and no gridOffsets->fillPointers copy — RD never runs a
   # spatial-hash neighbor search. The exact sequence:
   #   compute "Field (RD)" [fieldDeposit, fieldResolve,
-  #     8x alternating rdStepForward/rdStepReverse (starting Forward),
+  #     RD_STEPS_PER_FRAME alternating rdStepToFront/rdStepToTrail
+  #     (starting and ending ToFront, so the chain closes),
   #     fieldForce];
   #   clear sbDensityDelta (no pass in this frame self-resets it, unlike
   #     forces.wgsl/forces-sph.wgsl for particle-life/SPH);
@@ -155,21 +166,28 @@ suite "Reaction-Diffusion Frame Description":
     check frame[1].kind == fnkClearBuffer
     check frame[2].kind == fnkComputePass
 
-  test "node 0 is the Field (RD) pass with the profiler's grid-build slot":
+  test "node 0 is the Field (RD) pass with the profiler's own field slot":
     check frame[0].label == "Field (RD)"
-    check frame[0].profilerSlot == PROFILER_SLOT_GRID_BUILD
+    check frame[0].profilerSlot == PROFILER_SLOT_FIELD
     check frame[0].dispatches.len == 2 + RD_STEPS_PER_FRAME + 1
 
   test "the Field (RD) pass opens with fieldDeposit then fieldResolve":
     check frame[0].dispatches[0] == Dispatch(pipelineKey: "fieldDeposit", size: dsParticleWorkgroups)
     check frame[0].dispatches[1] == Dispatch(pipelineKey: "fieldResolve", size: dsFieldWorkgroups)
 
-  test "the eight rd-step dispatches alternate Forward/Reverse, starting Forward":
+  test "the seven rd-step dispatches alternate, start ToFront, and end ToFront":
+    # CONTRACT: fieldResolve is the frame's first ping-pong swap (front ->
+    # trail), so the substeps must start by writing back to the front and must
+    # END on the front — that is the texture fieldForce, the renderer, and the
+    # next frame's resolve all read. An even step count ends on the trail
+    # instead and throws the last substep away every frame, which is precisely
+    # what the old Forward/Reverse sequence did.
     let stepDispatches = frame[0].dispatches[2 ..< 2 + RD_STEPS_PER_FRAME]
-    check stepDispatches.len == 8
+    check stepDispatches.len == 7
     for stepIndex, stepDispatch in stepDispatches:
-      let expectedKey = if stepIndex mod 2 == 0: "rdStepForward" else: "rdStepReverse"
+      let expectedKey = if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail"
       check stepDispatch == Dispatch(pipelineKey: expectedKey, size: dsFieldWorkgroups)
+    check stepDispatches[^1].pipelineKey == "rdStepToFront"
 
   test "the Field (RD) pass closes with fieldForce":
     check frame[0].dispatches[^1] == Dispatch(pipelineKey: "fieldForce", size: dsParticleWorkgroups)
@@ -187,3 +205,89 @@ suite "Reaction-Diffusion Frame Description":
       if node.kind == fnkClearBuffer:
         check node.clearTarget notin {sbGridCounts, sbGridOffsets, sbFillPointers}
       check node.kind != fnkCopyBuffer
+
+
+suite "Profiler Slot Constants":
+  test "the three slot constants are distinct":
+    # They index one query set. Two passes sharing a slot would overwrite each
+    # other's timestamps and report a meaningless delta — which is exactly what
+    # the field pass did while it borrowed the grid-build slot.
+    check PROFILER_SLOT_GRID_BUILD != PROFILER_SLOT_PHYSICS
+    check PROFILER_SLOT_GRID_BUILD != PROFILER_SLOT_FIELD
+    check PROFILER_SLOT_PHYSICS != PROFILER_SLOT_FIELD
+
+  test "every frame's compute passes hold distinct profiler slots":
+    for kind in SimKind:
+      var seenSlots: HashSet[int]
+      for node in buildFrame(kind):
+        if node.kind == fnkComputePass:
+          check node.profilerSlot notin seenSlots
+          seenSlots.incl node.profilerSlot
+
+
+suite "Per-Mode Control Groups":
+  let sectionOnly = toHashSet(@SECTION_ONLY_GROUPS)
+  let descriptorGroups = block:
+    var groups: HashSet[string]
+    for descriptor in buildParamDescriptors():
+      groups.incl descriptor.group
+    groups
+
+  test "every group a mode lists either owns descriptors or is declared section-only":
+    # THE red light: a typo'd group id would silently hide a whole section
+    # instead of failing anywhere. Section-only ids (the matrix editor, the
+    # force-model button row) are legitimately descriptor-free, so they are
+    # declared rather than inferred.
+    for kind in SimKind:
+      for group in controlGroupsFor(kind):
+        check group in descriptorGroups or group in sectionOnly
+
+  test "every descriptor group is listed by at least one mode":
+    # The converse red light: an unlisted group vanishes from every mode's
+    # panel, so its sliders become unreachable without any error.
+    var listed: HashSet[string]
+    for kind in SimKind:
+      for group in controlGroupsFor(kind):
+        listed.incl group
+    for group in descriptorGroups:
+      check group in listed
+
+  test "no mode lists a group twice":
+    for kind in SimKind:
+      let groups = controlGroupsFor(kind)
+      check toHashSet(groups).len == groups.len
+
+  test "only modes that dispatch the forces pass offer the force-model groups":
+    # The relation the co-location buys: forces.wgsl is the sole reader of the
+    # attraction matrix and the force-model selector, so a mode without that
+    # dispatch must not present either. SPH's forces-sph reads neither, and RD
+    # runs no force pass at all.
+    for kind in SimKind:
+      let groups = toHashSet(controlGroupsFor(kind))
+      let runsForces = dispatchesPipeline(kind, "forces")
+      for forceGroup in ["matrix", "force-model", "force-polynomial",
+          "force-exponential", "particle-life"]:
+        check (forceGroup in groups) == runsForces
+
+  test "the grid group appears exactly for the modes that build a spatial hash":
+    # interactionRadius is the neighbor-search radius binCount bins by, and
+    # SPH's smoothing radius. Reaction-diffusion dispatches no binCount, so
+    # the control would be inert there.
+    for kind in SimKind:
+      check ("grid" in controlGroupsFor(kind)) ==
+        dispatchesPipeline(kind, "binCount")
+
+  test "the reaction-diffusion groups appear only in reaction-diffusion":
+    for kind in SimKind:
+      let groups = toHashSet(controlGroupsFor(kind))
+      let isField = kind == skReactionDiffusion
+      check ("rd" in groups) == isField
+      check ("rd-field" in groups) == isField
+
+  test "every mode offers the universal groups":
+    # simulation/render/glow/bloom/palette touch every mode's pipeline, so a
+    # mode that dropped one would hide a control that still works.
+    for kind in SimKind:
+      let groups = toHashSet(controlGroupsFor(kind))
+      for universal in ["simulation", "render", "glow", "bloom", "palette"]:
+        check universal in groups

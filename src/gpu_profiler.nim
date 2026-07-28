@@ -31,7 +31,14 @@ const
     ## the last (attachBeginTimestamp/attachEndTimestamp), so the delta is
     ## the whole bloom chain including any inter-pass gap. Only written when
     ## bloom is enabled.
-  numPasses* = 5
+  passField* = 5
+    ## The reaction-diffusion field pass (deposit, resolve, the Gray-Scott
+    ## substeps, field force). Its own slot rather than passGridBuild's:
+    ## reaction-diffusion dispatches no grid-build passes at all, so reporting
+    ## field time under "GPU grid" made the two modes' numbers mean different
+    ## things under one label. The honest consequence is that grid time now
+    ## reads 0 in reaction-diffusion, which is what it genuinely is.
+  numPasses* = 6
   numQueries = numPasses * 2
 
 proc createJsObject(): JsObject {.importjs: "({})".}

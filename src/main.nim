@@ -53,6 +53,7 @@ const StaticFiles = {
   "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),  # Merged AoS
   # Reaction-diffusion field passes (S8). field-composite.wgsl is staticRead into
   # app.js by webgpu_render (a render shader), so it is deliberately not served here.
+  "/shaders/field-seed.wgsl": staticRead("../web/shaders/field-seed.wgsl"),
   "/shaders/field-deposit.wgsl": staticRead("../web/shaders/field-deposit.wgsl"),
   "/shaders/field-resolve.wgsl": staticRead("../web/shaders/field-resolve.wgsl"),
   "/shaders/rd-step.wgsl": staticRead("../web/shaders/rd-step.wgsl"),

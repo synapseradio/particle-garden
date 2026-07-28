@@ -23,12 +23,18 @@ export interface ParamDescriptor {
   defaultValue: number;
   store: ParamStore;
   reinitOnCommit: boolean;
+  // Guidance shown beside the label; empty for parameters that need none.
+  hint: string;
 }
 
 export interface SimMode {
   id: string;
   label: string;
   particleCeiling: number;
+  // The descriptor groups this mode uses. The panel shows a control only
+  // when the active mode lists its group — see lib/mode-gating.ts, which
+  // still renders everything if an older app.js omits the field.
+  groups: string[];
 }
 
 export interface PaletteSchemeEntry {
@@ -50,12 +56,26 @@ export interface StatsSample {
   gpuPhysicsMs: number;
   gpuDrawMs: number;
   gpuPresentMs: number;
+  // The reaction-diffusion field pass. Zero in the other two modes, which run
+  // no field — just as gpuGridMs is zero in reaction-diffusion, which builds
+  // no spatial hash.
+  gpuFieldMs: number;
 }
 
 export interface PresetKeys {
   prefix: string;
   indexKey: string;
   defaultName: string;
+}
+
+// A preset shipped with the app: Nim holds the JSON, so a starter never
+// reaches localStorage and can neither collide with nor be overwritten by a
+// saved preset of the same name.
+export interface BuiltinPreset {
+  id: string;
+  label: string;
+  mode: string;
+  json: string;
 }
 
 export interface ApplyPresetResult {
@@ -109,6 +129,9 @@ export interface GardenAPI {
   // Particles
   resetParticles(): void;
 
+  // Reaction-diffusion field
+  reseedField(): void;
+
   // Stats
   onStats(callback: (stats: StatsSample) => void): void;
 
@@ -118,6 +141,7 @@ export interface GardenAPI {
   exportPresetJson(name: string): string;
   exportPresetJsonPretty(name: string): string;
   applyPresetJson(json: string): ApplyPresetResult;
+  builtinPresets(): BuiltinPreset[];
 }
 
 declare global {

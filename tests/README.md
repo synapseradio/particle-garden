@@ -55,7 +55,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_preset.nim` | Versioned preset schema: round-trip, version rejection, clamp/default degradation, migration hook | Native |
 | `test_preset_store_core.nim` | Preset name normalization, storage keys, apply-order contract | Native |
 | `test_sph_core.nim` | SPH math: 2D smoothing kernels, Tait equation, XSPH term | Native |
-| `test_field_core.nim` | Gray-Scott reaction-diffusion step and the 9-point Laplacian | Native |
+| `test_field_core.nim` | Gray-Scott step, the 9-point Laplacian, the field seed, and whether a seed ignites the pattern at all | Native |
 | `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
 | `test_colormap_core.nim` | Reaction-diffusion field colormap ramps | Native |
 
@@ -87,7 +87,7 @@ test_all.nim (runner)
     ├── test_preset.nim         → preset.nim (versioned schema, validate/migrate)
     ├── test_preset_store_core.nim → ui/presets/preset_store_core.nim (keys, order)
     ├── test_sph_core.nim       → sph_core.nim (kernels, Tait, XSPH)
-    ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian)
+    ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian, seeding)
     ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
     └── test_colormap_core.nim  → colormap_core.nim (field colormap ramps)
 ```

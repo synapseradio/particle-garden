@@ -84,6 +84,28 @@ const
   RD_FEED_MAX* = 0.080
   RD_KILL_MIN* = 0.040
   RD_KILL_MAX* = 0.075
+  RD_DEPOSIT_MIN* = 0.0
+    ## Zero is a meaningful setting: it decouples the particles from the field
+    ## entirely, leaving the reaction-diffusion pattern to evolve on its own.
+  RD_DEPOSIT_MAX* = 0.08
+    ## Measured at the Pearson defaults, the field floods into a uniform bath
+    ## from around 0.15 and diverges near 0.30. Those numbers were taken at
+    ## feed=0.030 kill=0.062; at the slider's weakest corner (RD_FEED_MIN,
+    ## RD_KILL_MIN) the (feed+kill)*B depletion opposing the deposit is about
+    ## 1.8x weaker, so the ceiling has to sit well below the measured flood
+    ## point. 0.08 leaves roughly 2x margin at that corner, which is what
+    ## test_field_core's deposit-ceiling sweep verifies.
+  RD_FIELD_FORCE_MIN* = 0.0
+    ## Zero leaves particles blind to the field — a real setting, and the way
+    ## to watch the pattern evolve without particles stirring it.
+  RD_FIELD_FORCE_MAX* = 150.0
+    ## Inhibitor gradients peak near 0.05 per cell, so the default 30 is about
+    ## 1.5 velocity units per frame against a maxVelocity of 50. 150 is five
+    ## times that: violent, but still bounded by the integrator's own velocity
+    ## clamp. Kept non-negative deliberately — field-force.wgsl notes that a
+    ## negative scale pulls particles up-gradient, concentrating their deposits
+    ## on inhibitor ridges into a positive-feedback loop nothing here has
+    ## checked for stability.
   # HDR bloom + colour grade (S9). bloomEnabled is a toggle, not a slider, so
   # it has no range here. Temperature is signed (warm/cool), centred on 0.
   BLOOM_INTENSITY_MIN* = 0.0
@@ -119,6 +141,12 @@ static:
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
   doAssert RD_FEED_MIN < RD_FEED_MAX
   doAssert RD_KILL_MIN < RD_KILL_MAX
+  doAssert RD_DEPOSIT_MIN < RD_DEPOSIT_MAX
+  doAssert RD_FIELD_FORCE_MIN < RD_FIELD_FORCE_MAX
+  doAssert RD_DEFAULT_DEPOSIT >= RD_DEPOSIT_MIN and
+    RD_DEFAULT_DEPOSIT <= RD_DEPOSIT_MAX
+  doAssert RD_DEFAULT_FIELD_FORCE >= RD_FIELD_FORCE_MIN and
+    RD_DEFAULT_FIELD_FORCE <= RD_FIELD_FORCE_MAX
   # field_core's Pearson defaults must themselves lie inside the slider range
   # they are the default value of — a future default change that escapes the
   # range fails the build here rather than shipping an out-of-bounds slider.

@@ -32,9 +32,12 @@ type
     entryPoint*: string
 
 func shaderSpecsFor*(kind: SimKind): seq[ShaderSpec] =
-  ## The compute shaders a simulation kind's frame dispatches. The keys here
-  ## are exactly the Dispatch.pipelineKey values sim_registry.buildFrame(kind)
-  ## emits — the relation test pins that agreement.
+  ## The compute shaders a simulation kind's frame dispatches, plus any the
+  ## mode runs outside its frame. Every Dispatch.pipelineKey that
+  ## sim_registry.buildFrame(kind) emits appears here — the relation test pins
+  ## that direction. The converse does not hold: a one-shot shader like
+  ## fieldSeed, which the executor encodes on demand rather than every frame,
+  ## is registered here and dispatched by no frame node at all.
   case kind
   of skParticleLife: @[
     ShaderSpec(key: "binCount", path: "./shaders/bin-count.wgsl",
@@ -72,22 +75,27 @@ func shaderSpecsFor*(kind: SimKind): seq[ShaderSpec] =
       label: "Integrate Shader (AoS)", entryPoint: "integrate"),
   ]
   of skReactionDiffusion:
-    # The field mode's own five compute shaders, plus the particle-life
+    # The field mode's own six compute shaders, plus the particle-life
     # integrate pass it reuses verbatim (same pipeline, same spec entry — RD's
     # fieldForce writes velocityDelta in the same layout integrate expects).
-    # rdStepForward and rdStepReverse share one shader file and entry point:
+    # rdStepToFront and rdStepToTrail share one shader file and entry point:
     # one WGSL pipeline, but the executor gives each dispatch key its own bind
     # group over that pipeline (the two orientations of the field-texture
-    # ping-pong), so both keys are registered against the same path/entry.
+    # ping-pong), so both keys are registered against the same path/entry. The
+    # keys name their DESTINATION texture; the older Forward/Reverse names said
+    # nothing about which texture ended up holding the live field, which is
+    # exactly how an off-by-one-substep parity bug hid in the sequence.
     @[
+      ShaderSpec(key: "fieldSeed", path: "./shaders/field-seed.wgsl",
+        label: "Field Seed Shader", entryPoint: "seedField"),
       ShaderSpec(key: "fieldDeposit", path: "./shaders/field-deposit.wgsl",
         label: "Field Deposit Shader", entryPoint: "depositField"),
       ShaderSpec(key: "fieldResolve", path: "./shaders/field-resolve.wgsl",
         label: "Field Resolve Shader", entryPoint: "resolveField"),
-      ShaderSpec(key: "rdStepForward", path: "./shaders/rd-step.wgsl",
-        label: "Gray-Scott Step Shader (Forward)", entryPoint: "rdStep"),
-      ShaderSpec(key: "rdStepReverse", path: "./shaders/rd-step.wgsl",
-        label: "Gray-Scott Step Shader (Reverse)", entryPoint: "rdStep"),
+      ShaderSpec(key: "rdStepToFront", path: "./shaders/rd-step.wgsl",
+        label: "Gray-Scott Step Shader (To Front)", entryPoint: "rdStep"),
+      ShaderSpec(key: "rdStepToTrail", path: "./shaders/rd-step.wgsl",
+        label: "Gray-Scott Step Shader (To Trail)", entryPoint: "rdStep"),
       ShaderSpec(key: "fieldForce", path: "./shaders/field-force.wgsl",
         label: "Field Force Shader", entryPoint: "applyFieldForce"),
       ShaderSpec(key: "integrate", path: "./shaders/integrate.wgsl",

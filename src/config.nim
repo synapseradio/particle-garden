@@ -65,6 +65,8 @@ type
     sphSubsteps* {.exportc.}: int         # SPH physics substeps per rendered frame
     rdFeed* {.exportc.}: float            # Gray-Scott feed rate F
     rdKill* {.exportc.}: float            # Gray-Scott kill rate k
+    rdDeposit* {.exportc.}: float         # Inhibitor deposited per particle per frame
+    rdFieldForce* {.exportc.}: float      # Field-gradient to velocity-impulse gain
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -192,6 +194,8 @@ proc createConfig(): ConfigObject =
   result.sphSubsteps = sim.sphSubsteps
   result.rdFeed = sim.rdFeed
   result.rdKill = sim.rdKill
+  result.rdDeposit = sim.rdDeposit
+  result.rdFieldForce = sim.rdFieldForce
   result.particleSize = visual.particleSize
   result.trails = visual.trails
   result.trailLength = visual.trailLength

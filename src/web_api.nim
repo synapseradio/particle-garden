@@ -94,6 +94,8 @@ when defined(js):
     CONFIG.sphSubsteps = simState.sphSubsteps
     CONFIG.rdFeed = simState.rdFeed
     CONFIG.rdKill = simState.rdKill
+    CONFIG.rdDeposit = simState.rdDeposit
+    CONFIG.rdFieldForce = simState.rdFieldForce
 
   proc applyRenderToConfig(renderState: RenderState) =
     CONFIG.particleSize = renderState.particleSize
@@ -161,6 +163,7 @@ when defined(js):
     result["defaultValue"] = toJs(descriptor.defaultValue)
     result["store"] = toJs(storeName(descriptor.store))
     result["reinitOnCommit"] = toJs(descriptor.reinitOnCommit)
+    result["hint"] = toJs(cstring(descriptor.hint))
 
   let descriptorArray = block:
     let jsArray = newJsArray()
@@ -233,6 +236,10 @@ when defined(js):
     if not canvas_input.onInitParticles.isNil:
       canvas_input.onInitParticles()
 
+  proc triggerFieldReseed() =
+    if not canvas_input.onReseedField.isNil:
+      canvas_input.onReseedField()
+
   proc setTrailsImpl(enabled: bool) =
     updateRender(proc(renderState: var RenderState) =
       renderState.trails = enabled)
@@ -248,7 +255,8 @@ when defined(js):
 
   proc setColormapImpl(index: int) =
     updateRender(proc(renderState: var RenderState) =
-      renderState.colormapIndex = clamp(index, 0, 2))
+      renderState.colormapIndex =
+        clamp(index, COLORMAP_INDEX_MIN, COLORMAP_INDEX_MAX))
 
   proc simKindCeiling(kind: SimKind): int =
     ## The particle-count ceiling entering this mode clamps to (0 = none).
@@ -326,6 +334,8 @@ when defined(js):
     of "sphSubsteps": CONFIG.sphSubsteps.float
     of "rdFeed": CONFIG.rdFeed
     of "rdKill": CONFIG.rdKill
+    of "rdDeposit": CONFIG.rdDeposit
+    of "rdFieldForce": CONFIG.rdFieldForce
     of "fieldOpacity": CONFIG.fieldOpacity
     else:
       consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
@@ -405,6 +415,10 @@ when defined(js):
       proc(simState: var SimulationState) = simState.rdFeed = value)
     of "rdKill": updateSimulation(
       proc(simState: var SimulationState) = simState.rdKill = value)
+    of "rdDeposit": updateSimulation(
+      proc(simState: var SimulationState) = simState.rdDeposit = value)
+    of "rdFieldForce": updateSimulation(
+      proc(simState: var SimulationState) = simState.rdFieldForce = value)
     of "fieldOpacity": updateRender(
       proc(renderState: var RenderState) = renderState.fieldOpacity = value)
     else: discard
@@ -441,7 +455,7 @@ when defined(js):
 
   proc pushStats*(fps, particleCount: int;
       gridTimeMs, workerTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs,
-      gpuPresentMs: float) =
+      gpuPresentMs, gpuFieldMs: float) =
     ## Called from app.nim's frame loop (currently every ~500ms; the cadence
     ## is loop-side). Raw numbers — formatting belongs to the UI.
     if statsCallbacks.len == 0:
@@ -455,6 +469,7 @@ when defined(js):
     stats["gpuPhysicsMs"] = toJs(gpuPhysicsMs)
     stats["gpuDrawMs"] = toJs(gpuDrawMs)
     stats["gpuPresentMs"] = toJs(gpuPresentMs)
+    stats["gpuFieldMs"] = toJs(gpuFieldMs)
     for callback in statsCallbacks:
       callback(stats)
 
@@ -576,6 +591,8 @@ when defined(js):
           simState.sphSubsteps = settings.sphSubsteps
           simState.rdFeed = settings.rdFeed
           simState.rdKill = settings.rdKill
+          simState.rdDeposit = settings.rdDeposit
+          simState.rdFieldForce = settings.rdFieldForce
         )
         updateRender(proc(renderState: var RenderState) =
           renderState.particleSize = settings.particleSize
@@ -618,6 +635,14 @@ when defined(js):
       mode["id"] = toJs(cstring(simKindId(kind)))
       mode["label"] = toJs(cstring(simKindLabel(kind)))
       mode["particleCeiling"] = toJs(simKindCeiling(kind))
+      # The descriptor groups this mode's panel shows. The panel gates on these
+      # rather than on mode ids, so which controls a mode offers stays a Nim
+      # decision (sim_registry.controlGroupsFor, tested against the mode's own
+      # frame) and the panel decides only where each group sits on screen.
+      let groups = newJsArray()
+      for group in controlGroupsFor(kind):
+        groups.push(toJs(cstring(group)))
+      mode["groups"] = groups
       jsArray.push(mode)
     jsArray
 
@@ -638,12 +663,66 @@ when defined(js):
       jsArray.push(entry)
     jsArray
 
+  static:
+    # The label list below is hand-written while the ramps themselves live in
+    # colormap_core. A fourth ramp would otherwise be invisible in the panel
+    # with nothing failing anywhere; this makes it fail the build instead.
+    # Phrased against the index bounds rather than colormap_core's
+    # COLORMAP_COUNT because those are what preset re-exports into this scope,
+    # and COLORMAP_INDEX_MAX is defined as COLORMAP_COUNT - 1.
+    doAssert COLORMAP_INDEX_MAX - COLORMAP_INDEX_MIN + 1 == 3
+
   let colormapArray = block:
     let jsArray = newJsArray()
     for (index, label) in [(0, "Inferno"), (1, "Viridis"), (2, "Two-Tone")]:
       let entry = newJsObject()
       entry["index"] = toJs(index)
       entry["label"] = toJs(cstring(label))
+      jsArray.push(entry)
+    jsArray
+
+  # ----------------------------------------------------------------------------
+  # Starter presets
+  # ----------------------------------------------------------------------------
+  #
+  # Complete, already-valid presets served as JSON strings and applied through
+  # the ordinary applyPresetJson path — no separate apply route, no schema
+  # variant, nothing for the panel to interpret. They never touch localStorage,
+  # which is the whole separation from the user's saved presets: no key to
+  # collide with, no write path to be overwritten through, and "cannot be
+  # deleted" holds without any code enforcing it.
+
+  proc rdStarter(name: string; feed, kill, deposit, fieldForce: float): string =
+    ## A reaction-diffusion starter at one published Gray-Scott regime.
+    var preset = defaultPreset()
+    preset.name = name
+    preset.mode = simKindId(skReactionDiffusion)
+    preset.settings.rdFeed = feed
+    preset.settings.rdKill = kill
+    preset.settings.rdDeposit = deposit
+    preset.settings.rdFieldForce = fieldForce
+    # The apply path reaches activeSimKind directly and never runs the mode
+    # ceiling, so each starter has to carry a count its own mode can afford.
+    preset.settings.particleCount =
+      min(preset.settings.particleCount, simKindCeiling(skReactionDiffusion))
+    toJsonString(preset)
+
+  let builtinPresetArray = block:
+    let jsArray = newJsArray()
+    # (F, k) coordinates as published for each named Gray-Scott regime; see the
+    # rdFeed/rdKill hints in param_descriptor.nim for the sources. Every value
+    # is a position its slider can land on, so loading a starter and then
+    # nudging the slider behaves the way the reading suggests.
+    for (id, label, feed, kill) in [
+        ("rd-spots", "Spots", 0.035, 0.065),
+        ("rd-stripes", "Stripes", 0.029, 0.057),
+        ("rd-worms", "Worms", 0.078, 0.061)]:
+      let entry = newJsObject()
+      entry["id"] = toJs(cstring(id))
+      entry["label"] = toJs(cstring(label))
+      entry["mode"] = toJs(cstring(simKindId(skReactionDiffusion)))
+      entry["json"] = toJs(cstring(rdStarter(
+        label, feed, kill, RD_DEFAULT_DEPOSIT, RD_DEFAULT_FIELD_FORCE)))
       jsArray.push(entry)
     jsArray
 
@@ -718,6 +797,10 @@ when defined(js):
     # Particles
     result["resetParticles"] = toJs(proc() = triggerParticleReinit())
 
+    # Reaction-diffusion field. Fire-and-forget: the request is synchronous,
+    # the seed lands on the next frame, and it is a no-op outside RD.
+    result["reseedField"] = toJs(proc() = triggerFieldReseed())
+
     # Stats
     result["onStats"] = toJs(proc(callback: proc(stats: JsObject)) =
       statsCallbacks.add(callback))
@@ -732,6 +815,7 @@ when defined(js):
       keys)
     result["normalizePresetName"] = toJs(proc(raw: cstring): cstring =
       cstring(normalizePresetName($raw)))
+    result["builtinPresets"] = toJs(proc(): JsObject = builtinPresetArray)
     result["exportPresetJson"] = toJs(proc(name: cstring): cstring =
       cstring(toJsonString(snapshotPreset($name))))
     result["exportPresetJsonPretty"] = toJs(proc(name: cstring): cstring =

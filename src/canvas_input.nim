@@ -60,9 +60,19 @@ var onInitParticles* {.exportc.}: proc() = nil
 # Set via setResizeCallback - called on window resize
 var onResize* {.exportc.}: proc() = nil
 
+# Set via setReseedFieldCallback - called when the reaction-diffusion field
+# should be re-seeded with a fresh pattern. Same indirection as
+# onInitParticles, and for the same reason: web_api is Layer 3 and cannot
+# import Layer 4's webgpu_compute, where the seed request actually lives.
+var onReseedField* {.exportc.}: proc() = nil
+
 proc setInitParticlesCallback*(callback: proc()) {.exportc.} =
   ## Set the callback for particle reinitialization.
   onInitParticles = callback
+
+proc setReseedFieldCallback*(callback: proc()) {.exportc.} =
+  ## Set the callback for reaction-diffusion field re-seeding.
+  onReseedField = callback
 
 proc setResizeCallback*(callback: proc()) {.exportc.} =
   ## Set the callback for window resize.

@@ -1,30 +1,40 @@
-// The control panel, laid out 1:1 with the old index.html panel: same
-// control order, same sections, same button rows. All state flows through
-// the controller; no component touches gardenAPI numbers directly.
+// The control panel: sections, control order and button rows as the old
+// index.html panel laid them out, narrowed to the controls the active
+// simulation mode uses. Nim decides which group belongs to which mode and
+// what a group contains; this file decides only where each group sits on
+// screen. All state flows through the controller; no component touches
+// gardenAPI numbers directly.
 
 import { createSignal, For, Show } from "solid-js";
 import type { PanelController } from "../state";
+import {
+  filterVisibleIds,
+  groupParamIds,
+  isGroupVisible,
+  isModeExclusiveGroup,
+} from "../lib/mode-gating";
 import { Section } from "./Section";
 import { ParamSlider } from "./ParamSlider";
 import { MatrixEditor } from "./MatrixEditor";
 import { PresetsSection } from "./PresetsSection";
 import { StatsPanel } from "./StatsPanel";
 
-// Pearson regime hints, verbatim from the old panel's RD labels.
-const RD_HINTS: Record<string, string> = {
-  rdFeed: "spots .025-.034, stripes .046-.058, movers ~.06",
-  rdKill: "spots .061-.065, stripes .063-.065, movers ~.0609",
-};
-
 export function Panel(props: { ctrl: PanelController }) {
   const ctrl = props.ctrl;
   const [collapsed, setCollapsed] = createSignal(false);
   const toggleCollapsed = () => setCollapsed(!collapsed());
 
+  // Mode gating. Solid's JSX transform reads each/when through getters, so
+  // every call below re-runs on a mode switch with no further plumbing.
+  const shows = (group: string) =>
+    isGroupVisible(ctrl.api.simModes(), ctrl.simMode(), group);
+  const opensFor = (group: string) =>
+    isModeExclusiveGroup(ctrl.api.simModes(), ctrl.simMode(), group);
+  // Empty when the group is hidden, so slider lists need no <Show> of their own.
   const groupIds = (group: string) =>
-    ctrl.descriptors
-      .filter((entry) => entry.group === group)
-      .map((entry) => entry.id);
+    shows(group) ? groupParamIds(ctrl.descriptors, group) : [];
+  const visible = (ids: string[]) =>
+    filterVisibleIds(ctrl.descriptors, ctrl.api.simModes(), ctrl.simMode(), ids);
 
   return (
     <div class="controls" classList={{ collapsed: collapsed() }}>
@@ -56,7 +66,7 @@ export function Panel(props: { ctrl: PanelController }) {
 
         {/* Main simulation sliders */}
         <For
-          each={[
+          each={visible([
             "particleCount",
             "speciesCount",
             "interactionRadius",
@@ -64,13 +74,15 @@ export function Panel(props: { ctrl: PanelController }) {
             "friction",
             "timeScale",
             "ruleTemperature",
-          ]}
+          ])}
         >
           {(id) => <ParamSlider ctrl={ctrl} id={id} />}
         </For>
 
         <div class="button-row">
-          <button onClick={() => ctrl.randomizeMatrix()}>🎲 New Rules</button>
+          <Show when={shows("matrix")}>
+            <button onClick={() => ctrl.randomizeMatrix()}>🎲 New Rules</button>
+          </Show>
           <button onClick={() => ctrl.resetParticles()}>↺ Reset</button>
           <button
             class="secondary"
@@ -112,61 +124,83 @@ export function Panel(props: { ctrl: PanelController }) {
 
         <ParamSlider ctrl={ctrl} id="maxVelocity" />
 
-        <Section title="Force Model">
-          <div class="control-group model-selector">
-            <button
-              class="model-btn"
-              classList={{ active: ctrl.forceModel() === 0 }}
-              onClick={() => ctrl.setForceModel(0)}
-            >
-              Polynomial
-            </button>
-            <button
-              class="model-btn"
-              classList={{ active: ctrl.forceModel() === 1 }}
-              onClick={() => ctrl.setForceModel(1)}
-            >
-              Exponential
-            </button>
-          </div>
-          <Show when={ctrl.forceModel() === 0}>
-            <For each={groupIds("force-polynomial")}>
+        <Show when={shows("force-model")}>
+          <Section title="Force Model" defaultOpen={opensFor("force-model")}>
+            <div class="control-group model-selector">
+              <button
+                class="model-btn"
+                classList={{ active: ctrl.forceModel() === 0 }}
+                onClick={() => ctrl.setForceModel(0)}
+              >
+                Polynomial
+              </button>
+              <button
+                class="model-btn"
+                classList={{ active: ctrl.forceModel() === 1 }}
+                onClick={() => ctrl.setForceModel(1)}
+              >
+                Exponential
+              </button>
+            </div>
+            <Show when={ctrl.forceModel() === 0}>
+              <For each={groupIds("force-polynomial")}>
+                {(id) => <ParamSlider ctrl={ctrl} id={id} />}
+              </For>
+            </Show>
+            <Show when={ctrl.forceModel() === 1}>
+              <For each={groupIds("force-exponential")}>
+                {(id) => <ParamSlider ctrl={ctrl} id={id} />}
+              </For>
+            </Show>
+          </Section>
+        </Show>
+
+        <Show when={shows("sph")}>
+          <Section title="SPH Fluid" defaultOpen={opensFor("sph")}>
+            <For each={groupIds("sph")}>
               {(id) => <ParamSlider ctrl={ctrl} id={id} />}
             </For>
-          </Show>
-          <Show when={ctrl.forceModel() === 1}>
-            <For each={groupIds("force-exponential")}>
+          </Section>
+        </Show>
+
+        <Show when={shows("rd")}>
+          <Section title="Reaction-Diffusion" defaultOpen={opensFor("rd")}>
+            <For each={groupIds("rd")}>
               {(id) => <ParamSlider ctrl={ctrl} id={id} />}
             </For>
-          </Show>
-        </Section>
-
-        <Section title="SPH Fluid">
-          <For each={groupIds("sph")}>
-            {(id) => <ParamSlider ctrl={ctrl} id={id} />}
-          </For>
-        </Section>
-
-        <Section title="Reaction-Diffusion">
-          <ParamSlider ctrl={ctrl} id="rdFeed" hint={RD_HINTS["rdFeed"]} />
-          <ParamSlider ctrl={ctrl} id="rdKill" hint={RD_HINTS["rdKill"]} />
-          <div class="control-group model-selector">
-            <For each={ctrl.api.colormaps()}>
-              {(entry) => (
-                <button
-                  class="model-btn"
-                  classList={{ active: ctrl.colormap() === entry.index }}
-                  onClick={() => ctrl.setColormap(entry.index)}
-                >
-                  {entry.label}
-                </button>
-              )}
+            <div class="control-group">
+              <label>Field Colormap</label>
+              <div class="model-selector">
+                <For each={ctrl.api.colormaps()}>
+                  {(entry) => (
+                    <button
+                      class="model-btn"
+                      classList={{ active: ctrl.colormap() === entry.index }}
+                      onClick={() => ctrl.setColormap(entry.index)}
+                    >
+                      {entry.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+            <For each={groupIds("rd-field")}>
+              {(id) => <ParamSlider ctrl={ctrl} id={id} />}
             </For>
-          </div>
-          <ParamSlider ctrl={ctrl} id="fieldOpacity" />
-        </Section>
+            <div class="control-group model-selector">
+              <button
+                class="model-btn"
+                onClick={() => ctrl.api.reseedField?.()}
+              >
+                ↻ Reseed Field
+              </button>
+            </div>
+          </Section>
+        </Show>
 
-        <MatrixEditor ctrl={ctrl} />
+        <Show when={shows("matrix")}>
+          <MatrixEditor ctrl={ctrl} />
+        </Show>
 
         <Section title="Palette">
           <div class="control-group model-selector">

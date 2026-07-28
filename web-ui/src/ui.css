@@ -206,6 +206,12 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* The starter row's length is Nim's to decide, so it wraps where the
+   fixed-length button rows do not. */
+#ui-root .starter-presets {
+  flex-wrap: wrap;
+}
+
 #ui-root .preset-list {
   width: 100%;
 }

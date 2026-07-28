@@ -11,13 +11,17 @@
 //
 // PING-PONG / STABLE FRONT:
 // The field lives in two rgba16float textures. fieldA is the FIXED front the render
-// and force passes always sample; fieldB trails it by one substep. A half-float
-// texture cannot be a read_write storage texture (only r32* can), so resolve cannot update
-// a texture in place. Instead it reads the trailing copy (srcField = fieldB,
-// approximately live) and writes the front (dstField = fieldA). The eight rd-step
-// substeps that follow ping-pong A<->B and end back on A, so fieldA holds the live
-// field at frame end and fieldB trails it — the invariant this pass relies on.
-// Folding deposits onto a one-substep-old snapshot is negligible for the pattern.
+// and force passes always sample; fieldB trails it. A half-float texture cannot be a
+// read_write storage texture (only r32* can), so resolve cannot update a texture in
+// place — it reads one and writes the other.
+//
+// RESOLVE IS THE FRAME'S FIRST PING-PONG SWAP. It reads the front (srcField =
+// fieldA, holding last frame's final substep) and writes the trail (dstField =
+// fieldB). The rd-step substeps that follow start by writing back to fieldA and
+// alternate from there, so an ODD substep count is what lands the live field back
+// on fieldA at frame end. src/field_core.nim asserts that parity statically; an
+// even count would end on fieldB, where nothing reads it, throwing away one full
+// substep every frame.
 //
 // CHANNELS: field texture .r = activator (A), .g = inhibitor (B).
 //
@@ -29,8 +33,8 @@
 // +-------+---------------------------------------+--------------+--------+
 // | Bind  | Shader Type                           | Resource     | Access |
 // +-------+---------------------------------------+--------------+--------+
-// |   0   | texture_2d<f32>                       | fieldB view  | sample |
-// |   1   | texture_storage_2d<rgba16float,write> | fieldA view  | write  |
+// |   0   | texture_2d<f32>                       | fieldA view  | sample |
+// |   1   | texture_storage_2d<rgba16float,write> | fieldB view  | write  |
 // |   2   | storage atomic<i32>                   | fieldDeposit | r/w    |
 // +-------+---------------------------------------+--------------+--------+
 // =============================================================================
@@ -59,16 +63,16 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let coord = vec2<i32>(i32(cellX), i32(cellY));
   let current = textureLoad(srcField, coord, 0).xy;  // .x = activator, .y = inhibitor
 
+  // One i32 per cell, the inhibitor deposit — see field-deposit.wgsl for why
+  // there is no activator slot.
   let cellIndex = cellY * FIELD_W + cellX;
-  let depositA = f32(atomicLoad(&fieldDeposit[cellIndex * 2u])) * INV_FIXED_POINT_SCALE;
-  let depositB = f32(atomicLoad(&fieldDeposit[cellIndex * 2u + 1u])) * INV_FIXED_POINT_SCALE;
+  let depositB = f32(atomicLoad(&fieldDeposit[cellIndex])) * INV_FIXED_POINT_SCALE;
 
   // Reset the deposit buffer for next frame. One thread owns each cell, so a
   // plain store is race-free (no encoder-level clearBuffer needed — the same
   // self-reset convention forces.wgsl uses for the velocity/density deltas).
-  atomicStore(&fieldDeposit[cellIndex * 2u], 0);
-  atomicStore(&fieldDeposit[cellIndex * 2u + 1u], 0);
+  atomicStore(&fieldDeposit[cellIndex], 0);
 
-  let updated = current + vec2<f32>(depositA, depositB);
+  let updated = vec2<f32>(current.x, current.y + depositB);
   textureStore(dstField, coord, vec4<f32>(updated, 0.0, 1.0));
 }

@@ -43,6 +43,12 @@ type
                               ## SPH_MAX_SUBSTEPS.
     rdFeed*: float            ## Gray-Scott feed rate F
     rdKill*: float            ## Gray-Scott kill rate k
+    rdDeposit*: float         ## Inhibitor each particle folds into its field
+                              ## cell per frame. A perturbation on an already
+                              ## ignited field, not what ignites it.
+    rdFieldForce*: float      ## Gain converting the sampled field gradient
+                              ## into a per-frame velocity impulse. Zero
+                              ## leaves particles blind to the field.
 
 func initSimulationState*(): SimulationState =
   ## The authoritative physics defaults (copied into CONFIG by createConfig).
@@ -65,5 +71,7 @@ func initSimulationState*(): SimulationState =
     sphViscosity: 0.1,
     sphSubsteps: 2,
     rdFeed: RD_DEFAULT_FEED,
-    rdKill: RD_DEFAULT_KILL
+    rdKill: RD_DEFAULT_KILL,
+    rdDeposit: RD_DEFAULT_DEPOSIT,
+    rdFieldForce: RD_DEFAULT_FIELD_FORCE
   )

@@ -18,8 +18,11 @@
 # Used by:
 #   - tests/test_field_core.nim (native analytic tests)
 #   - src/sim_registry.nim (RD_STEPS_PER_FRAME drives the frame's step count)
+#   - src/shader_config.nim (the seed constants substituted into field-seed.wgsl)
 #
 # ==============================================================================
+
+import std/math
 
 # ==============================================================================
 # FIELD DIMENSIONS
@@ -52,10 +55,11 @@ const
     ## (center weight -1) 9-point stencil, laplacian9 — its worst-mode
     ## amplification factor stays inside the unit circle at Da=1, dt=1. The
     ## -4-center 5-point form would need dt <= 0.25 at these rates.
-  RD_STEPS_PER_FRAME* = 8
+  RD_STEPS_PER_FRAME* = 7
     ## Reaction-diffusion substeps run per rendered frame. The pattern
     ## evolves slowly relative to a video frame, so multiple steps per frame
     ## buys visible motion without lowering dt (and hence stability).
+    ## Must be ODD — see the static assertion below.
   RD_PARTICLE_CEILING* = 32000
     ## Upper particle count for the reaction-diffusion mode. Particles are
     ## sources that deposit into the field and are pushed by its gradient;
@@ -67,22 +71,31 @@ const
     ## citation and the (F, k) range it names).
   RD_DEFAULT_KILL* = 0.062
     ## Kill rate k. See RD_DEFAULT_FEED.
-  RD_DEPOSIT_AMOUNT* = 0.02
-    ## Inhibitor concentration each particle folds into its field cell per frame.
-    ## field-deposit.wgsl splats this (fixed-point) into the deposit buffer;
-    ## field-resolve.wgsl adds the decoded sum onto the inhibitor channel. This
-    ## is what seeds Gray-Scott from the trivial (activator=1, inhibitor=0) start
-    ## the field textures are cleared to — a uniform-zero inhibitor field never
-    ## reacts. The magnitude is bounded by the seeding fixed point
-    ## rdSeedEquilibrium(deposit, feed, kill) = deposit/(feed+kill): 0.02 gives
-    ## ~0.217 at the Pearson defaults, inside the pattern band, where the old
-    ## 0.1 saturated seeded cells at ~1.09 and flooded the field.
-  RD_FIELD_FORCE_SCALE* = 30.0
-    ## Converts the sampled field gradient into a per-frame velocity impulse.
-    ## field-force.wgsl multiplies the central-difference inhibitor gradient by
-    ## this and writes it to the velocity-delta buffer integrate.wgsl consumes.
-    ## Zero would leave particles blind to the field. A first-cut magnitude in
-    ## world velocity units; S10 calibrates it.
+  RD_DEFAULT_DEPOSIT* = 0.02
+    ## Default inhibitor concentration each particle folds into its field cell
+    ## per frame. field-deposit.wgsl splats this (fixed-point) into the deposit
+    ## buffer; field-resolve.wgsl adds the decoded sum onto the inhibitor
+    ## channel.
+    ##
+    ## This is a PERTURBATION on an already-ignited field, not what ignites it.
+    ## Ignition comes from rdSeedCell below: a particle deposit lands in one
+    ## isolated cell, and diffusion strips an isolated peak of Db*B per substep,
+    ## so no deposit magnitude in a usable band can lift the field off
+    ## Gray-Scott's trivial (activator=1, inhibitor=0) fixed point.
+    ##
+    ## MEASURED BAND (64x64 grid, Pearson defaults, seeded field, deposit folded
+    ## once per frame ahead of RD_STEPS_PER_FRAME substeps): at 0.02 the pattern
+    ## survives the forcing largely intact; from ~0.15 the field floods into a
+    ## uniform bath rather than spots; at ~0.30 it diverges. RD_DEPOSIT_MAX in
+    ## config_ranges is set well below the flood point because the feed/kill
+    ## sliders can weaken the depletion that opposes the deposit.
+  RD_DEFAULT_FIELD_FORCE* = 30.0
+    ## Default conversion from the sampled field gradient to a per-frame
+    ## velocity impulse. field-force.wgsl multiplies the central-difference
+    ## inhibitor gradient by this and writes it to the velocity-delta buffer
+    ## integrate.wgsl consumes. Zero leaves particles blind to the field.
+    ## Inhibitor gradients peak near 0.05 per cell, so 30 is roughly 1.5
+    ## velocity units per frame against a maxVelocity of 50.
   RD_GLOW_DENSITY_FLOOR* = 1.0
     ## Per-mode floor the render loop feeds glow.wgsl's densityFactor in
     ## reaction-diffusion mode. RD runs no forces pass, so particle density
@@ -92,19 +105,91 @@ const
     ## pass 0 here, leaving their glow untouched. BLIND VISUAL PICK: the user's
     ## visual pass owns the final magnitude.
 
-# ==============================================================================
-# SEEDING EQUILIBRIUM
-# ==============================================================================
+static:
+  # fieldResolve is itself a ping-pong stage — it reads the trailing texture
+  # and writes the front — so one frame performs 1 + RD_STEPS_PER_FRAME texture
+  # swaps. That total must be even for the live field to land back on the
+  # texture the renderer samples and the next frame's resolve reads. An even
+  # RD_STEPS_PER_FRAME leaves it on the wrong texture, silently discarding the
+  # last substep every frame.
+  doAssert RD_STEPS_PER_FRAME mod 2 == 1
 
-func rdSeedEquilibrium*(depositAmount, feed, kill: float): float =
-  ## The inhibitor concentration at which per-frame particle deposit balances
-  ## the Gray-Scott depletion term — the fixed point of
-  ## B' = B + depositAmount - (feed + kill)*B, i.e. depositAmount/(feed+kill).
-  ## A stationary particle saturates its cell toward this value, so it must
-  ## sit inside the band where Pearson patterns form (below ~0.3); above it,
-  ## seeded cells pin the inhibitor past the pattern regime and the field
-  ## reads as a flat flood instead of structure.
-  depositAmount / (feed + kill)
+# ==============================================================================
+# FIELD SEED
+# ==============================================================================
+#
+# The initial field state, and the answer to why the mode looked inert: the
+# render-pass clear the field textures get (activator=1, inhibitor=0) is
+# Gray-Scott's trivial fixed point for ANY feed/kill/dt, and per-cell noise
+# cannot escape it either — an isolated peak loses Db*B to diffusion every
+# substep with no neighbors to replenish it. Only a spatially COHERENT
+# perturbation ignites the system, which is what these blobs are.
+#
+# web/shaders/src/field-seed.wgsl mirrors rdSeedCell exactly. The pair is
+# hand-maintained with no compile-time link, the same contract grayScottStep
+# and rd-step.wgsl already have. Blob centers are integers and the hash is pure
+# 32-bit integer arithmetic precisely so Nim's float64 and WGSL's f32 cannot
+# disagree about where a blob is.
+
+const
+  RD_SEED_BLOB_COUNT* = 48
+    ## Blobs the seed scatters across the field. Calibrated for the shipped
+    ## FIELD_W x FIELD_H: enough that spots fill the frame within a few
+    ## seconds, few enough that the seed reads as scattered structure rather
+    ## than a uniform bath.
+  RD_SEED_BLOB_RADIUS* = 6.0
+    ## Blob radius in cells. The floor that matters is coherence, not size —
+    ## below ~2 cells diffusion erases the blob before it can react.
+  RD_SEED_CORE_ACTIVATOR* = 0.5
+    ## Activator concentration at a blob's core. Depressed from the background
+    ## 1.0: Gray-Scott spots are activator-depleted, inhibitor-rich regions.
+  RD_SEED_CORE_INHIBITOR* = 0.25
+    ## Inhibitor concentration at a blob's core, against a background of 0.
+
+func rdSeedHash*(value: uint32): uint32 =
+  ## A pure 32-bit integer hash (the lowbias32 xor-shift/multiply chain). No
+  ## floating point anywhere: this is what lets field-seed.wgsl, which has only
+  ## f32, place blobs at byte-identical integer coordinates.
+  var mixed = value
+  mixed = mixed xor (mixed shr 16)
+  mixed = mixed * 0x7feb352d'u32
+  mixed = mixed xor (mixed shr 15)
+  mixed = mixed * 0x846ca68b'u32
+  mixed = mixed xor (mixed shr 16)
+  mixed
+
+func rdSeedBlobCenter*(blobIndex: int, nonce: uint32, width, height: int):
+    tuple[x, y: int] =
+  ## Integer cell coordinates of one blob's center. The nonce is what makes
+  ## Reset produce a different pattern rather than the same one again.
+  let stream = rdSeedHash(uint32(blobIndex) * 2'u32 + 1'u32) xor
+    rdSeedHash(nonce)
+  (x: int(rdSeedHash(stream) mod uint32(width)),
+   y: int(rdSeedHash(stream xor 0x9e3779b9'u32) mod uint32(height)))
+
+func rdSeedCell*(x, y: int, nonce: uint32, width, height, blobCount: int,
+    blobRadius: float): tuple[activator, inhibitor: float] =
+  ## The seeded state of one field cell: the background (activator 1,
+  ## inhibitor 0) blended toward the blob core by the strongest blob covering
+  ## it. Distances are toroidal because the field wraps, exactly as the
+  ## Laplacian's neighbor lookups do.
+  ##
+  ## The blend takes the MAX over blobs rather than the sum, so overlapping
+  ## blobs saturate at the core values instead of stacking past them into the
+  ## flooded regime.
+  var coverage = 0.0
+  for blobIndex in 0 ..< blobCount:
+    let center = rdSeedBlobCenter(blobIndex, nonce, width, height)
+    var dx = abs(x - center.x).float
+    if dx > width.float * 0.5: dx = width.float - dx
+    var dy = abs(y - center.y).float
+    if dy > height.float * 0.5: dy = height.float - dy
+    let distance = sqrt(dx * dx + dy * dy)
+    # A flat core out to half the radius, falling to background at the edge.
+    let falloff = clamp((blobRadius - distance) / (blobRadius * 0.5), 0.0, 1.0)
+    coverage = max(coverage, falloff)
+  (activator: 1.0 + (RD_SEED_CORE_ACTIVATOR - 1.0) * coverage,
+   inhibitor: RD_SEED_CORE_INHIBITOR * coverage)
 
 # ==============================================================================
 # 9-POINT LAPLACIAN STENCIL

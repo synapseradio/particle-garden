@@ -52,6 +52,46 @@ func parseSimKind*(id: string): SimKind =
   raise newException(ValueError, "unknown simulation kind id: " & id)
 
 # ==============================================================================
+# SECTION 1b: THE CONTROLS EACH MODE USES
+# ==============================================================================
+#
+# Which descriptor groups a mode's panel shows. This lives beside buildFrame
+# deliberately: what a mode's frame dispatches is what decides which knobs can
+# possibly affect it, and keeping the two lists in one file is what lets a
+# native test assert the relation — for instance that a mode whose frame runs
+# no `forces` dispatch does not offer the force-model groups.
+#
+# Two of the ids name no descriptor. They key panel sections that are not
+# slider lists (the attraction-matrix editor, the force-model button row), and
+# tests/test_sim_registry.nim declares them so the coverage invariant can tell
+# a deliberate section-only id from a typo.
+
+const
+  SECTION_ONLY_GROUPS* = ["matrix", "force-model"]
+    ## Group ids that key a panel section rather than a set of sliders. Every
+    ## other id a mode lists must own at least one descriptor.
+
+func controlGroupsFor*(kind: SimKind): seq[string] =
+  ## The descriptor groups a simulation kind's control panel presents.
+  ## Everything not listed is hidden for that mode — not disabled, absent.
+  case kind
+  of skParticleLife: @[
+    "simulation", "grid", "particle-life", "matrix", "force-model",
+    "force-polynomial", "force-exponential",
+    "render", "glow", "bloom", "palette"]
+  of skSph: @[
+    # No matrix and no force-model: forces-sph.wgsl reads neither the
+    # attraction matrix nor the force-model selector. It DOES read
+    # interactionRadius as its smoothing radius, which is why "grid" stays.
+    "simulation", "grid", "sph",
+    "render", "glow", "bloom", "palette"]
+  of skReactionDiffusion: @[
+    # No "grid": this mode dispatches no spatial-hash pass at all, so the
+    # interaction radius has nothing to read it.
+    "simulation", "rd", "rd-field",
+    "render", "glow", "bloom", "palette"]
+
+# ==============================================================================
 # SECTION 2: FRAME DESCRIPTION TYPES
 # ==============================================================================
 
@@ -65,15 +105,13 @@ type
     sbFillPointers
     sbDensityDelta
     sbFieldDeposit
-      ## The reaction-diffusion fixed-point splat buffer: fieldDeposit
-      ## accumulates each particle's contribution into it (per FIELD_W x
-      ## FIELD_H cell), and fieldResolve reads it to update the field
-      ## texture. Declared here for the executor's buffer-allocation table;
-      ## this stage's buildFrame(skReactionDiffusion) does not clear it —
-      ## whether fieldDeposit.wgsl self-resets it via atomicStore (the
-      ## convention forces.wgsl/forces-sph.wgsl use for velocityDelta/
-      ## densityDelta) or an encoder-level clear belongs here is a decision
-      ## for the shader that writes it (roadmap S8, next stage).
+      ## The reaction-diffusion fixed-point splat buffer: one i32 per FIELD_W x
+      ## FIELD_H cell. fieldDeposit accumulates each particle's inhibitor
+      ## contribution into it and fieldResolve reads it to update the field
+      ## texture. buildFrame(skReactionDiffusion) does not clear it, because
+      ## fieldResolve zeroes each cell as it consumes it — the same self-reset
+      ## convention forces.wgsl/forces-sph.wgsl use for velocityDelta and
+      ## densityDelta.
 
   DispatchSize* = enum
     ## Symbolic dispatch sizes, resolved by the executor each frame. The
@@ -123,6 +161,11 @@ const
     ## value is duplicated here; both sides document the pairing).
   PROFILER_SLOT_PHYSICS* = 1
     ## Mirrors gpu_profiler.passPhysics.
+  PROFILER_SLOT_FIELD* = 5
+    ## Mirrors gpu_profiler.passField — the reaction-diffusion field pass.
+    ## Distinct from PROFILER_SLOT_GRID_BUILD because this mode runs no
+    ## grid-build passes, so sharing that slot reported field time under a
+    ## label that meant something else in the other two modes.
 
 # ==============================================================================
 # SECTION 3: NODE CONSTRUCTORS
@@ -212,15 +255,25 @@ func buildFrame*(kind: SimKind): FrameDescription =
     # RD_STEPS_PER_FRAME Gray-Scott substeps, alternating which of the two
     # field-texture copies is read from vs. written to each substep (the
     # ping-pong pattern a storage texture needs since a shader cannot read
-    # and write the same texture binding in one dispatch). Starts Forward.
+    # and write the same texture binding in one dispatch).
+    #
+    # THE CHAIN MUST CLOSE. fieldResolve above is itself a ping-pong stage —
+    # it reads the front texture and writes the trailing one — so the frame
+    # performs 1 + RD_STEPS_PER_FRAME swaps in total. The substeps therefore
+    # start on the texture resolve just wrote (the trail, hence ToFront first)
+    # and must end back on the front, which is what the renderer, fieldForce,
+    # and the next frame's resolve all read. That closure is why field_core
+    # statically asserts RD_STEPS_PER_FRAME is odd: an even count leaves the
+    # live field on the trailing texture where nothing looks for it, silently
+    # discarding the last substep every single frame.
     for stepIndex in 0 ..< RD_STEPS_PER_FRAME:
       if stepIndex mod 2 == 0:
-        fieldDispatches.add dispatch("rdStepForward", dsFieldWorkgroups)
+        fieldDispatches.add dispatch("rdStepToFront", dsFieldWorkgroups)
       else:
-        fieldDispatches.add dispatch("rdStepReverse", dsFieldWorkgroups)
+        fieldDispatches.add dispatch("rdStepToTrail", dsFieldWorkgroups)
     fieldDispatches.add dispatch("fieldForce", dsParticleWorkgroups)
     @[
-      computePassNode("Field (RD)", PROFILER_SLOT_GRID_BUILD, fieldDispatches),
+      computePassNode("Field (RD)", PROFILER_SLOT_FIELD, fieldDispatches),
       # densityDelta is read by integrate (EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE
       # binds it unconditionally) but no pass in this frame writes it: unlike
       # forces.wgsl/forces-sph.wgsl, which self-reset velocityDelta/

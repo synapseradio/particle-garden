@@ -14,9 +14,13 @@
 // depositAmount * FIXED_POINT_SCALE (i32); field-resolve.wgsl decodes the sum back
 // to f32 and folds it into the field texture, then zeroes this buffer.
 //
-// CHANNEL LAYOUT: fieldDeposit is 2 i32s per cell — [activatorFixed, inhibitorFixed].
-// Particles write only the inhibitor slot (index*2 + 1). The activator slot exists
-// for symmetry / future coupling and stays untouched here.
+// CHANNEL LAYOUT: fieldDeposit is ONE i32 per cell — the inhibitor deposit. It
+// carried a second, never-written activator slot as headroom for a future
+// activator coupling; nothing used it, so it cost 1 MB of VRAM and 1 MB per frame
+// of read/write traffic to reserve. Restoring it is a contained ~20-line change:
+// double the allocation in webgpu_init.createFieldResources and byteLengthFor in
+// webgpu_compute, index as cellIndex*2 here, and load/store/reset both slots in
+// field-resolve.wgsl. Do that when an activator coupling actually exists.
 //
 // INDEXING: reads particles[] in ORIGINAL index space (globalId.x), the same space
 // integrate.wgsl and field-force.wgsl use. Reaction-diffusion runs no bin-scatter,
@@ -66,7 +70,7 @@ fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let cellY = clamp(i32(cellFy), 0, FIELD_H - 1);
   let cellIndex = cellY * FIELD_W + cellX;
 
-  // Fold depositAmount of inhibitor into this cell (fixed-point, channel 1).
+  // Fold depositAmount of inhibitor into this cell (fixed-point).
   let depositFixed = i32(params.depositAmount * FIXED_POINT_SCALE);
-  atomicAdd(&fieldDeposit[cellIndex * 2 + 1], depositFixed);
+  atomicAdd(&fieldDeposit[cellIndex], depositFixed);
 }

@@ -65,6 +65,7 @@ const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 7             # AoS: velocity + dens
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: clones the forces layout exactly (7 entries)
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 4          # AoS: + densityDelta for temporal smoothing
 # Reaction-diffusion passes (S8). See the four field shaders' binding manifests.
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED* = 2         # dstField(storage) + fieldParams (for the nonce)
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 4      # gridParams + particles + deposit + fieldParams
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 3      # srcField(sample) + dstField(storage) + deposit (deposit amount already applied in field-deposit)
 const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 3            # srcField(sample) + dstField(storage) + fieldParams
@@ -81,11 +82,12 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "forces": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES
   of "forcesSph": result = EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH
   of "integrate": result = EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE
+  of "fieldSeed": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED
   of "fieldDeposit": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT
   of "fieldResolve": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE
-  # rdStepForward and rdStepReverse share one WGSL pipeline; each gets its own
+  # rdStepToFront and rdStepToTrail share one WGSL pipeline; each gets its own
   # bind group (opposite ping-pong orientation) with the same three-entry shape.
-  of "rdStepForward", "rdStepReverse": result = EXPECTED_BIND_GROUP_ENTRIES_RD_STEP
+  of "rdStepToFront", "rdStepToTrail": result = EXPECTED_BIND_GROUP_ENTRIES_RD_STEP
   of "fieldForce": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE
   else: result = -1
 
@@ -118,6 +120,22 @@ const prewarmedKinds = {skParticleLife, skSph, skReactionDiffusion}
   ## them: their pipelines and bind groups are built here, and the field
   ## textures + deposit buffer live in webgpu_init.
 
+var pendingFieldSeed = false
+  ## Set when something asks for a fresh reaction-diffusion pattern; consumed
+  ## by the next encoded frame.
+var fieldSeedNonce = 0
+  ## Written into FieldParams.seedNonce, which field-seed.wgsl hashes to place
+  ## its blobs. Incrementing it is what makes each re-seed a DIFFERENT pattern
+  ## rather than the same one again.
+
+proc requestFieldSeed*() =
+  ## Ask for the field to be re-seeded on the next frame. Synchronous and
+  ## fire-and-forget, so it is callable straight from an Observable
+  ## subscription or from initParticles. A no-op in effect outside
+  ## reaction-diffusion: the frame only encodes the pass when RD is active.
+  inc fieldSeedNonce
+  pendingFieldSeed = true
+
 proc setActiveSimKind*(kind: SimKind) =
   ## Switch the executor to another simulation's frame description. A kind whose
   ## pipelines were not pre-warmed (its shaders do not exist on disk yet — see
@@ -130,6 +148,13 @@ proc setActiveSimKind*(kind: SimKind) =
     consoleWarn(("[sim] mode \"" & simKindId(kind) &
       "\" is not runnable in this build yet - keeping the current mode").toJs)
     return
+  # Entering the field mode seeds it, so the pattern is there the moment the
+  # user selects it. The `kind != activeSimKind` guard is load-bearing:
+  # Observable.set notifies its subscribers unconditionally, so without it
+  # re-clicking the already-active Reaction-Diffusion button would wipe
+  # whatever pattern had grown.
+  if kind == skReactionDiffusion and kind != activeSimKind:
+    requestFieldSeed()
   activeSimKind = kind
   activeFrame = buildFrame(kind)
 
@@ -371,9 +396,20 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   # REACTION-DIFFUSION PASSES (S8)
   # ==========================================================================
   # Built unconditionally (RD pre-warms). The field textures and deposit buffer
-  # live in webgpu_init; fieldA is the fixed front (see field-resolve.wgsl for
-  # the ping-pong orientation). Texture views bind directly; the compute passes
-  # read via textureLoad, so no sampler is bound here.
+  # live in webgpu_init; fieldA is the fixed front — the texture the renderer,
+  # fieldForce, and each frame's opening resolve all read. Texture views bind
+  # directly; the compute passes read via textureLoad, so no sampler is bound
+  # here.
+  #
+  # THE PING-PONG CHAIN, one frame, front = A and trail = B:
+  #   fieldResolve   A -> B   (folds this frame's particle deposits in)
+  #   rdStepToFront  B -> A   substep 1
+  #   rdStepToTrail  A -> B   substep 2
+  #   ...            alternating, RD_STEPS_PER_FRAME of them
+  #   rdStepToFront  B -> A   substep RD_STEPS_PER_FRAME (odd, so it ends here)
+  # The live field lands on A, where fieldForce and the renderer sample it and
+  # the next frame's resolve picks it up. Every key below names its DESTINATION
+  # for that reason.
   let fieldViewFront = cast[JsObject](webgpu_init.fieldSampledViewA())
   let fieldViewTrail = cast[JsObject](webgpu_init.fieldSampledViewB())
   let fieldDepositBuf = cast[JsObject](webgpu_init.fieldDepositGpuBuffer())
@@ -392,10 +428,12 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Field Deposit Bind Group"
   )
 
-  # Field Resolve: read trailing texture (B) + deposits, write front texture (A).
+  # Field Resolve: read front texture (A) + deposits, write trailing texture (B).
+  # This is the first of the frame's swaps, which is why the substeps that
+  # follow start by writing back to the front.
   let fieldResolveEntries = createJsArray()
-  discard fieldResolveEntries.push(createBindGroupResourceEntry(0, fieldViewTrail))
-  discard fieldResolveEntries.push(createBindGroupResourceEntry(1, fieldViewFront))
+  discard fieldResolveEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
+  discard fieldResolveEntries.push(createBindGroupResourceEntry(1, fieldViewTrail))
   discard fieldResolveEntries.push(createBindGroupEntry(2, fieldDepositBuf))
   validateBindGroupEntryCount(fieldResolveEntries, "fieldResolve", "bind group creation")
   bindGroups["fieldResolve"] = await createBindGroupWithValidation(
@@ -405,31 +443,45 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Field Resolve Bind Group"
   )
 
-  # RD Step Forward: read A, write B. The 8-substep frame starts here; after the
-  # even count of alternating steps the live field lands back in A (the front).
-  let rdForwardEntries = createJsArray()
-  discard rdForwardEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
-  discard rdForwardEntries.push(createBindGroupResourceEntry(1, fieldViewTrail))
-  discard rdForwardEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
-  validateBindGroupEntryCount(rdForwardEntries, "rdStepForward", "bind group creation")
-  bindGroups["rdStepForward"] = await createBindGroupWithValidation(
-    "RD Step Forward",
-    cast[GPUBindGroupLayout](bindGroupLayouts["rdStepForward"]),
-    rdForwardEntries,
-    "RD Step Forward Bind Group"
+  # RD Step To Front: read B, write A. The substep sequence starts here.
+  let rdToFrontEntries = createJsArray()
+  discard rdToFrontEntries.push(createBindGroupResourceEntry(0, fieldViewTrail))
+  discard rdToFrontEntries.push(createBindGroupResourceEntry(1, fieldViewFront))
+  discard rdToFrontEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(rdToFrontEntries, "rdStepToFront", "bind group creation")
+  bindGroups["rdStepToFront"] = await createBindGroupWithValidation(
+    "RD Step To Front",
+    cast[GPUBindGroupLayout](bindGroupLayouts["rdStepToFront"]),
+    rdToFrontEntries,
+    "RD Step To Front Bind Group"
   )
 
-  # RD Step Reverse: read B, write A (opposite orientation, same pipeline).
-  let rdReverseEntries = createJsArray()
-  discard rdReverseEntries.push(createBindGroupResourceEntry(0, fieldViewTrail))
-  discard rdReverseEntries.push(createBindGroupResourceEntry(1, fieldViewFront))
-  discard rdReverseEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
-  validateBindGroupEntryCount(rdReverseEntries, "rdStepReverse", "bind group creation")
-  bindGroups["rdStepReverse"] = await createBindGroupWithValidation(
-    "RD Step Reverse",
-    cast[GPUBindGroupLayout](bindGroupLayouts["rdStepReverse"]),
-    rdReverseEntries,
-    "RD Step Reverse Bind Group"
+  # RD Step To Trail: read A, write B (opposite orientation, same pipeline).
+  let rdToTrailEntries = createJsArray()
+  discard rdToTrailEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
+  discard rdToTrailEntries.push(createBindGroupResourceEntry(1, fieldViewTrail))
+  discard rdToTrailEntries.push(createBindGroupEntry(2, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(rdToTrailEntries, "rdStepToTrail", "bind group creation")
+  bindGroups["rdStepToTrail"] = await createBindGroupWithValidation(
+    "RD Step To Trail",
+    cast[GPUBindGroupLayout](bindGroupLayouts["rdStepToTrail"]),
+    rdToTrailEntries,
+    "RD Step To Trail Bind Group"
+  )
+
+  # Field Seed: write the initial pattern into the FRONT texture only. Not both:
+  # every frame opens with fieldResolve reading the front and writing the trail,
+  # so the trail is overwritten before any pass reads it. Seeding it too would be
+  # a second full-field dispatch that changes nothing.
+  let fieldSeedEntries = createJsArray()
+  discard fieldSeedEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
+  discard fieldSeedEntries.push(createBindGroupEntry(1, uniformBuffers["fieldParams"]))
+  validateBindGroupEntryCount(fieldSeedEntries, "fieldSeed", "bind group creation")
+  bindGroups["fieldSeed"] = await createBindGroupWithValidation(
+    "Field Seed",
+    cast[GPUBindGroupLayout](bindGroupLayouts["fieldSeed"]),
+    fieldSeedEntries,
+    "Field Seed Bind Group"
   )
 
   # Field Force: sample front field (A), write velocity deltas integrate consumes.
@@ -721,10 +773,12 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
-  # Field parameters (reaction-diffusion mode only). feed/kill are the live UI
-  # knobs; the diffusion rates, timestep, and coupling magnitudes come from
-  # field_core (the natively-tested authority). Written each frame so a slider
-  # change lands next frame, matching the SPH per-frame uniform pattern.
+  # Field parameters (reaction-diffusion mode only). feed, kill, deposit, and
+  # field force are the live UI knobs, descriptor-clamped in web_api before
+  # they reach CONFIG; the diffusion rates and timestep come from field_core
+  # (the natively-tested authority) because the shader's stability depends on
+  # them and no slider offers them. Written each frame so a slider change lands
+  # next frame, matching the SPH per-frame uniform pattern.
   if activeSimKind == skReactionDiffusion:
     let fieldParamsData = newFloat32Array(FIELD_PARAMS_F32_COUNT)
     fieldParamsData[FIELD_FEED] = float32(config.CONFIG.rdFeed)
@@ -732,9 +786,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     fieldParamsData[FIELD_DIFFUSION_A] = float32(RD_DIFFUSION_A)
     fieldParamsData[FIELD_DIFFUSION_B] = float32(RD_DIFFUSION_B)
     fieldParamsData[FIELD_DELTA_T] = float32(RD_DELTA_T)
-    fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(RD_DEPOSIT_AMOUNT)
-    fieldParamsData[FIELD_FORCE_SCALE] = float32(RD_FIELD_FORCE_SCALE)
-    fieldParamsData[FIELD_PADDING0] = 0.0
+    fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(config.CONFIG.rdDeposit)
+    fieldParamsData[FIELD_FORCE_SCALE] = float32(config.CONFIG.rdFieldForce)
+    fieldParamsData[FIELD_SEED_NONCE] = float32(fieldSeedNonce)
     queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["fieldParams"]), 0, fieldParamsData)
 
   # =========================================================================
@@ -763,7 +817,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     case simBuffer
     of sbGridCounts, sbGridOffsets, sbFillPointers: numCells * 4
     of sbDensityDelta: particleCount * 4  # i32 per particle
-    of sbFieldDeposit: FIELD_W * FIELD_H * 2 * 4  # 2 i32 channels per field cell
+    of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
 
   # The 2D field dispatch (dsFieldWorkgroups) covers FIELD_W x FIELD_H in
   # fieldStepX x fieldStepY tiles. Every other DispatchSize is 1D; this one is
@@ -784,6 +838,23 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       raise newException(CatchableError, "dsFieldWorkgroups is dispatched 2D, not via resolveDispatchSize")
 
   let commandEncoder = device.createCommandEncoderLabeled("Physics Frame Command Encoder")
+
+  # One-shot field seed, ahead of everything else this frame. Encoded here
+  # rather than at the request site because both prerequisites are only
+  # guaranteed at this point: createBindGroups has run, and the fieldParams
+  # uniform carrying the nonce has been written. Deliberately NOT counted as a
+  # profiler pass and deliberately NOT bumping fieldGeneration — the textures
+  # are not recreated, and bumping would rebuild the render and tonemap bind
+  # groups for nothing.
+  if pendingFieldSeed and activeSimKind == skReactionDiffusion:
+    pendingFieldSeed = false
+    let seedPassDesc = createJsObject()
+    seedPassDesc["label"] = "Field Seed Compute Pass".cstring.toJs
+    let seedPass = commandEncoder.beginComputePass(seedPassDesc)
+    seedPass.setPipeline(cast[GPUComputePipeline](pipelines["fieldSeed".cstring]))
+    seedPass.setBindGroup(0, cast[GPUBindGroup](bindGroups["fieldSeed".cstring]))
+    seedPass.dispatchWorkgroups(fieldGroupsX, fieldGroupsY)
+    seedPass.endPass()
 
   # Encode the frame description substepCount times into this one encoder. Each
   # repetition is a full physics step (grid build + scatter + forces + integrate)

@@ -116,10 +116,12 @@ var hasTimestampQuery* {.exportc.}: bool = false
 # rgba16float is the nearest storage+sampled+filterable half-float format. This is the
 # app's first use of STORAGE_BINDING: the rd-step / resolve passes sample one
 # texture and write the other. fieldTextureA is the FIXED front the render and
-# force passes always read; fieldTextureB trails it by one substep (see
-# field-resolve.wgsl for why the half-float format forces this ping-pong
-# rather than an in-place update). fieldGenerationCounter bumps whenever the textures are
-# (re)created so the render side can cache its bind group and rebuild on change.
+# force passes always read; fieldTextureB is the scratch the ping-pong bounces
+# through (see field-resolve.wgsl for why the half-float format forces a
+# ping-pong rather than an in-place update, and webgpu_compute's bind-group
+# section for the full per-frame swap sequence). fieldGenerationCounter bumps
+# whenever the textures are (re)created so the render side can cache its bind
+# group and rebuild on change.
 var fieldTextureA {.exportc: "pgFieldTextureA".}: GPUTexture = nil
 var fieldTextureB {.exportc: "pgFieldTextureB".}: GPUTexture = nil
 var fieldViewA {.exportc: "pgFieldViewA".}: GPUTextureView = nil
@@ -201,17 +203,22 @@ proc createFieldResources() =
   samplerDesc["label".cstring] = "RD Field Sampler".cstring.toJs
   fieldLinearSampler = device.createSampler(samplerDesc)
 
-  # Deposit buffer: 2 i32 channels (activator, inhibitor) per field cell, for
-  # fixed-point atomic accumulation of per-particle splats.
-  let depositBytes = FIELD_W * FIELD_H * 2 * 4
+  # Deposit buffer: one i32 per field cell — the inhibitor channel — for
+  # fixed-point atomic accumulation of per-particle splats. field-deposit.wgsl
+  # documents why there is no second, activator channel.
+  let depositBytes = FIELD_W * FIELD_H * 4
   let depositUsage = bitwiseOr(gpuBufferUsageStorage, gpuBufferUsageCopyDst)
   fieldDepositBuffer = device.createBufferLabeled(
-    depositBytes, depositUsage, "RD Field Deposit (fixed-point i32, 2ch)")
+    depositBytes, depositUsage, "RD Field Deposit (fixed-point i32, inhibitor)")
 
-  # Seed: clear both field textures to (activator=1, inhibitor=0), the trivial
-  # Gray-Scott steady state, via a render-pass clear (rgba16float is renderable).
-  # Particle deposits then perturb the inhibitor to ignite the pattern. Also
-  # zero the deposit buffer so frame 0 folds no garbage.
+  # Clear both field textures to (activator=1, inhibitor=0) via a render-pass
+  # clear (rgba16float is renderable). This is the PRE-SEED BASELINE, not the
+  # seed: it is Gray-Scott's trivial fixed point, inert for any feed/kill, and
+  # the field stays exactly here until field-seed.wgsl writes a real pattern
+  # over it on mode entry. What this clear guarantees is a defined starting
+  # state, so a frame encoded before the first seed reads sane values rather
+  # than uninitialized texture memory. Also zero the deposit buffer so frame 0
+  # folds no garbage.
   let seedEncoder = device.createCommandEncoderLabeled("RD Field Seed")
 
   proc clearFieldTexture(view: GPUTextureView, label: cstring) =

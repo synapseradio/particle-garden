@@ -28,6 +28,16 @@ xattr -dr com.apple.quarantine ~/Downloads/Particle\ Garden.app
 <!-- TODO: Add screenshot or GIF demonstrating the simulation here -->
 <!-- Recommended: 600-800px wide GIF showing particles forming patterns -->
 
+## Three Modes
+
+The mode buttons at the top of the panel switch between three different simulations, each with its own physics and its own set of controls. Switching modes reshapes the panel: you only ever see the knobs that affect what is currently running.
+
+**Particle Life** is the default. Six species attract and repel each other according to a 6x6 matrix you can edit directly. This is where swarms, orbits, and predation come from.
+
+**SPH Fluid** treats the same particles as an incompressible liquid, with density, pressure and viscosity instead of species rules. It sloshes.
+
+**Reaction-Diffusion** runs a Gray-Scott chemical simulation on a field behind the particles, growing the spots, stripes and coral patterns that show up on seashells and animal coats. The particles seed the chemistry as they move, and the pattern's gradients push them back. Feed and Kill select which pattern forms; the Starter Presets give you three known-good settings to begin from.
+
 ## What You Can Do
 
 Particles form swarms, chase each other, or settle into stable orbits — all from simple attraction rules. Click the interaction matrix to change how species react to each other and watch the system reorganize.
