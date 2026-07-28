@@ -20,13 +20,15 @@ from std/dom import Event, MouseEvent, TouchEvent, KeyboardEvent, preventDefault
 from std/jsffi import JsObject
 
 from bindings/dom_extensions import
-  HTMLCanvasElement, WheelEvent, domWindow, addEventListener
+  HTMLCanvasElement, WheelEvent, domWindow, addEventListener,
+  addNonPassiveEventListener
 
 import ui/core/observable
 import ui/state/input_state
 import ui/input/mouse_handler
 import ui/input/touch_handler
 import ui/input/wheel_handler
+import ui/input/pan_handler
 import ui/input/key_handler
 import camera_core
 import config
@@ -55,6 +57,11 @@ var cameraSetter*: proc(next: Camera) = nil
 
 proc cameraHooksReady(): bool =
   not cameraGetter.isNil and not cameraSetter.isNil
+
+var panSession = initPanSession()
+  ## Whether a middle-button drag is moving the camera. Camera state rather
+  ## than physics input, so it lives beside the camera hooks instead of in
+  ## currentInput, and left-drag interaction is untouched by it.
 
 proc getMouseX*(): float = currentInput.get().mouseX
 proc getMouseY*(): float = currentInput.get().mouseY
@@ -131,15 +138,25 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
   # Mouse events - use pure handlers
   canvasEl.addEventListener("mousedown", proc(event: MouseEvent) =
     let eventData = extractMouseData(event)
+    if eventData.button == mbMiddle:
+      # Autoscroll otherwise drops a scroll puck on the canvas and eats the
+      # drag; the middle button pans the camera here instead.
+      preventDefault(event)
+    panSession = panPressed(panSession, eventData.button,
+      eventData.clientX, eventData.clientY)
     currentInput.set(handleMouseDown(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("mouseup", proc(event: MouseEvent) =
     let eventData = extractMouseData(event)
+    panSession = panReleased(panSession, eventData.button)
     currentInput.set(handleMouseUp(currentInput.get(), eventData))
   )
 
   canvasEl.addEventListener("mouseleave", proc(event: MouseEvent) =
+    # A pointer that leaves mid-drag returns from anywhere, and resuming from
+    # a stale position would jump the view by however far it travelled unseen.
+    panSession = initPanSession()
     currentInput.set(handleMouseLeave(currentInput.get()))
   )
 
@@ -157,6 +174,14 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
   canvasEl.addEventListener("mousemove", proc(event: MouseEvent) =
     let eventData = extractMouseData(event)
     currentInput.set(handleMouseMove(currentInput.get(), eventData))
+    # Mousemove fires whether or not a button is down, so the session decides
+    # that a move pans; with none in progress panMoved reports no travel.
+    let moved = panMoved(panSession, eventData.clientX, eventData.clientY)
+    panSession = moved.session
+    if panSession.active and cameraHooksReady():
+      cameraSetter(grabPanned(cameraGetter(), moved.dx, moved.dy,
+        float32(config.WORLD_W), float32(config.WORLD_H),
+        float32(canvasEl.width), float32(canvasEl.height)))
   )
 
   # Touch events - use pure handlers
@@ -189,27 +214,38 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     currentInput.set(handleTouchMove(currentInput.get(), eventData))
   )
 
-  # Wheel zooms at the cursor. preventDefault stops the page from scrolling
-  # underneath the canvas, which in a desktop window reads as the whole app
-  # jumping.
-  canvasEl.addEventListener("wheel", proc(event: WheelEvent) =
+  # Wheel carries both camera gestures: a plain scroll pans, and a scroll with
+  # ctrl or cmd held zooms at the cursor, which is the shape a trackpad pinch
+  # arrives in. Both preventDefault, and both must: the pan replaces page
+  # scroll, which in a desktop window reads as the whole app jumping, and the
+  # zoom replaces the browser's page zoom, which would resize the app itself
+  # under the gesture. Registered non-passive so those calls are honoured.
+  canvasEl.addNonPassiveEventListener("wheel", proc(event: WheelEvent) =
     preventDefault(cast[Event](event))
     if not cameraHooksReady():
       return
-    # Cursor position in clip space: x right-positive, y UP-positive. The y
-    # inversion here is what undoes the renderer's own flip, so the anchor
-    # handed to the handler is in the same space camera_core.toClip returns.
     let width = float(canvasEl.width)
     let height = float(canvasEl.height)
     if width <= 0.0 or height <= 0.0:
       return
     let wheelData = WheelEventData(
+      deltaX: float(event.deltaX),
       deltaY: float(event.deltaY),
+      zoomModifier: event.ctrlKey or event.metaKey,
+      # Cursor position in clip space: x right-positive, y UP-positive. The y
+      # inversion here is what undoes the renderer's own flip, so the anchor
+      # handed to the handler is in the same space camera_core.toClip returns.
       clipX: (float(event.offsetX) / width) * 2.0 - 1.0,
       clipY: 1.0 - (float(event.offsetY) / height) * 2.0)
-    cameraSetter(handleWheel(cameraGetter(), wheelData,
-      float32(config.WORLD_W), float32(config.WORLD_H),
-      float32(CAMERA_ZOOM_MIN), float32(CAMERA_ZOOM_MAX)))
+    case wheelGesture(wheelData)
+    of wgZoom:
+      cameraSetter(handleWheel(cameraGetter(), wheelData,
+        float32(config.WORLD_W), float32(config.WORLD_H),
+        float32(CAMERA_ZOOM_MIN), float32(CAMERA_ZOOM_MAX)))
+    of wgPan:
+      cameraSetter(handleWheelPan(cameraGetter(), wheelData,
+        float32(config.WORLD_W), float32(config.WORLD_H),
+        float32(width), float32(height)))
   )
 
   # Keyboard navigation. Listens on the WINDOW rather than the canvas: a canvas

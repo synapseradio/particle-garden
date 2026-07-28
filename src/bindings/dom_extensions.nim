@@ -52,16 +52,31 @@ type
     deltaY* {.importjs: "deltaY".}: float
       ## Vertical scroll amount. Positive scrolls down/away, which zooms OUT.
     deltaX* {.importjs: "deltaX".}: float
-      ## Horizontal scroll amount. Unused today; present so a trackpad's
-      ## horizontal axis is reachable without another binding change.
+      ## Horizontal scroll amount, which a trackpad's sideways swipe reports.
     offsetX* {.importjs: "offsetX".}: float
       ## Cursor x relative to the target element's padding edge — canvas
       ## coordinates, not page coordinates, which is what the zoom anchor needs.
     offsetY* {.importjs: "offsetY".}: float
       ## Cursor y relative to the target element's padding edge.
+    ctrlKey* {.importjs: "ctrlKey".}: bool
+      ## Whether control was held. A trackpad PINCH also arrives with this set
+      ## and no key touched: the gesture reaches a browser runtime only as a
+      ## ctrl-wheel event, so this field is how pinch-to-zoom is detected.
+    metaKey* {.importjs: "metaKey".}: bool
+      ## Whether cmd was held, which is the macOS spelling of the same intent.
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: WheelEvent)) {.importjs: "#.addEventListener(#, #)".}
   ## Add event listener with WheelEvent callback
+
+proc addNonPassiveEventListener*(et: EventTarget, event: cstring, handler: proc(e: WheelEvent)) {.importjs: "#.addEventListener(#, #, {passive: false})".}
+  ## Add a WheelEvent listener that is allowed to preventDefault.
+  ##
+  ## A passive listener cannot: the browser drops the preventDefault call and
+  ## scrolls or zooms the page anyway, reporting nothing anywhere. Element
+  ## targets default to non-passive, so this states the choice rather than
+  ## inheriting it — and it states it at the one place a later move of the
+  ## listener to window or document, where that default flips, would otherwise
+  ## break the gesture in silence.
 
 proc getContext*(canvas: HTMLCanvasElement, contextType: cstring): JsObject {.importjs: "#.getContext(#)".}
   ## Get a rendering context from canvas (e.g., "2d")

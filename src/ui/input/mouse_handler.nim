@@ -42,7 +42,9 @@ func handleMouseDown*(state: InputState; event: MouseEventData): InputState =
   of mbRight:
     result = result.withMouseRightDown(true)
   of mbMiddle:
-    discard  # Middle button not used
+    # The middle button pans the camera (canvas_input, pan_handler) and reaches
+    # physics input nowhere.
+    discard
 
 func handleMouseUp*(state: InputState; event: MouseEventData): InputState =
   ## Process mouse up event. Returns new state.
