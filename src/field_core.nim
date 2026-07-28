@@ -113,7 +113,7 @@ const
     ## 1 + RD_STEPS_PER_FRAME full-field passes and the cost is real: deposits
     ## fold once per frame, so LOWERING the substep count raises the deposit
     ## rate per unit of field time and dissolves the coherence requirement on
-    ## ignition. Measured at 3: a scattered deposit ignites on frame 6, the
+    ## ignition. Measured unscaled at 3: a scattered deposit ignites on frame 6, the
     ## critical splat radius falls from 5 to 3, and the single-cell negative
     ## control lights the field — design D3's property fails. The fold
     ## therefore renormalizes: RD_DEPOSIT_FRAME_SCALE below holds the deposit

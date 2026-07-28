@@ -994,6 +994,11 @@ suite "Chemotactic Collapse Bound":
     ## Smallest deposit sampled at which some tropism DOES diverge it, and low
     ## enough that the deposit alone still cannot — a frozen population stays
     ## finite here and through 30x, and only diverges by 40x. The upper half.
+    ## MEASURED AT THE REFERENCE STEP COUNT: if RD_STEPS_PER_FRAME moves, the
+    ## demonstration needs field-time parity — nominal multiple scaled by the
+    ## inverse of RD_DEPOSIT_FRAME_SCALE and demo frames scaled to the same
+    ## total field steps (a substeps-3 recalibration measured 30x over doubled
+    ## frames as the working coordinates).
 
   # The runs that bracket the collapse, all with the field force at its maximum.
   let boundAtSafeDeposit = runChemotaxis(
@@ -1554,12 +1559,18 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
   const UNBOUNDED_DEPOSIT = 1000.0
     ## What a crowd with no per-cell limit delivers: far past any ceiling.
 
-  test "an ordinary deposit passes through untouched":
+  test "an ordinary deposit folds uncapped, at the frame scale":
     # The bound must be invisible in normal play. A spread-out population puts
     # a small fraction of one particle's deposit into any given cell, so the
     # ceiling sits orders of magnitude above what a cell normally receives.
-    check resolveCellDeposit(0.0, 0.001) == 0.001
-    check resolveCellDeposit(0.3, 0.01) == 0.31
+    # The fold applies RD_DEPOSIT_FRAME_SCALE to everything that arrives —
+    # deposit per FIELD STEP, not per frame, is the conserved quantity.
+    check resolveCellDeposit(0.0, 0.001) == RD_DEPOSIT_FRAME_SCALE * 0.001
+    check resolveCellDeposit(0.3, 0.01) == 0.3 + RD_DEPOSIT_FRAME_SCALE * 0.01
+    # And at an explicit scale of one, the raw arithmetic is the identity the
+    # pre-scale fold shipped.
+    check resolveCellDeposit(0.0, 0.001, scale = 1.0) == 0.001
+    check resolveCellDeposit(0.3, 0.01, scale = 1.0) == 0.31
 
   test "the ceiling exceeds what a dense legitimate crowd deposits":
     # Every particle in one cell at the deposit slider's ceiling still lands
@@ -1569,9 +1580,14 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
       depositSplatNormalization(RD_DEPOSIT_SPLAT_RADIUS)
     check RD_DEPOSIT_CELL_MAX > onePartcleAtMax * 40.0
 
-  test "an unbounded deposit saturates at the ceiling":
-    check resolveCellDeposit(0.0, 1000.0) == RD_DEPOSIT_CELL_MAX
-    check resolveCellDeposit(0.2, 1000.0) == 0.2 + RD_DEPOSIT_CELL_MAX
+  test "an unbounded deposit saturates at the scaled ceiling":
+    # The cap applies before the scale, so the effective per-frame injection
+    # bound moves with the substep count and the measured stability margin
+    # holds in field time.
+    check resolveCellDeposit(0.0, 1000.0) ==
+      RD_DEPOSIT_FRAME_SCALE * RD_DEPOSIT_CELL_MAX
+    check resolveCellDeposit(0.2, 1000.0) ==
+      0.2 + RD_DEPOSIT_FRAME_SCALE * RD_DEPOSIT_CELL_MAX
 
   test "the inhibitor never goes negative however many eroders stack on one cell":
     # RD_DEPOSIT_CELL_MAX bounds excess from above only (min() is a no-op on a
