@@ -714,14 +714,19 @@ large.
 
 Weakly-compressible SPH carries an artificial speed of sound set by the stiffness. The scheme is
 stable only while a pressure wave cannot cross a smoothing radius inside one timestep — the Courant
-condition, `dt <= C * h / c`. Since `c` grows like the square root of stiffness, the largest stable
-stiffness grows like `(h * substeps / dt)^2`. Two consequences, and the second is the one C5 missed:
+condition, `dt <= C * h / c`. Since `c` grows like the square root of stiffness, this argument
+predicted a largest stable stiffness growing like `(h * substeps / dt)^2`. The C3.1 sweep measured
+the boundary and overturned two of the three exponents: it runs exactly inverse in `dt`, linear in
+the substep count, and sublinear in `h` — the fitted law, and why this integrator escapes the
+textbook square, are recorded beside `SPH_STABILITY_COEFFICIENT` in `src/sph_core.nim`. Two
+consequences, and the second is the one C5 missed:
 
-- Raising substeps raises the stable ceiling quadratically. `sph_core.nim:39-42` already says this in
-  prose — "Higher stiffness needs a smaller effective timestep; substepping buys that" — so the
-  coupling is known to the codebase and simply absent from the ranges.
-- **Shrinking `h` LOWERS the stable ceiling quadratically.** A radius fraction of 0.35 cuts the
-  largest stable stiffness to roughly an eighth of what the same world tolerates today.
+- Raising substeps raises the stable ceiling — linearly, by the measurement. `sph_core.nim` already
+  says this in prose beside `SPH_MAX_SUBSTEPS` — "Higher stiffness needs a smaller effective
+  timestep; substepping buys that" — so the coupling is known to the codebase and simply absent
+  from the ranges.
+- **Shrinking `h` LOWERS the stable ceiling.** Linearly as served: a radius fraction of 0.35 cuts
+  the largest stable stiffness to roughly a third of what the same world tolerates today.
 
 So `SPH_STIFFNESS_MAX = 40` (`src/config_ranges.nim:75-76`) is not a constant. It is a function of
 the radius fraction and the substep count that has been written down as a constant, and this change

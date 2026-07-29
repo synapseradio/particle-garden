@@ -54,12 +54,13 @@ the `parameter-range-authority` delta); this capability owns the function and it
 #### Scenario: Shrinking the radius lowers the ceiling
 
 - **WHEN** the radius fraction falls with substeps and timestep held fixed
-- **THEN** the derived stiffness ceiling falls, quadratically in the fraction
+- **THEN** the derived stiffness ceiling falls, linearly in the fraction — the measured law,
+  recorded beside `SPH_STABILITY_COEFFICIENT` in `src/sph_core.nim`
 
 #### Scenario: More substeps buy more stiffness
 
 - **WHEN** the substep count rises with the fraction and timestep held fixed
-- **THEN** the derived ceiling rises, quadratically in the substep count
+- **THEN** the derived ceiling rises, linearly in the substep count, under the same measured law
 
 #### Scenario: The ceiling cannot exceed the envelope
 
