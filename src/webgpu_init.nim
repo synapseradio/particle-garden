@@ -13,12 +13,7 @@
 # separate arrays for each field. This enables cache-friendly access patterns
 # in compute shaders.
 #
-# BUFFER ORGANIZATION:
-# - particlesA: Primary particle buffer (N * 32 bytes)
-# - particlesSorted: Spatially-sorted particles for cache-friendly forces
-# - velocityDeltaFixed: Interleaved i32 pairs for Newton's 3rd law atomics
-# - Grid buffers: counts, offsets, fillPointers
-# - Index mappings: sortedIndices, reverseIndices
+# Buffer inventory and per-buffer semantics: memory_layout.nim's MemoryOffsets.
 #
 # ==============================================================================
 
@@ -87,11 +82,12 @@ type
     sortedIndices* {.importjs: "sortedIndices".}: int
     reverseIndices* {.importjs: "reverseIndices".}: int
     velocityDelta* {.importjs: "velocityDelta".}: int
-    ## Density delta buffer for symmetric accumulation via atomics.
-    ## Half-neighbor iteration processes each pair once, but density must be
-    ## accumulated for BOTH particles. Since WGSL lacks atomic f32, we use
-    ## fixed-point i32 (scale=65536) and apply in integrate pass.
+      ## Two i32 per particle, interleaved [vx, vy].
     densityDelta* {.importjs: "densityDelta".}: int
+      ## Density delta buffer for symmetric accumulation via atomics.
+      ## Half-neighbor iteration processes each pair once, but density must be
+      ## accumulated for BOTH particles. Since WGSL lacks atomic f32, we use
+      ## fixed-point i32 (scale=65536) and apply in integrate pass.
     sphDensityDelta* {.importjs: "sphDensityDelta".}: int
     crowdDensityDelta* {.importjs: "crowdDensityDelta".}: int
     fieldAlive* {.importjs: "fieldAlive".}: int
@@ -351,7 +347,7 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
 
   let sizes = calculateBufferSizes()
 
-  # Find max buffer size (particlesA is largest at 64K * 32 = 2MB)
+  # Find max buffer size (particlesA is the largest single buffer)
   var maxBufferSize = sizes.particlesA
   if sizes.particlesSorted > maxBufferSize: maxBufferSize = sizes.particlesSorted
 

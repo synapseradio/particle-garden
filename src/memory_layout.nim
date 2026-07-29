@@ -27,12 +27,7 @@
 # - Powers-of-two alignment avoids straddling cache line boundaries
 # - All fields naturally aligned (f32/u32 at 4-byte boundaries)
 #
-# BUFFER ORGANIZATION:
-# - particlesA: Primary particle buffer (N * 32 bytes)
-# - particlesSorted: Spatially-sorted copy for cache-friendly force computation
-# - velocityDeltaFixed: Interleaved i32 pairs for atomic Newton's 3rd law
-# - Grid buffers: cellCounts, cellOffsets for spatial hashing
-# - Index mappings: sortedIndices, reverseIndices
+# Buffer inventory and per-buffer semantics: the MemoryOffsets field docs below.
 #
 # CROSS-COMPILATION:
 #   This module compiles for `nim js` (browser).
@@ -78,7 +73,8 @@ const
     ## What the crowding cap reads, because the spatial hash a mixed blob fills
     ## costs exactly what a single-species one costs — so the signal that bounds
     ## that cost must count neighbours the same way the hash does.
-    ## The last word of the 32-byte struct, previously padding.
+    ## The last word of the 32-byte struct; the field costs no extra bytes,
+    ## since the struct was already sized to this width.
 
 # ==============================================================================
 # SECTION 3: SHARED BUFFER CONFIGURATION

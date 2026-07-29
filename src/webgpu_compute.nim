@@ -2,12 +2,10 @@
 # PARTICLE GARDEN - WEBGPU COMPUTE PIPELINE ORCHESTRATION (AoS Layout)
 # ==============================================================================
 #
-# This module implements the physics pipeline with AoS (Array of Structures):
-# - Pass 1: bin-count (count particles per cell)
-# - Pass 2: prefix-sum (exclusive scan for cell offsets)
-# - Pass 3: bin-scatter (physically scatter entire Particle structs)
-# - Pass 4: forces (compute inter-particle forces from SORTED buffer)
-# - Pass 5: integrate (apply velocity deltas and update positions)
+# This module dispatches the GPU compute pipeline with AoS (Array of
+# Structures) buffers. Which passes run each frame, and their order, is
+# sim_registry.buildFrame's to say — this module executes that frame
+# description rather than a fixed pass list.
 #
 # AoS LAYOUT BENEFIT:
 # With AoS, each Particle is a 32-byte struct containing pos, vel, species, density.
@@ -16,12 +14,7 @@
 # - Better cache locality when accessing multiple fields
 # - Merged passes (bin-scatter and integrate are each a single pass)
 #
-# BUFFER ORGANIZATION:
-# - particlesA: Primary particle buffer (N * 32 bytes)
-# - particlesSorted: Spatially-sorted for cache-friendly force computation
-# - velocityDelta: Interleaved i32 pairs for Newton's 3rd law atomics
-# - Grid buffers: counts, offsets, fillPointers
-# - Index mappings: sortedIndices, reverseIndices
+# Buffer inventory and per-buffer semantics: memory_layout.nim's MemoryOffsets.
 #
 # ==============================================================================
 
@@ -64,7 +57,7 @@ const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 6        # AoS: merged pass
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 8             # AoS: velocity + colony and crowd density deltas
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: forces' slots, with its own density at 6
 const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6          # AoS: + all three density deltas to resolve
-# Reaction-diffusion passes (S8). See the four field shaders' binding manifests.
+# Reaction-diffusion passes. See the four field shaders' binding manifests.
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED* = 2         # dstField(storage) + fieldParams (for the nonce)
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particles + deposit + fieldParams + speciesChemistry
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 4      # srcField(sample) + dstField(storage) + deposit + alive-cell census
@@ -413,7 +406,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   )
 
   # ==========================================================================
-  # REACTION-DIFFUSION PASSES (S8)
+  # REACTION-DIFFUSION PASSES
   # ==========================================================================
   # Built unconditionally (RD pre-warms). The field textures and deposit buffer
   # live in webgpu_init; fieldA is the fixed front — the texture the renderer,
@@ -747,7 +740,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # bin-count, bin-scatter, forces, and integrate all dispatch per-particle
   # and share one workgroup-size-derived divisor. They're independently
   # tunable in shader_config.nim's WorkgroupConfig but all sit at the same
-  # production value today; if that ever diverges, dsParticleWorkgroups needs
+  # production value; if that ever diverges, dsParticleWorkgroups needs
   # splitting into per-pass dispatch kinds in sim_registry.
   let workgroupSize = shader_config.getWorkgroupSize("bin-count")
   let particleWorkgroups = jsCeil(particleCount.float / workgroupSize.float)
@@ -826,9 +819,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[SIM_CROWDING_STRENGTH] = float32(config.CONFIG.crowdingStrength)
 
   # The fraction of the interaction radius the fluid's kernel spans. One is the
-  # whole radius, which is the kernel every fluid world ran before this field
-  # existed; the range caps it there, so the smoothing radius can never exceed
-  # the sweep's reach.
+  # whole radius; the range caps it there, so the smoothing radius can never
+  # exceed the sweep's reach.
   simParamsData[SIM_SPH_RADIUS_FRACTION] =
     float32(config.CONFIG.sphRadiusFraction)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)

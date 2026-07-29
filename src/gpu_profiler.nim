@@ -34,16 +34,16 @@ const
   passField* = 5
     ## The reaction-diffusion field pass (deposit, resolve, the Gray-Scott
     ## substeps, field force). Its own slot rather than passGridBuild's:
-    ## reaction-diffusion dispatches no grid-build passes at all, so reporting
-    ## field time under "GPU grid" made the two modes' numbers mean different
-    ## things under one label. The honest consequence is that grid time now
-    ## reads 0 in reaction-diffusion, which is what it genuinely is.
+    ## reaction-diffusion dispatches no grid-build passes at all, so folding
+    ## field time into "GPU grid" would make the two modes' numbers mean
+    ## different things under one label. Grid time reads 0 in
+    ## reaction-diffusion, which is what it genuinely is.
   passIntegrate* = 6
-    ## The integrate pass, which left the physics pass when frames became
-    ## composable: it must run after the field passes, and the field passes
-    ## must run after forces, so it needed a node — and therefore a slot — of
-    ## its own. app.nim adds this back into the physics figure it reports, so
-    ## the stat keeps meaning what it meant before the split.
+    ## The integrate pass. It must run after the field passes, and the field
+    ## passes must run after forces, so it needs a node — and therefore a
+    ## slot — of its own, separate from passPhysics. app.nim adds this back
+    ## into the physics figure it reports, so the stat keeps meaning what it
+    ## says: total physics time.
   numPasses* = 7
   numQueries = numPasses * 2
 

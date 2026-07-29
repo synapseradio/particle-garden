@@ -74,12 +74,11 @@ const
     ## render.wgsl's vertex stage. 0 leaves species colours untouched, 1 replaces
     ## them entirely with the colormapped field.
     ##
-    ## INDEPENDENT OF FIELD_OPACITY_DEFAULT, and that independence is the point:
-    ## the backdrop and the tint are two different ways to show one field, and
-    ## folding the backdrop's scale into the tint made turning the backdrop off
-    ## also blind the particles. The pull is already proportional to the field's
-    ## local intensity, so a particle standing where no pattern is keeps its
-    ## species colour exactly — the tint needs no second gate.
+    ## Independent of FIELD_OPACITY_DEFAULT by design: the backdrop and the tint
+    ## are two different ways to show one field. The pull is already
+    ## proportional to the field's local intensity, so a particle standing
+    ## where no pattern is keeps its species colour exactly — the tint needs no
+    ## second gate.
     ##
     ## BLIND VISUAL PICK, deliberately below half-and-half so species stay
     ## tellable apart inside a bright pattern; the calibration pass owns the

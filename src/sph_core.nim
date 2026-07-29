@@ -153,40 +153,11 @@ const
     ## The fitted stability coefficient: the largest stiffness this integrator
     ## holds still at is `SPH_STABILITY_COEFFICIENT * h * substeps / dt`, with h
     ## the smoothing radius in world pixels and dt the substepped frame's
-    ## timestep in seconds.
-    ##
-    ## WHAT WAS MEASURED. tests/test_sph_core.nim's stability harness runs this
-    ## fluid alone in a periodic box a few smoothing radii across, seeded at
-    ## twice rest density — the compression forces-sph.wgsl clamps its Tait
-    ## input at, so the equation of state is answering as hard as it ever will —
-    ## and bisects for the largest stiffness whose disturbance still comes to
-    ## rest. The conditions: the shipped rest density, viscosity, friction and
-    ## velocity cap; fluid strength at its maximum, because that strength
-    ## multiplies the whole pass and the ceiling has to hold where it is
-    ## largest; 120 frames at a 1/60 s reference frame; and "at rest" meaning a
-    ## residual RMS speed at or below half a pixel per frame.
-    ##
-    ## THE NUMBERS. Written as the coefficient `k* dt / (h * substeps)`, the
-    ## boundary measured 0.00312 at the widest kernel the sliders reach (150 px,
-    ## one substep), 0.00367 at the default 50 px kernel, and 0.0111 at a 5 px
-    ## one. It falls as the kernel widens, so the SMALLEST of those is the one a
-    ## law linear in h may be anchored at; 0.0025 sits a fifth below it. The
-    ## margin that leaves runs from 1.25x at the anchor to about 4x at a narrow
-    ## kernel, and the harness holds both ends: at the ceiling the fluid settles,
-    ## at eight times the ceiling it does not.
-    ##
-    ## THE FORM IS LINEAR, NOT THE COURANT SQUARE. Design C7 predicted a
-    ## boundary growing like `(h * substeps / dt)^2` and marked it a hypothesis
-    ## pending this measurement. The measurement disagrees on two of the three
-    ## exponents: the boundary is exactly inverse in dt, linear in the substep
-    ## count, and SUBLINEAR in h (about 0.86 over the wide end, flattening to
-    ## nothing below a few pixels where the shader's 2 px minimum separation
-    ## takes over). The textbook square collects one factor of 1/h from the
-    ## pressure gradient and another from advancing position by velocity times
-    ## dt; this integrator has neither, because both kernels are divided by
-    ## their self-weight to make the pressure magnitude radius-independent
-    ## (forces-sph.wgsl) and integrate.wgsl advances position by the velocity
-    ## itself. One factor of each survives, which is this form.
+    ## timestep in seconds. Linear in h rather than the Courant square: this
+    ## integrator normalizes both kernels by their self-weight and advances
+    ## position by the velocity itself, so one factor each of 1/h and dt
+    ## survives. Measured, fitted and re-checked by tests/test_sph_core.nim's
+    ## stability harness, which also records the fit's anchor numbers.
   SPH_CEILING_REFERENCE_FRAME_SECONDS* = 1.0 / 60.0
     ## The frame the served ceiling reads its timestep against. app.nim forms
     ## the real timestep from the frame the browser actually delivered, capped

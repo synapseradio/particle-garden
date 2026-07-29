@@ -110,8 +110,8 @@ func bindingsDeclared*(code: string): seq[int] =
   ## A trailing `//` comment is stripped from each line before the scan, so
   ## prose that merely mentions a binding number can never inflate the set —
   ## the same false-positives-forbidden stance as namedFieldConstructorLines.
-  ## A `/* */` block comment is NOT stripped; no bundled shader uses one
-  ## today, so this is a recorded blind spot (see the tests) rather than a
+  ## A `/* */` block comment is NOT stripped; no bundled shader uses one,
+  ## so this is a recorded blind spot (see the tests) rather than a
   ## parser worth the complexity to close.
   const marker = "@binding("
   var seen: HashSet[int]

@@ -12,7 +12,7 @@
 #     restriction and is exercised directly by tests/test_palette.nim)
 #   - tests/test_palette.nim (native test compilation)
 #
-# This module is the serialization contract for palettes: presets (B2) store
+# This module is the serialization contract for palettes: presets store
 # a generated or edited palette by its RGB tuples, so the shape returned here
 # (seq[tuple[red, green, blue: float]]) is load-bearing beyond config.nim.
 #

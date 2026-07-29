@@ -55,7 +55,7 @@ func clampZoom*(zoom, minZoom, maxZoom: float32): float32 =
 
 func initCamera*(worldWidth, worldHeight: float32): Camera =
   ## The default view: the whole world, centred. At this camera toClip
-  ## reproduces the mapping the renderer used before a camera existed.
+  ## reduces to the pre-camera mapping `(worldPos / worldSize) * 2 - 1`.
   Camera(
     centerX: worldWidth * 0.5'f32,
     centerY: worldHeight * 0.5'f32,

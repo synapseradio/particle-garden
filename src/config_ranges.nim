@@ -13,8 +13,7 @@
 #
 # Because both consumers read these constants, the UI and the preset schema
 # cannot drift apart — neither side holds its own copy, so a preset bound
-# cannot track a dead web/index.html attribute (a 64000 particle ceiling
-# against a live 128000 slider).
+# cannot silently diverge from what the slider offers.
 #
 # ==============================================================================
 
@@ -34,10 +33,11 @@ const
   INTERACTION_RADIUS_MIN* = 10
   INTERACTION_RADIUS_MAX* = 150
   FORCE_STRENGTH_MIN* = 0.0
-    ## Zero is an ordinary value of a coupling strength (design D13).
+    ## Zero is an ordinary value of a coupling strength.
     ## `fMul` scales BOTH force zones (`src/physics_core.nim:52-60`), so zero
-    ## removes short-range repulsion too and particles pass through each other.
-    ## Design C0 covers what that means for the crowding cap.
+    ## removes short-range repulsion too and particles pass through each other
+    ## — at that point the crowding cap is vacuous rather than wrong, since
+    ## there is no attraction left to attenuate.
   FORCE_STRENGTH_MAX* = 5.0
   CROWDING_STRENGTH_MIN* = 0.0
     ## Zero is today's force law exactly — `1 / (1 + 0 * log(1 + density))` is 1
@@ -56,7 +56,7 @@ const
   FLUID_STRENGTH_MAX* = 1.0
     ## One is the whole fluid. Nothing above it: this multiplies the pass's
     ## entire velocity contribution, so a higher value amplifies pressure past
-    ## the settings design C7's stability analysis covers. Stiffness is where to
+    ## the settings the stability analysis covers. Stiffness is where to
     ## ask for a stiffer fluid, because its ceiling answers.
   FRICTION_MIN* = 0.0
   FRICTION_MAX* = 0.5
@@ -118,7 +118,7 @@ const
     ## tests/test_sph_core.nim, and neither forces a change yet.
     ##
     ## The stable stiffness ceiling falls LINEARLY with this fraction, not
-    ## quadratically as design C7 predicted before the sweep existed
+    ## quadratically as predicted before the sweep existed
     ## (src/sph_core.nim's SPH_STABILITY_COEFFICIENT records why). So the floor
     ## still decides the worst-case ceiling, at 0.0025 * fraction *
     ## interactionRadius * substeps / dt. Every labelled stiffness notch has to
@@ -132,12 +132,12 @@ const
     ## than that floor sees no neighbour at any separation. This fraction against
     ## the smallest interaction radius reaches 1 px, which is inside that inert
     ## region. Raising the floor to make it unreachable is a live option and a
-    ## decision for whoever calibrates the fraction's default (C2.6). [?]
+    ## decision for whoever calibrates the fraction's default. [?]
   SPH_RADIUS_FRACTION_MAX* = 1.0
     ## Exactly one, and the assertion below holds it there. One is the whole
     ## interaction radius, which is the kernel every fluid world ran before this
     ## fraction existed, so keeping it representable is what stops this change
-    ## from silently altering a saved world (design C5).
+    ## from silently altering a saved world.
     ##
     ## Nothing above it, and by construction rather than by clamp: the SPH
     ## neighbour sweep visits only the cell block around a particle and the
@@ -156,7 +156,7 @@ const
     ## the executor loop and the slider bound stay one value.
   RD_FEED_MIN* = 0.010
   RD_FEED_MAX* = 0.085
-    ## 0.085 clears Coral, whose feed coordinate is 0.082 (design D4); a 0.080
+    ## 0.085 clears Coral, whose feed coordinate is 0.082; a 0.080
     ## ceiling strands it. Shipping a labelled notch outside its own slider's
     ## range would be the same defect the named regimes exist to fix — a
     ## position the panel names and the user cannot reach. The static assertion
@@ -260,7 +260,7 @@ const
     ## Fastest weather: two tours a minute. Bounded by CLIMATE_MAX_STEP rather
     ## than by taste — tests/test_climate_core.nim sweeps the loop at this speed
     ## and fails if any single frame moves a slider further than that ceiling.
-  # Camera (S6). The bounds camera_core.clampZoom is called with — they live
+  # Camera. The bounds camera_core.clampZoom is called with — they live
   # here rather than beside the camera maths because this file is the single
   # source of truth for every user-facing range, and camera_core takes them as
   # parameters precisely so that stays true.
@@ -302,7 +302,7 @@ const
     ## particles pushed away from their own deposits spread across the pattern,
     ## and no feedback loop closes. There is no measured hazard to bound.
   TROPISM_MAX* = 0.5
-    ## Half authority UP-gradient, per design D5. Climbing a self-deposited
+    ## Half authority UP-gradient. Climbing a self-deposited
     ## gradient closes a positive feedback loop — deposit raises the peak, the
     ## peak steepens the gradient, the gradient pulls harder — which is the
     ## Keller-Segel collapse mechanism (chi*M > 8*pi in 2D,
@@ -342,7 +342,7 @@ const
     ##
     ## If the finite half of the bracket ever goes red, halve this constant and
     ## record the failing value here. Never widen the test's ceiling instead.
-  # HDR bloom + colour grade (S9). bloomEnabled is a toggle, not a slider, so
+  # HDR bloom + colour grade. bloomEnabled is a toggle, not a slider, so
   # it has no range here. Temperature is signed (warm/cool), centred on 0.
   BLOOM_INTENSITY_MIN* = 0.0
   BLOOM_INTENSITY_MAX* = 3.0
@@ -354,7 +354,7 @@ const
   CONTRAST_MAX* = 2.0
   TEMPERATURE_MIN* = -1.0
   TEMPERATURE_MAX* = 1.0
-  # Reaction-diffusion field visualization (S10). colormapIndex is an integer
+  # Reaction-diffusion field visualization. colormapIndex is an integer
   # ramp selector (a button group, not a slider, but preset.nim clamps it);
   # fieldOpacity is a slider. Both ranges come from colormap_core, the field
   # colormap authority.
@@ -382,7 +382,7 @@ static:
   # would make the pre-crowding world unreachable.
   doAssert CROWDING_STRENGTH_MIN == 0.0,
     "crowding strength zero is today's force law and must stay reachable"
-  # Every coupling strength reaches zero (design D13). One loop rather than an
+  # Every coupling strength reaches zero. One loop rather than an
   # assertion each, so a fifth coupling with a nonzero floor fails here.
   for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
       RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN]:
@@ -405,7 +405,7 @@ static:
     "normalizations (src/sph_core.nim:62 and :82)"
   # At exactly 1 the smoothing radius can never outrun the neighbour sweep,
   # whose cells are sized to the interaction radius. Raising this ceiling would
-  # make dropped neighbours expressible, which is the constraint design C5
+  # make dropped neighbours expressible, which is the constraint this range
   # chose to make unrepresentable rather than to clamp.
   doAssert SPH_RADIUS_FRACTION_MAX == 1.0,
     "the SPH smoothing radius must stay at or below the interaction radius " &
@@ -444,7 +444,7 @@ static:
     doAssert zoomNotch >= CAMERA_ZOOM_MIN and zoomNotch <= CAMERA_ZOOM_MAX
   # Species chemistry: non-empty ranges, and field_core's defaults inside the
   # range they are the default of — the same guard as the RD pair above. The
-  # tropism range is asymmetric on purpose (design D5); the assertion below
+  # tropism range is asymmetric on purpose; the assertion below
   # states that as a checked property so a future "tidying" to [-1, +1] fails
   # here rather than shipping unmeasured up-gradient authority.
   doAssert SECRETION_MIN < SECRETION_MAX

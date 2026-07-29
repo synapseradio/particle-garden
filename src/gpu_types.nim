@@ -1,12 +1,8 @@
 # =============================================================================
 # GPU TYPES - Type-Safe GPU Buffer Layouts
 # =============================================================================
-# Provides:
-# 1. Nim-side definitions of WGSL struct layouts
-# 2. Compile-time validation of field offsets
-# 3. Type-safe buffer write helpers
 #
-# This module is the single source of truth for GPU struct layouts in Nim.
+# The single source of truth for GPU struct layouts in Nim.
 # The WGSL modules in web/shaders/modules/ should match these definitions.
 # =============================================================================
 
@@ -28,15 +24,15 @@ import memory_layout
 type
   GpuType* = enum
     ## WGSL scalar and vector types with known sizes
-    gtF32         ## f32: 4 bytes
-    gtU32         ## u32: 4 bytes
-    gtI32         ## i32: 4 bytes
-    gtVec2F32     ## vec2<f32>: 8 bytes
-    gtVec3F32     ## vec3<f32>: 12 bytes (but 16-byte aligned in structs!)
-    gtVec4F32     ## vec4<f32>: 16 bytes
-    gtVec2U32     ## vec2<u32>: 8 bytes
-    gtVec4U32     ## vec4<u32>: 16 bytes
-    gtArray       ## array<T, N>: variable size
+    gtF32
+    gtU32
+    gtI32
+    gtVec2F32
+    gtVec3F32
+    gtVec4F32
+    gtVec2U32
+    gtVec4U32
+    gtArray
 
   GpuField* = object
     ## A field within a GPU struct
@@ -60,7 +56,6 @@ type
 # =============================================================================
 
 func gpuTypeSize*(t: GpuType): int =
-  ## Size in bytes for each GPU type
   case t
   of gtF32, gtU32, gtI32: 4
   of gtVec2F32, gtVec2U32: 8
@@ -69,7 +64,6 @@ func gpuTypeSize*(t: GpuType): int =
   of gtArray: 0     # Must be calculated from element type * count
 
 func gpuTypeAlignment*(t: GpuType): int =
-  ## Alignment requirement for each GPU type
   case t
   of gtF32, gtU32, gtI32: 4
   of gtVec2F32, gtVec2U32: 8
@@ -127,7 +121,7 @@ const
   # forces-sph.wgsl)
   # Layout: 16 scalar fields (64 bytes) + 9 vec4 matrix (144 bytes) + 6 force-model
   # fields (24 bytes) + 4 SPH fields (16 bytes) + crowding (4 bytes) + the SPH
-  # radius fraction (4 bytes). The written size now fills the allocation
+  # radius fraction (4 bytes). The written size fills the allocation
   # exactly, so the next field costs a 16-byte block rather than a pad.
   SimParamsLayout* = GpuStruct(
     name: "SimParams",
@@ -183,11 +177,11 @@ const
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
-  # glowDensityFloor (S10) is a floor under the glow's density factor, for a
+  # glowDensityFloor is a floor under the glow's density factor, for a
   # world where colony density is unavailable. forces.wgsl is world-intrinsic
   # and writes that density every frame, so webgpu_render.nim writes the floor
   # at 0 and glow.wgsl's max is inert. The field stays until someone shrinks
-  # RenderParams deliberately — see one-world tasks 9.0c2.
+  # RenderParams deliberately.
   #
   # fieldOpacity and colormapIndex are duplicated here from TonemapParams so the
   # VERTEX stage can light each particle by the field it is standing in
@@ -255,8 +249,8 @@ const
   # THE EXTENT TRAVELS WITH THE VIEW. Every transform in camera_transform.wgsl
   # needs the world span as well as the camera — a view over a torus means
   # nothing without the span it wraps around — so the pass that binds a camera
-  # gets both from one record. The fade and composite passes used to carry
-  # private copies in their own param structs, which is two structs holding one
+  # gets both from one record. Carrying private copies in the fade and
+  # composite passes' own param structs would be two structs holding one
   # number and two chances to disagree about how big the world is inside a
   # single frame.
   #
@@ -329,7 +323,7 @@ const
   # The uniform exists so a second reaction never revisits rd-step's bind
   # group, its layout, its entry-count constant, or the shader manifest — that
   # reaction's parameters grow this struct in the same change that reads them,
-  # never as reserved members ahead of a consumer (one-world 3.7).
+  # never as reserved members ahead of a consumer.
   ReactionParamsLayout* = GpuStruct(
     name: "ReactionParams",
     fields: @[
@@ -424,7 +418,6 @@ func fieldByName*(gpuStruct: GpuStruct, name: string): GpuField =
   raise newException(KeyError, "Field not found: " & name & " in struct " & gpuStruct.name)
 
 func fieldOffset*(gpuStruct: GpuStruct, name: string): int =
-  ## Get byte offset for a field by name
   fieldByName(gpuStruct, name).offset
 
 func fieldIndex*(gpuStruct: GpuStruct, name: string): int =

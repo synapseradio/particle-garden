@@ -76,7 +76,6 @@ proc getBlastX*(): float = currentInput.get().blastX
 proc getBlastY*(): float = currentInput.get().blastY
 proc getBlastStrength*(): float = currentInput.get().blastStrength
 
-# Frame update - decays blast in the observable
 const BLAST_DECAY_FACTOR = 0.85
 proc updateInputState*() =
   let current = currentInput.get()
@@ -92,7 +91,6 @@ proc updateInputState*() =
 # and count commits through this).
 var onInitParticles* {.exportc.}: proc() = nil
 
-# Set via setResizeCallback - called on window resize
 var onResize* {.exportc.}: proc() = nil
 
 # Set via setReseedFieldCallback - called when the reaction-diffusion field
@@ -108,19 +106,15 @@ var onReseedField* {.exportc.}: proc() = nil
 var onResizeParticles* {.exportc.}: proc() = nil
 
 proc setInitParticlesCallback*(callback: proc()) {.exportc.} =
-  ## Set the callback for particle reinitialization.
   onInitParticles = callback
 
 proc setResizeParticlesCallback*(callback: proc()) {.exportc.} =
-  ## Set the callback for a non-destructive particle-count change.
   onResizeParticles = callback
 
 proc setReseedFieldCallback*(callback: proc()) {.exportc.} =
-  ## Set the callback for reaction-diffusion field re-seeding.
   onReseedField = callback
 
 proc setResizeCallback*(callback: proc()) {.exportc.} =
-  ## Set the callback for window resize.
   onResize = callback
 
 # ==============================================================================
@@ -128,19 +122,13 @@ proc setResizeCallback*(callback: proc()) {.exportc.} =
 # ==============================================================================
 
 proc setupEvents*(canvas: JsObject) {.exportc.} =
-  ## Set up mouse, touch, and resize event handlers on the canvas.
-  ## Handlers use pure functions from mouse_handler/touch_handler to compute
-  ## new state, then update the currentInput observable.
-
   let canvasEl = cast[HTMLCanvasElement](canvas)
 
-  # Window resize
   domWindow.addEventListener("resize", proc() =
     if not onResize.isNil:
       onResize()
   )
 
-  # Mouse events - use pure handlers
   canvasEl.addEventListener("mousedown", proc(event: MouseEvent) =
     let eventData = extractMouseData(event)
     if eventData.button == mbMiddle:
@@ -165,7 +153,6 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     currentInput.set(handleMouseLeave(currentInput.get()))
   )
 
-  # Prevent context menu on right-click
   canvasEl.addEventListener("contextmenu", proc(event: Event) =
     preventDefault(event)
   )
@@ -189,7 +176,6 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
         float32(canvasEl.width), float32(canvasEl.height)))
   )
 
-  # Touch events - use pure handlers
   canvasEl.addEventListener("touchstart", proc(event: TouchEvent) =
     preventDefault(event)
     let eventData = extractTouchData(event)

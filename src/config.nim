@@ -4,13 +4,6 @@
 #
 # Configuration and constants for Particle Garden simulation.
 #
-# This module exports:
-# - CONFIG: Mutable runtime configuration (particle count, physics params, rendering options)
-# - MAX_* constants: Upper bounds for buffer allocation and grid sizing
-# - MEMORY_LAYOUT: AoS memory offsets (sourced from memory_layout.nim)
-# - PARTICLE_*: Particle struct layout constants
-# - COLORS: Species color palette as interleaved RGB Float32Array
-#
 # IMPORTANT: Memory layout constants are defined in memory_layout.nim.
 # This module re-exports them for JS consumption.
 #
@@ -30,70 +23,62 @@ import ui/state/render_state
 
 type
   ConfigObject* = ref object of JsObject
-    ## Runtime configuration for particle simulation
+    ## Flat GPU-facing mirror of the typed records. Field semantics live on
+    ## SimulationState (simulation_state.nim) and RenderState (render_state.nim);
+    ## colormapIndex values are colormap_core.nim's COLORMAP_INDEX_* constants.
     particleCount* {.exportc.}: int
     speciesCount* {.exportc.}: int
     interactionRadius* {.exportc.}: int
     forceStrength* {.exportc.}: float
-    crowdingStrength* {.exportc.}: float  # Density attenuation on attraction
+    crowdingStrength* {.exportc.}: float
     friction* {.exportc.}: float
-    ruleTemperature* {.exportc.}: float  # Std dev sigma for the bell-curve rule randomizer
+    ruleTemperature* {.exportc.}: float
     timeScale* {.exportc.}: float
     particleSize* {.exportc.}: int
     trails* {.exportc.}: bool
-    trailLength* {.exportc.}: float  # 0-100 particle diameters
+    trailLength* {.exportc.}: float
     glowIntensity* {.exportc.}: float
     velocityGlowScale* {.exportc.}: float
     maxVelocity* {.exportc.}: float
-    repulsionEnd* {.exportc.}: float      # Where repulsion zone ends (0-1, default 0.5)
-    attractionPeak* {.exportc.}: float    # Where attraction peaks (0-1, default 0.75)
-    forceModel* {.exportc.}: int          # 0=polynomial, 1=exponential
-    expRepulsionAlpha* {.exportc.}: float # Exponential repulsion steepness (default 6.0)
-    expAttractionBeta* {.exportc.}: float # Exponential attraction range (default 3.0)
-    glowRadiusScale* {.exportc.}: float   # Glow halo radius = (particleSize+1) * this
-    glowFalloff* {.exportc.}: float       # Gaussian falloff exponent (higher = tighter halo)
-    glowWarmth* {.exportc.}: float        # Density-driven warm shift, [0,1]
-    bloomEnabled* {.exportc.}: bool       # HDR bloom + tonemap path on/off (off = quality floor)
-    bloomIntensity* {.exportc.}: float    # Gain on the blurred bloom in the composite
-    exposure* {.exportc.}: float          # HDR exposure before the ACES tonemap
-    saturation* {.exportc.}: float        # Grade: 1 = unchanged, 0 = greyscale
-    contrast* {.exportc.}: float          # Grade: 1 = unchanged, around a 0.5 pivot
-    temperature* {.exportc.}: float       # Grade: signed warm/cool tint, 0 = neutral
-    colormapIndex* {.exportc.}: int       # RD field colormap selector (0=inferno,1=viridis,2=two-tone)
-    fieldOpacity* {.exportc.}: float      # RD field contribution scale, [0,1]
-    fluidStrength* {.exportc.}: float     # How much of the fluid's velocity verdict lands
-    sphRestDensity* {.exportc.}: float    # SPH target density (Tait EOS rest density)
-    sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
-    sphRadiusFraction* {.exportc.}: float # SPH smoothing radius / interactionRadius
-    sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
-    sphSubsteps* {.exportc.}: int         # SPH physics substeps per rendered frame
-    rdFeed* {.exportc.}: float            # Gray-Scott feed rate F
-    rdKill* {.exportc.}: float            # Gray-Scott kill rate k
-    rdDeposit* {.exportc.}: float         # Inhibitor deposited per particle per frame
-    rdFieldForce* {.exportc.}: float      # Field-gradient to velocity-impulse gain
-    climateDrift* {.exportc.}: bool       # Whether the climate wanders on its own
-    climateSpeed* {.exportc.}: float      # Regime tours per minute while drifting
+    repulsionEnd* {.exportc.}: float
+    attractionPeak* {.exportc.}: float
+    forceModel* {.exportc.}: int
+    expRepulsionAlpha* {.exportc.}: float
+    expAttractionBeta* {.exportc.}: float
+    glowRadiusScale* {.exportc.}: float
+    glowFalloff* {.exportc.}: float
+    glowWarmth* {.exportc.}: float
+    bloomEnabled* {.exportc.}: bool
+    bloomIntensity* {.exportc.}: float
+    exposure* {.exportc.}: float
+    saturation* {.exportc.}: float
+    contrast* {.exportc.}: float
+    temperature* {.exportc.}: float
+    colormapIndex* {.exportc.}: int
+    fieldOpacity* {.exportc.}: float
+    fluidStrength* {.exportc.}: float
+    sphRestDensity* {.exportc.}: float
+    sphStiffness* {.exportc.}: float
+    sphRadiusFraction* {.exportc.}: float
+    sphViscosity* {.exportc.}: float
+    sphSubsteps* {.exportc.}: int
+    rdFeed* {.exportc.}: float
+    rdKill* {.exportc.}: float
+    rdDeposit* {.exportc.}: float
+    rdFieldForce* {.exportc.}: float
+    climateDrift* {.exportc.}: bool
+    climateSpeed* {.exportc.}: float
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
-    ## Values are sourced from memory_layout.OFFSETS.
-
-    # AoS particle buffers
-    particlesA* {.exportc.}: int       ## Primary particles (N * 32 bytes)
-    particlesSorted* {.exportc.}: int  ## Sorted particles for cache-friendly forces
-
-    # Index mappings
-    sortedIndices* {.exportc.}: int    ## sorted_idx -> original_idx
-    reverseIndices* {.exportc.}: int   ## original_idx -> sorted_idx
-
-    # Velocity deltas
-    velocityDeltaFixed* {.exportc.}: int  ## Interleaved fixed-point Int32 deltas
-
-    # Grid
+    ## Values and field semantics: memory_layout.OFFSETS (MemoryOffsets).
+    particlesA* {.exportc.}: int
+    particlesSorted* {.exportc.}: int
+    sortedIndices* {.exportc.}: int
+    reverseIndices* {.exportc.}: int
+    velocityDeltaFixed* {.exportc.}: int
     gridCounts* {.exportc.}: int
     gridOffsets* {.exportc.}: int
-
-    # Shared state
     matrix* {.exportc.}: int
     sync* {.exportc.}: int
     totalSize* {.exportc.}: int
@@ -109,19 +94,6 @@ let MAX_GRID* {.exportc.}: int = memory_layout.MAX_GRID
 # ==============================================================================
 # SECTION 2b: PARTICLE STRUCT LAYOUT (re-exported from memory_layout)
 # ==============================================================================
-#
-# AoS Particle struct: 32 bytes, cache-aligned
-# ┌─────────┬──────────┬───────┐
-# │ Offset  │ Field    │ Size  │
-# ├─────────┼──────────┼───────┤
-# │ 0       │ pos.x    │ 4     │
-# │ 4       │ pos.y    │ 4     │
-# │ 8       │ vel.x    │ 4     │
-# │ 12      │ vel.y    │ 4     │
-# │ 16      │ species  │ 4     │
-# │ 20      │ density  │ 4     │
-# │ 24-31   │ padding  │ 8     │
-# └─────────┴──────────┴───────┘
 
 let PARTICLE_STRIDE* {.exportc.}: int = memory_layout.PARTICLE_STRIDE
 let PARTICLE_POS_X_OFFSET* {.exportc.}: int = memory_layout.PARTICLE_POS_X_OFFSET

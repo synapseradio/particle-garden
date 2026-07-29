@@ -11,7 +11,7 @@
 # (engineering principle 5).
 #
 # WHAT A RESPONSE PROBE READS. `haloAlphaIntegralClamped` is the observable the
-# glow sliders are measured through (design E1): the display-clamped alpha
+# glow sliders are measured through: the display-clamped alpha
 # summed over the halo's screen footprint, in pixels squared. A screen answers
 # alpha up to DISPLAY_ALPHA_MAX and no further, so past that the raw integral
 # keeps climbing through slider travel that shows nothing — which is exactly
@@ -102,7 +102,7 @@ func normalizedVelocity*(speed, maxVelocity: float): float =
 func baseHaloRadius*(uniforms: GlowUniforms): float =
   ## The halo a still particle draws, in pixels (glow.wgsl:98). It multiplies
   ## the particle's own size, which is what keeps halo, particle and trail
-  ## moving together rather than drifting apart (design D9).
+  ## moving together rather than drifting apart.
   uniforms.baseSize * uniforms.glowRadiusScale
 
 func haloRadius*(uniforms: GlowUniforms; velocityNorm: float): float =
@@ -205,7 +205,7 @@ func haloAlphaIntegralRaw*(tuning: GlowTuning; uniforms: GlowUniforms;
 func haloAlphaIntegralClamped*(tuning: GlowTuning; uniforms: GlowUniforms;
     velocityNorm, density: float;
     samples: int = HALO_INTEGRAL_SAMPLES): float =
-  ## The probe observable (design E1): the halo's total alpha as a display can
+  ## The probe observable: the halo's total alpha as a display can
   ## show it. Bounded above by haloDiscArea, which it approaches once every
   ## pixel of the halo sits at the clamp.
   haloAlphaIntegral(tuning, uniforms, velocityNorm, density,

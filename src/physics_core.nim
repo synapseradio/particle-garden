@@ -66,13 +66,13 @@ func crowdingAttenuation*(density, strength: float32): float32 =
   ## `1 / (1 + strength * ln(1 + density))`. Logarithmic because the range that
   ## matters spans two orders of magnitude — a few neighbours against a
   ## collapsing blob — and a linear coefficient tuned for one end does nothing
-  ## at the other (design C2).
+  ## at the other.
   ##
   ## density - the receiving particle's smoothed local density, non-negative by
   ##           construction: it is a sum of non-negative proximity weights fed
   ##           through an exponential moving average of itself.
   ## strength - the crowding strength parameter. Zero returns 1.0 at every
-  ##            density, which is exactly today's force law.
+  ##            density, leaving calculateForce's attraction unchanged.
   ##
   ## Three properties hold by construction rather than by tuning, and each is a
   ## test in tests/test_physics.nim: identity at zero density, monotone
@@ -86,14 +86,14 @@ func calculateAttenuatedForce*(normalizedDistance, attr, fMul, invD, density,
   ## contribution alone.
   ##
   ## Attractive here means the attraction zone entered with a positive matrix
-  ## entry. The repulsion zone keeps today's force at every density, and so does
-  ## an attraction-zone pair whose matrix entry is negative — that contribution
-  ## pushes the pair apart, and damping it would partly cancel the cap the term
-  ## exists to serve (design C1).
+  ## entry. The repulsion zone keeps calculateForce's force at every density,
+  ## and so does an attraction-zone pair whose matrix entry is negative — that
+  ## contribution pushes the pair apart, and damping it would partly cancel the
+  ## cap the term exists to serve.
   ##
   ## The attenuation multiplies the force AFTER `fMul`, so the result at force
-  ## strength k is k times the result at force strength 1. Design C0 requires
-  ## that: expressed as an absolute force instead, the term would mean something
+  ## strength k is k times the result at force strength 1. That must hold:
+  ## expressed as an absolute force instead, the term would mean something
   ## different at each end of the force-strength range and stop being a cap.
   let plain = calculateForce(normalizedDistance, attr, fMul, invD)
   if normalizedDistance >= 0.3f and attr > 0.0f:
@@ -136,7 +136,7 @@ func calculateAttenuatedForce*(normalizedDistance, attr, fMul, invD, density,
 #
 # Within that scope a finite ceiling bounds per-cell occupancy up to geometric
 # constants, because grid cells are sized to the interaction radius
-# (src/grid.nim:61) and the density weight spans that same radius.
+# (src/grid.nim) and the density weight spans that same radius.
 
 const
   REPULSION_ZONE_END* = 1.0 / float(INV_03)
@@ -163,7 +163,7 @@ const
   DENSITY_CEILING_SEARCH_ROOF = 1.0e12
     ## The bisection's upper bracket. A balance still positive here means no
     ## crossing exists and the ceiling is infinite — which happens only at
-    ## crowding strength zero, today's uncapped force law.
+    ## crowding strength zero, the uncapped force law.
   DENSITY_CEILING_STEPS = 120
     ## Bisection steps. Halving the bracket 120 times takes it far below the
     ## precision a float64 can carry, so the result is converged rather than
@@ -181,9 +181,8 @@ func crowdingBalance*(density, attraction, strength: float): float =
   ## tightens; negative means repulsion has taken over.
   ##
   ## Force strength scales both terms and so appears in neither: the attenuation
-  ## is a fraction of the attraction that survives `fMul` (design C0), which is
-  ## exactly what keeps the crossing from drifting across the force-strength
-  ## range.
+  ## is a fraction of the attraction that survives `fMul`, which is exactly what
+  ## keeps the crossing from drifting across the force-strength range.
   ##
   ## Strictly decreasing in density — the first term falls, the second rises —
   ## so the crossing is unique and bisection finds it.
@@ -195,14 +194,15 @@ func densityCeiling*(attr, fMul, strength: float): float =
   ## crowd — read the scope block above before quoting this number.
   ##
   ## attr - the pair's attraction-matrix entry. A negative entry is repulsive
-  ##        and the crowding term never touches it (design C1), so it enters
-  ##        here as no attraction at all.
+  ##        and the crowding term never touches it, so it enters here as no
+  ##        attraction at all.
   ## fMul - the force strength. Zero removes every force
-  ##        (`src/config_ranges.nim:36-40`), so attraction concentrates nothing
+  ##        (`src/config_ranges.nim`), so attraction concentrates nothing
   ##        at any density and the ceiling degenerates to zero: vacuous rather
-  ##        than wrong, exactly as design C0 describes.
-  ## strength - the crowding strength. Zero is today's force law, where nothing
-  ##            caps a strong enough attraction and the ceiling is infinite.
+  ##        than wrong, exactly as described above.
+  ## strength - the crowding strength. Zero reproduces calculateForce's
+  ##            attraction unmodified, where nothing caps a strong enough
+  ##            attraction and the ceiling is infinite.
   if fMul == 0.0:
     return 0.0
   let attraction = max(attr, 0.0)
@@ -413,9 +413,10 @@ func getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
 # ==============================================================================
 # forces.wgsl dispatches between two force models by params.forceModel, both
 # parameterized from SimParams; these mirror that shipped block (the MODEL 0 /
-# MODEL 1 branch in the neighbour loop). calculateForce above keeps the fixed
-# 0.3/1.3/0.7 curve that predates the models. Neither model multiplies by the
-# force multiplier or the inverse distance here — the shader applies
+# MODEL 1 branch in the neighbour loop). calculateForce above implements a
+# third, fixed 0.3/1.3/0.7 curve, independent of the two selectable models
+# below. Neither model multiplies by the force multiplier or the inverse
+# distance here — the shader applies
 # `* params.forceMultiplier * invDistance` after the branch, and callers of
 # these mirrors do the same.
 
@@ -426,7 +427,7 @@ func polynomialForce*(normalizedDist, attraction, repulsionEnd,
   ## lands at 0 with zero slope. Attraction over [repulsionEnd, 1] is a squared
   ## bump peaking at attractionPeak scaled by 4, and the crowding attenuation
   ## multiplies it only when the matrix entry attracts (a negative entry pushes
-  ## apart, and damping it would fight the cap — design C1). Zone degeneracy
+  ## apart, and damping it would fight the cap). Zone degeneracy
   ## (attractionPeak at or outside [repulsionEnd, 1]) is unguarded exactly as
   ## the shader leaves it unguarded; the ranges keep it unreachable.
   if normalizedDist < repulsionEnd:
@@ -455,7 +456,7 @@ func exponentialForce*(normalizedDist, attraction, alpha, beta,
   -repulsion + attraction * attract * 2.0'f32 * crowding
 
 func postStepSpeed*(speed, friction, maxVelocity: float32): float32 =
-  ## integrate.wgsl:120-137. Friction multiplies the post-delta velocity (it is
+  ## integrate.wgsl. Friction multiplies the post-delta velocity (it is
   ## a retention factor, not a drag), then speeds above half maxVelocity are
   ## compressed as threshold + ln(1 + excess) and hard-capped at maxVelocity.
   let damped = speed * friction

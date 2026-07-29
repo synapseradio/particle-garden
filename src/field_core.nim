@@ -39,8 +39,8 @@ const
     ## touches is derived from it: the grid below, RD_DEFAULT_FIELD_FORCE,
     ## RD_FIELD_FORCE_MAX in config_ranges, and RD_SEED_BLOB_RADIUS.
     ##
-    ## Reads as a multiple of the 512-cell square field this replaced: at 1 a
-    ## spot draws the width it drew there, at 4 a quarter of it. Raising it
+    ## Reads as a multiple of a 512-cell square field: at 1 a spot draws that
+    ## width, at 4 a quarter of it. Raising it
     ## costs memory and bandwidth quadratically and costs nothing else — the
     ## chemistry lives in cell space and never sees this (RD_DIFFUSION_A says
     ## what happens when something DOES move the chemistry).
@@ -53,19 +53,15 @@ const
     ##
     ## field-deposit.wgsl maps the whole world rect onto FIELD_W x FIELD_H, so
     ## the two aspects have to match. A square 512x512 grid over a 16:9 world
-    ## gave cells 7.5 by 4.22 world units, and since the 9-point Laplacian is
-    ## isotropic in CELLS, every spot came out an ellipse 1.78x wider than tall.
+    ## would give cells 7.5 by 4.22 world units, and since the 9-point Laplacian
+    ## is isotropic in CELLS, every spot would come out an ellipse 1.78x wider
+    ## than tall.
     ##
     ## RESOLUTION IS THE ONLY SAFE LEVER FOR PATTERN SIZE. Gray-Scott's
     ## dynamics live in cell space, so shrinking the cell shrinks what the eye
     ## sees and changes no chemistry at all: every ignition threshold, regime
     ## coordinate and collapse bound in this file is measured in cells and
     ## survives untouched. RD_DIFFUSION_A says what the other lever costs.
-    ##
-    ## 512:288 is the world's 16:9 (FIELD_WORLD_ASPECT), so a cell stays SQUARE
-    ## in world units at every shrink. A square 512x512 grid over a 16:9 world
-    ## gave cells 7.5 by 4.22 world units, and since the 9-point Laplacian is
-    ## isotropic in CELLS, every spot came out an ellipse 1.78x wider than tall.
     ##
     ## COST at the shipped shrink of 4: 2.36M cells, carried in two rgba16float
     ## ping-pong textures (~19 MB each) plus one i32 deposit buffer (~9 MB).
@@ -89,8 +85,9 @@ const
     ## at THESE diffusion rates. Moving them moves the whole map underneath the
     ## table: measured at Da=0.25, a floored regime settled 2.5x further from
     ## its own unforced morphology than from a different regime's, scattered
-    ## deposits ignited where coherence used to be required, and the chemotactic
-    ## collapse the safety bound is measured against stopped reproducing.
+    ## deposits ignited without the coherence the shipped rate requires, and
+    ## the chemotactic collapse the safety bound is measured against stopped
+    ## reproducing.
     ## Pattern size is set by FIELD_W/FIELD_H instead, which changes what a cell
     ## covers and leaves the chemistry in cell space untouched.
   RD_DIFFUSION_B* = 0.5
@@ -115,7 +112,7 @@ const
     ## rate per unit of field time and dissolves the coherence requirement on
     ## ignition. Measured unscaled at 3: a scattered deposit ignites on frame 6, the
     ## critical splat radius falls from 5 to 3, and the single-cell negative
-    ## control lights the field — design D3's property fails. The fold
+    ## control lights the field. The fold
     ## therefore renormalizes: RD_DEPOSIT_FRAME_SCALE below holds the deposit
     ## rate per FIELD STEP invariant under this knob, which is what makes it
     ## a speed lever at all. What the knob still changes is wall-clock: the
@@ -443,8 +440,8 @@ const
     ## below ~2 cells diffusion erases the blob before it can react.
     ##
     ## Multiplied by the shrink so a spore holds the same WORLD footprint at any
-    ## field resolution: it stays the size it was on screen and simply contains
-    ## more spots than it used to.
+    ## field resolution: it stays the same size on screen and simply spans more
+    ## cells at a higher shrink.
   RD_SEED_CORE_ACTIVATOR* = 0.5
     ## Activator concentration at a blob's core. Depressed from the background
     ## 1.0: Gray-Scott spots are activator-depleted, inhibitor-rich regions.

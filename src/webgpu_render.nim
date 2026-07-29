@@ -112,7 +112,7 @@ let colorData = newFloat32Array(24)
   ## arrays above this one is also the record of what colorBuffer already
   ## holds, which is what lets a frame that changed no color skip the upload
   ## entirely — the palette moves when someone edits it, not once a frame.
-var bindGroupLayout: GPUBindGroupLayout  # Store original layout for bind group creation
+var bindGroupLayout: GPUBindGroupLayout
 var isInitialized: bool = false
 
 # Ping-pong trail textures (persistent across frames)
@@ -123,10 +123,10 @@ var trailViewB: GPUTextureView
 var trailParity: int = 0  # 0 = read A write B, 1 = read B write A
 
 # Cached bind groups for trail rendering (created once, selected at runtime)
-var blitBindGroupA: GPUBindGroup  # Blit from trail texture A
-var blitBindGroupB: GPUBindGroup  # Blit from trail texture B
-var fadeBindGroupReadA: GPUBindGroup  # Fade pass reads from A
-var fadeBindGroupReadB: GPUBindGroup  # Fade pass reads from B
+var blitBindGroupA: GPUBindGroup
+var blitBindGroupB: GPUBindGroup
+var fadeBindGroupReadA: GPUBindGroup
+var fadeBindGroupReadB: GPUBindGroup
 
 # Shared sampler for texture reads
 var linearSampler: GPUSampler
@@ -135,7 +135,6 @@ var linearSampler: GPUSampler
 var depthTexture: GPUTexture
 var depthTextureView: GPUTextureView
 
-# Canvas format for texture creation
 var canvasFormat: cstring
 
 # Bind group layouts (needed for resize to recreate bind groups)
@@ -159,7 +158,7 @@ var cachedRenderFieldGeneration: int = -1
   ## other's caching.
 
 # ==============================================================================
-# HDR BLOOM RESOURCES (S9)
+# HDR BLOOM RESOURCES
 # ==============================================================================
 # When CONFIG.bloomEnabled is on, the glow draw is retargeted from the present
 # pass into a half-resolution rgba16float HDR target, separably blurred (H then
@@ -263,7 +262,7 @@ const GLOW_SHADER = staticRead("../web/shaders/glow.wgsl")
 const FADE_SHADER = staticRead("../web/shaders/fade.wgsl")
 const BLIT_SHADER = staticRead("../web/shaders/composite.wgsl")
 const FIELD_COMPOSITE_SHADER = staticRead("../web/shaders/field-composite.wgsl")
-# HDR bloom shaders (S9); staticRead-embedded like the render shaders above.
+# HDR bloom shaders; staticRead-embedded like the render shaders above.
 const BLUR_SHADER = staticRead("../web/shaders/blur.wgsl")
 const TONEMAP_SHADER = staticRead("../web/shaders/tonemap.wgsl")
 const OVERLAY_SHADER = staticRead("../web/shaders/overlay.wgsl")
@@ -294,7 +293,6 @@ proc initWebGPURender*(): bool =
     {.emit: "console.error('WebGPU device not initialized');".}
     return false
 
-  # Get canvas
   canvas = document.getElementById("canvas").toHTMLCanvasElement()
   if canvas.isNil:
     {.emit: "console.error('Canvas not found');".}
@@ -304,20 +302,18 @@ proc initWebGPURender*(): bool =
   canvas.width = windowInnerWidth()
   canvas.height = windowInnerHeight()
 
-  # Configure canvas for WebGPU
   gpuContext = cast[JsObject](canvas).getContextWebGPU()
   if gpuContext.isNil:
     {.emit: "console.error('Failed to get WebGPU context');".}
     return false
 
-  canvasFormat = getPreferredCanvasFormat()  # Store in module variable
+  canvasFormat = getPreferredCanvasFormat()
   let configObj = newJsObject()
   configObj["device"] = webgpu_init.device.toJs
   configObj["format"] = canvasFormat.toJs
   configObj["alphaMode"] = "opaque".cstring.toJs
   gpuContext.configure(configObj)
 
-  # Create shader module
   let shaderDesc = newJsObject()
   shaderDesc["label"] = "Particle Render Shader".cstring.toJs
   shaderDesc["code"] = RENDER_SHADER.cstring.toJs
@@ -433,7 +429,6 @@ proc initWebGPURender*(): bool =
   layoutDesc["entries"] = entries
   bindGroupLayout = webgpu_init.device.createBindGroupLayout(layoutDesc)
 
-  # Create pipeline layout
   let pipelineLayoutDesc = newJsObject()
   let layouts = newJsArray()
   discard layouts.push(bindGroupLayout)
@@ -441,18 +436,15 @@ proc initWebGPURender*(): bool =
   pipelineLayoutDesc["label"] = "Render Pipeline Layout".cstring.toJs
   let pipelineLayout = webgpu_init.device.createPipelineLayout(pipelineLayoutDesc)
 
-  # Create render pipeline
   let pipelineDesc = newJsObject()
   pipelineDesc["label"] = "Particle Render Pipeline".cstring.toJs
   pipelineDesc["layout"] = pipelineLayout.toJs
 
-  # Vertex stage
   let vertexStage = newJsObject()
   vertexStage["module"] = shaderModule.toJs
   vertexStage["entryPoint"] = "vs_main".cstring.toJs
   pipelineDesc["vertex"] = vertexStage
 
-  # Fragment stage
   let fragmentStage = newJsObject()
   fragmentStage["module"] = shaderModule.toJs
   fragmentStage["entryPoint"] = "fs_main".cstring.toJs
@@ -494,7 +486,6 @@ proc initWebGPURender*(): bool =
 
   renderPipeline = webgpu_init.device.createRenderPipeline(pipelineDesc)
 
-  # Create glow shader module
   let glowShaderDesc = newJsObject()
   glowShaderDesc["label"] = "Glow Render Shader".cstring.toJs
   glowShaderDesc["code"] = GLOW_SHADER.cstring.toJs
@@ -538,7 +529,6 @@ proc initWebGPURender*(): bool =
   glowFragmentStage["targets"] = glowTargets
   glowPipelineDesc["fragment"] = glowFragmentStage
 
-  # Primitive state
   let glowPrimitive = newJsObject()
   glowPrimitive["topology"] = "triangle-list".cstring.toJs
   glowPrimitive["cullMode"] = "none".cstring.toJs
@@ -651,7 +641,6 @@ proc initWebGPURender*(): bool =
   fadeLayoutDesc["entries"] = fadeLayoutEntries
   fadeBindGroupLayout = webgpu_init.device.createBindGroupLayout(fadeLayoutDesc)
 
-  # Create fade pipeline layout
   let fadePipelineLayoutDesc = newJsObject()
   let fadeLayouts = newJsArray()
   discard fadeLayouts.push(fadeBindGroupLayout)
@@ -729,7 +718,6 @@ proc initWebGPURender*(): bool =
   blitLayoutDesc["entries"] = blitLayoutEntries
   blitBindGroupLayout = webgpu_init.device.createBindGroupLayout(blitLayoutDesc)
 
-  # Create blit pipeline layout
   let blitPipelineLayoutDesc = newJsObject()
   let blitLayouts = newJsArray()
   discard blitLayouts.push(blitBindGroupLayout)
@@ -895,7 +883,7 @@ proc initWebGPURender*(): bool =
   # FIELD COMPOSITE PIPELINE (reaction-diffusion LDR backdrop)
   # ==========================================================================
   # The bloom-off quality floor for the RD field. Its bind group is texture +
-  # sampler + the shared TonemapParams uniform (S10: the field-composite reads
+  # sampler + the shared TonemapParams uniform (the field-composite reads
   # the same colormapIndex / fieldOpacity the HDR tonemap does, so the field
   # looks the same under either present path). Opaque backdrop drawn first in
   # the present pass under glow/trails, so no blending. Depth matches the pass.
@@ -982,7 +970,7 @@ proc initWebGPURender*(): bool =
   fieldCompositePipeline = webgpu_init.device.createRenderPipeline(fieldPipelineDesc)
 
   # ==========================================================================
-  # HDR BLOOM PIPELINES (S9): glow-to-HDR, separable blur, tonemap composite
+  # HDR BLOOM PIPELINES: glow-to-HDR, separable blur, tonemap composite
   # ==========================================================================
 
   # --- Glow-to-HDR pipeline: the glow shader, retargeted to the half-res
@@ -1119,7 +1107,7 @@ proc initWebGPURender*(): bool =
   tonemapBuffer3["type"] = "uniform".cstring.toJs
   tonemapEntry3["buffer"] = tonemapBuffer3
   discard tonemapLayoutEntries.push(tonemapEntry3)
-  # Binding 4: RD field texture (S10). Sampled in the tonemap so the field joins
+  # Binding 4: RD field texture. Sampled in the tonemap so the field joins
   # the graded HDR light; the bloom view stands in while the field view is nil.
   let tonemapEntry4 = newJsObject()
   tonemapEntry4["binding"] = 4.toJs
@@ -1345,7 +1333,6 @@ proc initWebGPURender*(): bool =
   createBloomTargets()
   createBloomBindGroups()
 
-  # Create initial bind group
   updateBindGroup()
 
   # Seed the camera at the default view before the first frame reads it. Both
@@ -1366,7 +1353,6 @@ proc updateBindGroup*() =
   let bindGroupDesc = newJsObject()
   bindGroupDesc["label"] = "Render Bind Group AoS".cstring.toJs
 
-  # Get the bind group layout from the pipeline
   bindGroupDesc["layout"] = renderPipeline.getBindGroupLayout(0).toJs
 
   let entries = newJsArray()
@@ -1864,7 +1850,6 @@ proc render*(particleCount: int) =
   let fadeReadBG = if trailParity == 0: fadeBindGroupReadA else: fadeBindGroupReadB
   let blitBG = if trailParity == 0: blitBindGroupB else: blitBindGroupA
 
-  # Create command encoder
   let encoderDesc = newJsObject()
   encoderDesc["label"] = "Render Command Encoder".cstring.toJs
   let commandEncoder = webgpu_init.device.createCommandEncoder(encoderDesc)
@@ -1930,7 +1915,7 @@ proc render*(particleCount: int) =
     # composites it over the blurred glow.
     # ------------------------------------------------------------------------
 
-    # The tonemap/grade uniforms (including the S10 field-visualization pair)
+    # The tonemap/grade uniforms (including the field-visualization pair)
     # were written above, before this branch, so both present paths share them.
     # The field is sampled inside the tonemap (binding 4), so its bind groups
     # must track the live field texture.
@@ -1986,7 +1971,7 @@ proc render*(particleCount: int) =
     blurVPass.endPass()
 
     # Present: clear bg, then tonemap the trail + bloom + field over it. The RD
-    # field is composited INSIDE the tonemap (S10 — sampled at binding 4 and
+    # field is composited INSIDE the tonemap (sampled at binding 4 and
     # folded into the graded HDR light), so there is no separate backdrop draw
     # here; the tonemap's coverage alpha keeps the flat clear wherever the field
     # has no intensity.
@@ -2126,7 +2111,6 @@ proc recreateTrailTextures() =
   if not depthTexture.isNil:
     depthTexture.destroy()
 
-  # Create new textures at current canvas size
   let trailTextureDesc = newJsObject()
   let trailSize = newJsArray()
   discard trailSize.push(canvas.width.toJs)
@@ -2142,7 +2126,6 @@ proc recreateTrailTextures() =
   trailViewA = trailTextureA.createView()
   trailViewB = trailTextureB.createView()
 
-  # Recreate depth texture at new canvas size
   let depthTextureDesc = newJsObject()
   let depthSize = newJsArray()
   discard depthSize.push(canvas.width.toJs)

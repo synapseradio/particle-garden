@@ -51,7 +51,7 @@ const StaticFiles = {
   "/shaders/forces.wgsl": staticRead("../web/shaders/forces.wgsl"),
   "/shaders/forces-sph.wgsl": staticRead("../web/shaders/forces-sph.wgsl"),  # SPH fluid force pass
   "/shaders/integrate.wgsl": staticRead("../web/shaders/integrate.wgsl"),  # Merged AoS
-  # Reaction-diffusion field passes (S8). field-composite.wgsl is staticRead into
+  # Reaction-diffusion field passes. field-composite.wgsl is staticRead into
   # app.js by webgpu_render (a render shader), so it is deliberately not served here.
   "/shaders/field-seed.wgsl": staticRead("../web/shaders/field-seed.wgsl"),
   "/shaders/field-deposit.wgsl": staticRead("../web/shaders/field-deposit.wgsl"),
@@ -72,7 +72,6 @@ proc startCrossOriginIsolatedServer(): Future[void] {.async.} =
   proc handler(req: Request) {.async.} =
     echo "[DEBUG] Request: ", req.reqMethod, " ", req.url.path
 
-    # Normalize path: "/" -> "/index.html"
     let path = if req.url.path == "/": "/index.html" else: req.url.path
 
     if StaticFiles.hasKey(path):
@@ -96,23 +95,18 @@ proc serverThread() {.thread.} =
   waitFor startCrossOriginIsolatedServer()
 
 proc main() =
-  # Start the HTTP server in a separate thread
   var thread: Thread[void]
   createThread(thread, serverThread)
 
-  # Give server a moment to start
   sleep(100)
 
-  # Create webui window
   let window = newWindow()
   window.setSize(1400, 900)
 
-  # Navigate to our cross-origin isolated server
   let url = "http://127.0.0.1:" & $ServerPort
   echo "Opening browser to ", url
   window.show(url)
 
-  # Wait for window to close
   wait()
 
 when isMainModule:

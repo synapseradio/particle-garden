@@ -7,25 +7,15 @@
 # visibly move. Pure (no FFI, no DOM): compiles on both backends and is
 # exercised natively, like the other *_core modules.
 #
-# ONE TOUR, MANY TABLES. `tourAt` interpolates any table whose waypoints are
-# float coordinates indexed by that weather's own axis enum, so a weather over
-# different parameters supplies a table and reuses this advance, easing and
-# wrapping. The reaction-diffusion climate below is one such table. Arity comes
-# from the axis enum, which is why nothing here fixes it at two: a weather over
-# four force parameters names four axes and calls the same code. The axis type
-# also keeps one weather's point from being read as another's.
+# `tourAt` interpolates any table whose waypoints are float coordinates indexed
+# by that weather's own axis enum. Arity comes from the axis enum, which is why
+# nothing here fixes it at two: a weather over four force parameters names four
+# axes and calls the same code. The axis type also keeps one weather's point
+# from being read as another's.
 #
-# THE CLIMATE TABLE TOURS THE NAMED REGIMES. Most of the feed/kill rectangle
-# produces nothing worth looking at — that is the whole reason the named regimes
-# exist — so a drift that wandered the box at random would spend most of its
-# time in dead or flooded parameter space and read as a broken feature rather
-# than as weather. The path is instead a closed loop through the six regime
-# coordinates in RD_REGIMES order, so the weather visits every regime the panel
-# names and nothing else.
+# Two properties every table gets by construction, not by tuning:
 #
-# TWO PROPERTIES EVERY TABLE GETS BY CONSTRUCTION, not by tuning:
-#
-#   IN RANGE. Every point is a convex combination of two waypoints. One
+#   In range. Every point is a convex combination of two waypoints. One
 #   parameter's range is an interval and a set of them is an axis-aligned box,
 #   hence convex, so a table whose waypoints all lie inside its box interpolates
 #   only to points inside it. config_ranges statically asserts that for
@@ -33,7 +23,7 @@
 #   own ranges. No clamping is needed and none is applied; clamping would hide a
 #   path that has left the box rather than prevent it.
 #
-#   CONTINUOUS. Segments are joined with smoothstep easing, whose derivative is
+#   Continuous. Segments are joined with smoothstep easing, whose derivative is
 #   zero at both ends, so the path has no velocity discontinuity where one
 #   waypoint hands over to the next. Plain linear interpolation would be
 #   positionally continuous but would visibly corner at every waypoint.
@@ -42,10 +32,8 @@
 # over a probe table of another arity, so the guarantees are proven of the tour
 # rather than of the climate.
 #
-# The frame loop advances `phase` and writes the result through the ordinary
-# setParam path, so the sliders move where a user can see them — that is what
-# makes the weather legible rather than mysterious, and it is a requirement of
-# the weather spec rather than an implementation convenience.
+# Why the tour walks the named regimes, and why the drift exists at all:
+# docs/one-world.md's climate section.
 
 import std/math
 import config_ranges
@@ -133,7 +121,7 @@ const
   CLIMATE_DEFAULT_SPEED* = 0.25
     ## One tour of the regimes every four minutes. Slow enough that the pattern
     ## has time to settle into each regime before the climate leaves it —
-    ## ignition alone takes a dozen frames, and a morphology takes longer to
+    ## ignition takes several frames and a morphology takes longer still to
     ## develop than to nucleate — and slow enough that a moving slider reads as
     ## weather rather than as something malfunctioning.
   CLIMATE_MAX_STEP* = 0.002
