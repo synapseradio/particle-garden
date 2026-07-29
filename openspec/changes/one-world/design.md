@@ -993,6 +993,10 @@ the constants.
 `LIVE_FRACTION_MIN = 0.60`, `CLIFF_MAX = 0.25`, `RESPONSE_EPSILON = 1e-4` of reference magnitude.
 These are guesses written down so the first run has something to move, not values to defend.
 
+*Calibrated (E5, as built):* `SPAN_MIN = 0.15`, `LIVE_FRACTION_MIN = 0.70`, `CLIFF_MAX = 0.25`,
+`RESPONSE_EPSILON = 1e-4`, each placed inside a measured anchor gap and recorded beside the
+constants in src/ui/api/response_probe.nim.
+
 *Rejected:* setting thresholds from a percentile of the measured distribution. It always passes about
 the same number of controls whatever the truth is, which makes the bar unfalsifiable.
 
@@ -1121,9 +1125,11 @@ feeds the world-intrinsic density that always runs, so it declares no coupling d
 because a layer that switches whole sections is a control set that changes with what the world is
 doing, which the panel promises never to do. Two rules keep the declarations honest:
 
-- A control never goes dormant under its own value. Zero is an ordinary value (D7), and
+- A control never goes dormant under its own value alone. Zero is an ordinary value (D7), and
   the slider sitting at zero is precisely the control that brings its coupling back; dimming it
-  would tell the user the way out is closed.
+  would tell the user the way out is closed. A compound predicate may read its carriers where
+  their own movement can break the condition — the feed/kill pair reads its own coordinates so it
+  wakes the moment the user moves into the self-starting region, before anything ignites.
 - A predicate names the strength that multiplies the control's consumer, per D12's split — which
   for chemistry means the deposit and field-force pair govern different controls, since the field's
   own evolution is world-intrinsic and scaled by neither.
@@ -1169,8 +1175,10 @@ disagree.
 
 Some parameters are a length, and a number cannot say what that length is. While such a control is
 being dragged, the renderer draws a transient overlay at world scale: `interactionRadius` as a ring at
-the cursor, the deposit splat radius as a disc, camera zoom as a frame. The overlay disappears on
-release.
+the cursor, camera zoom as a frame around the world. The overlay disappears on release. The deposit
+splat radius, named here originally, is `RD_DEPOSIT_SPLAT_RADIUS` — a compile-time constant in
+field_core with no control to drag — so no disc ships; it joins the set only if a splat-radius
+control ever exists.
 
 The set is deliberately closed to parameters that are literally a distance in the world. Extending it
 to non-spatial parameters would mean inventing a visual metaphor per control, which is a different and
@@ -1282,10 +1290,10 @@ commit, maps an emptied field through `NaN` to a forced re-render back to the li
 the matrix version bumps, so the intermediate state every retyped number passes through is treated
 as an error and reverted.
 
-**The matrix range becomes ±0.100 with step 0.001 and three-decimal display.** An order of magnitude
-gentler across the board, calibrated together with the crowding attenuation (C1-C2) rather than
-separately — each tuned against the other's old behaviour
-would leave both wrong. The recalibration is recorded beside the constants with the same
+**The matrix range becomes ±0.330 with step 0.001 and three-decimal display.** Gentler across the
+board than the ±1 it replaces, calibrated together with the crowding attenuation (C1-C2) rather than
+separately — each tuned against the other's old behaviour would leave both wrong. (First landed at
+±0.100; widened to ±0.330 by user decision in use, one edit in the range authority.) The recalibration is recorded beside the constants with the same
 measurement-comment discipline every other bound carries (parameter-range-authority).
 
 **One authority, no restatements.** The matrix bounds, step, and display precision move into
@@ -1305,13 +1313,13 @@ what the user meant, and the empty field proves there are moments where the only
 ### E14. A promise about a visible result is guaranteed on the result, not on a parameter
 
 A particle's on-screen radius is a product: the size parameter, the density size multiplier (0.7 to
-1.3, web/shaders/src/render.wgsl:65-66 and :110), the world-to-screen scale, the camera zoom, and
-the camera size correction (render.wgsl:160, glow.wgsl:105). `PARTICLE_SIZE_MIN = 1`
-(src/config_ranges.nim:45) bounds one factor of that product, so at small size and low zoom the
-product lands under a pixel and the fragment coverage test removes what remains: particles vanish
-while every bound holds. `CAMERA_SIZE_FLOOR = 0.5` (src/camera_core.nim:30-31) is the same
-intention placed halfway down the chain — it floors the apparent-scale *factor*, so it protects
-against zoom alone and not against zoom compounded with a small size.
+1.3, web/shaders/src/render.wgsl), the world-to-screen scale, and the camera zoom.
+`PARTICLE_SIZE_MIN = 1` (src/config_ranges.nim) bounds one factor of that product, so at the small
+end the product can land under a pixel and the fragment coverage test removes what remains:
+particles vanish while every bound holds. (`CAMERA_SIZE_FLOOR`, an earlier floor on the
+apparent-scale factor alone, went with the D15 camera revision along with the size-correction
+factor it shaped; D15's zoom floor of 1.0 also narrows the exposed corner to small size rather
+than small size compounded with low zoom — the floor below re-measures the corner as it stands.)
 
 **This is its own defect class, not an instance of the others.** The control is wired (E6 passes),
 its own math moves (a probe on the parameter's expression passes), its consumer is bound (E8's
@@ -1329,9 +1337,8 @@ range-authority constant asserted natively at the worst reachable corner: minimu
 zoom, the density multiplier at its 0.7 floor. The renderers clamp at the same point in the same
 chain, both shaders and the mirror changing together as for every oracle. `particleSize`'s probe
 measures this composed observable on slices at the zoom corners (E2), so the sweep, not review,
-holds the floor. Whether `CAMERA_SIZE_FLOOR` survives as an aesthetic shaping of the zoom-size
-relation or retires into the result floor is the implementer's call from the measurement; if it
-stays, its comment says plainly that it is not the visibility guarantee.
+holds the floor. `CAMERA_SIZE_FLOOR` is already retired — deleted with the D15 camera revision —
+so the result floor is built fresh rather than beside a halfway constant.
 
 The same error shape appears twice more in this change's material: glow's raw alpha integral keeps
 rising where the display has clamped (E1, E3), and a stiffness ceiling written as a constant where
@@ -1357,7 +1364,7 @@ exist for visibility.
   failure is a real defect and goes through the E4 ladder. A wave of curve changes is the correct
   outcome, not a reason to relax the bar.
 - **The matrix recalibration changes every saved world's feel.** Loaded presets clamp matrix values
-  into ±0.100 through the schema, so a matrix authored at ±1 loses its contrasts. This is the cost
+  into ±0.330 through the schema, so a matrix authored at ±1 loses its contrasts. This is the cost
   of calibrating the matrix and the crowding cap together, and it belongs in the release notes.
 - **The visibility floor changes what extreme corners look like.** At minimum size and minimum zoom,
   particles render at the floor instead of vanishing — that is the point, and it is a visible change
@@ -1377,7 +1384,7 @@ ladder re-ranges a parameter, `preset.nim` clamps loaded presets into the new bo
 (parameter-range-authority) keeps every notch and hint numeral on the lattice through any re-range —
 a bound cannot move past a coordinate the descriptor names.
 
-The one stored-data change is the matrix: values saved in `[-1, 1]` clamp into `[-0.100, 0.100]` on
+The one stored-data change is the matrix: values saved in `[-1, 1]` clamp into `[-0.330, 0.330]` on
 load. Old presets keep loading; their matrix contrast compresses. Release-notes item, priced in E13.
 
 ### Ordering within the change

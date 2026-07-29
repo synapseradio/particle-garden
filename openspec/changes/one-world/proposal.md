@@ -113,13 +113,13 @@ did nothing because it is broken"* and *"you moved this and it did nothing becau
 ready for it yet"*, and those feel identical from the outside.
 
 **A control's guarantee can sit upstream of its promise.** A particle's on-screen size is not the
-size parameter — it is that parameter through four more multiplications: the density size multiplier
-(0.7 to 1.3, web/shaders/src/render.wgsl:65-66), the world-to-screen scale, the camera zoom, and the
-camera size correction (render.wgsl:160). `PARTICLE_SIZE_MIN = 1` (src/config_ranges.nim:45) bounds
-one factor of that product, so at small size and low zoom the product lands under a pixel and the
-fragment coverage test finishes it off: particles become invisible while every bound holds.
-`CAMERA_SIZE_FLOOR` (src/camera_core.nim:30-31) is the right idea placed halfway — it floors the
-scale *factor*, so it protects against zoom alone and not against zoom compounded with a small size.
+size parameter — it is that parameter through more multiplications: the density size multiplier
+(0.7 to 1.3, web/shaders/src/render.wgsl), the world-to-screen scale, and the camera zoom.
+`PARTICLE_SIZE_MIN = 1` (src/config_ranges.nim) bounds one factor of that product, so at the small
+end the product can land under a pixel and the fragment coverage test finishes it off: particles
+become invisible while every bound holds. (`CAMERA_SIZE_FLOOR`, an earlier floor on the scale
+factor alone, was the right idea placed halfway; it went with the D15 camera revision, and the
+floor on the composed result replaces it.)
 The same shape hides in glow: the halo alpha the screen can show clamps, so the top of the intensity
 range `[0.0, 3.0]` (src/config_ranges.nim:49-50) is blown-out travel that an unclamped observable
 would call live. A bound on a parameter is not a bound on the observable.
@@ -226,10 +226,11 @@ means.
   stays in place, and stays movable.
 - Give the **matrix editor the user's edit**: a cell holds uncommitted intermediate states including
   empty, clamps on commit, and is never overwritten mid-edit by a re-render. The matrix range
-  recalibrates to **±0.100 with step 0.001** and three-decimal display, with the bounds, step, and
+  recalibrates to **±0.330 with step 0.001** and three-decimal display, with the bounds, step, and
   precision served through the boundary so the editor restates none of them.
 - Draw a **transient world overlay** for the parameters that have a spatial meaning — interaction
-  radius, deposit splat radius, camera zoom — for as long as the control is being dragged.
+  radius and camera zoom; the deposit splat radius is a compile-time constant with no control to
+  drag — for as long as the control is being dragged.
 - Add **in-app help**: markdown authored under `docs/help/`, `staticRead` into the frontend at
   Nim-compile time, opened by `?` and a button. The same files are the feature documentation, so
   there is one source and no second copy to drift.

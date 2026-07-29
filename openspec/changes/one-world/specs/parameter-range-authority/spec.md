@@ -2,9 +2,10 @@
 
 ### Requirement: Camera ranges
 
-config_ranges.nim SHALL define `CAMERA_ZOOM_MIN = 0.25` (four tiles visible — the infinity read) and
-`CAMERA_ZOOM_MAX = 8.0` (creature scale), with the standard static non-emptiness assertion, consumed
-by the descriptor table and preset clamping like every other range.
+config_ranges.nim SHALL define `CAMERA_ZOOM_MIN = 1.0` (the view never spans more than one world —
+design D15, reversing the earlier 0.25 and its tiling) and `CAMERA_ZOOM_MAX = 8.0` (creature
+scale), with the standard static non-emptiness assertion, consumed by the descriptor table and
+preset clamping like every other range.
 
 #### Scenario: Zoom clamps at the authority's bounds
 - **WHEN** input drives zoom beyond either bound
@@ -162,7 +163,7 @@ of claim a bound makes, and it belongs where a bound belongs.
 
 ### Requirement: The attraction matrix's coordinates are one recorded range decision
 
-The matrix bounds SHALL be `[-0.100, 0.100]` with step `0.001` and three-decimal display precision,
+The matrix bounds SHALL be `[-0.330, 0.330]` with step `0.001` and three-decimal display precision,
 held in the range authority as the single source consumed by the matrix state, the preset schema,
 and the boundary — no copy elsewhere, and no restatement in TypeScript. The calibration is recorded
 beside the constants and is made together with the crowding attenuation (design C1-C2), because

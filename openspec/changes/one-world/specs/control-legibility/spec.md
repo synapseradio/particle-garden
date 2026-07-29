@@ -160,19 +160,21 @@ repairs the control where exempting removes it from the guarantee.
 - **THEN** the measured live fraction before and after appears beside the constant
 
 #### Scenario: A joint group cannot be entered by assertion
-- **WHEN** a joint group is declared without recorded slice measurements showing non-overlapping
-  live intervals
+- **WHEN** a joint group is declared without recorded slice measurements showing a partner-coupled
+  live boundary
 - **THEN** the declaration is rejected in review, the same way an unjustified exemption is
 
 ### Requirement: A joint group restates its members' promise honestly
 
 Parameters whose live region is a product of intervals in no single parameter SHALL be declarable as
-a joint legibility group. Entry SHALL rest on slice measurement: the members' live intervals on
-slices through the named points fail to overlap, so no partner-independent curve can serve them all.
-A joint group SHALL guarantee joint reachability of every named point, per-member liveness within a
-declared neighbourhood of every named point measured on the slice through it, the per-member cliff
-bound over the whole track, and attractor fidelity — each named point settling into its own
-attractor, distinct from every other's.
+a joint legibility group. Entry SHALL rest on slice measurement: moving a member's partner across
+the named points shifts the member's live boundary by more than the declared point neighbourhood,
+so no partner-independent curve can serve them all. A joint group SHALL guarantee joint
+reachability of every named point, per-member liveness within a declared neighbourhood of every
+named point measured on the slice through it, and attractor fidelity — each named point settling
+into its own attractor, distinct from every other's. A whole-track cliff bound is NOT among the
+guarantees: the boundaries between named points are real phase transitions, and promising smooth
+travel across them would promise what the physics refuses.
 
 The group's promise is that the set locates living worlds and each member is alive wherever the set
 has located one — not that each member is alive everywhere, which no instrument can make true of a
@@ -186,8 +188,8 @@ jointly-shaped live region.
 #### Scenario: A selector is not a dropdown in slider clothes
 - **WHEN** the joint group's guarantees are checked
 - **THEN** destinations are distinct beyond within-point variation, surroundings satisfy slice
-  liveness, and travel between named points is continuous and cliff-free — and failing any one of
-  the three fails the group
+  liveness, and every named point lies on each member's lattice — and failing any one of the
+  three fails the group
 
 ### Requirement: Acknowledgement is immediate and independent of the world's response
 
@@ -226,8 +228,9 @@ before the world catches up.
 
 The dormancy predicate is declared per descriptor over named state fields and streamed stats, and a
 native check SHALL assert every name it uses resolves, so a renamed field breaks loudly. A control
-is never dormant under its own value: zero is an ordinary value, and the control sitting at zero is
-the way back.
+is never dormant under its own value alone: zero is an ordinary value, and the control sitting at
+zero is the way back. A compound predicate MAY read its carriers where their own movement can break
+the condition, so the control still holds its own way out.
 
 #### Scenario: The grade sliders under a disabled consumer
 - **WHEN** bloom is off
@@ -275,8 +278,9 @@ An emptied field is a moment inside an edit, not a value to correct; reverting i
 A parameter whose value is a distance in the world SHALL draw a transient overlay at world scale for
 the duration of a drag, disappearing on release.
 
-The set is closed to parameters that are literally a world distance — interaction radius, deposit
-splat radius, camera zoom. Extending it further would require inventing a visual metaphor per control.
+The set is closed to parameters that are literally a world distance — interaction radius and camera
+zoom; the deposit splat radius is a compile-time constant with no control to drag. Extending the set
+further would require inventing a visual metaphor per control.
 
 #### Scenario: Interaction radius shows its reach
 - **WHEN** the interaction-radius slider is being dragged
