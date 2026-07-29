@@ -53,7 +53,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   // the two paths must agree about where the field is, not merely about how it
   // is graded. Reduces to input.uv at the default camera.
   let fieldUv = cameraScreenUvToFieldUv(input.uv, cam,
-    vec2f(params.worldWidth, params.worldHeight));
+    vec2f(cam.worldWidth, cam.worldHeight));
   let field = textureSample(fieldTexture, fieldSampler, fieldUv).xy;
   let colormapIndex = u32(params.colormapIndex + 0.5);
   // The field's light contribution, exactly as the bloom-on path forms it.

@@ -8,6 +8,11 @@
 // FadeParams comes from the generated fade_params module (FadeParamsLayout in
 // src/gpu_types.nim); fadeAmount is 0.0 = instant clear, 1.0 = keep previous.
 //
+// TWO CAMERAS, TWO BINDINGS. Bindings 4 and 5 hold the live view and the view
+// the trail texture was drawn under, both as the Camera struct camera.wgsl
+// generates from CameraLayout, and both carrying the world extent the
+// transforms need.
+//
 // THE TRAIL DRIFTS ALONG THE FIELD. Binding 3 is the reaction-diffusion field;
 // the trail is re-sampled a hair along its gradient, so a trail decaying near
 // the pattern bends around it rather than fading straight back. fieldDriftScale
@@ -24,6 +29,10 @@
 @group(0) @binding(2) var<uniform> params: FadeParams;
 @group(0) @binding(3) var fieldTexture: texture_2d<f32>;
 @group(0) @binding(4) var<uniform> cam: Camera;
+// The view the trail texture was drawn under. A second record of the same
+// struct the renderer transforms through, so the reprojection reads a camera
+// rather than reassembling one field by field.
+@group(0) @binding(5) var<uniform> prevCam: Camera;
 
 // Fullscreen triangle (3 vertices cover entire screen)
 const POSITIONS = array<vec2f, 3>(
@@ -49,7 +58,8 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  let worldSize = vec2f(params.worldWidth, params.worldHeight);
+  // The world the camera looks at, carried by the camera itself.
+  let worldSize = vec2f(cam.worldWidth, cam.worldHeight);
 
   // REPROJECT THE TRAIL. The trail texture is in SCREEN space, so without this
   // the trails stay welded to the screen while the world moves under them —
@@ -62,11 +72,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   // scale about a point. At a still camera the two transforms are inverses and
   // this returns input.uv exactly, so a stationary view fades as it always did.
   let worldHere = cameraScreenUvToWorld(input.uv, cam, worldSize);
-  // Positional, because WGSL has no named-field constructors — the field order
-  // here must match the Camera struct that camera.wgsl generates from
-  // CameraLayout: centerX, centerY, zoom, pad0.
-  let prevCam = Camera(params.prevCenterX, params.prevCenterY,
-    params.prevZoom, 0.0);
   let reprojectedUv = cameraWorldToScreenUv(worldHere, prevCam, worldSize);
 
   // Displace the sample along the field gradient. The whole term is multiplied

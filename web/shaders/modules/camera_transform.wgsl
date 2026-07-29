@@ -10,6 +10,14 @@
 // lands and how big it looks. Two shaders drawing the same particle through
 // different transforms is exactly the bug this module exists to make
 // impossible.
+//
+// WORLD SIZE STAYS A PARAMETER. Camera carries worldWidth/worldHeight, and the
+// fullscreen passes pass exactly those (`vec2f(cam.worldWidth,
+// cam.worldHeight)`); render.wgsl and glow.wgsl pass the RenderParams.worldSize
+// they already hold for their pixel-scale and field-cell maths. Keeping the
+// span an argument holds every function here line-for-line against its
+// camera_core.nim mirror, which takes it the same way and is where the
+// arithmetic is tested.
 // =============================================================================
 
 //! import camera

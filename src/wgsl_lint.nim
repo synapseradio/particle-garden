@@ -164,7 +164,7 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   # Render shaders (staticRead into app.js by webgpu_render.nim).
   "render": @[0, 1, 2, 3, 4],
   "glow": @[0, 1, 2, 4],  # binding 3 (render's fieldTexture) legally absent — glow never samples the RD field
-  "fade": @[0, 1, 2, 3, 4],
+  "fade": @[0, 1, 2, 3, 4, 5],  # binding 5 is the PREVIOUS frame's camera, the second Camera record the trail reprojection reads
   "tonemap": @[0, 1, 2, 3, 4, 5],
   "field-composite": @[0, 1, 2, 3],
   "composite": @[0, 1],

@@ -58,6 +58,10 @@ var renderParamsBuffer: GPUBuffer
 var colorBuffer: GPUBuffer
 var fadeParamsBuffer: GPUBuffer
 var cameraBuffer: GPUBuffer
+var prevCameraBuffer: GPUBuffer
+  ## The previous frame's view, in the same CameraLayout the live one uses. The
+  ## fade pass binds it beside the live camera and reprojects the trail between
+  ## the two.
 var activeCamera: Camera
   ## The live view. Owned here because the render loop is the only thing that
   ## reads it every frame; the input handlers move it through setCamera.
@@ -72,8 +76,14 @@ var lastUploadedCamera: Camera = Camera(centerX: 0.0, centerY: 0.0, zoom: 0.0)
   ## and so matches no reachable camera, which forces the first upload after
   ## the buffer is created; initWebGPURender puts it back on buffer creation so
   ## a rebuilt buffer is never left holding a stale view.
+var lastUploadedPrevCamera: Camera = Camera(centerX: 0.0, centerY: 0.0, zoom: 0.0)
+  ## The same record for the previous-frame buffer, armed the same way. The two
+  ## buffers change on different frames — the live view moves when the user
+  ## moves it, the previous view follows one frame behind — so each carries its
+  ## own skip test.
 let cameraData = newFloat32Array(CAMERA_PARAMS_F32_COUNT)
-  ## Scratch for that upload, allocated once and refilled in place.
+  ## Scratch for those uploads, allocated once and refilled in place. Shared by
+  ## both because queue.writeBuffer copies what it is given before it returns.
 
 # Staging arrays for the other per-frame uniform uploads, allocated once and
 # refilled in place. Every slot each one carries is written unconditionally
@@ -203,8 +213,8 @@ var cachedTonemapFieldGeneration: int = -1
 const EXPECTED_BIND_GROUP_ENTRIES_RENDER* = 5
   ## particles + renderParams + colors + field + camera. Shared by the render
   ## and glow pipelines, so both bind groups carry all five.
-const EXPECTED_BIND_GROUP_ENTRIES_FADE* = 5
-  ## trail texture + sampler + fadeParams + field + camera.
+const EXPECTED_BIND_GROUP_ENTRIES_FADE* = 6
+  ## trail texture + sampler + fadeParams + field + camera + previous camera.
 const EXPECTED_BIND_GROUP_ENTRIES_BLIT* = 2
   ## trail texture + sampler.
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_COMPOSITE* = 4
@@ -315,16 +325,30 @@ proc initWebGPURender*(): bool =
   # the next frame's alpha slot force an upload.
   colorData.fill(0.0)
 
-  # Camera uniform: where the view sits over the toroidal world. Bound by both
-  # render.wgsl and glow.wgsl, which must draw a particle at the same image.
+  # Camera uniform: where the view sits over the toroidal world, and how big
+  # that world is. Bound by both render.wgsl and glow.wgsl, which must draw a
+  # particle at the same image, and by every fullscreen pass that maps a screen
+  # pixel back into the world.
   let cameraDesc = newJsObject()
   cameraDesc["size"] = wgslUniformSize(CameraLayout).toJs
   cameraDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
   cameraDesc["label"] = "Camera Buffer".cstring.toJs
   cameraBuffer = webgpu_init.device.createBuffer(cameraDesc)
-  # A fresh buffer holds no view, so arm the sentinel that forces the first
-  # frame to upload one.
+
+  # The same layout again, holding the view the trail texture was drawn under.
+  # A second buffer rather than more FadeParams fields: the fade pass reads a
+  # Camera exactly as the renderer writes one, so the two views cannot drift
+  # apart in shape.
+  let prevCameraDesc = newJsObject()
+  prevCameraDesc["size"] = wgslUniformSize(CameraLayout).toJs
+  prevCameraDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  prevCameraDesc["label"] = "Previous Camera Buffer".cstring.toJs
+  prevCameraBuffer = webgpu_init.device.createBuffer(prevCameraDesc)
+
+  # Fresh buffers hold no view, so arm the sentinels that force the first frame
+  # to upload one into each.
   lastUploadedCamera = Camera(centerX: 0.0, centerY: 0.0, zoom: 0.0)
+  lastUploadedPrevCamera = Camera(centerX: 0.0, centerY: 0.0, zoom: 0.0)
 
   # Create bind group layout (AoS: particles + renderParams + colors + field +
   # camera). SHARED BY THE RENDER AND GLOW PIPELINES — both are built from the
@@ -530,7 +554,7 @@ proc initWebGPURender*(): bool =
   samplerDesc["label"] = "Linear Sampler".cstring.toJs
   linearSampler = webgpu_init.device.createSampler(samplerDesc)
 
-  # Create fade params uniform buffer (fadeAmount + 3 padding floats)
+  # Create fade params uniform buffer (fadeAmount + fieldDriftScale + 2 pads)
   let fadeParamsSize = wgslUniformSize(FadeParamsLayout)
   let fadeParamsDesc = newJsObject()
   fadeParamsDesc["size"] = fadeParamsSize.toJs
@@ -587,7 +611,8 @@ proc initWebGPURender*(): bool =
   fadeEntry3["texture"] = fadeTexture3
   discard fadeLayoutEntries.push(fadeEntry3)
 
-  # Binding 4: the camera, for reprojecting the trail as the view moves.
+  # Binding 4: the live camera, and binding 5 the view the trail was drawn
+  # under. Reprojecting the trail as the view moves takes both.
   let fadeEntry4 = newJsObject()
   fadeEntry4["binding"] = 4.toJs
   fadeEntry4["visibility"] = gpuShaderStageFragment.toJs
@@ -595,6 +620,14 @@ proc initWebGPURender*(): bool =
   fadeBuffer4["type"] = "uniform".cstring.toJs
   fadeEntry4["buffer"] = fadeBuffer4
   discard fadeLayoutEntries.push(fadeEntry4)
+
+  let fadeEntry5 = newJsObject()
+  fadeEntry5["binding"] = 5.toJs
+  fadeEntry5["visibility"] = gpuShaderStageFragment.toJs
+  let fadeBuffer5 = newJsObject()
+  fadeBuffer5["type"] = "uniform".cstring.toJs
+  fadeEntry5["buffer"] = fadeBuffer5
+  discard fadeLayoutEntries.push(fadeEntry5)
 
   validateEntryCount(fadeLayoutEntries, "Fade Bind Group Layout",
     EXPECTED_BIND_GROUP_ENTRIES_FADE)
@@ -1286,6 +1319,29 @@ proc resetCamera*() =
   ## Back to the whole world, centred.
   activeCamera = initCamera(float32(config.WORLD_W), float32(config.WORLD_H))
 
+proc uploadCamera(buffer: GPUBuffer, view: Camera) =
+  ## Write one Camera record into one uniform buffer.
+  ##
+  ## The live view and the previous frame's view go through this same proc, so
+  ## the two records are filled by one piece of code and cannot disagree about
+  ## where a field sits. The world extent rides along because every camera
+  ## transform needs the span it wraps around, and the pass reading a camera
+  ## should not have to be handed that separately.
+  ##
+  ## Callers skip this whenever the view has not moved, which is safe only
+  ## because config.WORLD_W/WORLD_H are immutable: a world that could resize
+  ## under a still camera would leave the extent in the buffer stale, and would
+  ## have to force an upload on the resize.
+  cameraData[CAMERA_CENTER_X] = view.centerX
+  cameraData[CAMERA_CENTER_Y] = view.centerY
+  cameraData[CAMERA_ZOOM] = view.zoom
+  cameraData[CAMERA_WORLD_WIDTH] = float32(config.WORLD_W)
+  cameraData[CAMERA_WORLD_HEIGHT] = float32(config.WORLD_H)
+  cameraData[CAMERA_PAD0] = 0.0
+  cameraData[CAMERA_PAD1] = 0.0
+  cameraData[CAMERA_PAD2] = 0.0
+  webgpu_init.queue.writeBuffer(buffer, 0, cameraData)
+
 proc createFadeBindGroups() =
   ## (Re)build both fade bind groups. They reference the ping-pong trail views,
   ## so they are rebuilt whenever those are recreated (resize), and they carry
@@ -1323,13 +1379,23 @@ proc createFadeBindGroups() =
     fieldEntry["resource"] = currentFieldViewOrFallback().toJs
     discard entries.push(fieldEntry)
 
-    # The camera, for reprojecting the trail as the view moves.
+    # The live camera and the one the trail was drawn under. The reprojection
+    # asks where each world point sat on that earlier screen and reads the
+    # trail there, so a moving view slides its history with the world instead
+    # of smearing it across the screen.
     let cameraEntry = newJsObject()
     cameraEntry["binding"] = 4.toJs
     let cameraResource = newJsObject()
     cameraResource["buffer"] = cameraBuffer.toJs
     cameraEntry["resource"] = cameraResource
     discard entries.push(cameraEntry)
+
+    let prevCameraEntry = newJsObject()
+    prevCameraEntry["binding"] = 5.toJs
+    let prevCameraResource = newJsObject()
+    prevCameraResource["buffer"] = prevCameraBuffer.toJs
+    prevCameraEntry["resource"] = prevCameraResource
+    discard entries.push(prevCameraEntry)
 
     validateEntryCount(entries, $label, EXPECTED_BIND_GROUP_ENTRIES_FADE)
     desc["entries"] = entries
@@ -1590,12 +1656,17 @@ proc render*(particleCount: int) =
   # still camera leaves the contents correct, and comparing the whole Camera
   # (Nim lifts == over every field) keeps a future field from slipping past.
   if activeCamera != lastUploadedCamera:
-    cameraData[CAMERA_CENTER_X] = activeCamera.centerX
-    cameraData[CAMERA_CENTER_Y] = activeCamera.centerY
-    cameraData[CAMERA_ZOOM] = activeCamera.zoom
-    cameraData[CAMERA_PAD0] = 0.0
-    webgpu_init.queue.writeBuffer(cameraBuffer, 0, cameraData)
+    uploadCamera(cameraBuffer, activeCamera)
     lastUploadedCamera = activeCamera
+
+  # The view the trail texture was drawn under, in its own buffer of the same
+  # layout. The fade pass reprojects between the two, so it needs the previous
+  # one as a whole camera rather than as scalars it reassembles. On the first
+  # frame this equals the live view, which makes the reprojection an identity —
+  # correct, since there is no history yet.
+  if previousCamera != lastUploadedPrevCamera:
+    uploadCamera(prevCameraBuffer, previousCamera)
+    lastUploadedPrevCamera = previousCamera
 
   # Species colors, packed as vec4f for 16-byte alignment. colorData already
   # holds what the buffer holds, so writing through it doubles as the change
@@ -1631,17 +1702,8 @@ proc render*(particleCount: int) =
   # Trails bend along the field gradient, in every world. A flat field has zero
   # gradient, so the drift term vanishes by arithmetic rather than by a gate.
   fadeData[FADE_FIELD_DRIFT_SCALE] = float32(FIELD_DRIFT_SCALE)
-  # The camera the trail texture was drawn under. The fade pass asks where each
-  # world point sat on that frame's screen and reads the trail there, so a
-  # moving view slides its history with the world instead of smearing it across
-  # the screen. On the first frame this equals the current camera, which makes
-  # the reprojection an identity — correct, since there is no history yet.
-  fadeData[FADE_PREV_CENTER_X] = previousCamera.centerX
-  fadeData[FADE_PREV_CENTER_Y] = previousCamera.centerY
-  fadeData[FADE_PREV_ZOOM] = previousCamera.zoom
-  fadeData[FADE_WORLD_WIDTH] = float32(config.WORLD_W)
-  fadeData[FADE_WORLD_HEIGHT] = float32(config.WORLD_H)
   fadeData[FADE_PAD1] = 0.0
+  fadeData[FADE_PAD2] = 0.0
   webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
   # Tonemap/grade uniforms — written every frame regardless of the present path.
@@ -1658,9 +1720,7 @@ proc render*(particleCount: int) =
   # question the coverage term answers per pixel rather than one the world
   # answers once.
   tonemapData[TONEMAP_FIELD_OPACITY] = float32(config.CONFIG.fieldOpacity)
-  # World extent, so both composite paths can map screen UV into field space.
-  tonemapData[TONEMAP_WORLD_WIDTH] = float32(config.WORLD_W)
-  tonemapData[TONEMAP_WORLD_HEIGHT] = float32(config.WORLD_H)
+  tonemapData[TONEMAP_PAD2] = 0.0
   webgpu_init.queue.writeBuffer(tonemapParamsBuffer, 0, tonemapData)
 
   # Select pre-created resources based on trail parity (ZERO allocations)

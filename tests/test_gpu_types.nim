@@ -63,9 +63,9 @@ suite "Every Generated Layout Agrees With WGSL's Offset Algorithm":
   # by being added to this list rather than by someone remembering to write the
   # loop again.
   const generatedLayouts = [
-    SimParamsLayout, RenderParamsLayout, FieldParamsLayout,
-    ReactionParamsLayout, SpeciesChemistryLayout, BloomParamsLayout,
-    TonemapParamsLayout]
+    SimParamsLayout, RenderParamsLayout, FadeParamsLayout, CameraLayout,
+    FieldParamsLayout, ReactionParamsLayout, SpeciesChemistryLayout,
+    BloomParamsLayout, TonemapParamsLayout]
 
   test "every layout's declared offsets are the ones WGSL computes":
     for layout in generatedLayouts:
@@ -200,14 +200,15 @@ suite "Generated Render Struct Layouts":
     check RENDER_MAX_VELOCITY == 7
     check RENDER_TRAIL_LENGTH_SCALE == 8
 
-  test "FadeParamsLayout is 8 floats and generates FADE_ indices":
-    # 32 bytes because it carries the previous frame's camera, which the trail
-    # reprojection needs — see the layout's own comment for why a pure UV
-    # translation is not correct under zoom.
-    check FadeParamsLayout.totalSize == 32
-    check wgslUniformSize(FadeParamsLayout) == 32
+  test "FadeParamsLayout is 4 floats and generates FADE_ indices":
+    # 16 bytes: the fade pass carries only its own two settings. The view it
+    # reprojects through arrives as Camera records on their own bindings, so
+    # neither the previous camera nor the world extent takes room here.
+    check FadeParamsLayout.totalSize == 16
+    check wgslUniformSize(FadeParamsLayout) == 16
     check FADE_AMOUNT == 0
-    check FADE_PARAMS_F32_COUNT == 8
+    check FADE_FIELD_DRIFT_SCALE == 1
+    check FADE_PARAMS_F32_COUNT == 4
 
   test "a field name that begins with the prefix does not double the prefix":
     # fadeAmount under prefix FADE must emit FADE_AMOUNT, not FADE_FADE_AMOUNT.
@@ -221,6 +222,55 @@ suite "Generated Render Struct Layouts":
     let fadeStruct = toWgslStruct(FadeParamsLayout)
     check fadeStruct.startsWith("struct FadeParams {")
     check "fadeAmount: f32," in fadeStruct
+
+
+suite "The Camera Uniform Carries The World It Looks At":
+  # A view over a torus means nothing without the span it wraps around, so the
+  # extent travels inside the camera record rather than beside it. Every pass
+  # that binds a camera reads one authority for both halves of the transform,
+  # and a pass that needs the previous frame's view binds a second record of
+  # this same layout instead of rebuilding one from loose scalars.
+
+  test "CameraLayout is 8 floats, 32 bytes written and allocated":
+    check CameraLayout.totalSize == 32
+    check wgslUniformSize(CameraLayout) == 32
+
+  test "the generated CAMERA_ indices follow the declared field order":
+    check CAMERA_CENTER_X == 0
+    check CAMERA_CENTER_Y == 1
+    check CAMERA_ZOOM == 2
+    check CAMERA_WORLD_WIDTH == 3
+    check CAMERA_WORLD_HEIGHT == 4
+    check CAMERA_PARAMS_F32_COUNT == 8
+
+  test "the world extent sits in the camera and in neither pass's params":
+    # The fade and composite passes used to carry their own copies. Two structs
+    # holding one number is two chances to disagree about how big the world is
+    # within a single frame, which lands the field and the trail in different
+    # places on the same screen.
+    check CameraLayout.fieldOffset("worldWidth") == 12
+    check CameraLayout.fieldOffset("worldHeight") == 16
+    expect KeyError:
+      discard FadeParamsLayout.fieldByName("worldWidth")
+    expect KeyError:
+      discard TonemapParamsLayout.fieldByName("worldWidth")
+
+  test "the previous frame's view is a Camera record, not FadeParams fields":
+    # fade.wgsl used to rebuild a Camera positionally out of three FadeParams
+    # scalars, with a comment about field order as its only guard. A second
+    # binding of this layout retires that constructor.
+    expect KeyError:
+      discard FadeParamsLayout.fieldByName("prevCenterX")
+    expect KeyError:
+      discard FadeParamsLayout.fieldByName("prevZoom")
+
+  test "toWgslStruct renders the camera with its world extent":
+    let cameraStruct = toWgslStruct(CameraLayout)
+    check cameraStruct.startsWith("struct Camera {")
+    check "centerX: f32," in cameraStruct
+    check "zoom: f32," in cameraStruct
+    check "worldWidth: f32," in cameraStruct
+    check "worldHeight: f32," in cameraStruct
 
 
 suite "RenderParams Glow Knob Indices":
@@ -370,13 +420,14 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check BLOOM_TEXEL_SIZE_Y == 3
     check BLOOM_PARAMS_F32_COUNT == 4
 
-  test "TonemapParamsLayout is 12 floats, 48 bytes written and allocated":
-    # 48 bytes because both composite paths map screen UV into field space,
-    # which needs the world extent. The camera itself is bound from the shared
-    # camera buffer rather than copied in here, so that costs two live fields
-    # and the padding to the next 16-byte boundary.
-    check TonemapParamsLayout.totalSize == 48
-    check wgslUniformSize(TonemapParamsLayout) == 48
+  test "TonemapParamsLayout is 8 floats, 32 bytes written and allocated":
+    # 32 bytes: exposure, the bloom gain, the three grade knobs and the two
+    # field-visualization slots, padded to the 16-byte boundary. Both composite
+    # paths map screen UV into field space through the camera they already
+    # bind, which carries the world extent, so nothing about the view is
+    # restated here.
+    check TonemapParamsLayout.totalSize == 32
+    check wgslUniformSize(TonemapParamsLayout) == 32
 
   test "the generated TONEMAP_ indices follow the declared field order":
     check TONEMAP_EXPOSURE == 0
@@ -387,11 +438,8 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     # S10 claims two pad slots for the field-visualization pair.
     check TONEMAP_COLORMAP_INDEX == 5
     check TONEMAP_FIELD_OPACITY == 6
-    # The camera work claims two more for the world extent the UV mapping needs.
-    check TONEMAP_WORLD_WIDTH == 7
-    check TONEMAP_WORLD_HEIGHT == 8
-    check TONEMAP_PAD2 == 9
-    check TONEMAP_PARAMS_F32_COUNT == 12
+    check TONEMAP_PAD2 == 7
+    check TONEMAP_PARAMS_F32_COUNT == 8
 
   test "toWgslStruct renders both layouts with WGSL types":
     let bloomStruct = toWgslStruct(BloomParamsLayout)

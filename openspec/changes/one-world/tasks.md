@@ -687,7 +687,7 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       harden `wrapPosition` itself; floor-mod agrees with the single-step form on every input
       the current callers produce — verify by grep before choosing), and pin it:
       `a centre moved by any multiple of the world span rewraps into [0, worldSize)`.
-- [ ] 7.13 Give the previous camera a real struct. 7.6's reprojection smuggles it through
+- [x] 7.13 Give the previous camera a real struct. 7.6's reprojection smuggles it through
       `FadeParams` as three loose scalars, rebuilt in `fade.wgsl` with a positional
       `Camera(...)` constructor whose only guard is a comment about field order —
       `CameraLayout`'s generated module and offset assertions see none of it. The same growth
@@ -697,6 +697,24 @@ Extract the maths into a pure module first — none of it needs a GPU, and that 
       32 bytes) so every camera-binding pass gets it free, bind the previous frame's view as a
       second `Camera` uniform record for fade, and delete the loose scalars from both param
       layouts.
+      The world extent moved into `CameraLayout` (16 -> 32 bytes: centerX, centerY, zoom,
+      worldWidth at offset 12, worldHeight at 16, three pads), so `FadeParamsLayout` shrank
+      32 -> 16 bytes (prevCenterX/prevCenterY/prevZoom/worldWidth/worldHeight deleted) and
+      `TonemapParamsLayout` 48 -> 32 bytes (worldWidth/worldHeight deleted); `fade.wgsl` now
+      binds the previous view as a second `Camera` record at `@binding(5)` and its
+      hand-rebuilt positional `Camera(params.prevCenterX, ...)` constructor is gone, while
+      `tonemap.wgsl` and `field-composite.wgsl` read `vec2f(cam.worldWidth, cam.worldHeight)`.
+      `webgpu_render.nim` gained `prevCameraBuffer` with its own zoom-0 upload sentinel, one
+      shared `uploadCamera(buffer, view)` writer for both records, fade layout/bind-group
+      entry 5, and `EXPECTED_BIND_GROUP_ENTRIES_FADE` 5 -> 6; `wgsl_lint`'s
+      `ExpectedShaderBindings[fade]` became `@[0,1,2,3,4,5]`. Two reds watched first:
+      `tests/test_gpu_types.nim` failed to compile with "undeclared identifier:
+      'CAMERA_WORLD_WIDTH'" before the layout grew, and `tests/test_wgsl_lint.nim` reported
+      "fade: expected @[0, 1, 2, 3, 4, 5], got @[0, 1, 2, 3, 4]" after the manifest declared
+      binding 5 and before the shader did. Green after: `just happen` (5 shaders rebundled,
+      JS + UI + native all built) and `just test` at 685 [OK], 0 [FAILED]. Owed live check
+      (CLAUDE.md landmine: which resource lands at each binding is unchecked): pan and zoom
+      with trails on, and the bloom-off field backdrop, in a running app.
 - [x] 7.14 Teach the lint the binding manifest. The render path's bind groups agree with their
       shaders' `@binding` numbers by comment alone (7.3's runtime-only hazard, and the surface
       has since more than doubled); entry-count validation mirrors the compute path only if the

@@ -8,5 +8,9 @@ struct Camera {
   centerX: f32,
   centerY: f32,
   zoom: f32,
+  worldWidth: f32,
+  worldHeight: f32,
   pad0: f32,
+  pad1: f32,
+  pad2: f32,
 }

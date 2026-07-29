@@ -203,53 +203,65 @@ const
     totalSize: 64
   )
 
-  # FadeParams struct (32 bytes, generated into web/shaders/modules/fade_params.wgsl)
+  # FadeParams struct (16 bytes, generated into web/shaders/modules/fade_params.wgsl)
   #
-  # Carries the PREVIOUS frame's camera as well as the current fade settings.
-  # The trail texture is in screen space, so when the camera moves the trail has
-  # to be reprojected or it stays welded to the screen and smears across the
-  # world. Reprojecting needs both cameras: where a world point is now, and
-  # where it sat on the frame the trail texture was drawn.
+  # The fade pass's own two settings and nothing else. How much of the previous
+  # frame survives, and how far the trail slides along the field gradient while
+  # it decays.
   #
-  # 32 bytes rather than 16 to hold them. A pure UV translation fits in less,
-  # but it is only exact while the zoom is unchanged — during a zoom the correct
-  # mapping is a scale about a point, and a single offset would smear exactly
-  # when the user is moving fastest.
-  #
-  # worldWidth/worldHeight ride along so the fade pass can run the camera
-  # transform without also binding the whole of RenderParams for two numbers.
+  # The VIEW the pass reprojects through does not live here. The trail texture
+  # is in screen space, so a moving camera has to be reprojected or the history
+  # stays welded to the screen and smears across the world, and that needs two
+  # cameras — where a world point is now, and where it sat on the frame the
+  # trail was drawn. Both arrive as Camera records on their own bindings, so
+  # the pass reads the same struct the renderer transforms through instead of
+  # reassembling one from scalars carried here.
   FadeParamsLayout* = GpuStruct(
     name: "FadeParams",
     fields: @[
       GpuField(name: "fadeAmount", kind: gtF32, offset: 0,  size: 4, count: 1),
       GpuField(name: "fieldDriftScale", kind: gtF32, offset: 4, size: 4, count: 1),
-      GpuField(name: "prevCenterX", kind: gtF32, offset: 8,  size: 4, count: 1),
-      GpuField(name: "prevCenterY", kind: gtF32, offset: 12, size: 4, count: 1),
-      GpuField(name: "prevZoom",   kind: gtF32, offset: 16, size: 4, count: 1),
-      GpuField(name: "worldWidth", kind: gtF32, offset: 20, size: 4, count: 1),
-      GpuField(name: "worldHeight", kind: gtF32, offset: 24, size: 4, count: 1),
-      GpuField(name: "pad1",       kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "pad1",       kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "pad2",       kind: gtF32, offset: 12, size: 4, count: 1),
     ],
-    totalSize: 32
+    totalSize: 16
   )
 
-  # Camera struct (16 bytes, generated into web/shaders/modules/camera.wgsl)
-  # Where the view sits over the toroidal world and how close it is, mirroring
-  # camera_core.Camera. Its own uniform rather than more RenderParams fields
-  # because RenderParams has one pad left and this needs three slots — and
-  # because glow.wgsl needs the camera without needing the rest of RenderParams.
+  # Camera struct (32 bytes, generated into web/shaders/modules/camera.wgsl)
+  # Where the view sits over the toroidal world, how close it is, and how big
+  # that world is. Its own uniform rather than more RenderParams fields because
+  # RenderParams has one pad left and this needs five slots — and because
+  # glow.wgsl needs the camera without needing the rest of RenderParams.
   #
-  # centerX/centerY are always wrapped into [0, worldSize); the shaders' nearest
-  # -image arithmetic depends on that, exactly as camera_core documents.
+  # centerX/centerY/zoom mirror camera_core.Camera, which is where the transform
+  # is tested. centerX/centerY are always wrapped into [0, worldSize); the
+  # shaders' nearest-image arithmetic depends on that, exactly as camera_core
+  # documents.
+  #
+  # THE EXTENT TRAVELS WITH THE VIEW. Every transform in camera_transform.wgsl
+  # needs the world span as well as the camera — a view over a torus means
+  # nothing without the span it wraps around — so the pass that binds a camera
+  # gets both from one record. The fade and composite passes used to carry
+  # private copies in their own param structs, which is two structs holding one
+  # number and two chances to disagree about how big the world is inside a
+  # single frame.
+  #
+  # A pass wanting a SECOND view (fade, which reprojects the trail from the
+  # previous frame's camera) binds a second buffer of this layout rather than
+  # spelling the fields out again somewhere else.
   CameraLayout* = GpuStruct(
     name: "Camera",
     fields: @[
-      GpuField(name: "centerX", kind: gtF32, offset: 0,  size: 4, count: 1),
-      GpuField(name: "centerY", kind: gtF32, offset: 4,  size: 4, count: 1),
-      GpuField(name: "zoom",    kind: gtF32, offset: 8,  size: 4, count: 1),
-      GpuField(name: "pad0",    kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "centerX",     kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "centerY",     kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "zoom",        kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "worldWidth",  kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "worldHeight", kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "pad0",        kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "pad1",        kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "pad2",        kind: gtF32, offset: 28, size: 4, count: 1),
     ],
-    totalSize: 16
+    totalSize: 32
   )
 
   # FieldParams struct (32 bytes, generated into web/shaders/modules/field_params.wgsl)
@@ -350,6 +362,12 @@ const
   # the RD field) and fieldOpacity (how much the field contributes). The RD
   # field-composite (bloom-off) floor reads the same two slots from the same
   # buffer. Written every frame from CONFIG.
+  #
+  # Nothing about the VIEW appears here. Both composite paths map screen UV
+  # into field space, which needs the camera and the world extent, and both
+  # bind the shared Camera uniform that carries the pair — render, glow, fade,
+  # tonemap and field-composite must agree about the view within a frame, and
+  # five copies is five chances to disagree.
   TonemapParamsLayout* = GpuStruct(
     name: "TonemapParams",
     fields: @[
@@ -360,18 +378,9 @@ const
       GpuField(name: "temperature",    kind: gtF32, offset: 16, size: 4, count: 1),
       GpuField(name: "colormapIndex",  kind: gtF32, offset: 20, size: 4, count: 1),
       GpuField(name: "fieldOpacity",   kind: gtF32, offset: 24, size: 4, count: 1),
-      # World extent, so the composite passes can map screen UV through the
-      # camera into field space. The camera itself is NOT duplicated here — it
-      # is bound from the one shared camera buffer, because render, glow, fade,
-      # tonemap and field-composite must all agree about the view within a
-      # frame, and five copies is five chances to disagree.
-      GpuField(name: "worldWidth",     kind: gtF32, offset: 28, size: 4, count: 1),
-      GpuField(name: "worldHeight",    kind: gtF32, offset: 32, size: 4, count: 1),
-      GpuField(name: "pad2",           kind: gtF32, offset: 36, size: 4, count: 1),
-      GpuField(name: "pad3",           kind: gtF32, offset: 40, size: 4, count: 1),
-      GpuField(name: "pad4",           kind: gtF32, offset: 44, size: 4, count: 1),
+      GpuField(name: "pad2",           kind: gtF32, offset: 28, size: 4, count: 1),
     ],
-    totalSize: 48
+    totalSize: 32
   )
 
 # =============================================================================
@@ -628,7 +637,8 @@ const
 # RENDER_FIELD_OPACITY=13 and RENDER_COLORMAP_INDEX=14 (the field reaching the
 # vertex stage) and one pad at 15, RENDER_PARAMS_F32_COUNT=16 (totalSize 64);
 # FADE_AMOUNT=0, FADE_FIELD_DRIFT_SCALE=1 ... FADE_PAD2=3,
-# FADE_PARAMS_F32_COUNT=4.
+# FADE_PARAMS_F32_COUNT=4; CAMERA_CENTER_X=0 ... CAMERA_WORLD_HEIGHT=4, three
+# pads, CAMERA_PARAMS_F32_COUNT=8.
 
 genFieldIndices(RenderParamsLayout, "RENDER")
 genFieldIndices(FadeParamsLayout, "FADE")
@@ -646,9 +656,10 @@ static:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
         layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
   assert RenderParamsLayout.wgslUniformSize == 64, "RenderParams allocates 64 bytes"
-  assert FadeParamsLayout.wgslUniformSize == 32, "FadeParams allocates 32 bytes"
-  assert CameraLayout.totalSize == 16, "Camera must be 16 bytes"
-  assert CameraLayout.wgslUniformSize == 16, "Camera allocates 16 bytes"
+  assert FadeParamsLayout.totalSize == 16, "FadeParams must be 16 bytes"
+  assert FadeParamsLayout.wgslUniformSize == 16, "FadeParams allocates 16 bytes"
+  assert CameraLayout.totalSize == 32, "Camera must be 32 bytes"
+  assert CameraLayout.wgslUniformSize == 32, "Camera allocates 32 bytes"
 
 # =============================================================================
 # FIELDPARAMS FIELD INDICES (the chemical field, webgpu_compute.nim)
@@ -728,4 +739,5 @@ static:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
         layout.name & "." & layout.fields[fieldIndex].name & " offset drift"
   assert BloomParamsLayout.wgslUniformSize == 16, "BloomParams allocates 16 bytes"
-  assert TonemapParamsLayout.wgslUniformSize == 48, "TonemapParams allocates 48 bytes"
+  assert TonemapParamsLayout.totalSize == 32, "TonemapParams must be 32 bytes"
+  assert TonemapParamsLayout.wgslUniformSize == 32, "TonemapParams allocates 32 bytes"

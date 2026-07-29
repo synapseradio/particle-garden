@@ -73,7 +73,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   var fieldCoverage = 0.0;
   if (params.fieldOpacity > 0.0) {
     let fieldUv = cameraScreenUvToFieldUv(input.uv, cam,
-      vec2f(params.worldWidth, params.worldHeight));
+      vec2f(cam.worldWidth, cam.worldHeight));
     let fieldSample = textureSample(fieldTexture, texSampler, fieldUv).xy;
     let colormapIndex = u32(params.colormapIndex + 0.5);
     fieldLight =
