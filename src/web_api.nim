@@ -19,7 +19,10 @@
 #
 # Parameter writes clamp against the descriptor table
 # (ui/api/param_descriptor.nim) — the clamp authority — so no out-of-range
-# value can reach CONFIG regardless of what the UI sends.
+# value can reach CONFIG regardless of what the UI sends. A clamped write then
+# dispatches by walking the routed record's field names (assignParamField, and
+# the static gate above setParamImpl), so a descriptor id naming no field of
+# its store fails the build instead of writing nowhere.
 #
 # Presets are hybrid: this module owns snapshot -> JSON and JSON ->
 # validated preset -> apply (walking preset_store_core's presetApplySteps in
@@ -35,6 +38,10 @@
 when defined(js):
   import std/tables
   from std/json import pretty
+  # The parameter dispatch's build gate names the offending descriptor in its
+  # message, so it needs a compile-time error over a computed string; the
+  # `{.error.}` pragma accepts only a literal.
+  from std/macros import error
   from std/jsffi import JsObject, toJs, `[]=`
   from std/dom import getElementById
 
@@ -431,100 +438,120 @@ when defined(js):
       consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
       0.0
 
+  proc assignParamField[T](record: var T; id: string; value: float): bool =
+    ## Write `value` into the field of `record` whose NAME is `id`, and report
+    ## whether such a field exists.
+    ##
+    ## `fieldPairs` unrolls at compile time, so what reads as a search is a flat
+    ## list of comparisons against the record's real field names. That is what
+    ## makes a routing table unnecessary: a descriptor id and a state field of
+    ## the same name need no third place declaring that they belong together.
+    ##
+    ## Integer fields take int(value), and the truncation is already done —
+    ## clampParamValue rounds a pkInt parameter through int() before this sees
+    ## it, so what arrives for an int field is whole.
+    for name, field in record.fieldPairs:
+      when field is int:
+        if name == id:
+          field = int(value)
+          return true
+      elif field is float:
+        if name == id:
+          field = value
+          return true
+    false
+
+  static:
+    # THE BUILD GATE (design E6). Every descriptor that routes to a state record
+    # is written into a throwaway copy of that record HERE, at compile time,
+    # through the same walk setParamImpl runs. An id that names no assignable
+    # field of its store therefore fails the build instead of clamping a value
+    # and writing it nowhere while reporting success.
+    #
+    # WHAT THE FAILURE LOOKS LIKE, so the next person recognizes it. Drilled by
+    # adding a `floatParam("wobbliness", ...)` routed to psSimulation: the
+    # build-app step of `just happen` (`nim js`) stops with exit code 1 and
+    # prints, where NNN is the `error` line below,
+    #
+    #   stack trace: (most recent call last)
+    #   web_api.nim(NNN, 16)     web_api
+    #   .../src/web_api.nim(NNN, 16) Error: [gardenAPI] descriptor "wobbliness"
+    #   routes to psSimulation but names no assignable field of SimulationState
+    #
+    # The trace points HERE rather than at the descriptor, so the id inside the
+    # quotes is what to search for in ui/api/param_descriptor.nim. Nothing after
+    # build-app runs, and web/app.js on disk stays the last good one.
+    var simProbe = initSimulationState()
+    var renderProbe = initRenderState()
+    for descriptor in buildParamDescriptors():
+      case descriptor.store
+      of psSimulation:
+        if not assignParamField(simProbe, descriptor.id,
+            descriptor.defaultValue):
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to psSimulation but names no assignable field of " &
+            "SimulationState")
+      of psRender:
+        if not assignParamField(renderProbe, descriptor.id,
+            descriptor.defaultValue):
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to psRender but names no assignable field of " &
+            "RenderState")
+      of psPalette:
+        # The two arms below are written against these ids by name, because
+        # neither is a field assignment. A third palette knob has to decide what
+        # it writes, so it stops the build here rather than reaching an arm that
+        # does not know it exists.
+        if descriptor.id notin ["paletteSaturation", "paletteLightness"]:
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to psPalette, which setParamImpl serves with one arm " &
+            "per id; give it an arm")
+      of psCamera:
+        if descriptor.id != "cameraZoom":
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to psCamera, which setParamImpl serves with one arm " &
+            "per id; give it an arm")
+      of psSpeciesChemistry:
+        # Deliberately unrouted: the panel writes these cells into the live
+        # chemistry array by reference, and setParamImpl says so below.
+        discard
+
   proc setParamImpl(id: string; rawValue: float) =
+    ## Clamp against the descriptor, then route by the descriptor's STORE.
+    ##
+    ## The two stores that write a typed state record dispatch through
+    ## assignParamField above, so a parameter whose id is its field name needs
+    ## nothing written here; the two that write something else keep an arm each.
+    ## The static block above is what makes the field walk safe to ignore the
+    ## result of: it proves at compile time that every routed id lands.
     if id notin paramsById:
       consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
       return
-    let value = clampParamValue(paramsById[id], rawValue)
-    case id
-    of "particleCount": updateSimulation(
-      proc(simState: var SimulationState) = simState.particleCount = value.int)
-    of "speciesCount": updateSimulation(
-      proc(simState: var SimulationState) = simState.speciesCount = value.int)
-    of "interactionRadius": updateSimulation(
-      proc(simState: var SimulationState) =
-        simState.interactionRadius = value.int)
-    of "forceStrength": updateSimulation(
-      proc(simState: var SimulationState) = simState.forceStrength = value)
-    of "crowdingStrength": updateSimulation(
-      proc(simState: var SimulationState) = simState.crowdingStrength = value)
-    of "friction": updateSimulation(
-      proc(simState: var SimulationState) = simState.friction = value)
-    of "timeScale": updateSimulation(
-      proc(simState: var SimulationState) = simState.timeScale = value)
-    of "ruleTemperature": updateSimulation(
-      proc(simState: var SimulationState) = simState.ruleTemperature = value)
-    of "maxVelocity": updateSimulation(
-      proc(simState: var SimulationState) = simState.maxVelocity = value)
-    of "particleSize": updateRender(
-      proc(renderState: var RenderState) = renderState.particleSize = value.int)
-    of "trailLength": updateRender(
-      proc(renderState: var RenderState) = renderState.trailLength = value)
-    of "glowIntensity": updateRender(
-      proc(renderState: var RenderState) = renderState.glowIntensity = value)
-    of "velocityGlowScale": updateRender(
-      proc(renderState: var RenderState) =
-        renderState.velocityGlowScale = value)
-    of "glowRadiusScale": updateRender(
-      proc(renderState: var RenderState) = renderState.glowRadiusScale = value)
-    of "glowFalloff": updateRender(
-      proc(renderState: var RenderState) = renderState.glowFalloff = value)
-    of "glowWarmth": updateRender(
-      proc(renderState: var RenderState) = renderState.glowWarmth = value)
-    of "bloomIntensity": updateRender(
-      proc(renderState: var RenderState) = renderState.bloomIntensity = value)
-    of "exposure": updateRender(
-      proc(renderState: var RenderState) = renderState.exposure = value)
-    of "saturation": updateRender(
-      proc(renderState: var RenderState) = renderState.saturation = value)
-    of "contrast": updateRender(
-      proc(renderState: var RenderState) = renderState.contrast = value)
-    of "temperature": updateRender(
-      proc(renderState: var RenderState) = renderState.temperature = value)
-    of "repulsionEnd": updateSimulation(
-      proc(simState: var SimulationState) = simState.repulsionEnd = value)
-    of "attractionPeak": updateSimulation(
-      proc(simState: var SimulationState) = simState.attractionPeak = value)
-    of "expRepulsionAlpha": updateSimulation(
-      proc(simState: var SimulationState) = simState.expRepulsionAlpha = value)
-    of "expAttractionBeta": updateSimulation(
-      proc(simState: var SimulationState) = simState.expAttractionBeta = value)
-    of "paletteSaturation":
-      paletteEditorState.saturation = value
+    let descriptor = paramsById[id]
+    let value = clampParamValue(descriptor, rawValue)
+    case descriptor.store
+    of psSimulation:
+      updateSimulation(proc(simState: var SimulationState) =
+        discard assignParamField(simState, id, value))
+    of psRender:
+      updateRender(proc(renderState: var RenderState) =
+        discard assignParamField(renderState, id, value))
+    of psPalette:
+      # Not a field assignment: these write the palette EDITOR state, and the
+      # species colours have to be regenerated from it afterwards.
+      if id == "paletteSaturation":
+        paletteEditorState.saturation = value
+      else:
+        # Lightness, and the gate above is what makes that exhaustive.
+        paletteEditorState.lightness = value
       applyPaletteToColors()
-    of "paletteLightness":
-      paletteEditorState.lightness = value
-      applyPaletteToColors()
-    of "fluidStrength": updateSimulation(
-      proc(simState: var SimulationState) = simState.fluidStrength = value)
-    of "sphRestDensity": updateSimulation(
-      proc(simState: var SimulationState) = simState.sphRestDensity = value)
-    of "sphStiffness": updateSimulation(
-      proc(simState: var SimulationState) = simState.sphStiffness = value)
-    of "sphRadiusFraction": updateSimulation(
-      proc(simState: var SimulationState) = simState.sphRadiusFraction = value)
-    of "sphViscosity": updateSimulation(
-      proc(simState: var SimulationState) = simState.sphViscosity = value)
-    of "sphSubsteps": updateSimulation(
-      proc(simState: var SimulationState) = simState.sphSubsteps = value.int)
-    of "rdFeed": updateSimulation(
-      proc(simState: var SimulationState) = simState.rdFeed = value)
-    of "rdKill": updateSimulation(
-      proc(simState: var SimulationState) = simState.rdKill = value)
-    of "rdDeposit": updateSimulation(
-      proc(simState: var SimulationState) = simState.rdDeposit = value)
-    of "rdFieldForce": updateSimulation(
-      proc(simState: var SimulationState) = simState.rdFieldForce = value)
-    of "climateSpeed": updateSimulation(
-      proc(simState: var SimulationState) = simState.climateSpeed = value)
-    of "fieldOpacity": updateRender(
-      proc(renderState: var RenderState) = renderState.fieldOpacity = value)
-    # psCamera: writes the live view, never CONFIG. Reached through a hook
-    # because webgpu_render sits a layer above this file in app.nim's import
-    # order, the same wiring canvas_input's wheel and key handlers use. Nil
-    # until app.nim wires it, so a write arriving before the render pipeline
-    # initializes is dropped rather than crashing.
-    of "cameraZoom":
+    of psCamera:
+      # Writes the live view, never CONFIG. Reached through a hook because
+      # webgpu_render sits a layer above this file in app.nim's import order,
+      # the same wiring canvas_input's wheel and key handlers use. Nil until
+      # app.nim wires it, so a write arriving before the render pipeline
+      # initializes is dropped rather than crashing.
+      #
       # Reuses canvas_input's camera hooks rather than declaring a second pair:
       # webgpu_render sits a layer above both files, and one wiring point means
       # the slider and the wheel cannot end up pointed at different cameras.
@@ -538,9 +565,8 @@ when defined(js):
             CAMERA_ZOOM_MAX.float32),
           0.0'f32, 0.0'f32,
           float32(config.WORLD_W), float32(config.WORLD_H)))
-    else:
-      # Reached by an id the table serves that this switch does not route: the
-      # per-species columns, whose cells the panel writes into the live
+    of psSpeciesChemistry:
+      # The per-species columns, whose cells the panel writes into the live
       # chemistry array by reference. Silence would read as a dead control, so
       # name the path the caller wanted instead.
       consoleWarn(toJs("[gardenAPI] setParam does not route " & id &

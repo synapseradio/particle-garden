@@ -50,7 +50,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_input.nim` | Input handling logic | Native |
 | `test_matrix.nim` | Attraction matrix state plus cell and species colors | Native |
 | `test_app_state.nim` | App runtime and profiling-average accumulators | Native |
-| `test_param_descriptor.nim` | The descriptor table: ranges, defaults, store routing, clamping, the per-species chemistry fields, and that every notch is a position its slider can reach | Native |
+| `test_param_descriptor.nim` | The descriptor table: ranges, defaults, store routing, clamping, the per-species chemistry fields, that every routed id names a field of its store's record, and that every notch is a position its slider can reach | Native |
 | `test_palette.nim` | HSL-to-RGB conversion, palette generation schemes, flat encoding | Native |
 | `test_palette_state.nim` | Palette editor state and scheme selection | Native |
 | `test_preset.nim` | Versioned preset schema: round-trip, version rejection, clamp/default degradation, migration hook | Native |

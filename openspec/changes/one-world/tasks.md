@@ -2081,20 +2081,44 @@ Nothing can be measured that has no mirror. These two are the gap in the family.
 Independent of everything else here, and the highest-value single fix: it converts a silent no-op into
 a build error.
 
-- [ ] 2.1 `tests/test_param_descriptor.nim`: `every simulation-store descriptor id names a field of
+- [x] 2.1 `tests/test_param_descriptor.nim`: `every simulation-store descriptor id names a field of
       SimulationState` and `every render-store descriptor id names a field of RenderState`, walking
       the records with `fieldPairs`. Expected: passes immediately — it pins the relation the generated
       dispatch will depend on.
-- [ ] 2.2 `src/web_api.nim:407-508`: replace the hand-written `case` with a compile-time walk over the
+      DONE. Suite "Every Routed Id Names A Field Of Its Store" carries the two named tests plus two
+      the relation earns: `each routed id names a field of the kind its descriptor declares` — a
+      name match alone would let a pkFloat descriptor truncate silently through an int field — and
+      `the two routes that are not field assignments carry exactly their ids`, pinning the palette
+      pair and cameraZoom that 2.2 keeps as explicit arms. All four walk the records with the same
+      `fieldPairs` walk the dispatch performs, and all passed immediately as predicted: the relation
+      already held for every shipped descriptor.
+- [x] 2.2 `src/web_api.nim:407-508`: replace the hand-written `case` with a compile-time walk over the
       routed state record's fields, assigning where the name matches and coercing to `int` for
       `pkInt` descriptors. Keep explicit arms for the two routes that are not field assignments:
       `paletteSaturation`/`paletteLightness` (editor state plus `applyPaletteToColors()`) and
       `cameraZoom` (the live camera, deliberately outside CONFIG — see `ParamStore` in
       `src/ui/api/param_descriptor.nim`).
-- [ ] 2.3 Confirm the failure: temporarily add a descriptor whose id names no field, verify
+      DONE. setParamImpl now switches on `descriptor.store` rather than the id: psSimulation and
+      psRender dispatch through `assignParamField`, a `fieldPairs` walk assigning the field whose
+      name the id spells (int fields take `int(value)`, already whole because clampParamValue
+      rounds pkInt first); the palette pair and cameraZoom keep their arms; psSpeciesChemistry
+      warns by name. A `static` block above writes every routed descriptor into a throwaway copy
+      of its record at compile time through the same walk, and holds the palette and camera arms
+      exhaustive too — a third palette knob or a second camera control stops the build until it
+      gets an arm.
+- [x] 2.3 Confirm the failure: temporarily add a descriptor whose id names no field, verify
       `just happen` fails at compile time, then remove it. Record what the error looks like in a
       comment above the generated dispatch, so the next person recognizes it.
-- [ ] 2.4 `just happen` and `just check` green; every shipped parameter still writes the same field.
+      DONE. Drilled with a `floatParam("wobbliness", ...)` routed to psSimulation: `just build-app`
+      stops at web_api.nim(491, 16) with `Error: [gardenAPI] descriptor "wobbliness" routes to
+      psSimulation but names no assignable field of SimulationState`, the recipe exits 1, and
+      web/app.js on disk stays the last good one. Descriptor removed after. The comment above the
+      static gate records this shape, message and trace both, so the next person recognizes it.
+- [x] 2.4 `just happen` and `just check` green; every shipped parameter still writes the same field.
+      DONE. `just happen` exits 0 and `just check` runs green: the native suite reports 754 [OK]
+      with 0 failures, bun reports 50 pass / 0 fail across 95 expect() calls. Same-field is held by
+      2.1's name and kind tests over an unchanged descriptor table — no id, store, or field changed
+      in this group.
 
 ## 3. The probe registry and the sweep
 

@@ -30,6 +30,30 @@ proc byId(id: string): ParamDescriptor =
       return descriptor
   raise newException(KeyError, "no descriptor with id: " & id)
 
+type FieldKind = enum
+  ## What a state record holds under a given name, as far as a parameter write
+  ## cares: a number it can assign, or nothing it can assign.
+  fkAbsent  ## no field of that name, or one no float value can be written to
+  fkInt
+  fkFloat
+
+proc numericFieldKind[T](record: T; name: string): FieldKind =
+  ## Walk the record's fields and report what sits under `name`. The walk is the
+  ## same one src/web_api.nim's dispatch performs, so what this finds is what a
+  ## parameter write would land in.
+  for fieldName, value in record.fieldPairs:
+    if fieldName == name:
+      when value is int: return fkInt
+      elif value is float: return fkFloat
+      else: return fkAbsent
+  fkAbsent
+
+proc numericFieldNames[T](record: T): HashSet[string] =
+  ## Every field of the record a float value can be written to.
+  for fieldName, value in record.fieldPairs:
+    when value is int or value is float:
+      result.incl fieldName
+
 suite "Descriptor Table Covers The Full Tunable Inventory":
   test "every control the panel offers has exactly one descriptor":
     # The interface contract with the TypeScript UI: these ids, no others.
@@ -334,6 +358,68 @@ suite "Store Routing Sends Each Parameter To Its Mutation Path":
     for descriptor in descriptors:
       let expectReinit = descriptor.id in ["particleCount", "speciesCount"]
       check descriptor.reinitOnCommit == expectReinit
+
+suite "Every Routed Id Names A Field Of Its Store":
+  # THE relation src/web_api.nim's generated dispatch stands on (design E6).
+  # That dispatch walks the routed record's field names and assigns the one the
+  # descriptor id spells, so an id naming no field would write nowhere; the
+  # build gate there turns that into a compile error, and these tests report the
+  # same break natively, in a second rather than after a JS compile.
+  #
+  # Both records are pure modules, which is why the relation is checkable here
+  # at all: nothing about it needs the browser.
+
+  test "every simulation-store descriptor id names a field of SimulationState":
+    let fields = numericFieldNames(initSimulationState())
+    for descriptor in descriptors:
+      if descriptor.store != psSimulation:
+        continue
+      if descriptor.id notin fields:
+        checkpoint("SimulationState has no assignable field named " &
+          descriptor.id)
+      check descriptor.id in fields
+
+  test "every render-store descriptor id names a field of RenderState":
+    let fields = numericFieldNames(initRenderState())
+    for descriptor in descriptors:
+      if descriptor.store != psRender:
+        continue
+      if descriptor.id notin fields:
+        checkpoint("RenderState has no assignable field named " & descriptor.id)
+      check descriptor.id in fields
+
+  test "each routed id names a field of the kind its descriptor declares":
+    # The half of the relation a name match alone leaves open: a pkFloat
+    # descriptor over an int field truncates every value it carries, silently,
+    # because the dispatch coerces to whatever the FIELD holds.
+    for descriptor in descriptors:
+      let found =
+        case descriptor.store
+        of psSimulation: numericFieldKind(initSimulationState(), descriptor.id)
+        of psRender: numericFieldKind(initRenderState(), descriptor.id)
+        else: fkAbsent
+      if found == fkAbsent:
+        continue
+      let expected = (if descriptor.kind == pkInt: fkInt else: fkFloat)
+      if found != expected:
+        checkpoint("field kind " & $found & " under descriptor " &
+          descriptor.id & ", which declares " & $descriptor.kind)
+      check found == expected
+
+  test "the two routes that are not field assignments carry exactly their ids":
+    # web_api's explicit arms are written against these ids by name, so a third
+    # palette knob or a second camera control would reach an arm that does not
+    # know it exists. The dispatch's own build gate says the same thing at
+    # compile time; this says it here, where the message is a test name.
+    var palette: seq[string]
+    var camera: seq[string]
+    for descriptor in descriptors:
+      case descriptor.store
+      of psPalette: palette.add descriptor.id
+      of psCamera: camera.add descriptor.id
+      else: discard
+    check palette == @["paletteSaturation", "paletteLightness"]
+    check camera == @["cameraZoom"]
 
 suite "Clamping Is The Descriptor's Job":
   test "values below the range clamp to the minimum":
