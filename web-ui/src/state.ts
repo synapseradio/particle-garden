@@ -46,6 +46,11 @@ export function createPanelController(api: GardenAPI) {
   // sample arrives, which reads as "no ceiling reported" rather than as a
   // ceiling of zero — a slider draws its whole track live until told otherwise.
   const [ceilings, setCeilings] = createStore<Record<string, number>>({});
+  // Nim's dormancy verdicts by id, refreshed on the panel's own writes and
+  // on each stats push — never per frame.
+  const [dormantControls, setDormantControls] = createStore<
+    Record<string, boolean>
+  >({});
   const [matrixVersion, setMatrixVersion] = createSignal(0);
   const [chemistryVersion, setChemistryVersion] = createSignal(0);
   const [ready, setReady] = createSignal(api.isReady());
@@ -53,6 +58,12 @@ export function createPanelController(api: GardenAPI) {
 
   const bumpMatrix = () => setMatrixVersion((version) => version + 1);
   const bumpChemistry = () => setChemistryVersion((version) => version + 1);
+
+  const refreshDormancy = () => {
+    for (const [id, state] of Object.entries(api.dormantParams())) {
+      if (dormantControls[id] !== state) setDormantControls(id, state);
+    }
+  };
 
   // Re-read one descriptor from Nim. Every path that moves a parameter goes
   // through here, including the ones outside the panel: the wheel on the
@@ -78,6 +89,7 @@ export function createPanelController(api: GardenAPI) {
     setPaletteCustomSignal(api.isPaletteCustom());
     bumpMatrix();
     bumpChemistry();
+    refreshDormancy();
   };
 
   api.onReady(() => {
@@ -105,6 +117,9 @@ export function createPanelController(api: GardenAPI) {
       // The climate walks the regime coordinates, so a drift can light or
       // unlight a button. Nim owns the comparison.
       if (moved) setRdRegimeSignal(api.getRdRegime());
+      // World signals rode this sample; the field igniting or dying can
+      // flip a dormancy verdict without the panel writing anything.
+      refreshDormancy();
     });
     // Pick up whatever init applied after module eval: the URL overrides and
     // the randomized matrix.
@@ -117,6 +132,7 @@ export function createPanelController(api: GardenAPI) {
     byId,
     params,
     ceilings,
+    dormantControls,
     trails,
     bloom,
     forceModel,
@@ -149,6 +165,8 @@ export function createPanelController(api: GardenAPI) {
         bumpMatrix();
         bumpChemistry();
       }
+      // Writing a strength wakes or dims its whole family in the same tick.
+      refreshDormancy();
     },
     // The travel-curve pair, passed through untouched: the slider hands Nim
     // a handle position and receives the value, and the reverse to place the
@@ -172,6 +190,9 @@ export function createPanelController(api: GardenAPI) {
     setBloom(enabled: boolean) {
       api.setBloom(enabled);
       setBloomSignal(api.getBloom());
+      // Flipping the toggle wakes or dims all five grade sliders in the
+      // same tick.
+      refreshDormancy();
     },
     setForceModel(model: number) {
       api.setForceModel(model);

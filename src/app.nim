@@ -333,7 +333,7 @@ proc loop(now: float): Future[void] {.async.} =
           gpuDrawMs, gpuPresentMs, bloomMs)
     web_api.pushStats(runtimeState.fps, runtimeState.particleCount, 0,
       computeTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs,
-      gpuFieldMs)
+      gpuFieldMs, webgpu_compute.latestFieldAliveCells())
 
   # Reset profiling accumulators every 60 frames
   if runtimeState.profiling.frameCount >= 60:

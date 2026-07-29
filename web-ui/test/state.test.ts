@@ -27,6 +27,10 @@ function descriptorFor(id: string): ParamDescriptor {
     curve: "linear",
     curveExponent: 0,
     positionStep: 0.001,
+    horizon: "instant",
+    horizonReview: false,
+    dormantWhen: "",
+    dormantLine: "",
     defaultValue: 0,
     store: "sim",
     reinitOnCommit: false,
@@ -50,6 +54,7 @@ function statsSample(
     gpuDrawMs: 0,
     gpuPresentMs: 0,
     gpuFieldMs: 0,
+    fieldAliveCells: 0,
     params,
     ceilings,
   };
@@ -113,6 +118,7 @@ function fakeGarden() {
     onStats: (callback: (sample: StatsSample) => void) => {
       listeners.push(callback);
     },
+    dormantParams: () => ({}),
     presetKeys: () => ({ prefix: "", indexKey: "", defaultName: "" }),
     normalizePresetName: (raw: string) => raw,
     exportPresetJson: () => "{}",

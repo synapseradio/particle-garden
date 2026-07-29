@@ -67,7 +67,7 @@ const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6          # AoS: + all three den
 # Reaction-diffusion passes (S8). See the four field shaders' binding manifests.
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED* = 2         # dstField(storage) + fieldParams (for the nonce)
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particles + deposit + fieldParams + speciesChemistry
-const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 3      # srcField(sample) + dstField(storage) + deposit (deposit amount already applied in field-deposit)
+const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 4      # srcField(sample) + dstField(storage) + deposit + alive-cell census
 const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 4            # srcField(sample) + dstField(storage) + fieldParams + reactionParams
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 6        # gridParams + particles + field(sample) + velocityDelta + fieldParams + speciesChemistry
 
@@ -456,6 +456,8 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard fieldResolveEntries.push(createBindGroupResourceEntry(0, fieldViewFront))
   discard fieldResolveEntries.push(createBindGroupResourceEntry(1, fieldViewTrail))
   discard fieldResolveEntries.push(createBindGroupEntry(2, fieldDepositBuf))
+  discard fieldResolveEntries.push(createBindGroupEntry(3,
+    cast[JsObject](gpuBuffers.fieldAlive)))  # the one-word alive-cell census
   validateBindGroupEntryCount(fieldResolveEntries, "fieldResolve", "bind group creation")
   bindGroups["fieldResolve"] = await createBindGroupWithValidation(
     "Field Resolve",
@@ -695,6 +697,28 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 # SECTION 9: PHYSICS FRAME EXECUTION
 # ==============================================================================
 
+# ------------------------------------------------------------------------------
+# The alive-cell census readback
+# ------------------------------------------------------------------------------
+
+proc uint32At(view: JsObject, index: int): int {.importjs: "#[#]".}
+proc uint32View(buffer: JsObject): JsObject {.importjs: "new Uint32Array(#)".}
+
+var fieldAliveReadbackBusy = false
+var latestFieldAlive = 0
+
+proc latestFieldAliveCells*(): int =
+  ## Cells above field_core's aliveness threshold at the last readback; zero
+  ## means the field is dark. One map-latency stale.
+  latestFieldAlive
+
+proc readFieldAlive(): Future[void] {.async.} =
+  let readback = cast[GPUBuffer](gpuBuffers.fieldAliveReadback)
+  await mapAsyncRead(readback)
+  latestFieldAlive = uint32At(uint32View(readback.getMappedRange()), 0)
+  readback.unmap()
+  fieldAliveReadbackBusy = false
+
 proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   ## Run one physics frame using the AoS GPU compute pipeline.
   if not isPipelineReady:
@@ -874,6 +898,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
     of sbSphDensityDelta: cast[GPUBuffer](gpuBuffers.sphDensityDelta)
     of sbCrowdDensityDelta: cast[GPUBuffer](gpuBuffers.crowdDensityDelta)
+    of sbFieldAlive: cast[GPUBuffer](gpuBuffers.fieldAlive)
     of sbFieldDeposit: webgpu_init.fieldDepositGpuBuffer()
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
@@ -885,6 +910,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       # which reads as a world that drifts steadily downward.
     of sbDensityDelta, sbSphDensityDelta, sbCrowdDensityDelta:
       particleCount * 4  # i32 per particle
+    of sbFieldAlive: 4  # one u32: the frame's alive-cell census
     of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
 
   # The 2D field dispatch (dsFieldWorkgroups) covers FIELD_W x FIELD_H in
@@ -959,11 +985,23 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
             computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
         computePass.endPass()
 
+  # Census readback: 4 bytes, mapped only when the previous map finished, so
+  # a slow readback thins the sampling instead of queueing work.
+  let sampleFieldAlive = not fieldAliveReadbackBusy
+  if sampleFieldAlive:
+    commandEncoder.copyBufferToBuffer(
+      cast[GPUBuffer](gpuBuffers.fieldAlive), 0,
+      cast[GPUBuffer](gpuBuffers.fieldAliveReadback), 0, 4)
+
   # Submit
   let commandBuffer = commandEncoder.finish()
   let commandBufferArray = createJsArray()
   discard commandBufferArray.push(cast[JsObject](commandBuffer))
   queue.submit(commandBufferArray)
+
+  if sampleFieldAlive:
+    fieldAliveReadbackBusy = true
+    discard readFieldAlive()
 
 # ==============================================================================
 # SECTION 10: INITIAL DATA UPLOAD (AoS)

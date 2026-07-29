@@ -58,6 +58,7 @@ when defined(js):
   import canvas_input
   import camera_core
   import climate_core
+  import ui/api/dormancy
   import ui/api/param_descriptor
   import ui/api/slider_curve
   import ui/state/matrix_state
@@ -229,6 +230,20 @@ when defined(js):
     result["store"] = toJs(storeName(descriptor.store))
     result["reinitOnCommit"] = toJs(descriptor.reinitOnCommit)
     result["hint"] = toJs(cstring(descriptor.hint))
+    result["horizon"] = toJs(
+      case descriptor.horizon
+      of rhInstant: cstring"instant"
+      of rhSettling: cstring"settling"
+      of rhStructural: cstring"structural")
+    result["horizonReview"] = toJs(descriptor.horizonReview)
+    # The precondition line resolves from the registry, so the panel prints
+    # text it never authored.
+    result["dormantWhen"] = toJs(cstring(descriptor.dormantWhen))
+    result["dormantLine"] = toJs(cstring(
+      if descriptor.dormantWhen.len > 0:
+        dormancyRegistry()[descriptor.dormantWhen].line
+      else:
+        ""))
     # Labelled positions worth stopping at. Empty for most parameters; the
     # panel renders whatever arrives and invents none of its own.
     let notchArray = newJsArray()
@@ -718,9 +733,13 @@ when defined(js):
 
   var statsCallbacks: seq[proc(stats: JsObject)] = @[]
 
+  var lastFieldAliveCells = 0
+    ## Latest pushed alive-cell census; dormancy predicates evaluate against
+    ## the same value the panel last saw.
+
   proc pushStats*(fps, particleCount: int;
       gridTimeMs, workerTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs,
-      gpuPresentMs, gpuFieldMs: float) =
+      gpuPresentMs, gpuFieldMs: float; fieldAliveCells: int) =
     ## Called from app.nim's frame loop (currently every ~500ms; the cadence
     ## is loop-side). Raw numbers — formatting belongs to the UI.
     ##
@@ -768,6 +787,8 @@ when defined(js):
     stats["gpuDrawMs"] = toJs(gpuDrawMs)
     stats["gpuPresentMs"] = toJs(gpuPresentMs)
     stats["gpuFieldMs"] = toJs(gpuFieldMs)
+    lastFieldAliveCells = fieldAliveCells
+    stats["fieldAliveCells"] = toJs(fieldAliveCells)
     for callback in statsCallbacks:
       callback(stats)
 
@@ -1112,6 +1133,49 @@ when defined(js):
     result["colormaps"] = toJs(proc(): JsObject = colormapArray)
     result["getColormap"] = toJs(proc(): int = CONFIG.colormapIndex)
     result["setColormap"] = toJs(proc(index: int) = setColormapImpl(index))
+
+    # Dormancy: id -> whether the control's consumer can act. The panel calls
+    # this on its own writes and on each stats push — never per frame.
+    proc simFieldValue(name: string): float =
+      for fieldName, value in fieldPairs(currentSimulation):
+        if fieldName == name:
+          when typeof(value) is SomeNumber:
+            return value.float
+          elif typeof(value) is bool:
+            return (if value: 1.0 else: 0.0)
+      raiseAssert "dormancy predicate names unknown sim field " & name
+
+    proc renderFieldValue(name: string): float =
+      for fieldName, value in fieldPairs(currentRender):
+        if fieldName == name:
+          when typeof(value) is SomeNumber:
+            return value.float
+          elif typeof(value) is bool:
+            return (if value: 1.0 else: 0.0)
+      raiseAssert "dormancy predicate names unknown render field " & name
+
+    proc worldSignalValue(name: string): float =
+      case name
+      of "fieldAliveCells": lastFieldAliveCells.float
+      else:
+        raiseAssert "dormancy predicate names unknown world signal " & name
+
+    result["dormantParams"] = toJs(proc(): JsObject =
+      let states = newJsObject()
+      let registry = dormancyRegistry()
+      for descriptor in paramDescriptors:
+        if descriptor.dormantWhen.len == 0:
+          continue
+        let predicate = registry[descriptor.dormantWhen]
+        var values = initTable[string, float]()
+        for fieldName in predicate.simFields:
+          values[fieldName] = simFieldValue(fieldName)
+        for fieldName in predicate.renderFields:
+          values[fieldName] = renderFieldValue(fieldName)
+        for fieldName in predicate.statsFields:
+          values[fieldName] = worldSignalValue(fieldName)
+        states[cstring(descriptor.id)] = toJs(predicate.eval(values))
+      states)
 
     # Attraction matrix (live Float32Array references; valid after onReady)
     result["matrix"] = toJs(proc(): Float32Array = buffers.matrix)

@@ -158,7 +158,7 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   "integrate": @[0, 1, 2, 3, 4, 5],  # binding 5 resolves the crowd density
   "field-seed": @[0, 1],
   "field-deposit": @[0, 1, 2, 3, 4],
-  "field-resolve": @[0, 1, 2],
+  "field-resolve": @[0, 1, 2, 3],  # binding 3 is the one-word alive-cell counter the dormancy signal reads back
   "rd-step": @[0, 1, 2, 3],
   "field-force": @[0, 1, 2, 3, 4, 5],
   # Render shaders (staticRead into app.js by webgpu_render.nim).

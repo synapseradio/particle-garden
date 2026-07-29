@@ -66,7 +66,9 @@ const
     ## colony density and warranted by the in-app observation on task 4.3,
     ## never by this global rate. If secretion becomes population-normalized
     ## (10.5), recalibration rides that change.
-  ALIVE_THRESHOLD = 0.15
+  ALIVE_THRESHOLD = FIELD_ALIVE_THRESHOLD
+    ## field_core's single aliveness authority, shared with the stepped
+    ## probes and the shader's alive-cell census.
     ## Inhibitor concentration above which a cell reads as pattern rather than
     ## background. Gray-Scott's background sits at ~0 inhibitor.
   IGNITION_FRAME_BUDGET = 30

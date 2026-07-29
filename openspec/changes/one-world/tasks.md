@@ -2491,19 +2491,45 @@ recalibrate the range the editor serves.
 
 ## 7. Acknowledgement, horizon, and dormancy
 
-- [ ] 7.1 `src/ui/api/param_descriptor.nim`: add `horizon: rhInstant | rhSettling | rhStructural` per
+- [x] 7.1 `src/ui/api/param_descriptor.nim`: add `horizon: rhInstant | rhSettling | rhStructural` per
       design E7, and `dormantWhen` naming a declared predicate per design E8. Every render-store
       parameter is `rhInstant`.
-- [ ] 7.2 `tests/`: every state field a dormancy predicate names resolves against the state records,
+      DONE. Three fields on the descriptor — horizon (rhInstant default), horizonReview (true on a
+      non-instant claim no stepping mirror executes), dormantWhen (predicate id, empty = never) —
+      threaded through intParam/floatParam/perSpeciesParam. Settling: the motion, force-shape, and
+      coupling-strength controls. Structural: particleCount, speciesCount, ruleTemperature (its
+      consumer is the randomize action), rdFeed/rdKill/rdDeposit, secretion. All render/palette/
+      camera-store parameters stay rhInstant, pinned by test.
+- [x] 7.2 `tests/`: every state field a dormancy predicate names resolves against the state records,
       walked with `fieldPairs`, so a renamed field breaks the predicate loudly. A control never goes
       dormant under its own value — asserted over the table.
-- [ ] 7.3 `tests/`: `every field parameter with a stepping oracle moves its observable within its
+      DONE. tests/test_dormancy.nim: predicates declare simFields/renderFields/statsFields and
+      evaluate purely over a table keyed by those names; the suite walks the names against
+      initSimulationState()/initRenderState() and holds statsFields to StatsWorldSignals.
+      CORRECTION to the task's own-value clause, found red-first: the rule is "own value ALONE".
+      fieldSubcritical deliberately reads rdFeed/rdKill — the subcritical term is what lets the
+      pair wake under its own movement before ignition — so carrier-reading is legal only inside
+      a compound with more inputs than the carrier, and a witness test pins the supercritical
+      wake (feed 0.08, kill 0.02, dark → awake).
+- [x] 7.3 `tests/`: `every field parameter with a stepping oracle moves its observable within its
       declared horizon`; `every horizon without a stepping oracle is marked review-enforced`.
-- [ ] 7.4 `src/web_api.nim`: serve `horizon` and `dormantWhen` in `descriptorToJs`. Evaluate
+      DONE. rdFeed/rdKill/rdDeposit execute through the stepped alive-fraction harness
+      (FieldProbeFrames = 60) on the worms slice: point vs floor/ceiling, and deposit vs a bare
+      world, each moving the alive fraction by > 0.01. Every other non-instant declaration
+      carries horizonReview, held in both directions (no unlabelled unexecutable claim, no label
+      on an executed one, no label on rhInstant).
+- [x] 7.4 `src/web_api.nim`: serve `horizon` and `dormantWhen` in `descriptorToJs`. Evaluate
       predicates over panel-visible state synchronously against the state the panel already mirrors,
       and predicates over world state against the existing pushed stats stream — no new
       subscription, no per-frame call.
-- [ ] 7.5 The declared dormancy cases that need no coupling strengths, first:
+      DONE. descriptorToJs serves horizon/horizonReview/dormantWhen/dormantLine (line resolved
+      from the registry, so the panel prints text it never authored); dormantParams() evaluates
+      sim/render fields off the live records via fieldPairs and world signals off the last stats
+      push. The world signal itself is new: field-resolve.wgsl binding 3 accumulates a one-word
+      alive-cell census against field_core's FIELD_ALIVE_THRESHOLD (the single aliveness
+      authority), cleared per frame description (last substep wins), read back through a
+      busy-guarded 4-byte mapAsync, riding pushStats as stats["fieldAliveCells"].
+- [x] 7.5 The declared dormancy cases that need no coupling strengths, first:
       the five grade sliders dormant on the bloom toggle's state (their consumer binds only inside
       the bloom present path, `src/webgpu_render.nim:1756`, while the uniform is written every
       frame at :1673-1681 — the probe and dispatch checks both pass, which is why dormancy owns the
@@ -2511,20 +2537,47 @@ recalibrate the range the editor serves.
       fixed point; `rdFeed`/`rdKill` dormant under the compound predicate — field unlit AND
       `F < 4(F+k)²` (the fixed-point condition pinned at tests/test_field_core.nim:509) — with a
       line saying nothing has ignited yet.
-- [ ] 7.6 The strength-family cases, once the coupling strengths exist (D7 and D13; task
+      DONE. bloomOff on the five grade sliders and bloomIntensity; fieldUnlit ("the field is
+      dark", census == 0) on fieldOpacity, the one field-appearance slider the descriptor table
+      carries; fieldSubcritical ("nothing has ignited yet", dark AND F < 4(F+k)²) on rdFeed and
+      rdKill. Witness tables pin each predicate both ways, including lit-at-barren-coordinates
+      staying awake.
+- [x] 7.6 The strength-family cases, once the coupling strengths exist (D7 and D13; task
       group 9): every control whose effect a strength multiplies (the D12 ownership split) declares
       dormancy at that strength's zero, with the strength's own control declaring none. Verify each
       declaration against the ownership split, not against the panel group — `interactionRadius`
       feeds world-intrinsic density and declares no coupling dormancy.
-- [ ] 7.7 `web-ui/src/components/ParamSlider.tsx`: a brief highlight on every input event, in the same
+      DONE. forceOff on the force-shape family (crowding, repulsionEnd, attractionPeak, the
+      exponential pair); fluidOff on the five SPH controls; depositOff on secretion; tropismOff
+      on the per-species tropism column. Strength sliders declare none — the slider at zero is
+      the way back — and interactionRadius declares none, per its D12 side.
+- [x] 7.7 `web-ui/src/components/ParamSlider.tsx`: a brief highlight on every input event, in the same
       tick and unconditionally; a settling indicator while a non-instant horizon has not elapsed; a
       dimmed dormant state showing the precondition line. A dormant control stays in place and stays
       movable.
-- [ ] 7.8 `web-ui/src/ui.css`: the highlight, settling, and dormant styles. Keep the highlight short
+      DONE. acknowledge() fires before the write on every input event (ACK_MS = 250, timer
+      pushed per event so a drag holds instead of strobing); settling span while horizonMs has
+      not elapsed; control-dormant class dims and renders the served dormantLine. The input is
+      never disabled. Dormancy verdicts arrive via state.ts's dormantControls store, refreshed
+      on the panel's writes and each stats push.
+- [x] 7.8 `web-ui/src/ui.css`: the highlight, settling, and dormant styles. Keep the highlight short
       enough that a drag does not strobe.
-- [ ] 7.9 `bun test`: the dormancy predicate evaluation and the horizon-elapsed timer, as pure
+      DONE. Box-shadow highlight with transition on release only (transition: none while lit, so
+      repeated events cannot strobe), .param-settling, .control-dormant (opacity 0.45) with
+      .param-dormant-line.
+- [x] 7.9 `bun test`: the dormancy predicate evaluation and the horizon-elapsed timer, as pure
       functions.
-- [ ] 7.10 `just happen` and `just check` green.
+      DONE. web-ui/test/acknowledge.test.ts pins horizonMs and settlingActive as pure functions.
+      Predicate evaluation lives in Nim (tests/test_dormancy.nim) by design — the panel renders
+      verdicts and evaluates nothing — so the bun side tests the timer and the store plumbing
+      (state.test.ts mocks carry the new descriptor and stats fields).
+- [x] 7.10 `just happen` and `just check` green.
+      DONE. `just happen` exits 0; `just check` green — native 0 fail, bun 58 pass / 0 fail. One
+      red on the way: the own-value assertion, resolved by the "own value ALONE" correction in
+      7.2's record. TO THE USER VERIFICATION QUEUE: the three visual states in a running app
+      (highlight on drag, settling on a field slider, dormant dim + line with bloom off / force
+      zero / dark field), and the alive-census bind-group resource placement (binding counts are
+      build-checked; which resource lands at binding 3 is the standing render-binding landmine).
 
 ## 8. Spatial overlays
 

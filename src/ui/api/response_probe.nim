@@ -357,11 +357,13 @@ proc sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
 const
   FieldProbeGrid = 64
     ## Grid edge for the stepped probes, the field harness's own size.
-  FieldProbeFrames = 60
-    ## Frames each sample integrates before the statistic is read.
-  FieldProbeAliveThreshold = 0.15
-    ## Inhibitor concentration above which a cell counts as alive — the same
-    ## threshold tests/test_field_core.nim reads patterns with.
+  FieldProbeFrames* = 60
+    ## Frames each sample integrates before the statistic is read — the
+    ## executable form of the structural response horizon, which is why the
+    ## horizon suite names it.
+  FieldProbeAliveThreshold = FIELD_ALIVE_THRESHOLD
+    ## Aliveness read from field_core's single authority, the same number
+    ## the pattern tests and the shader's alive-cell census read.
 
 type FieldProbeField = array[FieldProbeGrid, array[FieldProbeGrid, float]]
 

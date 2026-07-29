@@ -264,6 +264,10 @@ proc getPlaceholderMap*(): Table[string, string] =
   # keeps the shader's conservation identical to the tested oracle's, since a
   # continuous-Gaussian approximation would disagree with the discrete sum.
   result["RD_DEPOSIT_CELL_MAX"] = fmt"{RD_DEPOSIT_CELL_MAX:.4f}"
+  # The aliveness threshold field-resolve's alive-cell counter reads —
+  # field_core owns it so the counter, the pattern tests, and the stepped
+  # probes agree about what "lit" means.
+  result["FIELD_ALIVE_THRESHOLD"] = fmt"{FIELD_ALIVE_THRESHOLD:.4f}"
   result["RD_DEPOSIT_FRAME_SCALE"] = fmt"{RD_DEPOSIT_FRAME_SCALE:.6f}"
   result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
   result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)

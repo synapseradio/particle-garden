@@ -61,6 +61,18 @@ interface ParamDescriptorBase {
   curve: "linear" | "log" | "power";
   curveExponent: number;
   positionStep: number;
+  /** When the world answers a move; the panel shows a settling indicator
+   * until it elapses. */
+  horizon: "instant" | "settling" | "structural";
+  /** True where no stepping mirror executes the horizon claim, so the
+   * declaration is review-enforced. */
+  horizonReview: boolean;
+  /** Id of the dormancy predicate naming when this control's consumer
+   * cannot act; empty means never dormant. Evaluation stays in Nim —
+   * dormantParams() — and the panel renders the result. */
+  dormantWhen: string;
+  /** The precondition line shown while dormant, e.g. "Bloom is off". */
+  dormantLine: string;
   defaultValue: number;
   store: ParamStore;
   reinitOnCommit: boolean;
@@ -121,6 +133,10 @@ export interface StatsSample {
   // The reaction-diffusion field pass. Zero while the field couplings sit at
   // zero strength and the frame leaves their passes out.
   gpuFieldMs: number;
+  /** How many field cells resolved above the aliveness threshold this
+   * frame; zero means the field is dark. Feeds the dormancy predicates
+   * over world state. */
+  fieldAliveCells: number;
   // Parameters the simulation writes on its own, by id — the drifting climate
   // walks its axes from the frame loop. Present on every sample whether or not
   // anything is currently moving them, so the panel reports what the
@@ -230,6 +246,9 @@ export interface GardenAPI {
 
   // Stats
   onStats(callback: (stats: StatsSample) => void): void;
+  /** Dormancy: id -> whether the control's consumer can act. Evaluated
+   * Nim-side; called on the panel's own writes and on each stats push. */
+  dormantParams(): Record<string, boolean>;
 
   // Presets (Nim owns schema/validation/apply order; this UI owns storage)
   presetKeys(): PresetKeys;

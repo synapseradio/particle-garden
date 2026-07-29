@@ -6,17 +6,51 @@
 // Notches are labelled tick marks the drag snaps to when it comes close. They
 // are a soft magnet, never a hard stop — the track stays continuous, so a
 // value between two named ones is still reachable by dragging past the pull.
+//
+// Three states beyond the value: acknowledgement lights on every input
+// event, unconditionally; settling stays lit while a non-instant horizon
+// has not elapsed; dormant dims, shows the line Nim served, and stays
+// fully movable.
 
-import { For, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { PanelController } from "../state";
 import { formatParamValue } from "../lib/format";
 import { applySnap } from "../lib/notches";
 import { dormantShare } from "../lib/bounds";
+import { horizonMs } from "../lib/acknowledge";
+
+const ACK_MS = 250;
 
 export function ParamSlider(props: { ctrl: PanelController; id: string }) {
   const descriptor = props.ctrl.byId.get(props.id);
   if (!descriptor) return null;
   const value = () => props.ctrl.params[props.id] ?? descriptor.defaultValue;
+
+  const controlDormant = () => props.ctrl.dormantControls[props.id] ?? false;
+
+  const [acknowledged, setAcknowledged] = createSignal(false);
+  const [settling, setSettling] = createSignal(false);
+  let ackTimer: ReturnType<typeof setTimeout> | undefined;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => {
+    clearTimeout(ackTimer);
+    clearTimeout(settleTimer);
+  });
+
+  // Every input event, before anything else: the acknowledgement is
+  // unconditional, and held (not strobed) through a drag because each event
+  // pushes the fade-out further away.
+  const acknowledge = () => {
+    setAcknowledged(true);
+    clearTimeout(ackTimer);
+    ackTimer = setTimeout(() => setAcknowledged(false), ACK_MS);
+    const horizon = horizonMs(descriptor.horizon);
+    if (horizon > 0) {
+      setSettling(true);
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => setSettling(false), horizon);
+    }
+  };
 
   // The track above a derived bound's live ceiling. The stored value keeps its
   // whole envelope — the handle still reaches the maximum and the number still
@@ -54,16 +88,30 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
   };
 
   return (
-    <div class="control-group">
+    <div
+      class="control-group"
+      classList={{
+        acknowledged: acknowledged(),
+        "control-dormant": controlDormant(),
+      }}
+    >
       <label>
         {descriptor.label}
         <Show when={descriptor.hint}>
           <span class="param-hint"> — {descriptor.hint}</span>
         </Show>
+        <Show when={settling()}>
+          <span class="param-settling" aria-live="polite">
+            settling…
+          </span>
+        </Show>
         <span class="value-display">
           {formatParamValue(value(), descriptor.kind, descriptor.precision)}
         </span>
       </label>
+      <Show when={controlDormant() && descriptor.dormantLine}>
+        <p class="param-dormant-line">{descriptor.dormantLine}</p>
+      </Show>
       <Show when={bound.kind === "derived" && dormant() !== null}>
         <p class="param-dormant-note">
           {bound.kind === "derived" ? bound.reason : ""}
@@ -83,14 +131,15 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
           max={1}
           step={descriptor.positionStep}
           value={props.ctrl.paramPositionOf(props.id, value())}
-          onInput={(event) =>
+          onInput={(event) => {
+            acknowledge();
             write(
               props.ctrl.paramValueAt(
                 props.id,
                 parseFloat(event.currentTarget.value),
               ),
-            )
-          }
+            );
+          }}
           onChange={() => props.ctrl.commitParam(props.id)}
         />
         <Show when={ticks().length > 0}>

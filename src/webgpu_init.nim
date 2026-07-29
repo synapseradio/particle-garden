@@ -57,6 +57,12 @@ type
     crowdDensityDelta* {.importjs: "crowdDensityDelta".}: GPUBuffer
       ## Species-blind crowd density, i32 per particle (fixed-point). What the
       ## crowding cap reads; the renderer keeps reading the colony channel.
+    fieldAlive* {.importjs: "fieldAlive".}: GPUBuffer
+      ## One u32: how many field cells resolved above the aliveness threshold
+      ## this frame. field-resolve writes it, the frame clears it, the stats
+      ## cadence reads it back for the panel's dormancy lines.
+    fieldAliveReadback* {.importjs: "fieldAliveReadback".}: GPUBuffer
+      ## The 4-byte MAP_READ staging pair for fieldAlive.
 
     # Grid structure
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
@@ -88,6 +94,7 @@ type
     densityDelta* {.importjs: "densityDelta".}: int
     sphDensityDelta* {.importjs: "sphDensityDelta".}: int
     crowdDensityDelta* {.importjs: "crowdDensityDelta".}: int
+    fieldAlive* {.importjs: "fieldAlive".}: int
     gridCounts* {.importjs: "gridCounts".}: int
     gridOffsets* {.importjs: "gridOffsets".}: int
     sync* {.importjs: "sync".}: int
@@ -163,6 +170,7 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
   result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 4
+  result.fieldAlive = 4  # one u32: the frame's alive-cell census
 
   # Grid: u32 per cell
   result.gridCounts = gridCells * 4
@@ -421,6 +429,11 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
     sizes.sphDensityDelta, bufferUsage, "SPH Kernel Density Delta (fixed-point i32)")
   buffers.crowdDensityDelta = createBuf(
     sizes.crowdDensityDelta, bufferUsage, "Crowd Density Delta (fixed-point i32)")
+  buffers.fieldAlive = createBuf(
+    sizes.fieldAlive, bufferUsage, "Field Alive-Cell Census (u32)")
+  buffers.fieldAliveReadback = createBuf(sizes.fieldAlive,
+    bitwiseOr(gpuBufferUsageCopyDst, gpuBufferUsageMapRead),
+    "Field Alive-Cell Readback")
 
   # Grid buffers
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")

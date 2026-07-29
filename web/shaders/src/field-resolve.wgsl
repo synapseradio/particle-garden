@@ -36,7 +36,12 @@
 // |   0   | texture_2d<f32>                       | fieldA view  | sample |
 // |   1   | texture_storage_2d<rgba16float,write> | fieldB view  | write  |
 // |   2   | storage atomic<i32>                   | fieldDeposit | r/w    |
+// |   3   | storage atomic<u32>                   | aliveCells   | r/w    |
 // +-------+---------------------------------------+--------------+--------+
+//
+// Binding 3: one u32 census the frame clears at its top; each cell above the
+// aliveness threshold adds one. Written here because this is the per-cell
+// pass that already reads the resolved inhibitor. One frame stale.
 // =============================================================================
 
 //! import fixed_point
@@ -49,9 +54,11 @@
 // (.r = activator, .g = inhibitor), .ba are ignored padding.
 @group(0) @binding(1) var dstField: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var<storage, read_write> fieldDeposit: array<atomic<i32>>;
+@group(0) @binding(3) var<storage, read_write> aliveCells: array<atomic<u32>>;
 
 const RD_DEPOSIT_CELL_MAX: f32 = {{RD_DEPOSIT_CELL_MAX}};
 const RD_DEPOSIT_FRAME_SCALE: f32 = {{RD_DEPOSIT_FRAME_SCALE}};
+const FIELD_ALIVE_THRESHOLD: f32 = {{FIELD_ALIVE_THRESHOLD}};
 
 @compute @workgroup_size({{WORKGROUP_SIZE_FIELD_X}}, {{WORKGROUP_SIZE_FIELD_Y}}, 1)
 fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -97,6 +104,11 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // same order (cap, fold, floor): the cap above bounds excess only from
   // above, so enough eroders sharing a cell still drive this negative
   // without the floor.
+  let resolvedInhibitor = max(0.0, current.y + depositB);
   textureStore(dstField, coord,
-    vec4<f32>(current.x, max(0.0, current.y + depositB), current.z, current.w));
+    vec4<f32>(current.x, resolvedInhibitor, current.z, current.w));
+
+  if (resolvedInhibitor > FIELD_ALIVE_THRESHOLD) {
+    atomicAdd(&aliveCells[0], 1u);
+  }
 }

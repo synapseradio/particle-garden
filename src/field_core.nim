@@ -291,6 +291,10 @@ const
     ## where the weight has fallen to ~13% of the peak — far enough out that
     ## the cut does not visibly square off the splat, close enough that the
     ## kernel stays compact.
+  FIELD_ALIVE_THRESHOLD* = 0.15
+    ## Inhibitor level above which a cell counts as alive — the single
+    ## authority read by the pattern tests, the stepped probes, and
+    ## field-resolve.wgsl's census (substituted through shader_config).
   RD_DEPOSIT_CELL_MAX* = 0.10
     ## Most inhibitor one cell may take from particles in one frame.
     ##

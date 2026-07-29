@@ -83,6 +83,15 @@ type
             ## above zero, and the static gate below holds the pair together
     cPower  ## equal travel buys more near the floor, by the exponent
 
+  ResponseHorizon* = enum
+    ## When the world answers a move of this control. Acknowledgement — the
+    ## handle, the readout, the brief highlight — is the panel's own and
+    ## always lands in the same tick; this declares the RESPONSE, which is
+    ## the world changing.
+    rhInstant     ## visible in the next frame; every render-store parameter
+    rhSettling    ## visible over roughly a second as motion redistributes
+    rhStructural  ## visible over many seconds, or on the next commit
+
   ParamBoundKind* = enum
     bConstant  ## the declared range is the whole bound
     bDerived   ## a registered ceiling bounds the value's EFFECT
@@ -178,6 +187,15 @@ type
     exemption*: string    ## The written reason this parameter carries no
                           ## probe. Empty wherever `probe` is set — a claim
                           ## reviewers can argue with, never a hole.
+    horizon*: ResponseHorizon
+                          ## When the world answers a move; the panel shows
+                          ## settling until it elapses. rhInstant by default.
+    horizonReview*: bool  ## True on a non-instant horizon no stepping mirror
+                          ## executes — the claim is review-enforced, and
+                          ## labelled so a reader knows which kind they hold.
+    dormantWhen*: string  ## Dormancy-predicate id (dormancy.nim registry);
+                          ## empty = never dormant. Never a predicate over
+                          ## this control's own value alone.
     bound*: ParamBound    ## What bounds the value beyond its envelope.
                           ## bConstant for every parameter whose range is the
                           ## whole story, which is all but one of them, and it
@@ -321,21 +339,25 @@ func paramStep(kind: ParamKind; precision: int): float =
 func intParam(id, label, group: string; minValue, maxValue, defaultValue: int;
     store: ParamStore; reinitOnCommit = false;
     notches: seq[ParamNotch] = @[]; probe = "";
-    exemption = ""): ParamDescriptor =
+    exemption = ""; horizon = rhInstant; horizonReview = false;
+    dormantWhen = ""): ParamDescriptor =
   ParamDescriptor(
     id: id, label: label, group: group, kind: pkInt,
     minValue: minValue.float, maxValue: maxValue.float,
     step: paramStep(pkInt, 0), precision: 0,
     defaultValue: defaultValue.float, store: store,
     reinitOnCommit: reinitOnCommit, notches: notches, arity: paScalar,
-    probe: probe, exemption: exemption)
+    probe: probe, exemption: exemption, horizon: horizon,
+    horizonReview: horizonReview, dormantWhen: dormantWhen)
 
 func floatParam(id, label, group: string;
     minValue, maxValue, defaultValue: float; precision: int;
     store: ParamStore; hint = "";
     notches: seq[ParamNotch] = @[];
     bound = ParamBound(kind: bConstant); probe = "";
-    curve = cLinear; curveExponent = 0.0): ParamDescriptor =
+    curve = cLinear; curveExponent = 0.0;
+    horizon = rhInstant; horizonReview = false;
+    dormantWhen = ""): ParamDescriptor =
   ParamDescriptor(
     id: id, label: label, group: group, kind: pkFloat,
     minValue: minValue, maxValue: maxValue,
@@ -343,11 +365,13 @@ func floatParam(id, label, group: string;
     defaultValue: defaultValue, store: store,
     reinitOnCommit: false, hint: hint, notches: notches, bound: bound,
     arity: paScalar, probe: probe, curve: curve,
-    curveExponent: curveExponent)
+    curveExponent: curveExponent, horizon: horizon,
+    horizonReview: horizonReview, dormantWhen: dormantWhen)
 
 func perSpeciesParam(id, label, group: string; slot: int;
     minValue, maxValue, defaultValue: float; precision: int;
-    hint = ""; probe = ""): ParamDescriptor =
+    hint = ""; probe = ""; horizon = rhInstant; horizonReview = false;
+    dormantWhen = ""): ParamDescriptor =
   ## A column of the per-species grid. Continuous and signed like the sliders
   ## it sits beside, so it takes pkFloat and the same step rule; what differs
   ## is that one of these exists per species, at `slot` inside the stride.
@@ -362,7 +386,8 @@ func perSpeciesParam(id, label, group: string; slot: int;
     step: paramStep(pkFloat, precision), precision: precision,
     defaultValue: defaultValue, store: psSpeciesChemistry,
     reinitOnCommit: false, hint: hint,
-    arity: paPerSpecies, slot: slot, probe: probe)
+    arity: paPerSpecies, slot: slot, probe: probe, horizon: horizon,
+    horizonReview: horizonReview, dormantWhen: dormantWhen)
 
 func withDefaultNotch(descriptor: ParamDescriptor;
     position: Natural): ParamDescriptor =
@@ -389,18 +414,23 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psSimulation, reinitOnCommit = true,
       exemption = "the observable is the count of things drawn — " &
         "structural and self-evident, and probing it would measure the " &
-        "probe").withDefaultNotch(0),
+        "probe", horizon = rhStructural,
+      horizonReview = true).withDefaultNotch(0),
     intParam("speciesCount", "Species", "simulation",
       SPECIES_COUNT_MIN, SPECIES_COUNT_MAX, sim.speciesCount,
       psSimulation, reinitOnCommit = true,
       exemption = "the observable is how many kinds are drawn — the same " &
-        "structural count particleCount is exempt for"),
+        "structural count particleCount is exempt for",
+      horizon = rhStructural, horizonReview = true),
     # "grid" rather than "simulation": interactionRadius is the neighbor search
     # radius forces.wgsl uses and the smoothing radius forces-sph.wgsl uses.
     # The group says where the control sits, never whether it appears.
+    # No coupling dormancy: it feeds the world-intrinsic density pass, which
+    # no strength's zero switches off.
     intParam("interactionRadius", "Interaction Radius", "grid",
       INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX, sim.interactionRadius,
-      psSimulation, probe = "force.reachAtFixedApproach"),
+      psSimulation, probe = "force.reachAtFixedApproach",
+      horizon = rhSettling, horizonReview = true),
     # A coupling strength, and its zero notch says so. Zero removes short-range
     # repulsion along with attraction (fMul scales both force zones), so
     # particles pass freely through each other — hence a notch label naming
@@ -410,7 +440,8 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psSimulation,
       notches = @[
         notch(FORCE_STRENGTH_MIN, "no forces"),
-      ], probe = "force.multiplier").withDefaultNotch(1),
+      ], probe = "force.multiplier",
+      horizon = rhSettling, horizonReview = true).withDefaultNotch(1),
     # Beside forceStrength because it shapes that force rather than adding
     # another: it scales the ATTRACTIVE half alone, so a crowded colony pulls
     # itself in less hard while the short-range repulsion holding it apart is
@@ -421,19 +452,26 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       hint = "how much a crowd weakens its own attraction; repulsion is never weakened",
       notches = @[
         notch(CROWDING_STRENGTH_MIN, "off"),
-      ], probe = "force.crowdingShare"),
+      ], probe = "force.crowdingShare",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "forceOff"),
     floatParam("friction", "Friction", "simulation",
       FRICTION_MIN, FRICTION_MAX, sim.friction, 2, psSimulation,
-      probe = "motion.frictionRetention"),
+      probe = "motion.frictionRetention",
+      horizon = rhSettling, horizonReview = true),
     floatParam("timeScale", "Time Scale", "simulation",
       TIME_SCALE_MIN, TIME_SCALE_MAX, sim.timeScale, 1, psSimulation,
-      probe = "motion.frameTravel"),
+      probe = "motion.frameTravel",
+      horizon = rhSettling, horizonReview = true),
+    # Structural: the consumer is the randomize action, which answers at the
+    # next commit and is always available — hence no dormancy either.
     floatParam("ruleTemperature", "🌡️ Temperature", "species",
       RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX, sim.ruleTemperature, 2,
-      psSimulation, probe = "matrix.sampleSpread"),
+      psSimulation, probe = "matrix.sampleSpread",
+      horizon = rhStructural, horizonReview = true),
     floatParam("maxVelocity", "Max Velocity", "simulation",
       MAX_VELOCITY_MIN, MAX_VELOCITY_MAX, sim.maxVelocity, 0, psSimulation,
-      probe = "motion.softCap"),
+      probe = "motion.softCap",
+      horizon = rhSettling, horizonReview = true),
 
     # Render sliders (outside the collapsible sections)
     intParam("particleSize", "Particle Size", "render",
@@ -461,36 +499,43 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       probe = "glow.warmth"),
 
     # Bloom & Grade section
+    # All five grade sliders name the bloom toggle: the tonemap uniform is
+    # written every frame but consumed only inside the bloom present path,
+    # a branch no gate sees — the predicate and that branch agree by review.
     floatParam("bloomIntensity", "Bloom Intensity", "bloom",
       BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX, visual.bloomIntensity, 2,
-      psRender, probe = "grade.bloomLuminance"),
+      psRender, probe = "grade.bloomLuminance", dormantWhen = "bloomOff"),
     floatParam("exposure", "Exposure", "bloom",
       EXPOSURE_MIN, EXPOSURE_MAX, visual.exposure, 2, psRender,
-      probe = "grade.exposureLuminance"),
+      probe = "grade.exposureLuminance", dormantWhen = "bloomOff"),
     floatParam("saturation", "Saturation", "bloom",
       SATURATION_MIN, SATURATION_MAX, visual.saturation, 2, psRender,
-      probe = "grade.chromaSpread"),
+      probe = "grade.chromaSpread", dormantWhen = "bloomOff"),
     floatParam("contrast", "Contrast", "bloom",
       CONTRAST_MIN, CONTRAST_MAX, visual.contrast, 2, psRender,
-      probe = "grade.contrastSpread"),
+      probe = "grade.contrastSpread", dormantWhen = "bloomOff"),
     floatParam("temperature", "Temperature", "bloom",
       TEMPERATURE_MIN, TEMPERATURE_MAX, visual.temperature, 2, psRender,
-      probe = "grade.temperatureSplit"),
+      probe = "grade.temperatureSplit", dormantWhen = "bloomOff"),
 
     # Force Model section (polynomial vs exponential parameter pairs)
     floatParam("repulsionEnd", "Repulsion End", "force-polynomial",
       REPULSION_END_MIN, REPULSION_END_MAX, sim.repulsionEnd, 2,
-      psSimulation, probe = "force.polyAtMidzone"),
+      psSimulation, probe = "force.polyAtMidzone",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "forceOff"),
     floatParam("attractionPeak", "Attraction Peak", "force-polynomial",
       ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX, sim.attractionPeak, 2,
-      psSimulation, probe = "force.polyPeakLocation"),
+      psSimulation, probe = "force.polyPeakLocation",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "forceOff"),
     floatParam("expRepulsionAlpha", "Repulsion α", "force-exponential",
       EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX,
-      sim.expRepulsionAlpha, 2, psSimulation, probe = "force.expRepulsion"),
+      sim.expRepulsionAlpha, 2, psSimulation, probe = "force.expRepulsion",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "forceOff"),
     floatParam("expAttractionBeta", "Attraction β", "force-exponential",
       EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX,
       sim.expAttractionBeta, 2, psSimulation,
-      probe = "force.expAttraction"),
+      probe = "force.expAttraction",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "forceOff"),
 
     # Palette section (routes to the palette editor state, not CONFIG)
     floatParam("paletteSaturation", "Saturation", "palette",
@@ -513,7 +558,8 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       notches = @[
         notch(FLUID_STRENGTH_MIN, "no fluid"),
         notch(FLUID_STRENGTH_MAX, "full"),
-      ], probe = "sph.pairShare"),
+      ], probe = "sph.pairShare",
+      horizon = rhSettling, horizonReview = true),
     # Ahead of the other three because it sets the neighbourhood they are
     # measured in: a rest density counts neighbours inside this radius, and a
     # stiffness is stable only against it (design C7). A fraction rather than a
@@ -525,10 +571,12 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       hint = "how far the fluid's kernel reaches, as a fraction of the interaction radius",
       notches = @[
         notch(SPH_RADIUS_FRACTION_MAX, "whole radius"),
-      ], probe = "sph.fractionCeiling"),
+      ], probe = "sph.fractionCeiling",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
     floatParam("sphRestDensity", "Rest Density", "fluid",
       SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX, sim.sphRestDensity, 2,
-      psSimulation, probe = "sph.reachablePressureBand"),
+      psSimulation, probe = "sph.reachablePressureBand",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
     # The one derived bound this mechanism serves. The envelope below is still
     # the whole of what can be STORED — a preset carrying 40 loads as 40 — while
     # how much of it the fluid can honour depends on the three controls around
@@ -539,10 +587,12 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psSimulation,
       hint = "how hard the fluid resists compression; a narrower kernel, " &
         "fewer substeps or a faster world hold less of it",
-      bound = derivedBound(pcStableStiffness), probe = "sph.pressureGain"),
+      bound = derivedBound(pcStableStiffness), probe = "sph.pressureGain",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
     floatParam("sphViscosity", "Viscosity", "fluid",
       SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX, sim.sphViscosity, 2,
-      psSimulation, probe = "sph.velocityBlend"),
+      psSimulation, probe = "sph.velocityBlend",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
     intParam("sphSubsteps", "Substeps", "fluid",
       SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX, sim.sphSubsteps, psSimulation,
       exemption = "a three-position integer count of whole physics passes: " &
@@ -554,7 +604,8 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         "no partner shapes it. Its ceiling consequence stays measured " &
         "through sphStiffness's deriving-box corner slices, and the count " &
         "itself is pinned by the measured stability fit " &
-        "(sph_core.stableStiffnessCeiling)"),
+        "(sph_core.stableStiffnessCeiling)",
+      horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
 
     # Reaction-Diffusion section. Feed and kill carry the six named regimes as
     # notches, so the living parts of the plane are positions the user can
@@ -566,12 +617,14 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       RD_FEED_MIN, RD_FEED_MAX, sim.rdFeed, 3, psSimulation,
       hint = "the feed rate F; a regime needs both axes, so the buttons set the pair",
       notches = regimeNotches(regimeFeed),
-      probe = "field.aliveFraction.feed"),
+      probe = "field.aliveFraction.feed",
+      horizon = rhStructural, dormantWhen = "fieldSubcritical"),
     floatParam("rdKill", "Breath Out", "rd",
       RD_KILL_MIN, RD_KILL_MAX, sim.rdKill, 3, psSimulation,
       hint = "the kill rate k; a regime needs both axes, so the buttons set the pair",
       notches = regimeNotches(regimeKill),
-      probe = "field.aliveFraction.kill"),
+      probe = "field.aliveFraction.kill",
+      horizon = rhStructural, dormantWhen = "fieldSubcritical"),
     # "Secretion Rate", not "Secretion": the per-species chemistry grid has a
     # Secretion column too, and the two are different KINDS of quantity — this
     # is the base amount every particle lays down, that is each species' signed
@@ -586,7 +639,8 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         # The measured floor for Worms and Coral to appear at all. Without it
         # those two regimes are dead buttons — see RD_REGIMES' minDeposit.
         notch(RD_REGIME_HIGH_FEED_DEPOSIT, "high-feed"),
-      ], probe = "field.resolvedDeposit").withDefaultNotch(1),
+      ], probe = "field.resolvedDeposit",
+      horizon = rhStructural).withDefaultNotch(1),
     # One decimal, where the other strengths take none: the range divides by
     # FIELD_PATTERN_SHRINK (field_core.RD_DEFAULT_FIELD_FORCE says why), so the
     # default and the ceiling stop landing on whole numbers as the field grid
@@ -597,16 +651,18 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       hint = "how hard the pattern pushes particles; 0 leaves them blind",
       notches = @[
         notch(RD_FIELD_FORCE_MIN, "blind"),
-      ], probe = "field.tropism").withDefaultNotch(1),
+      ], probe = "field.tropism",
+      horizon = rhSettling, horizonReview = true).withDefaultNotch(1),
     floatParam("climateSpeed", "Drift", "rd",
       CLIMATE_SPEED_MIN, CLIMATE_SPEED_MAX, sim.climateSpeed, 2, psSimulation,
       hint = "tours of the named regimes per minute, while Weather is on",
-      probe = "climate.phaseStep"),
+      probe = "climate.phaseStep",
+      horizon = rhSettling, horizonReview = true),
     # "rd-field" rather than "rd": this is the field's appearance, not its
     # physics, and the panel puts the colormap selector between the two groups.
     floatParam("fieldOpacity", "Field Opacity", "rd-field",
       FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX, visual.fieldOpacity,
-      2, psRender, probe = "colormap.coverage"),
+      2, psRender, probe = "colormap.coverage", dormantWhen = "fieldUnlit"),
 
     # Species chemistry: what each species does to the field, and what the
     # field does back. One value per species, so these carry paPerSpecies and a
@@ -618,11 +674,15 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       RD_DEFAULT_SECRETION, 2,
       hint = "this species' share of the Secretion Rate; negative erodes the " &
         "field instead of building it",
-      probe = "field.speciesDeposit"),
+      probe = "field.speciesDeposit",
+      horizon = rhStructural, horizonReview = true,
+      dormantWhen = "depositOff"),
     perSpeciesParam("tropism", "Tropism", "chemistry",
       SPECIES_TROPISM_SLOT, TROPISM_MIN, TROPISM_MAX, RD_DEFAULT_TROPISM, 2,
       hint = "negative flees its own trail, positive chases it",
-      probe = "field.tropismWeight"),
+      probe = "field.tropismWeight",
+      horizon = rhSettling, horizonReview = true,
+      dormantWhen = "tropismOff"),
 
     # The camera. psCamera, not psRender: this writes the live view, never
     # CONFIG, so it stays out of the preset schema for the reason recorded on

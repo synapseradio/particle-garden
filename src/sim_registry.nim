@@ -124,6 +124,10 @@ type
       ## cell as it consumes it — which is also what makes skipping the deposit
       ## at zero strength exact rather than merely cheap: the buffer a skipped
       ## deposit leaves behind is already zero.
+    sbFieldAlive
+      ## One-word alive-cell census fieldResolve accumulates. Cleared per
+      ## frame description, so under substepping the value at frame end is
+      ## the last substep's census, never a sum.
 
   DispatchSize* = enum
     ## Symbolic dispatch sizes, resolved by the executor each frame. The
@@ -241,6 +245,7 @@ func buildFrame*(couplings: WorldCouplings): FrameDescription =
     clearBufferNode(sbDensityDelta),
     clearBufferNode(sbSphDensityDelta),
     clearBufferNode(sbCrowdDensityDelta),
+    clearBufferNode(sbFieldAlive),
     # gridCounts must start at zero for bin-count's atomic increments.
     clearBufferNode(sbGridCounts),
   ]
