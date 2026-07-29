@@ -9,26 +9,17 @@
  * For 65,536 cells with workgroup size 256: dispatches 256 workgroups
  *
  * ALGORITHM: Blelloch parallel exclusive scan
+ * (Blelloch 1990: https://www.cs.cmu.edu/~scandal/papers/CMU-CS-90-190.html)
  * - Up-sweep: Build tree of partial sums (reduce)
  * - Down-sweep: Distribute prefix sums back (scan)
- *
- * BINDING MANIFEST:
- * ┌─────────┬──────────────────────────┬─────────────────┬────────┐
- * │ Binding │ Shader Type              │ JS Buffer       │ Access │
- * ├─────────┼──────────────────────────┼─────────────────┼────────┤
- * │ 0       │ uniform ScanParams       │ scanParams      │ read   │
- * │ 1       │ storage array<u32>       │ gridCounts      │ read   │
- * │ 2       │ storage array<u32>       │ gridOffsets     │ write  │
- * │ 3       │ storage array<u32>       │ blockSums       │ write  │
- * └─────────┴──────────────────────────┴─────────────────┴────────┘
  */
 
 //! import scan_params
 
 @group(0) @binding(0) var<uniform> params: ScanParams;
 @group(0) @binding(1) var<storage, read> data: array<u32>;           // cellCounts (input)
-@group(0) @binding(2) var<storage, read_write> offsets: array<u32>;  // cellOffsets (output)
-@group(0) @binding(3) var<storage, read_write> blockSums: array<u32>; // per-block totals
+@group(0) @binding(2) var<storage, read_write> offsets: array<u32>;
+@group(0) @binding(3) var<storage, read_write> blockSums: array<u32>;
 
 const BLOCK_SIZE: u32 = 256u;
 
@@ -45,7 +36,6 @@ fn main(
   let gid = globalId.x;
   let blockIdx = workgroupId.x;
 
-  // Load data into shared memory (with bounds check)
   if (gid < params.numCells) {
     temp[tid] = data[gid];
   } else {
@@ -88,7 +78,6 @@ fn main(
   }
   workgroupBarrier();
 
-  // Write result (exclusive prefix sum within block)
   if (gid < params.numCells) {
     offsets[gid] = temp[tid];
   }

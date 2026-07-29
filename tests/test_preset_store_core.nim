@@ -1,23 +1,11 @@
-# ==============================================================================
-# PARTICLE GARDEN - PRESET STORE CORE TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/ui/presets/preset_store_core.nim: the pure
 # localStorage-key and index-bookkeeping primitives the JS preset_store glue
 # builds on, plus the apply-order contract as data (presetApplySteps).
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/ui/presets/preset_store_core
 
 const PRESET_STORE_CORE_TESTS_LOADED* = true
-
-# ==============================================================================
-# NORMALIZE PRESET NAME
-# ==============================================================================
 
 suite "normalizePresetName trims and collapses whitespace":
   test "normalizePresetName trims leading and trailing whitespace":
@@ -33,7 +21,6 @@ suite "normalizePresetName trims and collapses whitespace":
     check normalizePresetName("") == ""
 
   test "normalizePresetName is idempotent over a range of messy inputs":
-    ## CONTRACT: normalize(normalize(x)) == normalize(x) for any input
     let messyInputs = @[
       "  leading and trailing  ",
       "internal   runs    of   spaces",
@@ -47,10 +34,6 @@ suite "normalizePresetName trims and collapses whitespace":
       let once = normalizePresetName(input)
       let twice = normalizePresetName(once)
       check once == twice
-
-# ==============================================================================
-# APPLY-ORDER CONTRACT
-# ==============================================================================
 
 suite "presetApplySteps pins the apply-order contract":
   test "presetApplySteps returns exactly the seven steps in the fixed order":
@@ -81,10 +64,6 @@ suite "presetApplySteps pins the apply-order contract":
     check steps.find(pasSpeciesCount) < steps.find(pasMatrix)
     check steps.find(pasSpeciesCount) < steps.find(pasChemistry)
 
-# ==============================================================================
-# STORAGE KEYS
-# ==============================================================================
-#
 # Both constants cross to TypeScript through gardenAPI.presetKeys. The panel
 # distinguishes a preset entry from the index by comparing the composed key
 # against the index key, so the two must never collide.

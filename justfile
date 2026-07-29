@@ -46,10 +46,8 @@ test:
 test-ui:
     cd web-ui && bun test
 
-# Both test suites
 check: test test-ui
 
-# Pull, build everything, run
 be:
     git pull
     just happen

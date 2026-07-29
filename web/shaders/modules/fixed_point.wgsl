@@ -3,13 +3,7 @@
 // =============================================================================
 // Fixed-point constants for atomic float accumulation.
 //
-// WHY FIXED-POINT?
-// GPUs don't support atomic operations on floats (yet).
-// We can't just write "atomicAdd(&someFloat, 0.5)" - hardware doesn't support it.
-//
-// SOLUTION:
-// Scale floats by 65536, convert to integers, use atomic integer ops,
-// then scale back down when reading. Like counting money in cents instead of dollars.
+// GPUs lack float atomics: scale by 2^16, accumulate as atomic i32, rescale on read.
 //
 // TWO SCALES, BECAUSE THE TWO QUANTITIES WANT OPPOSITE THINGS.
 //

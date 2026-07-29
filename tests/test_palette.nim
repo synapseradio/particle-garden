@@ -1,26 +1,16 @@
-# ==============================================================================
-# PARTICLE GARDEN - PALETTE TESTS
-# ==============================================================================
-#
 # Unit tests for pure color-generation functions in palette.nim.
 # Tests hslToRgb known values, generatePalette count/length behavior, scheme
 # distinctness, and channel range invariants.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/palette
 
-# Exported symbol for test_all.nim to reference
 const PALETTE_TESTS_LOADED* = true
 
 const
   EPSILON = 1e-9
 
 proc approxEq(left, right: float; epsilon: float = EPSILON): bool =
-  ## Epsilon-based float comparison for testing.
   abs(left - right) <= epsilon
 
 proc approxEqRgb(color: RgbColor, red, green, blue: float;
@@ -28,10 +18,6 @@ proc approxEqRgb(color: RgbColor, red, green, blue: float;
   approxEq(color.red, red, epsilon) and
     approxEq(color.green, green, epsilon) and
     approxEq(color.blue, blue, epsilon)
-
-# ==============================================================================
-# HSL -> RGB KNOWN VALUES
-# ==============================================================================
 
 suite "hslToRgb - Known Values":
   test "zero saturation is gray at any hue":
@@ -65,10 +51,6 @@ suite "hslToRgb - Known Values":
     let wrappedColor = hslToRgb(-0.1, 0.8, 0.5)
     check approxEqRgb(wrappedColor, baseColor.red, baseColor.green, baseColor.blue)
 
-# ==============================================================================
-# HSL -> RGB RANGE INVARIANTS
-# ==============================================================================
-
 suite "hslToRgb - Channel Range":
   test "channels stay within [0, 1] across a sweep of hues":
     for step in 0 .. 20:
@@ -87,10 +69,6 @@ suite "hslToRgb - Channel Range":
       check color.green >= 0.0 and color.green <= 1.0
       check color.blue >= 0.0 and color.blue <= 1.0
 
-# ==============================================================================
-# GENERATEPALETTE - LENGTH / COUNT BEHAVIOR
-# ==============================================================================
-
 suite "generatePalette - Length and Count":
   test "zero count returns an empty palette":
     check generatePalette(0).len == 0
@@ -106,10 +84,6 @@ suite "generatePalette - Length and Count":
   test "count returns exactly that many colors, for every named scheme":
     for scheme in PaletteScheme:
       check generatePalette(6, scheme).len == 6
-
-# ==============================================================================
-# GENERATEPALETTE - SCHEME DISTINCTNESS
-# ==============================================================================
 
 suite "generatePalette - Scheme Distinctness":
   test "golden scheme produces pairwise-distinct colors":
@@ -140,10 +114,6 @@ suite "generatePalette - Scheme Distinctness":
       check approxEqRgb(defaultPalette[colorIndex], goldenPalette[colorIndex].red,
         goldenPalette[colorIndex].green, goldenPalette[colorIndex].blue)
 
-# ==============================================================================
-# GENERATEPALETTE - CHANNEL RANGE
-# ==============================================================================
-
 suite "generatePalette - Channel Range":
   test "every channel of every color is within [0, 1], for every scheme":
     for scheme in PaletteScheme:
@@ -152,10 +122,6 @@ suite "generatePalette - Channel Range":
         check color.red >= 0.0 and color.red <= 1.0
         check color.green >= 0.0 and color.green <= 1.0
         check color.blue >= 0.0 and color.blue <= 1.0
-
-# ==============================================================================
-# FLATTENPALETTE
-# ==============================================================================
 
 suite "flattenPalette":
   test "flattens to 3x the palette length":
@@ -179,14 +145,10 @@ suite "flattenPalette":
     check approxEq(flattened[4], 0.5)
     check approxEq(flattened[5], 0.6)
 
-# ==============================================================================
-# OPEN COLOR SCHEME
-# ==============================================================================
-
 suite "generatePalette - Open Color Scheme":
-  # The user directed the default species colors to come from the Open Color
-  # palette (https://yeun.github.io/open-color/), picked bright and ordered to
-  # keep the classic species identities: red, green, blue, yellow, grape
+  # Default species colors are Open Color swatches
+  # (https://yeun.github.io/open-color/), picked bright and ordered to
+  # preserve the classic species identities: red, green, blue, yellow, grape
   # (magenta slot), cyan. Hex values verified against the canonical
   # open-color.json (red-5 #ff6b6b, green-5 #51cf66, blue-5 #339af0,
   # yellow-4 #ffd43b, grape-5 #cc5de8, cyan-4 #3bc9db).
@@ -202,8 +164,8 @@ suite "generatePalette - Open Color Scheme":
     check approxEqRgb(colors[5],  59.0/255.0, 201.0/255.0, 219.0/255.0)  # cyan-4
 
   test "psOpenColor swatches are bright (every swatch peaks at or above 0.8)":
-    # WHY: "brighter colors" is the point of the directive; each swatch's
-    # dominant channel must carry real luminance against the dark canvas.
+    # Each swatch's dominant channel must carry real luminance against the
+    # dark canvas — that's what 'brighter' requires here.
     for color in generatePalette(6, psOpenColor):
       check max(color.red, max(color.green, color.blue)) >= 0.8
 

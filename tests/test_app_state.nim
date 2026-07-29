@@ -1,15 +1,9 @@
-# ==============================================================================
 # PARTICLE GARDEN - APP STATE / PROFILING TESTS
-# ==============================================================================
 #
 # Behavioral tests for the pure profiling accumulators in app_state.nim. The
 # averages drive tuning decisions, and the averaging functions carry a
 # frameCount > 0 guard that must hold to avoid dividing by zero before any
 # frame has been recorded.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/ui/state/app_state
@@ -26,7 +20,6 @@ proc timingWith(grid, frame: float): TimingState =
 
 suite "Profiling Averages Divide By Frame Count":
   test "averageGridTime returns zero when no frames have accumulated":
-    # Exercises the frameCount > 0 guard: no division before the first frame.
     check initProfilingState().averageGridTime() == 0.0
 
   test "averageTotalTime returns zero when no frames have accumulated":

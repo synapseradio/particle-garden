@@ -4,16 +4,12 @@
 #
 # Spatial partitioning grid dimensions for particle simulation.
 #
-# ARCHITECTURE: WebGPU-only physics.
 # This module only computes grid dimensions. The actual grid building
 # (counting, prefix sum, scatter) happens entirely on the GPU via
 # WebGPU compute shaders in webgpu_compute.nim.
 #
-# The computeGridDimensions() proc calculates how many cells to use
-# based on world size and interaction radius. This info is passed
-# to the GPU for the bin-count, prefix-sum, and bin-scatter passes.
-#
-# Compile with: nim js -o:web/grid.js src/grid.nim
+# Compiled into app.nim's single frontend compilation unit (see app.nim);
+# built with `just happen`.
 #
 # ==============================================================================
 
@@ -35,7 +31,7 @@ type
 # SECTION 2: MODULE STATE
 # ==============================================================================
 
-# Grid dimensions - updated each frame based on canvas size and interaction radius
+# Grid dimensions - updated each frame from WORLD size and interaction radius
 var gridW* {.exportc.}: int = 0
 var gridH* {.exportc.}: int = 0
 var cellSize* {.exportc.}: int = 0
@@ -49,18 +45,16 @@ var gridTimeMs* {.exportc.}: float = 0.0
 
 proc computeGridDimensions*(canvasWidth: int, canvasHeight: int): GridDimensions {.exportc.} =
   ## Compute grid dimensions without doing any sorting.
-  ## Used by WebGPU path which builds the grid on the GPU.
   ##
   ## NOTE: Grid dimensions are computed from WORLD size, not canvas size.
   ## This decouples physics resolution from display resolution.
   ## The canvas parameters are ignored but kept for API compatibility.
-  ##
-  ## Returns object with gridW, gridH, cellSize
 
-  # Cell size equals interaction radius - classic spatial hash, no LOD artifacts
+  # Classic spatial hash: cellSize tracks the interaction radius so a 3x3
+  # stencil covers every interaction, no LOD artifacts. Floored at 16 below
+  # that (INTERACTION_RADIUS_MIN is 10).
   cellSize = max(CONFIG.interactionRadius, 16)
 
-  # Use WORLD dimensions for grid computation (decoupled from display)
   gridW = jsFloor(config.WORLD_W / cellSize.float)
   gridH = jsFloor(config.WORLD_H / cellSize.float)
   gridW = int(jsMax(1.0, jsMin(gridW.float, MAX_GRID.float)))

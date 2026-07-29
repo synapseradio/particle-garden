@@ -302,6 +302,30 @@ and kill sliders already draw. Each runs forces and chemistry together at the
 default force strength, carrying the deposit its own morphology needs — Worms and
 Coral do not ignite at the default deposit at all.
 
+## The climate drifts as a tour of the named regimes
+
+`climate_core.nim` advances a weather: a closed tour of waypoints the frame loop
+walks, writing every toured parameter through the ordinary setParam path.
+Writing through setParam moves the sliders where a user can watch them, so the
+drift stays legible as weather rather than reading as the simulation changing
+on its own.
+
+Most of the feed/kill rectangle produces nothing worth looking at; the named
+regimes exist precisely because interesting parameter space is sparse. A drift
+that wandered the box at random would spend most of its time in dead or flooded
+parameter space and read as a broken feature. The climate path instead loops
+through the regime coordinates in `RD_REGIMES` order, so the weather visits
+every regime the panel names and nothing else.
+
+One tour serves many tables. `tourAt` interpolates any table whose waypoints
+are float coordinates indexed by that weather's own axis enum, so a weather
+over different parameters — four force parameters, say — supplies a table and
+four axis names and reuses the same advance, easing and wrapping. The proofs
+that any such table stays in range (convexity of the parameter box) and moves
+without velocity corners (smoothstep easing) live beside the code in
+`climate_core.nim`, and `tests/test_climate_core.nim` exercises both over
+tables of different arities.
+
 ## Facts about the field that are easy to get wrong
 
 These are measured, and each is the opposite of what first-principles reasoning

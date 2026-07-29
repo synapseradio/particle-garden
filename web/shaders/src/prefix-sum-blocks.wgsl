@@ -1,19 +1,6 @@
 /**
- * Pass 2b: Scan block totals (sequential - only 256 elements)
- *
- * After local prefix sums, each workgroup produced a block total.
- * This pass computes exclusive prefix sum of those block totals.
- * With 65,536 cells / 256 per block = 256 blocks, this is small enough
- * to run on a single workgroup.
- *
- * BINDING MANIFEST:
- * ┌─────────┬──────────────────────────┬─────────────────┬────────┐
- * │ Binding │ Shader Type              │ JS Buffer       │ Access │
- * ├─────────┼──────────────────────────┼─────────────────┼────────┤
- * │ 0       │ uniform ScanParams       │ scanParams      │ read   │
- * │ 1       │ storage array<u32>       │ blockSums       │ read   │
- * │ 2       │ storage array<u32>       │ blockOffsets    │ write  │
- * └─────────┴──────────────────────────┴─────────────────┴────────┘
+ * 65,536 cells / 256 per block = 256 blocks: small enough for one workgroup.
+ * Blelloch scan (citation in prefix-sum-local.wgsl).
  */
 
 //! import scan_params
@@ -32,14 +19,12 @@ fn main(
   @builtin(local_invocation_id) localId: vec3<u32>,
   @builtin(workgroup_id) workgroupId: vec3<u32>
 ) {
-  // Only workgroup 0 does work - this is scanning at most 256 block totals
   if (workgroupId.x != 0u) {
     return;
   }
 
   let tid = localId.x;
 
-  // Load block sums into shared memory (with bounds check)
   if (tid < params.numBlocks) {
     temp[tid] = blockSums[tid];
   } else {
@@ -79,7 +64,6 @@ fn main(
   }
   workgroupBarrier();
 
-  // Write result (exclusive prefix sum of block totals)
   if (tid < params.numBlocks) {
     blockOffsets[tid] = temp[tid];
   }

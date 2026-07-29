@@ -1,15 +1,7 @@
-# ==============================================================================
-# PARTICLE GARDEN - COLORMAP CORE TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/colormap_core.nim: the reaction-diffusion field
 # colormaps and the polynomial ramp coefficients substituted into
 # web/shaders/modules/colormap.wgsl. A bad ramp would recolour the whole RD
 # field — visible, but invisible to the shader compiler, so it is pinned here.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, strutils]
 import ../src/colormap_core
@@ -113,25 +105,23 @@ suite "Defaults Are Consistent And In Range":
 
 
 suite "The Field Covers What It Lights":
-  # Why this suite exists: the field used to claim EVERY pixel whenever it was
-  # enabled at all — tonemap.wgsl set `fieldCoverage = 1.0` inside
-  # `if (params.fieldOpacity > 0.0)`, regardless of whether any field was
-  # actually there. That is what made the field read as a backdrop the
-  # particles sit on rather than as light in the world. Coverage now follows
-  # how much field is present, and these tests are what hold it there.
+  # Why this suite exists: fieldCoverage scales with how much field is
+  # actually present, never just with whether fieldOpacity is nonzero — that
+  # is what keeps the field reading as light in the world rather than as a
+  # backdrop the particles sit on, and these tests are what hold it there.
 
   const RAMPS = [COLORMAP_INDEX_INFERNO, COLORMAP_INDEX_VIRIDIS,
                  COLORMAP_INDEX_TWO_TONE]
 
   test "field coverage is zero where field intensity is zero":
-    # THE BUG THIS GROUP FIXES, as an executable fact. Empty field, full
-    # opacity: the pixel must be left entirely to the particles.
+    # Empty field, full opacity: the pixel must be left entirely to the
+    # particles.
     for ramp in RAMPS:
       check fieldIntensity(ramp, 0.0, 0.0) == 0.0
       check fieldCoverage(ramp, 0.0, 0.0, FIELD_OPACITY_MAX) == 0.0
       check fieldCoverage(ramp, 0.0, 0.0, FIELD_OPACITY_DEFAULT) == 0.0
     # And a field that IS present contributes nothing when turned off, which is
-    # the condition the shaders used to spell as `if (fieldOpacity > 0.0)`.
+    # the condition tonemap.wgsl spells as `if (fieldOpacity > 0.0)`.
     for ramp in RAMPS:
       check fieldCoverage(ramp, 1.0, 1.0, 0.0) == 0.0
 
@@ -181,9 +171,9 @@ suite "The Field Covers What It Lights":
     check fieldIntensity(-1, 1.0, 0.3) == fieldIntensity(COLORMAP_INDEX_INFERNO, 1.0, 0.3)
 
   test "the ramps are not black at zero field, which is why coverage cannot follow luminance":
-    # THE MEASUREMENT BEHIND THE DESIGN, kept executable so the reasoning
+    # The measurement behind the design, kept executable so the reasoning
     # cannot rot. Were coverage driven by the emitted colour's luminance, these
-    # are the alphas an EMPTY field would paint. Viridis's zero is dark purple,
+    # are the alphas an empty field would paint. Viridis's zero is dark purple,
     # not black, so luminance-driven coverage would tint the whole world.
     check abs(luminance(evalColormap(COLORMAP_INDEX_INFERNO, 0.0, 0.0)) -
       0.00123) < 1e-4

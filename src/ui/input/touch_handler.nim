@@ -29,7 +29,6 @@ type
 # ==============================================================================
 
 func handleTouchStart*(state: InputState; event: TouchEventData): InputState =
-  ## Process touch start event.
   ## First touch is treated as left mouse button down.
   if event.touches.len > 0:
     let touch = event.touches[0]
@@ -40,16 +39,12 @@ func handleTouchStart*(state: InputState; event: TouchEventData): InputState =
     result = state
 
 func handleTouchEnd*(state: InputState; event: TouchEventData): InputState =
-  ## Process touch end event.
-  ## When all touches end, release mouse button.
   if event.touches.len == 0:
     result = state.withMouseDown(false)
   else:
     result = state
 
 func handleTouchMove*(state: InputState; event: TouchEventData): InputState =
-  ## Process touch move event.
-  ## Track first touch position.
   if event.touches.len > 0:
     let touch = event.touches[0]
     result = state.withMousePosition(touch.clientX, touch.clientY)
@@ -57,8 +52,6 @@ func handleTouchMove*(state: InputState; event: TouchEventData): InputState =
     result = state
 
 func handleTouchCancel*(state: InputState): InputState =
-  ## Process touch cancel event.
-  ## Releases all touch state.
   state.withAllButtonsUp()
 
 func handleTwoFingerTap*(state: InputState; event: TouchEventData): InputState =
@@ -86,7 +79,6 @@ when defined(js):
   from std/dom import TouchEvent, TouchList
 
   proc extractTouchData*(event: TouchEvent): TouchEventData =
-    ## Extract pure data from DOM TouchEvent.
     result = TouchEventData(touches: @[])
 
     let touches = event.touches

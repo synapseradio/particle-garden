@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - WGSL LINT TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/wgsl_lint.nim, plus a check of the real shader
 # sources. The lint exists because a WGSL parse error is invisible to every
 # build step: the browser compiles WGSL, so `just happen` and `just check` both
@@ -10,10 +6,6 @@
 # The last suite here reads web/shaders/src/ directly. That is the assertion
 # that actually protects the app; the ones above it are what keep the checker
 # honest about what it flags and what it leaves alone.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, os, strutils, tables]
 import ../src/wgsl_lint
@@ -23,10 +15,9 @@ const WGSL_LINT_TESTS_LOADED* = true
 
 suite "Named-Field Constructors Are Caught":
   test "a struct constructor naming its fields is flagged":
-    # THE BUG THIS EXISTS FOR. WGSL constructors are positional; this exact
-    # line shipped in fade.wgsl and turned the window black whenever trails
-    # were on, because an invalid shader invalidates its pipeline and a frame
-    # using an invalid pipeline is never submitted.
+    # WGSL constructors are positional; a named-field constructor compiles to
+    # an invalid shader, which fails to build a pipeline — and a frame using
+    # an invalid pipeline is never submitted, so the canvas stays black.
     let code = "let prevCam = Camera(centerX: params.prevCenterX, zoom: 1.0);"
     check namedFieldConstructorLines(code) == @[1]
 
@@ -75,7 +66,7 @@ suite "Valid WGSL Is Left Alone":
 
   test "an uppercase function declaration is still a declaration":
     # The uppercase rule alone would flag this; the `fn` check is what saves it.
-    # No shader declares a PascalCase function today, which is exactly why the
+    # No shader declares a PascalCase function, which is exactly why the
     # guard needs a test rather than a caller.
     let code = "fn Camera(centerX: f32) -> f32 {"
     check namedFieldConstructorLines(code).len == 0
@@ -87,9 +78,9 @@ suite "Valid WGSL Is Left Alone":
 
 suite "The Shipped Shaders Parse As WGSL":
   test "no shader source uses a named-field constructor":
-    # THE ASSERTION THAT PROTECTS THE APP. Everything above keeps the checker
-    # honest; this one is why it exists. It reads the real sources, so a shader
-    # added tomorrow is covered without anyone remembering to add a case.
+    # The assertion that protects the app: everything above keeps the checker
+    # honest; this one is why it exists. It reads the real sources, so a newly
+    # added shader is covered without anyone remembering to add a case.
     var offenders: seq[string]
     for dir in ["web/shaders/src", "web/shaders/modules"]:
       if not dirExists(dir):
@@ -144,7 +135,7 @@ suite "Declared Bindings Are Parsed":
 
 suite "The Bundled Shaders Declare Their Registered Bindings":
   test "every bundled shader's declared bindings match ExpectedShaderBindings":
-    # THE ASSERTION THAT PROTECTS THE SHARED RENDER/GLOW LAYOUT. render.wgsl
+    # The assertion that protects the shared render/glow layout: render.wgsl
     # and glow.wgsl share one hand-built bind-group layout in
     # webgpu_render.nim; nothing else notices a swapped or added @binding
     # number, which compiles, bundles, and builds green while the GPU rejects

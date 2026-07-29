@@ -6,15 +6,6 @@
 // ring at the cursor, cameraZoom as a frame on the world seams. Coverage math
 // mirrors src/overlay_core.nim, which is where it is tested; constants are
 // substituted from there through shader_config.
-//
-// Bind group layout:
-// +-------+---------------+---------------+--------+
-// | Index | Type          | Resource      | Access |
-// +-------+---------------+---------------+--------+
-// |   0   | uniform       | OverlayParams | read   |
-// |   1   | uniform       | Camera        | read   |
-// |   2   | uniform       | RenderParams  | read   |
-// +-------+---------------+---------------+--------+
 // =============================================================================
 
 //! import overlay_params

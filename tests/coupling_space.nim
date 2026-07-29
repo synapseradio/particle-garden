@@ -1,6 +1,4 @@
-# ==============================================================================
 # PARTICLE GARDEN - THE COUPLING SPACE (SHARED TEST FIXTURE)
-# ==============================================================================
 #
 # The corners of the coupling-strength space, so an invariant asserted "for
 # every world" genuinely covers the space rather than a handful of settings the
@@ -13,18 +11,10 @@
 # the corners is testing physics rather than frame composition, and belongs with
 # the oracle that mirrors that physics (sph_core, field_core, physics_core).
 #
-# The nonzero value is arbitrary and deliberately not any parameter's default:
-# nothing in the frame path reads the magnitude, and pinning a default here
-# would invite a reader to think it does. tests/test_sim_registry.nim asserts
-# the arbitrariness directly — a strength one part in a billion above zero
-# dispatches exactly what a strength of one does — so a threshold smuggled in as
-# `> 0.001` fails there rather than hiding as a mode with a floating-point door.
-#
-# A fixture rather than a test module: it declares no suite, so test_all.nim
-# reaches it through the test modules that import it and it needs no entry of
-# its own there.
-#
-# ==============================================================================
+# tests/test_sim_registry.nim asserts the arbitrariness of the nonzero value
+# directly — a strength one part in a billion above zero dispatches exactly
+# what a strength of one does — so a threshold smuggled in as `> 0.001` fails
+# there rather than hiding as a mode with a floating-point door.
 
 import ../src/sim_registry
 

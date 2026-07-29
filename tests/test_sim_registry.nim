@@ -1,21 +1,12 @@
-# ==============================================================================
-# PARTICLE GARDEN - SIM REGISTRY TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/sim_registry.nim: the pure frame description that
 # webgpu_compute.nim's executor walks each frame.
 #
-# WHAT THESE PIN. There is one world, and a coupling contributes according to a
-# strength whose zero is an ordinary value (design D7). So the frame path may
-# ask a strength exactly one question — is it zero — and a pass may be skipped
-# only when its strength provably scales everything that pass produces (design
-# D12). A skip that removes an output the strength never scaled is a mode
-# wearing a floating-point comparison, and these tests are what stop one
-# appearing.
-#
-# Run with: just test
-#
-# ==============================================================================
+# What these pin: there is one world, and a coupling contributes according to a
+# strength whose zero is an ordinary value. So the frame path may ask a
+# strength exactly one question — is it zero — and a pass may be skipped only
+# when its strength provably scales everything that pass produces. A skip that
+# removes an output the strength never scaled is a mode wearing a
+# floating-point comparison, and these tests are what stop one appearing.
 
 import std/unittest
 import std/sets
@@ -79,9 +70,9 @@ suite "The World Runs, Whatever The Strengths Are":
         check key in sequence
 
   test "the neighbour sweep runs where no forces act":
-    # The honest price of D12, asserted rather than assumed. Density and the
-    # mouse both come out of this pass, and neither belongs to the force
-    # coupling, so force strength zero cannot take the sweep with it.
+    # The honest price of that skip rule, asserted rather than assumed.
+    # Density and the mouse both come out of this pass, and neither belongs to
+    # the force coupling, so force strength zero cannot take the sweep with it.
     check dispatchesPipeline(UNCOUPLED, "binCount")
     check dispatchesPipeline(UNCOUPLED, "forces")
 
@@ -107,7 +98,7 @@ suite "The World Runs, Whatever The Strengths Are":
 
 
 suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
-  # The multiplier property in its frame form (design D12): at exactly zero the
+  # The multiplier property in its frame form: at exactly zero the
   # world is identical to the world with that pass absent. The continuity half —
   # that the contribution approaches zero as the strength does — is physics, and
   # lives with the oracles that mirror the shaders.
@@ -129,7 +120,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     check not dispatchesPipeline(noFieldForce, "fieldForce")
 
   test "moving a strength to zero changes nothing else about the world":
-    # THE TEST THAT MAKES A SKIP AN OPTIMIZATION RATHER THAN A MODE. Zeroing one
+    # The test that makes a skip an optimization rather than a mode: zeroing one
     # strength must subtract exactly one pass and leave every other pass in
     # place, in order. A skip that also drops a neighbour's work rebuilds the
     # eight enumerated worlds under a nicer name.
@@ -157,7 +148,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
       check dispatchSequence(flipped) == dispatchSequence(couplings)
 
   test "a strength one part in a billion above zero dispatches its pass":
-    # ZERO IS THE ONLY SPECIAL VALUE. A threshold — `> 0.001`, `> epsilon` —
+    # Zero is the only special value. A threshold — `> 0.001`, `> epsilon` —
     # would be a mode with a floating-point door, and a user dragging a slider
     # to its bottom would fall through it into a different world.
     var barelyOn = UNCOUPLED
@@ -179,7 +170,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
 
 suite "Delta Buffers Have One Reset Owner":
   test "every frame clears velocityDelta and densityDelta before any pass that writes them":
-    # THE INVARIANT THAT MAKES COMPOSITION POSSIBLE. A contributor that
+    # The invariant that makes composition possible: a contributor that
     # self-resets these buffers in its own prologue erases the work of whichever
     # contributor ran before it in the frame. The frame owns the reset;
     # forces.wgsl and forces-sph.wgsl accumulate only.

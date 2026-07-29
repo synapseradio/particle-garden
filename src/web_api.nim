@@ -210,7 +210,7 @@ when defined(js):
     result["max"] = toJs(descriptor.maxValue)
     result["step"] = toJs(descriptor.step)
     result["precision"] = toJs(descriptor.precision)
-    # The travel curve (design E5). The panel converts between position and
+    # The travel curve. The panel converts between position and
     # value through paramValueAt/paramPositionOf and computes no mapping;
     # positionStep is the uniform position increment that walks the
     # descriptor's own value lattice under cLinear, and under a warp it is
@@ -497,7 +497,7 @@ when defined(js):
     false
 
   static:
-    # THE BUILD GATE (design E6). Every descriptor that routes to a state record
+    # THE BUILD GATE. Every descriptor that routes to a state record
     # is written into a throwaway copy of that record HERE, at compile time,
     # through the same walk setParamImpl runs. An id that names no assignable
     # field of its store therefore fails the build instead of clamping a value
@@ -741,8 +741,8 @@ when defined(js):
   proc pushStats*(fps, particleCount: int;
       gridTimeMs, workerTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs,
       gpuPresentMs, gpuFieldMs: float; fieldAliveCells: int) =
-    ## Called from app.nim's frame loop (currently every ~500ms; the cadence
-    ## is loop-side). Raw numbers — formatting belongs to the UI.
+    ## Called from app.nim's frame loop, on the loop's own FPS-refresh
+    ## cadence. Raw numbers — formatting belongs to the UI.
     ##
     ## `params` carries the parameters the SIMULATION writes on its own, so the
     ## panel learns of a drifting climate by being told rather than by asking.
@@ -1090,7 +1090,7 @@ when defined(js):
     # clamp a slider does.
     result["clampParam"] = toJs(proc(id: cstring; value: float): float =
       clampParamImpl($id, value))
-    # The travel-curve pair (design E5): the slider hands over its handle
+    # The travel-curve pair: the slider hands over its handle
     # position and receives the lattice value, and the reverse when it needs
     # to place the handle. Both live in Nim so setParam's clamp and the
     # handle can never disagree; an unknown id answers with the track's

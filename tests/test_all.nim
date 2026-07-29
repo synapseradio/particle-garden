@@ -1,15 +1,5 @@
-# ==============================================================================
 # PARTICLE GARDEN - TEST SUITE
-# ==============================================================================
-#
-# Run with: just test
-#
-# This file imports all test modules to run the complete test suite.
-# Tests are registered and executed automatically via std/unittest on import.
-#
-# ==============================================================================
 
-# Import test modules - tests run automatically on import via unittest
 import test_physics
 import test_grid
 import test_memory_layout

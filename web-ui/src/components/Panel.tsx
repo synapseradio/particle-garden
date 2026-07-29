@@ -76,7 +76,6 @@ export function Panel(props: { ctrl: PanelController }) {
       <HelpPanel ctrl={ctrl} open={helpOpen()} onClose={() => setHelpOpen(false)} />
 
       <div class="controls-content">
-        {/* Main simulation sliders */}
         <For
           each={[
             "particleCount",

@@ -68,7 +68,7 @@ func clampZoom*(zoom, minZoom, maxZoom: float32): float32 =
 
 func initCamera*(worldWidth, worldHeight: float32): Camera =
   ## The default view: the whole world, centred. At this camera toClip
-  ## reproduces the mapping the renderer used before a camera existed.
+  ## reduces to the pre-camera mapping `(worldPos / worldSize) * 2 - 1`.
   Camera(
     centerX: worldWidth * 0.5'f32,
     centerY: worldHeight * 0.5'f32,
@@ -134,7 +134,7 @@ func screenUvToWorld*(uvX, uvY: float32, camera: Camera,
 
 func worldToScreenUv*(worldX, worldY: float32, camera: Camera,
     worldWidth, worldHeight: float32): tuple[x, y: float32] =
-  ## Where a world point sits on screen. The forward direction, used to ask
+  ## Where a world point sits on screen. The forward direction; callers ask it
   ## where a point SAT on a previous frame's screen.
   ##
   ## Deliberately does NOT take the nearest toroidal image: the fade pass wants

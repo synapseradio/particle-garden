@@ -9,6 +9,12 @@
 //
 // Used by: fade, render, rd-step, field-force, field-deposit, field-resolve,
 // field-seed.
+//
+// The field's ping-pong textures are rgba16float: WebGPU does not permit
+// rg16float as a write-only storage texture (not in the storage-capable
+// format list), and rgba16float is the nearest storage+sampled+filterable
+// half-float format. Only .rg is used — .r = activator, .g = inhibitor —
+// .ba are reserved padding.
 
 // One fact, two spellings for WGSL's sake: compute passes bounds-check and
 // index with u32 invocation ids, everything else does signed cell arithmetic.

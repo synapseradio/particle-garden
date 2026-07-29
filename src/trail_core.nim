@@ -2,27 +2,28 @@
 # PARTICLE GARDEN - TRAIL CORE (Pure)
 # ==============================================================================
 #
-# The trail, as arithmetic: the per-frame decay web/shaders/src/fade.wgsl runs
-# (:104-105), and the mapping from the trail-length slider onto the fade
-# multiplier that drives it.
+# The trail, as arithmetic: the per-frame decay web/shaders/src/fade.wgsl runs,
+# and the mapping from the trail-length slider onto the fade multiplier that
+# drives it.
 #
 # TWO HALVES, ONE HOME. The decay itself runs in a fragment shader no native
 # test can execute, so `fadedAlpha` and `fadedChannel` mirror it and the suite
 # holds both sides to the same arithmetic (engineering principle 5). The
-# mapping is ordinary Nim that the renderer used to inline; it lives here, and
-# src/webgpu_render.nim calls `fadeAmountFor` when it writes the fade uniform,
-# so the number the GPU receives and the number the suite measures are one
-# number rather than two that agree today.
+# mapping is ordinary Nim, kept separate from the renderer that consumes it;
+# it lives here, and src/webgpu_render.nim calls `fadeAmountFor` when it
+# writes the fade uniform, so the number the GPU receives and the number the
+# suite measures are one number rather than two that must be kept in
+# agreement.
 #
 # WHAT A RESPONSE PROBE READS. `persistenceFrames` is the observable the trail
-# slider is measured through (design E1): the frames a trail takes to fall to
+# slider is measured through: the frames a trail takes to fall to
 # 1/e of its brightness. The fade multiplier itself is a poor observable, since
 # it crowds into the top of its range while the trail keeps lengthening; frames
 # are what a viewer actually watches.
 #
 # Used by:
 #   - tests/test_trail_core.nim (native tests)
-#   - src/webgpu_render.nim (writes the FadeParams uniform)
+#   - src/webgpu_render.nim (writes the fade and render uniforms)
 #
 # ==============================================================================
 
@@ -37,6 +38,10 @@ const
     ## What is left of a trail at the end of the frames its length names. Five
     ## percent is faint enough to read as the end of the trail and bright
     ## enough that the decay does not visibly stop early.
+  TRAIL_ELONGATION_PER_DIAMETER* = 0.02
+    ## Motion-blur elongation render.wgsl applies per diameter of trail
+    ## length: dots stretch along their velocity by trailLength * this, so
+    ## 100 diameters doubles the stretch (pinned by tests/test_trail_core.nim).
 
 func fadeAmountFor*(trailLength: float): float =
   ## The per-frame multiplier the fade pass keeps of the previous frame, for a
@@ -52,12 +57,18 @@ func fadeAmountFor*(trailLength: float): float =
     let visibleFrames = trailLength * TRAIL_FRAMES_PER_DIAMETER
     pow(TRAIL_RESIDUAL_FRACTION, 1.0 / visibleFrames)
 
+func trailElongationScale*(trailLength: float): float =
+  ## The velocity-elongation multiplier the renderer writes for a trail of
+  ## `trailLength` diameters. Linear, so the stretch reads as the same effect
+  ## the fade lengthens.
+  trailLength * TRAIL_ELONGATION_PER_DIAMETER
+
 func fadedAlpha*(previousAlpha, fadeAmount: float): float =
-  ## One frame of decay on the trail texture's alpha (fade.wgsl:105).
+  ## One frame of decay on the trail texture's alpha (fade.wgsl).
   previousAlpha * fadeAmount
 
 func fadedChannel*(background, previous, fadeAmount: float): float =
-  ## One frame of decay on a colour channel (fade.wgsl:104). The trail's colour
+  ## One frame of decay on a colour channel (fade.wgsl). The trail's colour
   ## falls toward the background rather than toward black, at the same rate the
   ## alpha falls toward nothing.
   background + (previous - background) * fadeAmount

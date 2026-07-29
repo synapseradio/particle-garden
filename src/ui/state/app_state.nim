@@ -5,9 +5,6 @@
 # Pure state type for application runtime (running, timing, profiling).
 # Can be wrapped in Observable[AppState] for reactive updates.
 #
-# Note: This module defines the state type. Full migration of app.nim
-# globals to use this is a future step.
-#
 # ==============================================================================
 
 # ==============================================================================
@@ -20,7 +17,7 @@ type
     gridTimeMs*: float
     physicsTimeMs*: float
     integrationTimeMs*: float
-    computeTimeMs*: float  # Total compute time
+    computeTimeMs*: float
     frameTimeMs*: float    # Actual wall-clock frame time
 
 func initTimingState*(): TimingState =
@@ -55,7 +52,6 @@ func initProfilingState*(): ProfilingState =
   )
 
 func accumulate*(state: ProfilingState; timing: TimingState): ProfilingState =
-  ## Add a frame's timing to profiling sums.
   result = state
   result.frameCount = state.frameCount + 1
   result.gridTimeSum = state.gridTimeSum + timing.gridTimeMs

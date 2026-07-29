@@ -11,17 +11,8 @@
 // - Four particles fit in one 128-byte GPU cache line
 // - 32-byte alignment avoids straddling cache line boundaries
 //
-// FIELD LAYOUT:
-// ┌─────────┬──────────┬───────┬─────────────────────────────────────────────┐
-// │ Offset  │ Field    │ Size  │ Description                                 │
-// ├─────────┼──────────┼───────┼─────────────────────────────────────────────┤
-// │ 0       │ pos      │ 8     │ Position (vec2<f32>)                        │
-// │ 8       │ vel      │ 8     │ Velocity (vec2<f32>)                        │
-// │ 16      │ species  │ 4     │ Species ID (u32, 0-5)                       │
-// │ 20      │ density  │ 4     │ Colony density, same-species (f32)          │
-// │ 24      │sphDensity│ 4     │ SPH kernel density, fluid-private (f32)     │
-// │ 28      │crowdDens.│ 4     │ Crowd density, species-blind (f32)          │
-// └─────────┴──────────┴───────┴─────────────────────────────────────────────┘
+// Field-by-field layout: web/shaders/README.md's Buffer Layout table and the
+// inline offsets on the struct below.
 //
 // THREE DENSITIES, NONE INTERCHANGEABLE. Each answers a different question, and
 // a field carrying two of them makes one consumer track the other's parameter.

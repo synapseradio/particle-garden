@@ -59,9 +59,9 @@ const CURRENT_SCHEMA_VERSION* = 2
   ##
   ## v2 also adds fields v1 has no slot for: per-species chemistry, the fluid
   ## strength, the two climate-drift settings, and the crowding strength. The
-  ## v1 branch derives the fluid strength from the mode and PINS the crowding
-  ## strength at zero — a world saved before a term existed must not acquire it
-  ## from a default that moves later.
+  ## v1 branch derives the fluid strength from the mode and pins the crowding
+  ## strength at zero: v1 carries no crowding strength field, so a fixed value
+  ## stands in rather than a default that could move independently.
 
 # ==============================================================================
 # SECTION 2: SHAPE
@@ -229,9 +229,9 @@ func defaultSettings*(): PresetSettings =
     sphRestDensity: 3.0,
     sphStiffness: 8.0,
     # Mirrors simulation_state.initSimulationState's sphRadiusFraction: the
-    # whole interaction radius, which is the kernel every fluid world so far has
-    # run. One-world task C2.6 moves this below 1 for fresh worlds; presets
-    # older than this schema version get 1.0 pinned in the legacy branch below,
+    # whole interaction radius, which is the kernel every fluid world runs.
+    # One-world moves this below 1 for fresh worlds; presets
+    # older than this schema version get 1.0 pinned in the v1 branch below,
     # never the shipped default.
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
@@ -449,7 +449,7 @@ proc validateChemistry(node: JsonNode): Chemistry =
   ## back to that slot's default rather than discarding the other eleven.
   ##
   ## The two channels clamp against DIFFERENT ranges, and asymmetrically —
-  ## tropism's ceiling sits below the magnitude of its floor (design D5), so a
+  ## tropism's ceiling sits below the magnitude of its floor, so a
   ## hand-edited preset asking for strong positive tropism is brought back to
   ## the bound rather than landing raw in the uniform.
   let defaults = defaultChemistry()
@@ -568,22 +568,21 @@ proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
         settings["rdFieldForce"] =
           %(field(settings, "rdFieldForce").getFloat(0.0) * V1_FIELD_FORCE_SCALE)
       # v1 carries no fluidStrength to keep or drop, so this derives one: a
-      # legacy fluid world runs its fluid at full effect, every other runs none.
+      # v1 fluid world runs its fluid at full effect, every other runs none.
       settings["fluidStrength"] = %(if legacy.keepFluid: 1.0 else: 0.0)
-      # PINNED, NOT DEFAULTED. Crowding did not exist when a v1 file was
-      # written, so every v1 world ran the force law without it and none was
-      # tuned against it. Letting the field default would hand a saved world the
-      # shipped default the moment that default moves off zero — a term the
-      # world was never saved with. Written unconditionally, so a v1 file that
-      # somehow carries the key is overwritten rather than trusted.
+      # Pinned, not defaulted. A v1 file has no crowding strength field, so
+      # every world it describes runs the force law without one. Letting the
+      # field default would hand that world the shipped default the moment
+      # the default moves off zero, changing a value the file never
+      # specified. Written unconditionally, so a v1 file that somehow carries
+      # the key is overwritten rather than trusted.
       settings["crowdingStrength"] = %0.0
-      # PINNED FOR THE SAME REASON, at the other end of its range. The
-      # smoothing radius was the whole interaction radius when a v1 file was
-      # written, so 1.0 is the kernel that world's fluid ran — not the shipped
-      # default, which C2.6 measures below 1. Defaulting instead would rescale
-      # every saved fluid the moment that measurement lands. Written
-      # unconditionally, so a v1 file that somehow carries the key is
-      # overwritten rather than trusted.
+      # Pinned for the same reason, at the other end of its range. A v1 file's
+      # smoothing radius is always the whole interaction radius — the only
+      # kernel a v1 fluid describes — not the shipped default, which sits
+      # below 1. Defaulting instead would rescale every migrated fluid the
+      # moment that default changes. Written unconditionally, so a v1 file
+      # that somehow carries the key is overwritten rather than trusted.
       settings["sphRadiusFraction"] = %1.0
 
 proc validate*(node: JsonNode): PresetLoadResult =

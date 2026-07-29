@@ -21,13 +21,14 @@ type
     ## Pure immutable data - updates go through a copied var and re-set.
     particleSize*: int
     trails*: bool
-    trailLength*: float       ## 0-100 particle diameters (0 = no trails)
+    trailLength*: float       ## Trail length in particle diameters (0 = no
+                              ## trails); range in config_ranges.
     glowIntensity*: float
     velocityGlowScale*: float
     glowRadiusScale*: float   ## Glow halo radius = (particleSize+1) * this
     glowFalloff*: float       ## Gaussian falloff exponent (higher = tighter)
     glowWarmth*: float        ## Density-driven warm shift, [0,1]
-    # HDR bloom + colour grade (S9). bloomEnabled gates the whole bloom path;
+    # HDR bloom + colour grade. bloomEnabled gates the whole bloom path;
     # off is the exact non-bloom quality floor. The rest drive the tonemap.
     bloomEnabled*: bool
     bloomIntensity*: float    ## Gain on the blurred bloom in the composite
@@ -35,7 +36,7 @@ type
     saturation*: float        ## Grade: 1 = unchanged, 0 = greyscale
     contrast*: float          ## Grade: 1 = unchanged, around a 0.5 pivot
     temperature*: float       ## Grade: signed warm/cool tint, 0 = neutral
-    # Reaction-diffusion field visualization (S10). colormapIndex selects the
+    # Reaction-diffusion field visualization. colormapIndex selects the
     # procedural ramp; fieldOpacity scales the field's contribution. Read by
     # both the HDR tonemap and the bloom-off field-composite floor.
     colormapIndex*: int

@@ -2,12 +2,7 @@
 # PARTICLE GARDEN - CONSOLIDATED WEB APPLICATION
 # ==============================================================================
 #
-# Single compilation unit for the web frontend.
-# All modules compile together, eliminating duplicate variable problems.
-#
-# ARCHITECTURE: WebGPU-only physics and rendering. All computation runs on GPU.
-#
-# Compile with: nim js -d:release --out:web/app.js src/app.nim
+# Build with `just happen` (recipe build-app in the justfile).
 #
 # ==============================================================================
 
@@ -81,7 +76,6 @@ var runtimeState {.exportc: "pgAppState".}: AppState = initAppState()
 
 var useWebGPU* {.exportc.}: bool = false
 
-# Canvas dimension helpers
 proc canvasWidth*(): int =
   webgpu_render.canvas.width
 
@@ -108,27 +102,21 @@ var currentTiming* = initTimingState()
 # ==============================================================================
 
 proc initParticles*() {.exportc.} =
-  ## Initialize particles with random positions and velocities.
-  ## Particles are distributed evenly among species, then shuffled.
   ## Positions are in WORLD coordinates (decoupled from canvas).
 
-  # Get config values - direct access via imported module
   let newCount = config.CONFIG.particleCount
   runtimeState = runtimeState.withParticleCount(newCount)
   let ns = config.CONFIG.speciesCount
 
-  # Use WORLD dimensions for particle positions (physics domain)
   let worldWidth = config.WORLD_W
   let worldHeight = config.WORLD_H
 
-  # Initialize particlesA buffer using AoS layout
-  # Struct: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5),
-  # sphDensity(6), crowdDensity(7). The two density channels the GPU owns are
-  # left at the zero the shared buffer was allocated with — no CPU writer
-  # touches either slot, so a fresh world starts uncrowded and the integrate
-  # pass fills them from the first frame onward.
+  # The GPU-owned density channels (sphDensity, crowdDensity) are left at the
+  # zero the shared buffer was allocated with — no CPU writer touches either
+  # slot, so a fresh world starts uncrowded and the integrate pass fills them
+  # from the first frame onward.
   for particleIndex in 0 ..< newCount:
-    let base = particleIndex * buffers.FLOATS_PER_PARTICLE  # 8 floats per particle
+    let base = particleIndex * buffers.FLOATS_PER_PARTICLE
     buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * worldWidth
     buffers.particlesA[base + buffers.FIELD_POS_Y] = jsRandom() * worldHeight
     buffers.particlesA[base + buffers.FIELD_VEL_X] = (jsRandom() - 0.5) * 2.0
@@ -137,7 +125,6 @@ proc initParticles*() {.exportc.} =
     buffers.particlesA[base + buffers.FIELD_DENSITY] = 0.0
 
   # Fisher-Yates shuffle for even species distribution
-  # Swap species values within AoS layout
   for shuffleIndex in countdown(newCount - 1, 1):
     let swapIndex = bitwiseOr(jsRandom() * float(shuffleIndex + 1), 0)
     let shuffleBase = shuffleIndex * buffers.FLOATS_PER_PARTICLE + buffers.FIELD_SPECIES
@@ -146,7 +133,6 @@ proc initParticles*() {.exportc.} =
     buffers.particlesA[shuffleBase] = buffers.particlesA[swapBase]
     buffers.particlesA[swapBase] = tempSpecies
 
-  # Upload to GPU if using WebGPU (ensures GPU has current particle data)
   if useWebGPU:
     discard webgpu_compute.uploadInitialData(newCount)
 
@@ -185,35 +171,26 @@ proc resizeParticles*() {.exportc.} =
     webgpu_compute.uploadParticleRange(previousCount, newCount)
 
 proc resetParticles*() {.exportc.} =
-  ## Reset particles to initial random state.
-  initParticles()  # Handles the GPU upload internally
+  initParticles()  # also triggers the GPU upload
 
 # ==============================================================================
 # PHYSICS (WebGPU Compute)
 # ==============================================================================
 
 proc physics(dt: float): Future[void] {.async.} =
-  ## Run one physics step using WebGPU compute shaders.
-  ## All computation (grid building, forces, integration) happens on GPU.
-
   let physicsStart = performanceNow()
 
   if not (useWebGPU and webgpu_compute.isPipelineReady):
-    # WebGPU not available - cannot run physics
     consoleWarn(toJs("WebGPU not ready - skipping physics frame"))
     return
 
-  # ═══════════════════════════════════════════════════════════════════════
-  # WebGPU Compute Path (ALL computation on GPU)
-  # ═══════════════════════════════════════════════════════════════════════
-
-  # Only compute grid dimensions - no CPU sorting
+  # Sorting runs in the GPU bin-count/prefix-sum/bin-scatter passes; this only
+  # sizes the grid.
   let gridResult = grid.computeGridDimensions(canvasWidth(), canvasHeight())
   currentTiming.gridTimeMs = 0  # Grid built on GPU
 
   let tPhysics0 = performanceNow()
 
-  # Build physics params object
   # NOTE: Physics uses WORLD dimensions, not canvas dimensions
   let params = makeJsObject()
   params["dt"] = toJs(dt)
@@ -225,7 +202,6 @@ proc physics(dt: float): Future[void] {.async.} =
   params["rMax"] = toJs(config.CONFIG.interactionRadius)
   params["fMul"] = toJs(config.CONFIG.forceStrength)
   params["friction"] = toJs(1.0 - config.CONFIG.friction)
-  # Scale mouse from canvas to world coordinates
   let mouseScaleX = config.WORLD_W / float(canvasWidth())
   let mouseScaleY = config.WORLD_H / float(canvasHeight())
   params["mouseX"] = toJs(canvas_input.getMouseX() * mouseScaleX)
@@ -239,7 +215,6 @@ proc physics(dt: float): Future[void] {.async.} =
 
   await webgpu_compute.runPhysicsFrame(params)
 
-  # Decay blast effect in observable (single source of truth)
   canvas_input.updateInputState()
 
   currentTiming.physicsTimeMs = performanceNow() - tPhysics0
@@ -274,8 +249,8 @@ proc loop(now: float): Future[void] {.async.} =
   #
   # It writes through web_api's ordinary setParam path, so the toured sliders
   # visibly move and the panel keeps telling the truth about the state. Writing
-  # CONFIG directly here would be a frame cheaper and would leave the UI lying
-  # — the climate-drift spec requires the visible path for that reason.
+  # CONFIG directly here would be a frame cheaper and would leave the UI lying,
+  # so the visible path is required.
   #
   # The tour point travels whole. Which parameters it lands on is climate_core's
   # to say (CLIMATE_PARAM_IDS), so this loop never names an axis and an added
@@ -295,10 +270,8 @@ proc loop(now: float): Future[void] {.async.} =
   currentTiming.frameTimeMs = performanceNow() - frameStart
   currentTiming.computeTimeMs = computeTimeMs
 
-  # Fold this frame's timing into the aggregate and accumulate profiling
   runtimeState = runtimeState.withTiming(currentTiming).accumulateProfiling()
 
-  # Update FPS and stats every 500ms
   frameCount = frameCount + 1
   if now - lastFpsTime > 500.0:
     runtimeState = runtimeState.withFps(
@@ -335,7 +308,6 @@ proc loop(now: float): Future[void] {.async.} =
       computeTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs,
       gpuFieldMs, webgpu_compute.latestFieldAliveCells())
 
-  # Reset profiling accumulators every 60 frames
   if runtimeState.profiling.frameCount >= 60:
     runtimeState = runtimeState.resetProfiling()
 
@@ -346,7 +318,6 @@ proc loop(now: float): Future[void] {.async.} =
 # ==============================================================================
 
 proc init(): Future[void] {.async, exportc.} =
-  ## Initialize the application.
   ## Requires WebGPU; there is no fallback path.
 
   # Optional ?n=<count> URL override for profiling runs at a chosen scale
@@ -362,10 +333,8 @@ proc init(): Future[void] {.async, exportc.} =
   if urlParamHas("seed"):
     setRandomSeed(urlParamInt("seed", 0))
 
-  # Allocate shared memory buffers
   buffers.allocateBuffers()
 
-  # Initialize WebGPU (required - no fallback)
   consoleLog(toJs("Initializing WebGPU..."))
   let webgpuResult = await webgpu_init.initWebGPU()
   if not webgpuResult["success"].to(bool):
@@ -376,7 +345,6 @@ proc init(): Future[void] {.async, exportc.} =
 
   consoleLog(toJs("WebGPU device acquired:"), webgpuResult["info"])
 
-  # GPU pass profiling (no-op when timestamp-query is unavailable)
   gpu_profiler.initProfiler()
 
   consoleLog(toJs("Initializing WebGPU compute pipelines..."))
@@ -390,7 +358,6 @@ proc init(): Future[void] {.async, exportc.} =
   useWebGPU = true
   consoleLog(toJs("Physics acceleration: WebGPU compute shaders"))
 
-  # Initialize WebGPU render pipeline (zero-readback rendering)
   consoleLog(toJs("Initializing WebGPU render pipeline..."))
   if not webgpu_render.initWebGPURender():
     consoleError(toJs("WebGPU render pipeline initialization failed."))
@@ -398,7 +365,6 @@ proc init(): Future[void] {.async, exportc.} =
     return
   consoleLog(toJs("WebGPU rendering: ENABLED (zero CPU readback)"))
 
-  # Set up canvas input and lifecycle callbacks
   canvas_input.setInitParticlesCallback(initParticles)
   canvas_input.setResizeParticlesCallback(resizeParticles)
   canvas_input.setResizeCallback(webgpu_render.resize)
@@ -414,13 +380,10 @@ proc init(): Future[void] {.async, exportc.} =
   subscribeSimple(sim_config.worldCouplings, proc(couplings: WorldCouplings) =
     webgpu_compute.setCouplings(couplings))
 
-  # Initialize attraction matrix with random values
   web_api.randomizeMatrix()
 
-  # Initialize particles
   initParticles()
 
-  # Upload particle data to GPU
   consoleLog(toJs("Uploading initial particle data to GPU..."))
   let uploadResult = await webgpu_compute.uploadInitialData(runtimeState.particleCount)
   if not uploadResult["success"].to(bool):
@@ -435,7 +398,6 @@ proc init(): Future[void] {.async, exportc.} =
   if urlParamHas("bloom"):
     web_api.setBloomImpl(urlParamInt("bloom", 0) != 0)
 
-  # Start animation loop
   lastTime = performanceNow()
   lastFpsTime = lastTime
   runtimeState = runtimeState.withRunning(true)
@@ -449,5 +411,4 @@ proc init(): Future[void] {.async, exportc.} =
 # ENTRY POINT
 # ==============================================================================
 
-# Register DOMContentLoaded handler
 domDocument.addEventListener("DOMContentLoaded", proc() = discard init())

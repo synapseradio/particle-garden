@@ -50,15 +50,13 @@ struct VertexOutput {
 fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   var output: VertexOutput;
   output.position = vec4f(POSITIONS[id], 0.0, 1.0);
-  // Convert clip space (-1 to 1) to UV space (0 to 1)
   output.uv = (POSITIONS[id] + 1.0) * 0.5;
-  output.uv.y = 1.0 - output.uv.y;  // Flip Y for texture coordinates
+  output.uv.y = 1.0 - output.uv.y;
   return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
-  // The world the camera looks at, carried by the camera itself.
   let worldSize = vec2f(cam.worldWidth, cam.worldHeight);
 
   // REPROJECT THE TRAIL. The trail texture is in SCREEN space, so without this
@@ -97,9 +95,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
   let prev = textureSample(prevFrame, prevSampler, driftUv);
 
-  // Fade toward transparent (glow shows through from present pass)
   // Higher fadeAmount = MORE of previous frame = LONGER trails
-  // RGB fades toward background tint, alpha fades toward 0
   let bgRgb = vec3f(0.04, 0.04, 0.06);
   let fadedRgb = mix(bgRgb, prev.rgb, params.fadeAmount);
   let fadedAlpha = prev.a * params.fadeAmount;

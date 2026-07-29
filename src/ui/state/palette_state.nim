@@ -67,9 +67,8 @@ func withScheme*(state: PaletteEditorState,
 # SECTION 2: SCHEME ID SERIALIZATION
 # ==============================================================================
 #
-# Stable string ids for DOM button wiring and any future serialization
-# surface. Ids are addressed by string, never by enum ordinal, so reordering
-# PaletteScheme cannot change what an id means.
+# Stable string ids for DOM button wiring, addressed by string rather
+# than enum ordinal so a serialization surface can rely on them.
 
 func schemeId*(scheme: PaletteScheme): string =
   ## The stable id for a palette scheme.

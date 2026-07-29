@@ -1,14 +1,12 @@
-# ==============================================================================
 # WGSL SHADER BUNDLER
-# ==============================================================================
 #
 # This tool preprocesses WGSL shaders by:
 # 1. Resolving //! import directives (module system)
 # 2. Substituting {{PLACEHOLDER}} values from shader_config.nim
-# 3. Validating struct layouts match gpu_types.nim (Phase 2)
+# 3. Generating WGSL struct modules from gpu_types.nim's layout tables.
 #
 # USAGE:
-#   nim c -r tools/wgsl_bundle.nim
+#   nim c -r --path:src tools/wgsl_bundle.nim (or: just shaders)
 #
 # The bundler reads from web/shaders/src/*.wgsl, resolves imports from
 # web/shaders/modules/, and writes bundled output to web/shaders/*.wgsl.
@@ -20,8 +18,6 @@
 # This directive must appear at the start of a line. The module name maps to
 # web/shaders/modules/{name}.wgsl. Imports are topologically sorted and
 # deduplicated.
-#
-# ==============================================================================
 
 import std/[os, strutils, tables, sets, times, hashes]
 import shader_config
@@ -40,9 +36,7 @@ type
     content: string
     imports: seq[string]
 
-# ==============================================================================
 # IMPORT PARSING
-# ==============================================================================
 
 proc parseImports(content: string): seq[string] =
   ## Extract module names from //! import directives.
@@ -57,16 +51,13 @@ proc parseImports(content: string): seq[string] =
         result.add(moduleName)
 
 proc stripImportDirectives(content: string): string =
-  ## Remove //! import lines from shader source.
   var lines: seq[string]
   for line in content.splitLines:
     if not line.strip.startsWith("//! import"):
       lines.add(line)
   result = lines.join("\n")
 
-# ==============================================================================
 # MODULE LOADING
-# ==============================================================================
 
 proc loadModule(name: string, loaded: var Table[string, Module]): Module =
   ## Load a module by name, caching in `loaded` table.
@@ -83,9 +74,7 @@ proc loadModule(name: string, loaded: var Table[string, Module]): Module =
   result.imports = parseImports(result.content)
   loaded[name] = result
 
-# ==============================================================================
 # DEPENDENCY RESOLUTION (Topological Sort)
-# ==============================================================================
 
 proc topologicalSort(modules: Table[string, Module]): seq[string] =
   ## Kahn's algorithm for dependency ordering.
@@ -93,12 +82,10 @@ proc topologicalSort(modules: Table[string, Module]): seq[string] =
   var inDegree: Table[string, int]
   var graph: Table[string, seq[string]]  # dependency -> dependents
 
-  # Initialize in-degree for all modules
   for name in modules.keys:
     if name notin inDegree:
       inDegree[name] = 0
 
-  # Build graph and count in-degrees
   for name, m in modules:
     for dep in m.imports:
       if dep notin graph:
@@ -106,13 +93,11 @@ proc topologicalSort(modules: Table[string, Module]): seq[string] =
       graph[dep].add(name)
       inDegree[name] = inDegree.getOrDefault(name, 0) + 1
 
-  # Start with modules that have no dependencies
   var queue: seq[string]
   for name, deg in inDegree:
     if deg == 0:
       queue.add(name)
 
-  # Process queue
   while queue.len > 0:
     let current = queue.pop
     result.add(current)
@@ -129,15 +114,11 @@ proc topologicalSort(modules: Table[string, Module]): seq[string] =
         missing.add(name)
     quit "Error: Circular dependency detected involving: " & missing.join(", ")
 
-# ==============================================================================
 # PLACEHOLDER SUBSTITUTION
-# ==============================================================================
 
-# Get placeholder map from shader_config.nim (centralized configuration)
 let PLACEHOLDERS = getPlaceholderMap()
 
 proc substitutePlaceholders(code: string, shaderName: string): string =
-  ## Replace {{PLACEHOLDER}} values with configured constants from shader_config.nim.
   result = code
 
   # Shader-specific workgroup size
@@ -145,11 +126,9 @@ proc substitutePlaceholders(code: string, shaderName: string): string =
   if workgroupKey in PLACEHOLDERS:
     result = result.replace("{{WORKGROUP_SIZE}}", PLACEHOLDERS[workgroupKey])
 
-  # All other placeholders from config
   for key, value in PLACEHOLDERS:
     result = result.replace("{{" & key & "}}", value)
 
-  # Check for unreplaced placeholders
   if "{{" in result:
     let startIdx = result.find("{{")
     let endIdx = result.find("}}", startIdx)
@@ -157,9 +136,7 @@ proc substitutePlaceholders(code: string, shaderName: string): string =
       let placeholder = result[startIdx..endIdx+1]
       quit "Error: Unreplaced placeholder in " & shaderName & ": " & placeholder
 
-# ==============================================================================
 # SHADER BUNDLING
-# ==============================================================================
 
 proc bundle(srcPath: string): string =
   ## Bundle a shader with all its dependencies.
@@ -167,11 +144,9 @@ proc bundle(srcPath: string): string =
   let imports = parseImports(content)
   let shaderName = srcPath.extractFilename.replace(".wgsl", "")
 
-  # If no imports, just substitute placeholders and return
   if imports.len == 0:
     return substitutePlaceholders(content, shaderName)
 
-  # Load all required modules (recursive)
   var loaded: Table[string, Module]
   var toProcess = imports
   while toProcess.len > 0:
@@ -182,10 +157,8 @@ proc bundle(srcPath: string): string =
         if dep notin loaded:
           toProcess.add(dep)
 
-  # Topologically sort modules
   let order = topologicalSort(loaded)
 
-  # Build output
   var output = "// =============================================================================\n"
   output &= "// AUTO-GENERATED BY tools/wgsl_bundle.nim - DO NOT EDIT DIRECTLY\n"
   output &= "// =============================================================================\n"
@@ -194,7 +167,6 @@ proc bundle(srcPath: string): string =
   output &= "// Generated: " & $now() & "\n"
   output &= "// =============================================================================\n\n"
 
-  # Add modules in dependency order
   for name in order:
     let m = loaded[name]
     output &= "// ─────────────────────────────────────────────────────────────────────────────\n"
@@ -203,13 +175,11 @@ proc bundle(srcPath: string): string =
     output &= "// ─────────────────────────────────────────────────────────────────────────────\n\n"
     output &= stripImportDirectives(m.content).strip & "\n\n"
 
-  # Add main shader (with imports stripped)
   output &= "// ─────────────────────────────────────────────────────────────────────────────\n"
   output &= "// MAIN SHADER\n"
   output &= "// ─────────────────────────────────────────────────────────────────────────────\n\n"
   output &= stripImportDirectives(content)
 
-  # Substitute placeholders
   result = substitutePlaceholders(output, shaderName)
 
   # Reject WGSL the browser will refuse to parse. The bundle is the last point
@@ -242,9 +212,7 @@ proc bundle(srcPath: string): string =
       "  expected: " & $expectedBindings & "\n" &
       "  got:      " & $declaredBindings
 
-# ==============================================================================
 # INCREMENTAL BUILD SUPPORT
-# ==============================================================================
 
 const PlaceholderSources = [
   "src/shader_config.nim",
@@ -260,24 +228,20 @@ const PlaceholderSources = [
   ## edit ships silently stale shaders.
 
 proc needsRebuild(srcPath, outPath: string): bool =
-  ## Check if shader needs rebuilding based on file modification times.
   if not fileExists(outPath):
     return true
 
   let outMtime = getLastModificationTime(outPath)
 
-  # Check source file
   if getLastModificationTime(srcPath) > outMtime:
     return true
 
-  # Check imported modules
   let content = readFile(srcPath)
   for name in parseImports(content):
     let modPath = ModulesDir / name & ".wgsl"
     if fileExists(modPath) and getLastModificationTime(modPath) > outMtime:
       return true
 
-  # Check the Nim sources that feed placeholder substitution
   for placeholderSource in PlaceholderSources:
     if fileExists(placeholderSource) and
         getLastModificationTime(placeholderSource) > outMtime:
@@ -285,9 +249,7 @@ proc needsRebuild(srcPath, outPath: string): bool =
 
   return false
 
-# ==============================================================================
 # GENERATED STRUCT MODULES
-# ==============================================================================
 # WGSL struct modules generated from the Nim layout tables in gpu_types.nim, the
 # single source of truth. Emitted into ModulesDir before import resolution so a
 # shader can `//! import` them. Kept out of version control (see .gitignore);
@@ -310,7 +272,6 @@ proc structModuleHeader(moduleName, layoutName: string): string =
   "// =============================================================================\n\n"
 
 proc generateStructModules() =
-  ## Regenerate every WGSL struct module owned by gpu_types.nim.
   generateStructModule("sim_params",
     structModuleHeader("sim_params", "SimParamsLayout"),
     toWgslStruct(SimParamsLayout))
@@ -342,21 +303,17 @@ proc generateStructModules() =
     structModuleHeader("overlay_params", "OverlayParamsLayout"),
     toWgslStruct(OverlayParamsLayout))
 
-# ==============================================================================
 # MAIN
-# ==============================================================================
 
 proc main() =
   echo "WGSL Shader Bundler"
   echo "==================="
 
-  # Check directories exist
   if not dirExists(SrcDir):
     echo "Note: Source directory ", SrcDir, " does not exist yet."
     echo "Creating passthrough for existing shaders..."
 
-    # In bootstrap mode, just copy existing shaders
-    # This allows gradual migration
+    # No src/ directory yet: report it and exit without bundling.
     echo "No source shaders found. Run 'nimble all' after migrating shaders to src/."
     return
 

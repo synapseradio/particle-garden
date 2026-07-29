@@ -1,21 +1,9 @@
-# ==============================================================================
-# PARTICLE GARDEN - SIM CONFIG TESTS
-# ==============================================================================
-#
 # Behavioral tests for the typed configuration layer: SimulationState (physics
 # tunables), RenderState (visual tunables), SimConfig (their composition), and
 # couplingsOf, which reads the world's couplings off the strengths rather than
 # storing them. config.nim's createConfig copies these defaults into the flat
 # GPU-facing CONFIG mirror, so this module is the single authoritative home of
 # every default value.
-#
-# Tests prefer relations over scalar pins: each default must lie inside its
-# own config_ranges clamp range (the same constants the sliders and preset
-# schema use), and cross-field identities are asserted directly.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/ui/state/sim_config
@@ -140,8 +128,6 @@ suite "The Couplings Are Read Off The Parameters":
     check couplings.fieldForce == 40.0
 
   test "the shipped world couples forces and chemistry, and no fluid":
-    # The shipped world: colonies that feel each other AND write the field they
-    # live in. The fluid waits at zero behind a slider the panel always shows.
     let couplings = couplingsOf(initSimulationState())
     check couplings.forces > 0.0
     check couplings.deposit > 0.0
@@ -149,9 +135,8 @@ suite "The Couplings Are Read Off The Parameters":
     check couplings.fluid == 0.0
 
   test "every coupling strength can be turned off through its own range":
-    # Design D13 as an executable fact rather than a claim about ranges. A
-    # strength whose minimum sits above zero cannot express "off", leaving its
-    # world with a coupling the user cannot remove.
+    # A strength whose minimum sits above zero cannot express "off", leaving
+    # its world with a coupling the user cannot remove.
     var silent = initSimulationState()
     silent.forceStrength = FORCE_STRENGTH_MIN
     silent.fluidStrength = FLUID_STRENGTH_MIN
@@ -170,7 +155,7 @@ suite "The Couplings Are Read Off The Parameters":
 
 
 suite "The Trails Toggle Always Produces Trails":
-  # THE DEFECT THIS PINS. Trails are two controls over one effect: a boolean
+  # The defect this pins: trails are two controls over one effect: a boolean
   # gating the fade pass, and a length deciding how much of the previous frame
   # that pass keeps. At length 0 the pass keeps nothing, so switching the
   # toggle on runs a pass that clears — a control that does nothing, from the

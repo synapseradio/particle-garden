@@ -29,31 +29,18 @@
 // field-deposit.wgsl, so resolve needs no FieldParams uniform — it just decodes
 // and adds. Binding one anyway would be pruned from the auto layout as unused.
 //
-// BINDING MANIFEST:
-// +-------+---------------------------------------+--------------+--------+
-// | Bind  | Shader Type                           | Resource     | Access |
-// +-------+---------------------------------------+--------------+--------+
-// |   0   | texture_2d<f32>                       | fieldA view  | sample |
-// |   1   | texture_storage_2d<rgba16float,write> | fieldB view  | write  |
-// |   2   | storage atomic<i32>                   | fieldDeposit | r/w    |
-// |   3   | storage atomic<u32>                   | aliveCells   | r/w    |
-// +-------+---------------------------------------+--------------+--------+
-//
-// Binding 3: one u32 census the frame clears at its top; each cell above the
-// aliveness threshold adds one. Written here because this is the per-cell
-// pass that already reads the resolved inhibitor. One frame stale.
 // =============================================================================
 
 //! import fixed_point
 //! import field_grid
 
 @group(0) @binding(0) var srcField: texture_2d<f32>;
-// rgba16float, not rg16float: WebGPU does not permit rg16float as a write-only
-// storage texture (it is not in the storage-capable format list). rgba16float is
-// the nearest storage+sampled+filterable half-float format; only .rg is used
-// (.r = activator, .g = inhibitor), .ba are ignored padding.
+// rgba16float format rationale: field_grid.wgsl.
 @group(0) @binding(1) var dstField: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var<storage, read_write> fieldDeposit: array<atomic<i32>>;
+// One u32 census the frame clears at its top; each cell above the aliveness
+// threshold adds one. Written here because this is the per-cell pass that
+// already reads the resolved inhibitor. One frame stale.
 @group(0) @binding(3) var<storage, read_write> aliveCells: array<atomic<u32>>;
 
 const RD_DEPOSIT_CELL_MAX: f32 = {{RD_DEPOSIT_CELL_MAX}};

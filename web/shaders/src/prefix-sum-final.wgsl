@@ -5,15 +5,6 @@
  * This completes the global exclusive prefix sum.
  *
  * Final result: gridOffsets[i] = sum of gridCounts[0..i-1]
- *
- * BINDING MANIFEST:
- * ┌─────────┬──────────────────────────┬─────────────────┬────────┐
- * │ Binding │ Shader Type              │ JS Buffer       │ Access │
- * ├─────────┼──────────────────────────┼─────────────────┼────────┤
- * │ 0       │ uniform ScanParams       │ scanParams      │ read   │
- * │ 1       │ storage array<u32>       │ gridOffsets     │ r/w    │
- * │ 2       │ storage array<u32>       │ blockOffsets    │ read   │
- * └─────────┴──────────────────────────┴─────────────────┴────────┘
  */
 
 //! import scan_params
@@ -33,8 +24,6 @@ fn main(
     return;
   }
 
-  // Add the block's offset to this element's local offset
-  // blockOffsets[blockIdx] = sum of all blocks before blockIdx
   let blockIdx = workgroupId.x;
   offsets[gid] = offsets[gid] + blockOffsets[blockIdx];
 }

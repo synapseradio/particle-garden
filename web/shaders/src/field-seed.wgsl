@@ -27,14 +27,6 @@
 // reads it. Seeding both would be wasted work, not extra safety.
 //
 // CHANNELS: .r = activator (A), .g = inhibitor (B).
-//
-// BINDING MANIFEST:
-// +-------+---------------------------------------+-------------+--------+
-// | Bind  | Shader Type                           | Resource    | Access |
-// +-------+---------------------------------------+-------------+--------+
-// |   0   | texture_storage_2d<rgba16float,write> | fieldA view | write  |
-// |   1   | uniform FieldParams                   | fieldParams | read   |
-// +-------+---------------------------------------+-------------+--------+
 // =============================================================================
 
 //! import field_params
@@ -49,9 +41,8 @@ const SEED_CORE_ACTIVATOR: f32 = {{RD_SEED_CORE_ACTIVATOR}};
 const SEED_CORE_INHIBITOR: f32 = {{RD_SEED_CORE_INHIBITOR}};
 
 // The initial condition for the two reserved state channels a multi-channel
-// reaction would occupy. The ping-pong textures are rgba16float because WebGPU
-// does not permit rg16float as a write-only storage format, so these channels
-// are already allocated at no additional cost. Gray-Scott uses neither.
+// reaction would occupy. These channels ride along on the rgba16float format
+// field_grid.wgsl documents, at no additional cost. Gray-Scott uses neither.
 const RESERVED_CHANNEL_B_INITIAL: f32 = 0.0;
 const RESERVED_CHANNEL_A_INITIAL: f32 = 1.0;
 

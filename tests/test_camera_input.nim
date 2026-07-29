@@ -1,20 +1,11 @@
-# ==============================================================================
-# PARTICLE GARDEN - CAMERA INPUT TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/ui/input/wheel_handler.nim, pan_handler.nim and
 # key_handler.nim: the pure part of navigation. What is tested here is what a
 # user would otherwise have to discover by scrolling, dragging and typing at a
 # running app and noticing that something felt wrong.
 #
-# The camera maths itself lives in tests/test_camera_core.nim. These tests cover
-# only the input layer's own decisions: which gesture a wheel event names, how a
-# screen-pixel delta becomes a world offset, when a drag is in progress, which
-# key means what, and what each binding anchors on.
-#
-# Run with: just test
-#
-# ==============================================================================
+# Input-layer decisions only: gesture classification, screen-to-world
+# scaling, drag state, key bindings. Camera math itself is
+# tests/test_camera_core.nim.
 
 import std/unittest
 import ../src/camera_core
@@ -46,7 +37,6 @@ func screenPixelsMoved(before, after: Camera): tuple[x, y: float32] =
 
 func worldUnderPointer(camera: Camera, pixelX, pixelY: float32):
     tuple[x, y: float32] =
-  ## The world point a canvas pixel is looking at, through a camera.
   screenUvToWorld(pixelX / VIEW_W_PX, pixelY / VIEW_H_PX, camera,
     WORLD_W, WORLD_H)
 
@@ -61,7 +51,7 @@ suite "The Wheel Zooms At The Cursor":
     check wheelZoomFactor(0.0) == 1.0
 
   test "the zoom factor composes: two half scrolls equal one whole":
-    # THE REASON THE RATE IS EXPONENTIAL. An additive rate would make fast
+    # The reason the rate is exponential: an additive rate would make fast
     # scrolling land somewhere different from slow scrolling over the same
     # total distance, so the view would depend on how quickly you moved.
     let whole = wheelZoomFactor(120.0)
@@ -78,7 +68,6 @@ suite "The Wheel Zooms At The Cursor":
     let event = WheelEventData(deltaY: -100.0, clipX: ANCHOR_X, clipY: ANCHOR_Y)
     let after = handleWheel(before, event, WORLD_W, WORLD_H, ZOOM_MIN, ZOOM_MAX)
 
-    # The world point the anchor named before the zoom, and after it.
     let worldBeforeX = before.centerX + ANCHOR_X.float32 * WORLD_W /
       (2.0'f32 * before.zoom)
     let worldAfterX = after.centerX + ANCHOR_X.float32 * WORLD_W /
@@ -86,8 +75,6 @@ suite "The Wheel Zooms At The Cursor":
     check abs(worldBeforeX - worldAfterX) < 0.01'f32
 
   test "wheel zoom clamps to the configured range at both ends":
-    # A very large scroll in each direction must land exactly on the bound,
-    # not past it and not short of it.
     var zoomedOut = testCamera()
     for _ in 0 .. 200:
       zoomedOut = handleWheel(zoomedOut,
@@ -162,7 +149,7 @@ suite "Scrolling Pans The View":
     check right.centerY == before.centerY
 
   test "one scroll travels the same screen distance at every zoom":
-    # THE PROPERTY THE PAN SCALING EXISTS FOR. A world-fixed step would throw
+    # The property the pan scaling exists for: a world-fixed step would throw
     # the view across the screen at 8x and barely register at 1x; what a user
     # judges is how far the picture moved under their fingers, so the world
     # offset divides by zoom and the screen distance comes out constant.
@@ -266,7 +253,7 @@ suite "Middle-Button Drag Pans The World Under The Pointer":
     check after.centerY < before.centerY
 
   test "the world point under the pointer stays under the pointer while dragging":
-    # WHAT MAKES A DRAG READ AS GRABBING THE WORLD rather than as nudging a
+    # What makes a drag read as grabbing the world rather than as nudging a
     # slider: the thing held onto is the thing that follows the hand.
     const START_X = 400.0'f32
     const START_Y = 300.0'f32
@@ -375,7 +362,7 @@ suite "Keyboard Navigation Moves The View":
     check abs(after.centerY - before.centerY) < 1e-3'f32
 
   test "reset returns exactly to the default view from anywhere":
-    # THE BINDING THAT CANNOT GET LOST. Every other key composes, so a user who
+    # The binding that cannot get lost: every other key composes, so a user who
     # has navigated somewhere confusing needs one that does not.
     var camera = testCamera()
     for _ in 0 .. 20:

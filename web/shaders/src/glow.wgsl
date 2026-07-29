@@ -91,16 +91,16 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let velocityNorm = clamp(speed / max(params.maxVelocity, 0.0001), 0.0, 1.0);
   output.velocityNorm = velocityNorm;
 
-  // Glow radius coupled to velocity and sweep
-  // At sweep=0 or velocity=0: radius = baseSize * glowRadiusScale
-  // At sweep=1 and max velocity: 50% larger
+  // Glow radius coupled to velocity, scaled by params.velocityGlowScale.
+  // At velocityGlowScale=0 or velocity=0: radius = baseSize * glowRadiusScale.
+  // At velocityGlowScale=1 and max velocity: 50% larger.
   let scale = params.resolution / params.worldSize;
   let baseRadius = params.baseSize * params.glowRadiusScale;
   let velocityBoost = velocityNorm * params.velocityGlowScale * 0.5;
   let glowRadius = baseRadius * (1.0 + velocityBoost);
   // Reaches clip space by the same path render.wgsl's offset takes, so glow
   // radius tracks particle size and trail length rather than drifting out of
-  // step with them (design D9: all three move together or none does).
+  // step with them — all three move together or none does.
   let worldOffset = offset * glowRadius / scale;
 
   // Species tint (colors has vertex-only visibility; interpolate to fragment)

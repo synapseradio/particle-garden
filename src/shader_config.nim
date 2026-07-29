@@ -16,7 +16,6 @@ type
   ShaderProfile* = enum
     ## Build profile affecting shader configuration
     spProduction    ## Validated defaults
-    spDevelopment   ## Debug-friendly, may enable additional checks
 
   WorkgroupConfig* = object
     ## Workgroup sizes for each compute shader.
@@ -28,7 +27,7 @@ type
     prefixSumLocal*: int  ## prefix-sum-local.wgsl: cells per workgroup (must match BLOCK_SIZE)
     prefixSumBlocks*: int ## prefix-sum-blocks.wgsl: blocks per workgroup
     prefixSumFinal*: int  ## prefix-sum-final.wgsl: cells per workgroup
-    # Reaction-diffusion field passes (S8). The deposit/force passes dispatch
+    # Reaction-diffusion field passes. The deposit/force passes dispatch
     # per particle (1D, like the physics passes); resolve/rd-step dispatch per
     # field cell (2D), so their workgroup is a fieldStepX x fieldStepY tile.
     fieldDeposit*: int    ## field-deposit.wgsl: particles per workgroup (1D)
@@ -103,8 +102,8 @@ const
     blastRangeSq: 40000.0,        # 200px blast radius
     densitySmoothFactor: 0.7,     # Smooth density transitions
     fixedPointScale: 65536.0,     # 2^16 for atomic accumulation
-    glowVelocityLogScale: 5.0,    # These eight reproduce glow.wgsl's former
-    glowVelocityBase: 0.5,        # hard-coded curve constants exactly, so the
+    glowVelocityLogScale: 5.0,    # These eight are calibrated to match
+    glowVelocityBase: 0.5,        # glow.wgsl's shipped curve exactly, so the
     glowDensityScale: 0.15,       # default appearance is unchanged.
     glowDensityMin: 0.05,
     glowDensityMax: 1.0,
@@ -117,7 +116,7 @@ const
                                   # others: the stability ceiling is fitted
                                   # against this gain, so a change on one side
                                   # alone leaves the ceiling claiming a
-                                  # boundary the fluid no longer has.
+                                  # boundary the fluid does not actually have.
     sphMaxPressureAccel: 5000.0,  # Mirrors sph_core.SPH_MAX_PRESSURE_ACCEL.
     sphMaxDensityRatio: 2.0,      # Tait is a 7th power: without a ceiling on its
                                   # input, a compressed cluster feeds its own

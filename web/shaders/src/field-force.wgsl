@@ -20,8 +20,7 @@
 // collapse mechanism. Descending one does not. config_ranges bounds tropism
 // asymmetrically for that reason (TROPISM_MAX is half of |TROPISM_MIN|), and
 // tests/test_field_core.nim measures the collapse point the bound sits below.
-// The shipped default is -1.0: full down-gradient, which is what this pass did
-// before species chemistry existed.
+// The shipped default is -1.0: full down-gradient.
 //
 // INDEXING + OUTPUT:
 // Reads particles[] and writes velocityDeltaFixed[] in ORIGINAL index space
@@ -32,18 +31,6 @@
 // (sim_registry.buildFrame). This mirrors the fixed-point contract forces.wgsl and
 // integrate.wgsl share. A field-only world runs no bin-scatter, so the sorted
 // buffer is stale and never referenced.
-//
-// BINDING MANIFEST:
-// +-------+---------------------------+-------------------+--------+
-// | Bind  | Shader Type               | JS Buffer/View    | Access |
-// +-------+---------------------------+-------------------+--------+
-// |   0   | uniform GridParams        | gridParams        | read   |
-// |   1   | storage array<Particle>   | particlesA        | read   |
-// |   2   | texture_2d<f32>           | fieldA view       | sample |
-// |   3   | storage array<atomic<i32>> | velocityDelta    | r/w    |
-// |   4   | uniform FieldParams       | fieldParams       | read   |
-// |   5   | uniform SpeciesChemistry  | speciesChemistry  | read   |
-// +-------+---------------------------+-------------------+--------+
 // =============================================================================
 
 //! import particle
@@ -70,10 +57,8 @@ fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   let particle = particles[particleIdx];
 
-  // Particle world position -> field cell (field spans the full world rect),
-  // then the central-difference gradient of the inhibitor channel there.
   let cell = fieldCellFor(particle.pos,
-    vec2<f32>(grid.canvasWidth, grid.canvasHeight));
+    vec2<f32>(grid.worldWidth, grid.worldHeight));
   let gradient = fieldInhibitorGradient(field, cell);
 
   // This species' signed tropism. Packed four species per vec4, the same

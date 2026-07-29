@@ -1,4 +1,3 @@
-# Package
 version       = "2.0.0"
 author        = "Particle Garden"
 description   = "Particle life simulation with WebGPU compute shaders"
@@ -7,29 +6,20 @@ srcDir        = "src"
 bin           = @["main"]
 binDir        = "."
 
-# Dependencies
 requires "nim >= 2.0.0 & < 3.0.0"
 # Pin to webui 2.4.2 tag (commit hash for reproducibility)
 # Tag 2.4.2 = commit 552a3e3 (upstream version string says 2.4.0.0)
 requires "webui#552a3e3"
 
-# Compiler flags for style and warning enforcement
 const styleFlags = "--styleCheck:error --styleCheck:usages"
 # Single line required - multiline strings with backslash break on Windows CI
 const warningFlags = "--warningAsError:Deprecated --warningAsError:BareExcept --warningAsError:CStringConv --warningAsError:EnumConv --warningAsError:HoleEnumConv --warningAsError:SmallLshouldNotBeUsed --warningAsError:ProveInit --warningAsError:UnusedImport --warningAsError:Effect --hint:XDeclaredButNotUsed:on"
 
-# Combined quality flags for all builds
 const qualityFlags = styleFlags & " " & warningFlags
 
-# JS backend flags (for nim js builds)
 const jsFlags = "-d:release " & qualityFlags
 
-# Native backend flags (for nim c builds)
 const nativeFlags = "-d:release --opt:speed " & qualityFlags
-
-# Release flags - optimized builds with runtime checks preserved
-const jsReleaseFlags = "-d:release " & qualityFlags
-const nativeReleaseFlags = "-d:release --opt:speed " & qualityFlags
 
 # Windows static linking flags - eliminate VCRUNTIME140.dll dependency
 # Uses MinGW static linking to create portable executables
@@ -58,11 +48,10 @@ task release, "Build optimized release":
   echo "Bundling shaders..."
   exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
   echo "Building app..."
-  exec "nim js " & jsReleaseFlags & " --out:web/app.js src/app.nim"
+  exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
   echo "Building native app..."
-  # Add static linking on Windows to avoid VCRUNTIME140.dll dependency
   when defined(windows):
-    exec "nim c " & nativeReleaseFlags & " " & windowsStaticFlags & " --out:main src/main.nim"
+    exec "nim c " & nativeFlags & " " & windowsStaticFlags & " --out:main src/main.nim"
   else:
-    exec "nim c " & nativeReleaseFlags & " --out:main src/main.nim"
+    exec "nim c " & nativeFlags & " --out:main src/main.nim"
   echo "Release build complete. Run with: ./main"

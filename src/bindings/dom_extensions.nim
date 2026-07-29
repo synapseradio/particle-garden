@@ -25,10 +25,8 @@ from std/jsffi import JsObject
 
 type
   HTMLElement* = Element
-    ## Alias for Element from std/dom
 
   HTMLInputElement* = InputElement
-    ## Alias for InputElement from std/dom
 
 # ==============================================================================
 # CANVAS ELEMENT - Not in std/dom
@@ -59,39 +57,33 @@ type
     offsetY* {.importjs: "offsetY".}: float
       ## Cursor y relative to the target element's padding edge.
     ctrlKey* {.importjs: "ctrlKey".}: bool
-      ## Whether control was held. A trackpad PINCH also arrives with this set
-      ## and no key touched: the gesture reaches a browser runtime only as a
-      ## ctrl-wheel event, so this field is how pinch-to-zoom is detected.
+      ## Whether control was held. A trackpad pinch also arrives with this set
+      ## and no key touched — a browser reports pinch gestures only as
+      ## ctrl-wheel events, which is how pinch-to-zoom is detected here.
+      ## https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/ctrlKey
     metaKey* {.importjs: "metaKey".}: bool
       ## Whether cmd was held, which is the macOS spelling of the same intent.
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: WheelEvent)) {.importjs: "#.addEventListener(#, #)".}
-  ## Add event listener with WheelEvent callback
 
 proc addNonPassiveEventListener*(et: EventTarget, event: cstring, handler: proc(e: WheelEvent)) {.importjs: "#.addEventListener(#, #, {passive: false})".}
-  ## Add a WheelEvent listener that is allowed to preventDefault.
-  ##
-  ## A passive listener cannot: the browser drops the preventDefault call and
+  ## A passive listener cannot preventDefault: the browser drops the call and
   ## scrolls or zooms the page anyway, reporting nothing anywhere. Element
   ## targets default to non-passive, so this states the choice rather than
   ## inheriting it — and it states it at the one place a later move of the
   ## listener to window or document, where that default flips, would otherwise
   ## break the gesture in silence.
+  ## https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
 
 proc getContext*(canvas: HTMLCanvasElement, contextType: cstring): JsObject {.importjs: "#.getContext(#)".}
-  ## Get a rendering context from canvas (e.g., "2d")
 
 proc getContext*(canvas: HTMLCanvasElement, contextType: cstring, options: JsObject): JsObject {.importjs: "#.getContext(#, #)".}
-  ## Get a rendering context with options
 
 proc toDataURL*(canvas: HTMLCanvasElement): cstring {.importjs: "#.toDataURL()".}
-  ## Export canvas to data URL (default PNG)
 
 proc toDataURL*(canvas: HTMLCanvasElement, mimeType: cstring): cstring {.importjs: "#.toDataURL(#)".}
-  ## Export canvas to data URL with specified MIME type
 
 proc toDataURL*(canvas: HTMLCanvasElement, mimeType: cstring, quality: float): cstring {.importjs: "#.toDataURL(#, #)".}
-  ## Export canvas to data URL with MIME type and quality
 
 # ==============================================================================
 # GLOBAL BINDINGS - Named domDocument/domWindow to avoid conflicts
@@ -109,23 +101,17 @@ var domWindow* {.importjs: "window", nodecl.}: Window
 
 # No-argument callbacks
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc()) {.importjs: "#.addEventListener(#, #)".}
-  ## Add event listener with no-argument callback
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(), useCapture: bool) {.importjs: "#.addEventListener(#, #, #)".}
-  ## Add event listener with no-argument callback and capture option
 
 # Specific event type callbacks
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: Event)) {.importjs: "#.addEventListener(#, #)".}
-  ## Add event listener with Event callback
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: MouseEvent)) {.importjs: "#.addEventListener(#, #)".}
-  ## Add event listener with MouseEvent callback
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: TouchEvent)) {.importjs: "#.addEventListener(#, #)".}
-  ## Add event listener with TouchEvent callback
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: KeyboardEvent)) {.importjs: "#.addEventListener(#, #)".}
-  ## Add event listener with KeyboardEvent callback
 
 # ==============================================================================
 # CLASSLIST EXTENSIONS - std/dom lacks force parameter
@@ -140,7 +126,6 @@ proc setClass*(c: ClassList, class: cstring, present: bool): bool {.importjs: "#
 # ==============================================================================
 
 proc forEach*(elements: seq[Element], callback: proc(el: Element)) {.importjs: "#.forEach(#)".}
-  ## Iterate over elements from querySelectorAll
 
 # ==============================================================================
 # ELEMENT EXTENSIONS - dataset, etc.
@@ -154,13 +139,11 @@ proc dataset*(el: Element): JsObject {.importjs: "#.dataset".}
 # ==============================================================================
 
 proc toHTMLInputElement*(el: Element): HTMLInputElement {.inline.} =
-  ## Cast Element to HTMLInputElement
   cast[HTMLInputElement](el)
 
 proc toHTMLCanvasElement*(el: Element): HTMLCanvasElement {.inline.} =
-  ## Cast Element to HTMLCanvasElement
   cast[HTMLCanvasElement](el)
 
 proc toHTMLElement*(el: Element): HTMLElement {.inline.} =
-  ## Cast Element to HTMLElement (identity since HTMLElement = Element)
+  ## Identity cast since HTMLElement = Element.
   cast[HTMLElement](el)

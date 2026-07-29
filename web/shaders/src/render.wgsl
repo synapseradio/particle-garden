@@ -13,16 +13,6 @@
 // one Particle struct instead of 4 separate buffer reads. This reduces binding
 // count from 5 to 2 and improves cache locality.
 //
-// BINDING MANIFEST:
-// +-------+---------------------------+-----------------+--------+
-// | Bind  | Shader Type               | JS Buffer       | Access |
-// +-------+---------------------------+-----------------+--------+
-// |   0   | storage array<Particle>   | particles       | read   |
-// |   1   | uniform RenderParams      | renderParams    | read   |
-// |   2   | uniform array<vec4f, 6>   | colors          | read   |
-// |   3   | texture_2d<f32>           | fieldA view     | load   |
-// +-------+---------------------------+-----------------+--------+
-//
 // THE FIELD LIGHTS THE PARTICLES. Binding 3 is the reaction-diffusion field,
 // read in the VERTEX stage at each particle's own cell, so a particle standing
 // in a bright region of the pattern is lit by it. This is the one stage that
@@ -96,30 +86,23 @@ struct VertexOutput {
 fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   var output: VertexOutput;
 
-  // Particle index = vertex_index / 6, quad corner = vertex_index % 6
   let particleId = id / 6u;
   let cornerId = id % 6u;
 
-  // Read particle data from AoS buffer (all data in one read!)
   let p = particles[particleId];
 
-  // Get quad corner offset (unit quad, -1 to 1)
   let cornerOffset = OFFSETS[cornerId];
 
-  // Calculate point size based on density using smooth exponential decay
-  // At density=0: sizeMod = 3.0, as density->inf: sizeMod -> 1.3
   let sizeMod = MIN_SIZE_MULTIPLIER + (MAX_SIZE_MULTIPLIER - MIN_SIZE_MULTIPLIER) * exp(-p.density * SIZE_DECAY_RATE);
   let pointSize = params.baseSize * sizeMod;
   let halfSize = pointSize * 0.5;
 
-  // Scale from world to screen space
   let scale = params.resolution / params.worldSize;
 
   // Motion blur: elongate quad in velocity direction
   let speed = length(p.vel);
   let hasMotion = speed > 0.001 && params.trailLengthScale > 0.0;
 
-  // Compute velocity-aligned coordinate system
   let velDir = select(vec2f(1.0, 0.0), p.vel / speed, hasMotion);
   let velPerp = vec2f(-velDir.y, velDir.x);
 
@@ -155,7 +138,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // Compute world offset using velocity-aligned axes. Particle size and trail
   // length both reach clip space through this one offset, so they scale
-  // together by construction rather than by a shared factor (design D9).
+  // together by construction rather than by a shared factor.
   let worldOffset = (velDir * alongVel + velPerp * acrossVel) / scale;
 
   // Transform to clip space through the camera, drawing the particle at its
@@ -181,7 +164,6 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let zDepth = speciesBase + particleHash * speciesBandSize * 0.9;  // Stay within band
   output.position = vec4f(normalizedPos.x, -normalizedPos.y, zDepth, 1.0);
 
-  // Pass offset for circle/capsule shape calculation in fragment shader
   // When elongated, we need to adjust offset to maintain circular ends
   output.offset = cornerOffset;
 
@@ -193,10 +175,8 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   output.alongN = alongVel / halfSize;
   output.elongN = elongation / halfSize;
 
-  // Pass density for glow intensity calculation
   output.density = p.density;
 
-  // Look up species color from uniform buffer
   let speciesIdx = min(p.species, 5u);
   let speciesColor = colors[speciesIdx].rgb;
 
@@ -255,7 +235,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let t = clamp((input.trailPos + 1.0) * 0.5, 0.0, 1.0);
   let tailFade = sqrt(t);  // Soft falloff curve: sqrt gives gentle fade
 
-  // Combine shape alpha with trail taper
   let alpha = shapeAlpha * tailFade;
 
   if (alpha <= 0.0) {

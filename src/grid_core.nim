@@ -34,10 +34,11 @@ func computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
   ##
   ## Returns:
   ##   gridW, gridH - Grid dimensions (clamped to [1, MAX_GRID])
-  ##   cellSize - Actual cell size (equals interactionRadius)
+  ##   cellSize - max(interactionRadius, 16)
   ##
-  ## Cell size equals interaction radius - the classic spatial hash approach.
-  ## 3×3 stencil covers all interactions. No LOD artifacts.
+  ## Classic spatial hash: cellSize tracks the interaction radius so a 3×3
+  ## stencil covers all interactions, no LOD artifacts. Floored at 16 below
+  ## that.
   ##
   let cellSize = max(interactionRadius, 16)
 
@@ -60,13 +61,7 @@ func computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
 
 func computeInverseCellDims*(gridW, gridH: int;
     canvasW, canvasH: float): tuple[invCellW: float, invCellH: float] =
-  ## Compute inverse cell dimensions for efficient position-to-cell mapping.
-  ##
-  ## gridW, gridH - Grid dimensions
-  ## canvasW, canvasH - Canvas dimensions
-  ##
   ## Returns (gridW/canvasW, gridH/canvasH) for multiplication instead of division.
-  ##
   result = (
     invCellW: float(gridW) / canvasW,
     invCellH: float(gridH) / canvasH
@@ -79,15 +74,7 @@ func computeInverseCellDims*(gridW, gridH: int;
 
 func positionToCellIndex*(px, py: float; gridW, gridH: int;
     invCellW, invCellH: float): int =
-  ## Map a particle position to a cell index.
-  ##
-  ## px, py - Particle position
-  ## gridW, gridH - Grid dimensions
-  ## invCellW, invCellH - Inverse cell dimensions (from computeInverseCellDims)
-  ##
-  ## Returns linear cell index in [0, gridW*gridH - 1].
   ## Out-of-bounds positions are clamped to valid cells.
-  ##
   var cx = int(px * invCellW)
   var cy = int(py * invCellH)
 
@@ -106,13 +93,6 @@ func positionToCellIndex*(px, py: float; gridW, gridH: int;
 
 
 func cellIndexToCoords*(cellIdx, gridW: int): tuple[cx: int, cy: int] =
-  ## Convert a linear cell index back to cell coordinates.
-  ##
-  ## cellIdx - Linear cell index
-  ## gridW - Grid width
-  ##
-  ## Returns (cx, cy) cell coordinates.
-  ##
   result = (cx: cellIdx mod gridW, cy: cellIdx div gridW)
 
 
@@ -121,13 +101,7 @@ func cellIndexToCoords*(cellIdx, gridW: int): tuple[cx: int, cy: int] =
 # ==============================================================================
 
 func computePrefixSum*(counts: openArray[int]): seq[int] =
-  ## Compute exclusive prefix sum of cell counts.
-  ##
-  ## counts - Array of particle counts per cell
-  ##
-  ## Returns array of offsets where each offset[i] = sum of counts[0..i-1].
-  ## This gives the starting index in the sorted buffer for each cell.
-  ##
+  ## Gives the starting index in the sorted buffer for each cell.
   result = newSeq[int](counts.len)
   var offset = 0
   for idx in 0 ..< counts.len:
@@ -137,19 +111,6 @@ func computePrefixSum*(counts: openArray[int]): seq[int] =
 
 func validateGridOffsets*(offsets, counts: openArray[int];
     particleCount: int): bool =
-  ## Validate that grid offsets are consistent with counts.
-  ##
-  ## offsets - Prefix sum offsets
-  ## counts - Particle counts per cell
-  ## particleCount - Total number of particles
-  ##
-  ## Returns true if:
-  ##   - All offsets are non-negative
-  ##   - offsets[i] + counts[i] <= particleCount for all i
-  ##   - Offsets form a contiguous exclusive prefix sum:
-  ##     offsets[i] == offsets[i-1] + counts[i-1] for every i > 0
-  ##   - Sum of counts equals particleCount
-  ##
   ## The contiguity check is what separates a healthy prefix sum from a corrupted
   ## bin-scatter. A gap leaves sorted-buffer slots unclaimed, and an overlap makes
   ## two cells share slots. Both can satisfy the per-cell bound and the total-count
@@ -177,12 +138,8 @@ func validateGridOffsets*(offsets, counts: openArray[int];
 # ==============================================================================
 
 func isValidCellIndex*(cellIdx, gridW, gridH: int): bool =
-  ## Check if a cell index is valid.
-  ##
   result = cellIdx >= 0 and cellIdx < gridW * gridH
 
 
 func isValidCellCoords*(cx, cy, gridW, gridH: int): bool =
-  ## Check if cell coordinates are valid.
-  ##
   result = cx >= 0 and cx < gridW and cy >= 0 and cy < gridH

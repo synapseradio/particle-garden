@@ -16,34 +16,7 @@
 //
 // TEMPORAL SMOOTHING:
 // Raw density can flicker frame-to-frame as particles move in/out of range.
-// We use exponential moving average: 70% previous + 30% new.
-// Think of it like your eyes adjusting to light - smooth transitions.
-//
-// ALGORITHM:
-// 1. Read particle from ORIGINAL buffer (in-place update)
-// 2. Read velocity delta (fixed-point i32 pair) → convert to float
-// 3. Read density delta (fixed-point i32) → convert to float
-// 4. Apply velocity delta with friction
-// 5. Apply velocity capping (logarithmic soft cap)
-// 6. Apply density temporal smoothing
-// 7. Update position: newPos = oldPos + newVel
-// 8. Apply toroidal wrapping
-// 9. Write updated particle back (in-place)
-//
-// BINDING MANIFEST:
-// +-------+---------------------------+-------------------+--------+
-// | Bind  | Shader Type               | JS Buffer         | Access |
-// +-------+---------------------------+-------------------+--------+
-// |   0   | uniform IntegrationParams | integrationParams | read   |
-// |   1   | storage array<Particle>   | particles         | r/w    |
-// |   2   | storage array<i32>        | velocityDelta     | read   |
-// |   3   | storage array<i32>        | densityDelta      | read   |
-// |   4   | storage array<i32>        | sphDensityDelta   | read   |
-// |   5   | storage array<i32>        | crowdDensityDelta | read   |
-// +-------+---------------------------+-------------------+--------+
-// TOTAL: 5 storage buffers (well under 8-buffer limit)
-//
-// THREAD MAPPING: One particle per thread (original index space)
+// DENSITY_SMOOTH_FACTOR below sets the exponential-moving-average blend.
 // =============================================================================
 
 //! import particle
@@ -77,22 +50,16 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
     return;
   }
 
-  // Read current particle state (AoS: all data in one read)
   var p = particles[particleIdx];
 
-  // Read velocity delta from fixed-point interleaved buffer
   let deltaVxFixed = velocityDeltaFixed[particleIdx * 2u];
   let deltaVyFixed = velocityDeltaFixed[particleIdx * 2u + 1u];
   let deltaVx = f32(deltaVxFixed) * INV_FIXED_POINT_SCALE;
   let deltaVy = f32(deltaVyFixed) * INV_FIXED_POINT_SCALE;
 
-  // Read density delta from fixed-point buffer (symmetric accumulation from forces)
-  // Both particles in each pair received contributions via atomics
   let deltaDensityFixed = densityDeltaFixed[particleIdx];
   let deltaDensity = f32(deltaDensityFixed) * INV_FIXED_POINT_SCALE;
 
-  // Apply density temporal smoothing
-  // Prevents flickering as particles move in/out of interaction radius
   let smoothedDensity = p.density * DENSITY_SMOOTH_FACTOR + deltaDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
   p.density = smoothedDensity;
 
@@ -121,26 +88,21 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var newVelX = (p.vel.x + deltaVx) * params.friction;
   var newVelY = (p.vel.y + deltaVy) * params.friction;
 
-  // Logarithmic velocity capping to reduce jank in high-activity areas
-  // Soft cap: velocities above threshold are compressed logarithmically
+  // Logarithmic velocity capping reduces jank in high-activity areas.
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY);
-  let softCapThreshold = params.maxVelocity * 0.5;  // Start compressing at half max
+  let softCapThreshold = params.maxVelocity * 0.5;
   if (speed > softCapThreshold && speed > 0.0) {
     let excess = speed - softCapThreshold;
-    // log(1 + x) gives smooth compression
     let compressedSpeed = softCapThreshold + log(1.0 + excess);
-    // Cap at maxVelocity as hard limit
     let cappedSpeed = min(compressedSpeed, params.maxVelocity);
     let scale = cappedSpeed / speed;
     newVelX *= scale;
     newVelY *= scale;
   }
 
-  // Update velocity
   p.vel.x = newVelX;
   p.vel.y = newVelY;
 
-  // Update position
   var newPosX = p.pos.x + newVelX;
   var newPosY = p.pos.y + newVelY;
 
@@ -157,10 +119,8 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
     newPosY -= params.worldHeight;
   }
 
-  // Update position
   p.pos.x = newPosX;
   p.pos.y = newPosY;
 
-  // Write back updated particle (AoS: all data in one write)
   particles[particleIdx] = p;
 }

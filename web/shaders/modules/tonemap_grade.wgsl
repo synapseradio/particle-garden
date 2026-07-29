@@ -15,6 +15,7 @@ fn luminance(color: vec3f) -> f32 {
 }
 
 // Narkowicz 2015 ACES filmic tonemap fit — maps unbounded HDR into [0,1].
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve
 fn acesFilmic(hdr: vec3f) -> vec3f {
   let a = 2.51;
   let b = 0.03;

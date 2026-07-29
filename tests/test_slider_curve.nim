@@ -1,16 +1,10 @@
-# ==============================================================================
-# PARTICLE GARDEN - SLIDER CURVE TESTS (design E5)
-# ==============================================================================
+# PARTICLE GARDEN - SLIDER CURVE TESTS
 #
 # The travel curve maps a handle POSITION in [0, 1] to a parameter VALUE and
 # back, in Nim, so the panel computes no mapping. These pin the pair as mutual
-# inverses on the descriptor's own step lattice, pin cLinear to the mapping
-# the panel ran before curves existed, and pin the endpoints and monotonicity
-# every curve owes the track.
-#
-# Run with: just test
-#
-# ==============================================================================
+# inverses on the descriptor's own step lattice, pin cLinear to a plain linear
+# mapping equivalent to no curve at all, and pin the endpoints and
+# monotonicity every curve owes the track.
 
 import std/[math, unittest]
 

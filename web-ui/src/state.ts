@@ -170,7 +170,7 @@ export function createPanelController(api: GardenAPI) {
     },
     // The travel-curve pair, passed through untouched: the slider hands Nim
     // a handle position and receives the value, and the reverse to place the
-    // handle. No mapping happens on this side of the boundary (design E5).
+    // handle. No mapping happens on this side of the boundary.
     paramValueAt(id: string, position: number) {
       return api.paramValueAt(id, position);
     },
@@ -193,8 +193,8 @@ export function createPanelController(api: GardenAPI) {
     setBloom(enabled: boolean) {
       api.setBloom(enabled);
       setBloomSignal(api.getBloom());
-      // Flipping the toggle wakes or dims all five grade sliders in the
-      // same tick.
+      // Flipping the toggle wakes or dims every slider in the bloom group
+      // in the same tick.
       refreshDormancy();
     },
     setForceModel(model: number) {

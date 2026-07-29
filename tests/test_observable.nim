@@ -1,22 +1,9 @@
-# ==============================================================================
 # PARTICLE GARDEN - OBSERVABLE TESTS
-# ==============================================================================
-#
-# Unit tests for the observable pattern in ui/core/
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/ui/core/observable
 
-# Exported symbol for test_all.nim to reference
 const OBSERVABLE_TESTS_LOADED* = true
-
-# ==============================================================================
-# OBSERVABLE TESTS
-# ==============================================================================
 
 suite "Observable - Basic Operations":
   test "newObservable creates with initial value":

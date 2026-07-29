@@ -4,7 +4,7 @@ import type { MatrixEdit } from "../src/lib/matrix-cell";
 
 // The clamp stands in for gardenAPI.clampMatrixValue: the boundary owns the
 // bounds, the edit machine only routes values through whatever clamp it is
-// handed. Mock written against the gardenAPI surface as of this suite.
+// handed. Mirrors gardenAPI.clampMatrixValue(value: number): number.
 const clamp = (value: number) => Math.max(-0.1, Math.min(0.1, value));
 
 describe("a cell edit belongs to the user until commit", () => {

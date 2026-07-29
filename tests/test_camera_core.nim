@@ -1,16 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - CAMERA CORE TESTS
-# ==============================================================================
-#
-# Behavioral tests for src/camera_core.nim: the toroidal camera transform, the
-# nearest-image choice that hides the seam, and the shared apparent-scale
-# factor. All pure maths — the shaders mirror these functions, so what is
-# checked here is the contract they are written against.
-#
-# Run with: just test
-#
-# ==============================================================================
-
 import std/unittest
 import ../src/camera_core
 import ../src/config_ranges
@@ -32,10 +19,8 @@ func closeTo(a, b: float32): bool = abs(a - b) < EPSILON
 
 suite "The Default Camera Reproduces Today's View":
   test "zoom 1.0 centred on the world middle reproduces today's clip mapping exactly":
-    # THE COMPATIBILITY CONTRACT. Before a camera existed the renderer computed
-    # `(worldPos / worldSize) * 2 - 1`. The camera must reduce to that at its
-    # default, or adding one silently reframes the world for every existing
-    # preset and screenshot.
+    # CONTRACT: default camera must reduce exactly to (worldPos/worldSize)*2-1
+    # — drift silently reframes every preset/screenshot.
     let camera = initCamera(WORLD_W, WORLD_H)
     for worldX in [0.0'f32, 1.0'f32, 480.0'f32, 960.0'f32, 1439.0'f32, 1919.0'f32]:
       for worldY in [0.0'f32, 1.0'f32, 270.0'f32, 540.0'f32, 809.0'f32, 1079.0'f32]:
@@ -125,14 +110,14 @@ suite "Panning Is Seamless And Exact":
       check camera.centerY < WORLD_H
 
   test "a centre moved by any multiple of the world span rewraps into [0, worldSize)":
-    # THE POSTCONDITION THE Camera DOC PROMISES, held against inputs that move
+    # The postcondition the Camera doc promises, held against inputs that move
     # a centre further than one span. Everything downstream reads that promise
     # as its precondition: wrapDelta corrects by a single step, which is enough
     # only while the centre sits inside one span, so a mover that handed back a
     # centre two spans out would reintroduce the seam nearest-image exists to
     # hide.
     #
-    # No gesture reaches these inputs today — a zoom jump across the whole
+    # No gesture reaches these inputs — a zoom jump across the whole
     # [1, 8] range displaces the centre by under half a span. The movers are
     # held to the promise regardless of who calls them, because a postcondition
     # that holds only for the callers who happen to exist is not one.
@@ -182,9 +167,9 @@ suite "Zoom Clamps And Anchors":
     # at is the thing being approached. Zooming about the view centre instead
     # slides the target away exactly when the user reaches for it.
     #
-    # SCOPE OF THE IDENTITY. It holds wherever the anchor names a unique world
+    # Scope of the identity: it holds wherever the anchor names a unique world
     # point, which is where the anchor lies within half a world span of the new
-    # centre — algebraically |anchor| <= newZoom. Below zoom 1 the world TILES,
+    # centre — algebraically |anchor| <= newZoom. Below zoom 1 the world tiles,
     # so a clip coordinate names infinitely many world points and the renderer
     # draws the nearest image; asking which one "stayed under the cursor" has no
     # single answer there. The guard states that boundary rather than hiding it
@@ -193,7 +178,6 @@ suite "Zoom Clamps And Anchors":
     var assertionsMade = 0
     for anchorX in [-0.8'f32, -0.25'f32, 0.0'f32, 0.4'f32, 0.9'f32]:
       for anchorY in [-0.6'f32, 0.0'f32, 0.7'f32]:
-        # The world point currently under the anchor.
         let worldX = camera.centerX + anchorX * WORLD_W / (2.0'f32 * camera.zoom)
         let worldY = camera.centerY + anchorY * WORLD_H / (2.0'f32 * camera.zoom)
         for newZoom in [0.5'f32, 1.0'f32, 2.0'f32, 4.0'f32]:
@@ -246,9 +230,9 @@ suite "Zoom Clamps And Anchors":
 
 
 suite "Screen UV And World Are Exact Inverses":
-  # WHY THIS SUITE EXISTS: fade.wgsl reprojects the trail by mapping a screen
-  # pixel to a world point through the CURRENT camera and back to screen
-  # through the PREVIOUS one. If those two transforms are not exact inverses,
+  # Why this suite exists: fade.wgsl reprojects the trail by mapping a screen
+  # pixel to a world point through the current camera and back to screen
+  # through the previous one. If those two transforms are not exact inverses,
   # every frame smears the trail by the error — and a smear is exactly what a
   # broken reprojection and a working one both look like at a glance, so the
   # property has to be checked here rather than by watching the app.
@@ -270,7 +254,7 @@ suite "Screen UV And World Are Exact Inverses":
 
   test "the default camera maps screen UV straight onto the world":
     # Reduces to uv * worldSize, so the composite passes sample the field at
-    # the screen UV they used before a camera existed.
+    # the same screen UV regardless of the camera's presence.
     let camera = initCamera(WORLD_W, WORLD_H)
     for uvStep in 0 .. 8:
       let uv = uvStep.float32 / 8.0'f32
@@ -317,8 +301,8 @@ suite "Screen UV And World Are Exact Inverses":
     check abs(firstShiftX) > 1e-6'f32
 
   test "zooming does NOT shift the reprojection by a constant":
-    # THE REASON THE FADE PASS CARRIES TWO CAMERAS INSTEAD OF ONE UV DELTA.
-    # Under zoom the correct mapping is a scale about a point, so the shift
+    # The reason the fade pass carries two cameras instead of one UV delta:
+    # under zoom the correct mapping is a scale about a point, so the shift
     # genuinely differs across the screen. A single offset would be wrong
     # everywhere except one pixel — and wrong most where the user is looking
     # least, at the edges. This test fails if anyone "simplifies" the

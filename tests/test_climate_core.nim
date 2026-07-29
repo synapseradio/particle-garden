@@ -1,6 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - CLIMATE CORE TESTS
-# ==============================================================================
 #
 # One parameterised tour, walked by the frame loop, writing every toured
 # parameter through the ordinary parameter path. The reaction-diffusion climate
@@ -11,14 +8,12 @@
 # ranges bound, drift can put the simulation somewhere the sliders cannot
 # express; if it can jump, the weather reads as a glitch instead of as weather.
 #
-# EVERY GUARANTEE IS WRITTEN ONCE, over any table. The templates below take the
+# Every guarantee is written once, over any table. The templates below take the
 # waypoints and the box, so a weather over different parameters registers its
 # table with them and inherits the proofs. Two tables run through them here: the
 # reaction-diffusion regimes, and a probe table of a different arity and a
 # different scale whose only job is to keep the tour from being specialised
 # to feed and kill.
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/climate_core
@@ -145,10 +140,9 @@ template checkLandsOnEveryWaypoint(waypoints: untyped) =
 
 
 suite "One Tour Serves Any Table":
-  # CONTRACT: the weather spec's "A second loop cannot appear". The same
-  # advance and easing code runs over both tables, so a second weather supplies
-  # a table and nothing else. These tests fail if the tour is ever narrowed to
-  # the climate's two axes.
+  # The same advance and easing code runs over both tables, so a second
+  # weather supplies a table and nothing else. These tests fail if the tour is
+  # ever narrowed to the climate's two axes.
   test "the tour carries its guarantees onto a table of another arity":
     checkStaysInsideBox(PROBE_TOUR, PROBE_BOX)
     checkNoStepExceeds(PROBE_TOUR, PROBE_MAX_STEP, CLIMATE_SPEED_MAX)
@@ -162,10 +156,9 @@ suite "One Tour Serves Any Table":
 
 suite "Climate Drift Stays Inside The Rectangle":
   test "climate drift stays inside the feed/kill rectangle for every phase":
-    # CONTRACT: the weather spec's "Drift respects the range". This is the
-    # property that lets the frame loop write drift straight through setParam
-    # without a clamp doing quiet work — a clamp MASKS a path that leaves the
-    # box rather than keeping it inside.
+    # This is the property that lets the frame loop write drift straight
+    # through setParam without a clamp doing quiet work — a clamp MASKS a path
+    # that leaves the box rather than keeping it inside.
     checkStaysInsideBox(RD_CLIMATE_TOUR, RD_CLIMATE_BOX)
 
   test "phase outside [0,1) names the same point as its wrapped equivalent":
@@ -187,9 +180,8 @@ suite "Climate Drift Stays Inside The Rectangle":
 
 suite "Climate Drift Is Continuous":
   test "climate drift is continuous — no step exceeds the configured maximum delta":
-    # CONTRACT: the weather spec's "Drift is continuous". Swept at
-    # CLIMATE_SPEED_MAX, the fastest weather the slider offers.
-    # OBSERVED: the largest single-frame move is well under CLIMATE_MAX_STEP;
+    # Swept at CLIMATE_SPEED_MAX, the fastest weather the slider offers.
+    # Observed: the largest single-frame move is well under CLIMATE_MAX_STEP;
     # if a future speed ceiling or regime coordinate pushes past it, this goes
     # red rather than the weather visibly jumping.
     checkNoStepExceeds(RD_CLIMATE_TOUR, CLIMATE_MAX_STEP, CLIMATE_SPEED_MAX)
@@ -203,7 +195,7 @@ suite "Climate Drift Is Continuous":
 
 suite "Climate Drift Tours The Named Regimes":
   test "the climate table carries one waypoint per named regime":
-    # WHY THE PATH IS A REGIME TOUR AND NOT A WANDER. Most of the feed/kill
+    # Why the path is a regime tour and not a wander: most of the feed/kill
     # rectangle produces nothing worth looking at — which is the entire reason
     # the named regimes exist — so a drift that wandered the box would spend
     # most of its time in dead parameter space. Landing exactly on each regime
@@ -242,7 +234,7 @@ suite "Climate Drift Tours The Named Regimes":
       check tourAdvance(phase, CLIMATE_SPEED_MAX, 0.0) == wrapPhase(phase)
 
 suite "The Climate Owns Its Output Surface":
-  # THE DEFECT THIS FAMILY PINS. The weather moves parameters from the frame
+  # The defect this family pins: the weather moves parameters from the frame
   # loop, so every consumer — the clamp that writes them, the panel that reads
   # them back — has to know which ones. Held as a separate list per consumer,
   # a third axis moves the simulation while a panel silently stops reporting

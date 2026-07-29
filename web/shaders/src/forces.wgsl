@@ -2,25 +2,14 @@
 // PARTICLE FORCES + DENSITY SHADER (Half-Neighbor with Newton's 3rd Law)
 // =============================================================================
 //
-// WHY THIS EXISTS (Cache Optimization):
-// This shader reads particle data from SORTED AoS buffer (particlesSorted[])
-// instead of using indirect indexing. The physical scatter pass copies entire
-// particle structs into spatially-sorted order, enabling SEQUENTIAL memory
-// access patterns here.
-//
-// AoS CACHE BEHAVIOR:
-// - Each Particle is 32 bytes (2 particles per 64-byte cache line)
-// - Reading particlesSorted[j] loads pos, vel, species, density in one fetch
-// - No separate buffer reads needed - all particle data is colocated
+// This shader reads the SORTED AoS buffer (particlesSorted[]), which the
+// scatter pass fills in spatial order, so neighbour sweeps touch memory
+// sequentially. Struct layout and cache behaviour: particle.wgsl and
+// web/shaders/README.md.
 //
 // ALGORITHM:
 // Computes inter-particle forces AND local density using half-neighbor iteration.
 // Each pair (i,j) is computed ONCE, with force applied to both particles via atomics.
-//
-// HALF-NEIGHBOR PATTERN (the key optimization):
-// Think of it like shaking hands at a party: each person only needs to shake
-// hands with people they haven't met yet. If Alice shakes Bob's hand, Bob doesn't
-// need to shake Alice's hand separately - that would duplicate the interaction.
 //
 // For particle i, we ONLY check:
 // +---+---+---+
@@ -34,22 +23,6 @@
 // This gives us 5 cells instead of 9, cutting work nearly in half.
 // Each pair (i,j) is computed EXACTLY ONCE, with forces applied to both via atomics.
 //
-// BINDING MANIFEST:
-// +-------+---------------------------+------------------------+--------+
-// | Bind  | Shader Type               | JS Buffer              | Access |
-// +-------+---------------------------+------------------------+--------+
-// |   0   | uniform SimParams         | simParams              | read   |
-// |   1   | storage array<Particle>   | particlesSorted        | read   |
-// |   2   | storage array<u32>        | sortedToOriginal       | read   |
-// |   3   | storage array<u32>        | cellStartOffsets       | read   |
-// |   4   | storage array<u32>        | cellParticleCounts     | read   |
-// |   5   | storage atomic<i32>       | velocityDeltaFixed     | r/w    |
-// |   6   | storage atomic<i32>       | densityDeltaFixed      | r/w    |
-// |   7   | storage atomic<i32>       | crowdDensityDeltaFixed | r/w    |
-// +-------+---------------------------+------------------------+--------+
-// TOTAL: 7 storage buffers (under 8-buffer limit)
-//
-// THREAD MAPPING: One particle per thread (sorted index space)
 // =============================================================================
 
 //! import particle
@@ -68,10 +41,7 @@
 @group(0) @binding(3) var<storage, read> cellStartOffsets: array<u32>;
 @group(0) @binding(4) var<storage, read> cellParticleCounts: array<u32>;
 
-// WHY FIXED-POINT? GPUs don't support atomic operations on floats (yet).
-// We can't just write "atomicAdd(&someFloat, 0.5)" - hardware doesn't support it.
-// Solution: scale floats by 65536, convert to integers, use atomic integer ops,
-// then scale back down when reading. Like counting money in cents instead of dollars.
+// Fixed-point atomic accumulators; rationale and scales in fixed_point.wgsl.
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
@@ -134,7 +104,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let thisParticle = particlesSorted[thisSortedIdx];
   let thisOriginalIdx = sortedToOriginal[thisSortedIdx];
 
-  // Precompute constants (avoid recomputing in inner loops)
   let radiusSq = params.interactionRadius * params.interactionRadius;
   let invRadius = 1.0 / params.interactionRadius;
   let halfWorldWidth = params.worldWidth * 0.5;
@@ -171,46 +140,32 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   cellX = clamp(cellX, 0, gridWidth - 1);
   cellY = clamp(cellY, 0, gridHeight - 1);
 
-  // Half-neighbor iteration: 5 cells instead of 9
-  // Why these specific 5? Imagine scanning left-to-right, top-to-bottom.
-  // Cells 0,1,2 (top row) have already been processed by earlier threads.
-  // We only need: own cell (0,0), right (1,0), and bottom-left to bottom-right (-1,1), (0,1), (1,1).
   for (var neighborIdx: i32 = 0; neighborIdx < 5; neighborIdx++) {
     var offsetX: i32;
     var offsetY: i32;
 
-    // Map index to cell offset (unrolled for GPU performance)
-    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }   // Same cell
-    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }   // Right
-    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }  // Bottom-left
-    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }   // Bottom
-    else { offsetX = 1; offsetY = 1; }                          // Bottom-right
+    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }
+    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }
+    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }
+    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }
+    else { offsetX = 1; offsetY = 1; }
 
     var neighborCellX = cellX + offsetX;
     var neighborCellY = cellY + offsetY;
     var toroidalOffsetX = 0.0;
     var toroidalOffsetY = 0.0;
 
-    // TOROIDAL WRAPPING (Pac-Man physics):
-    // World wraps at edges - particles exiting right re-enter from left.
-    // The GRID cells wrap (for neighbor search), but we also need to adjust
-    // the POSITION we use for distance calculations.
-    //
-    // Example: Particle at x=5 near left edge, neighbor cell wraps to right edge.
-    // Grid cell wraps: -1 → gridWidth-1 (correct cell index)
-    // Position offset: subtract worldWidth so distance calc treats neighbor
-    // as if it's "just to the left" instead of "way over on the right."
-
-    // Toroidal X wrap
+    // Toroidal wrapping: the world wraps at the edges, so the neighbor cell
+    // index wraps and the neighbor position is shifted by one world span for
+    // the distance calculation.
     if (neighborCellX < 0) {
-      neighborCellX += gridWidth;          // Wrap cell index
-      toroidalOffsetX = -params.worldWidth; // Adjust position for distance calc
+      neighborCellX += gridWidth;
+      toroidalOffsetX = -params.worldWidth;
     } else if (neighborCellX >= gridWidth) {
       neighborCellX -= gridWidth;
       toroidalOffsetX = params.worldWidth;
     }
 
-    // Toroidal Y wrap
     if (neighborCellY < 0) {
       neighborCellY += gridHeight;
       toroidalOffsetY = -params.worldHeight;
@@ -237,9 +192,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let isSameCell = (neighborIdx == 0);
     let cellEnd = cellStart + particlesInCell;
 
-    // Iterate through particles in this cell
-    // Because particles are SORTED by spatial position, this is sequential memory access.
-    // The GPU loads cache lines sequentially - very efficient!
     for (var otherSortedIdx: i32 = cellStart; otherSortedIdx < cellEnd; otherSortedIdx++) {
       // For same cell, only process pairs where other > this (half-neighbor optimization)
       if (isSameCell && u32(otherSortedIdx) <= thisSortedIdx) {
@@ -250,11 +202,9 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         continue;
       }
 
-      // Load neighbor particle (AoS: all fields arrive in one memory fetch)
       let otherParticle = particlesSorted[otherSortedIdx];
       let otherOriginalIdx = sortedToOriginal[otherSortedIdx];
 
-      // Compute separation vector (accounting for toroidal wrapping)
       let separationX = (otherParticle.pos.x + toroidalOffsetX) - thisParticle.pos.x;
       let separationY = (otherParticle.pos.y + toroidalOffsetY) - thisParticle.pos.y;
       let distanceSq = separationX * separationX + separationY * separationY;
@@ -272,21 +222,9 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let attractionThisToOther = params.attractionMatrix[matrixIdxThisToOther / 4u][matrixIdxThisToOther % 4u];
         let attractionOtherToThis = params.attractionMatrix[matrixIdxOtherToThis / 4u][matrixIdxOtherToThis % 4u];
 
-        // FORCE CALCULATION (the physics):
-        // Two models available, selected by params.forceModel:
-        //
-        // MODEL 0: POLYNOMIAL (smooth C¹-continuous curves)
-        //   - Repulsion zone: smooth cubic in [0, repulsionEnd]
-        //   - Attraction zone: smooth bump in [repulsionEnd, 1] peaking at attractionPeak
-        //   - Zone boundaries configurable via params
-        //
-        // MODEL 1: EXPONENTIAL (decay functions)
-        //   - Uses exp(-alpha*r) for repulsion, exp(-beta*r) for attraction
-        //   - Smoother decay across full range, no hard zone boundaries
-        //   - Alpha/beta control steepness of repulsion/attraction falloff
-        //
-        // Finally, divide by distance (invDistance) to convert force magnitude
-        // into proper acceleration (like gravity: F ∝ 1/r² becomes a ∝ 1/r).
+        // Force model selection: params.forceModel picks the polynomial curve
+        // (default) or the exponential one defined above. invDistance converts
+        // the force magnitude into an acceleration.
 
         var forceMagnitudeOnThis: f32;
         var forceMagnitudeOnOther: f32;
@@ -307,20 +245,20 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
           // Force on THIS particle
           if (normalizedDist < repEnd) {
             // Repulsion zone: smooth cubic normalized to [0, repEnd]
-            let t = normalizedDist / repEnd;  // Normalize to [0, 1]
+            let t = normalizedDist / repEnd;
             let t2 = t * t;
             forceMagnitudeOnThis = -1.0 + 3.0 * t2 - 2.0 * t2 * t;  // Hermite: f(0)=-1, f(1)=0, f'(1)=0
           } else {
             // Attraction zone: smooth bump in [repEnd, 1] peaking at attPeak
             let zoneWidth = 1.0 - repEnd;
             let peakPos = (attPeak - repEnd) / zoneWidth;  // Normalized peak position in [0, 1]
-            let t = (normalizedDist - repEnd) / zoneWidth;  // Normalize to [0, 1]
+            let t = (normalizedDist - repEnd) / zoneWidth;
             // Bump function: peaks at peakPos, zero at 0 and 1
             let leftDist = t / peakPos;
             let rightDist = (1.0 - t) / (1.0 - peakPos);
             let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
-            // Scale to match old peak magnitude, then attenuate by how crowded
-            // the RECEIVING particle is. Gated on the sign: a negative entry
+            // Scale to the model's calibrated peak magnitude, then attenuate by
+            // how crowded the RECEIVING particle is. Gated on the sign: a negative entry
             // makes this branch repulsive and the crowding term never touches
             // repulsion.
             let crowdingOnThis = select(1.0, attenuationOnThis, attractionThisToOther > 0.0);
@@ -357,9 +295,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // Threads for 3, 5, and 12 all try to update particle 7 simultaneously.
         // Without atomics, updates would race and overwrite each other (data loss).
         // atomicAdd ensures all three contributions are correctly summed.
-        //
-        // WHY FIXED-POINT? GPU atomics only work on integers, not floats.
-        // Scale by 65536, convert to int, atomic add, then scale back later.
         let forceOnOtherX = -separationX * forceMagnitudeOnOther;  // Newton's 3rd: opposite direction
         let forceOnOtherY = -separationY * forceMagnitudeOnOther;
         let deltaVxOtherFixed = i32(forceOnOtherX * params.dt * FIXED_POINT_SCALE);
@@ -367,19 +302,11 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], deltaVxOtherFixed);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], deltaVyOtherFixed);
 
-        // SYMMETRIC DENSITY ACCUMULATION, TWO CHANNELS:
-        //
-        // COLONY density counts same-species neighbours. It says what a colony
-        // looks like, and dot size, brightness and glow read it.
-        //
-        // CROWD density counts every neighbour, whatever its species. It says
-        // what the spatial hash is carrying, which is what the crowding cap has
-        // to bound: a cell filled by a mixed blob costs exactly what a cell
-        // filled by one species costs, so a species-gated signal would let a
-        // mixed blob pack MAX_SPECIES times tighter before the cap noticed.
-        //
-        // Both share one proximity weight — (1.0 - normalizedDist), touching=1,
-        // at the radius edge=0 — and differ only in the gate above them.
+        // Symmetric density accumulation into two channels, colony
+        // (species-gated) and crowd (ungated); what each answers and why they
+        // stay separate: particle.wgsl's THREE DENSITIES block. Both share one
+        // proximity weight — (1.0 - normalizedDist), touching=1, at the radius
+        // edge=0 — and differ only in the gate above them.
         //
         // CRITICAL: Half-neighbor iteration means each pair is processed ONCE.
         // Both particles must receive the contribution from this pair. Same
@@ -392,9 +319,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
           i32(proximityWeight * CROWD_DENSITY_FIXED_POINT_SCALE));
 
         if (otherParticle.species == thisParticle.species) {
-          densityAccum += proximityWeight;  // THIS particle (register)
+          densityAccum += proximityWeight;
 
-          // OTHER particle gets same contribution via atomic (like velocity)
           let densityFixed = i32(proximityWeight * FIXED_POINT_SCALE);
           atomicAdd(&densityDeltaFixed[otherOriginalIdx], densityFixed);
         }
@@ -407,7 +333,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     var mouseOffsetX = params.mouseX - thisParticle.pos.x;
     var mouseOffsetY = params.mouseY - thisParticle.pos.y;
 
-    // Toroidal wrapping for mouse distance (use shortest path around edges)
     if (mouseOffsetX > halfWorldWidth) { mouseOffsetX -= params.worldWidth; }
     else if (mouseOffsetX < -halfWorldWidth) { mouseOffsetX += params.worldWidth; }
     if (mouseOffsetY > halfWorldHeight) { mouseOffsetY -= params.worldHeight; }
@@ -432,7 +357,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     var blastOffsetX = thisParticle.pos.x - params.blastX;
     var blastOffsetY = thisParticle.pos.y - params.blastY;
 
-    // Toroidal wrapping for blast distance
     if (blastOffsetX > halfWorldWidth) { blastOffsetX -= params.worldWidth; }
     else if (blastOffsetX < -halfWorldWidth) { blastOffsetX += params.worldWidth; }
     if (blastOffsetY > halfWorldHeight) { blastOffsetY -= params.worldHeight; }
@@ -442,7 +366,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let blastRangeSq = 40000.0;  // 200² - blast influence radius squared
     if (blastDistSq > 0.0 && blastDistSq < blastRangeSq) {
       let blastDist = sqrt(blastDistSq);
-      // Powerful repulsion that breaks any formation
       let blastForce = params.blastStrength * 3000.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);
       forceOnThisX += blastOffsetX * blastForce;
       forceOnThisY += blastOffsetY * blastForce;
@@ -457,8 +380,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], deltaVxThisFixed);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], deltaVyThisFixed);
 
-  // Apply accumulated density for THIS particle via atomic, both channels.
-  // Same pattern as velocity: accumulated in register, written once at end.
   // Temporal smoothing happens in integrate pass (needs previous density value).
   let densityThisFixed = i32(densityAccum * FIXED_POINT_SCALE);
   atomicAdd(&densityDeltaFixed[thisOriginalIdx], densityThisFixed);

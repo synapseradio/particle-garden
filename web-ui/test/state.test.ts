@@ -148,7 +148,7 @@ function fakeGarden() {
 
 describe("the panel takes the climate's writes as a push", () => {
   test("it reads back exactly the ids gardenAPI says the climate writes", () => {
-    // THE DEFECT THIS PINS. The frame loop moves these parameters and the panel
+    // The defect this pins. The frame loop moves these parameters and the panel
     // has to report them. Naming them on the TypeScript side means a third axis
     // moves the simulation while the panel keeps showing two — nothing breaks,
     // the readout just stops being true.
@@ -163,8 +163,8 @@ describe("the panel takes the climate's writes as a push", () => {
 
   test("it subscribes to the stats channel rather than starting a timer", () => {
     // Push, not poll: one subscription on the channel that already exists, and
-    // no interval of the panel's own. syncDriftingParams was that timer's
-    // callback, so its absence is what proves the timer is gone.
+    // no interval of the panel's own. Asserting syncDriftingParams is
+    // undefined is asserting that no such timer, and no such callback, exists.
     const garden = fakeGarden();
     const ctrl = createPanelController(garden.api);
 

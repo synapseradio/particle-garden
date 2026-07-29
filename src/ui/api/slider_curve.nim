@@ -8,7 +8,7 @@
 # on the descriptor's own step lattice: valueAt lands every result on that
 # lattice, positionOf stays continuous.
 #
-# Both directions read the bounds the CALLER says are currently served —
+# Both directions read the bounds the CALLER says are served —
 # `boundMin`/`boundMax` default to the descriptor's envelope, and a derived
 # bound passes its live ceiling — so position keeps meaning
 # "fraction of the reachable track" at every ceiling, and the curve needs no
