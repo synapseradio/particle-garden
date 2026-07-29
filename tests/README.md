@@ -59,6 +59,8 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_field_core.nim` | Gray-Scott step, the 9-point Laplacian, the field seed, what ignites the pattern, the species chemistry coupling, the chemotactic-collapse bound, and that a regime's deposit floor preserves its morphology | Native |
 | `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
 | `test_colormap_core.nim` | Reaction-diffusion field colormap ramps, and the coverage the field claims as light | Native |
+| `test_glow_core.nim` | The particle halo: radius composition, Gaussian falloff, the warm shift, and the display-clamped alpha integral a response probe reads | Native |
+| `test_trail_core.nim` | The trail: its per-frame geometric decay, and the frames of persistence the trail-length slider buys | Native |
 | `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, the shared apparent-scale factor | Native |
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
 | `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, tours every named regime, and that every parameter it declares it writes has a descriptor to write through | Native |
@@ -66,7 +68,7 @@ test "computeMemoryOffsets adds padding correctly":
 
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, descriptor group arithmetic, notch geometry and snapping, and the panel controller's handling of what the simulation pushes at it; `just check` runs both.
 
-Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, and `test_camera_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Their subject modules have no importer in `src/` by design; see the reference-oracle table in the root `CLAUDE.md`.
+Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, and `test_trail_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in the root `CLAUDE.md`.
 
 ### Test Architecture
 
@@ -95,6 +97,8 @@ test_all.nim (runner)
     ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian, seeding)
     ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
     ├── test_colormap_core.nim  → colormap_core.nim (field colormap ramps, coverage)
+    ├── test_glow_core.nim      → glow_core.nim (halo radius, falloff, warmth, alpha integral)
+    ├── test_trail_core.nim     → trail_core.nim (trail decay, persistence in frames)
     ├── test_camera_core.nim    → camera_core.nim (toroidal camera, apparent scale)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
     ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
@@ -479,6 +483,6 @@ The browser-dependent modules have no separate test target. Their correctness is
 
 ## Coverage Summary
 
-The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, the SPH kernels and Tait equation, the Gray-Scott reaction-diffusion step and Laplacian, the bloom blur kernel and field colormap ramps, GPU struct layouts and field accessors, shader workgroup and tuning configuration and the placeholders the bundler emits, the frame description and shader set each couplings combination composes, the drifting climate's path, the `Observable` primitive, the UI state models (simulation, render, matrix and its colors, palette editor, and profiling averages), the parameter descriptor table (ranges, defaults, store routing, clamping), palette generation (HSL conversion, scheme distinctness, flat encoding), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook) alongside preset name normalization and apply order. Run `just test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
+The native suite covers the pure-logic core: memory layout and 4-byte alignment, spatial-grid math and bin-offset validation, physics force/wrapping/density math and neighbor-cell indexing, the SPH kernels and Tait equation, the Gray-Scott reaction-diffusion step and Laplacian, the bloom blur kernel and field colormap ramps, the particle halo's radius, falloff, warmth and display-clamped alpha integral, the trail's per-frame decay and the frames of persistence its slider buys, GPU struct layouts and field accessors, shader workgroup and tuning configuration and the placeholders the bundler emits, the frame description and shader set each couplings combination composes, the drifting climate's path, the `Observable` primitive, the UI state models (simulation, render, matrix and its colors, palette editor, and profiling averages), the parameter descriptor table (ranges, defaults, store routing, clamping), palette generation (HSL conversion, scheme distinctness, flat encoding), and the versioned preset schema (round-trip serialization, schema-version rejection, clamp/default degradation of malformed input, and the migration hook) alongside preset name normalization and apply order. Run `just test` for the current pass count rather than relying on a number recorded here, which would drift the moment a test is added.
 
 Browser integration (WebGPU, DOM, the FFI bindings) is not covered by this suite. It is exercised by the application build and by manual testing in the browser.

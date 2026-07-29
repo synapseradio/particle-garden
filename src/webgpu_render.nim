@@ -16,7 +16,6 @@
 
 from std/jsffi import JsObject, toJs, `[]`, `[]=`
 import std/dom
-import std/math
 import bindings/js_interop
 import bindings/webgpu
 import bindings/typed_arrays
@@ -37,6 +36,11 @@ import camera_core
 # render-coupling constants there rather than here, so the calibration pass has
 # one place to look.
 import colormap_core
+# trail_core is pure; it owns the trail length -> fade multiplier mapping and
+# mirrors the decay fade.wgsl runs with it. The uniform written below is that
+# mapping's output, so the number the GPU receives is the one the native suite
+# measures rather than a second copy of the same arithmetic.
+import trail_core
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -1688,17 +1692,11 @@ proc render*(particleCount: int) =
 
   # Update fade params
   # Layout matches FadeParams indices in gpu_types.nim
-  # Convert trail length (0-100 particle diameters) to decay factor
-  # fadeAmount: higher = more of previous frame retained = longer trails
-  let fadeAmount = if config.CONFIG.trailLength <= 0.0:
-    0.0  # No trails: instant clear
-  else:
-    # Approximate frames to show trailLength worth of trail
-    # At 60fps, typical particle covers ~1 diameter per 2 frames
-    let framesVisible = config.CONFIG.trailLength * 2.0
-    # Decay to 5% visibility over that many frames: decay^frames = 0.05
-    pow(0.05, 1.0 / framesVisible)
-  fadeData[FADE_AMOUNT] = float32(fadeAmount)
+  # The trail length the user set, in particle diameters, becomes the per-frame
+  # multiplier fade.wgsl keeps of the previous frame: higher = more of the
+  # previous frame retained = longer trails, and zero clears outright. The
+  # mapping lives in trail_core, where the suite measures the frames it buys.
+  fadeData[FADE_AMOUNT] = float32(fadeAmountFor(config.CONFIG.trailLength))
   # Trails bend along the field gradient, in every world. A flat field has zero
   # gradient, so the drift term vanishes by arithmetic rather than by a gate.
   fadeData[FADE_FIELD_DRIFT_SCALE] = float32(FIELD_DRIFT_SCALE)

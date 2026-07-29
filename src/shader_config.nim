@@ -196,8 +196,30 @@ import colormap_core
 # the particle budget, so the scale the shader encodes with and the
 # native-tested one are one number.
 import sph_core
+# glow_core is pure; it mirrors glow.wgsl, and takes the same curve constants
+# this module substitutes into that shader. Importing its type is what lets the
+# mirror read them from here instead of carrying a second copy.
+from glow_core import GlowTuning
 # The particle budget that derivation is taken against.
 from memory_layout import MAX_PARTICLES
+
+proc glowTuning*(): GlowTuning =
+  ## The glow curve constants in the shape glow_core's mirror takes them. The
+  ## values are the ones getPlaceholderMap emits as the {{TUNABLE_GLOW_*}}
+  ## family below, so the mirror and the shader run the same curve.
+  ##
+  ## The bundler writes those placeholders at two decimal places, which is
+  ## exact for every shipped value; a tuning constant needing more precision
+  ## would reach the shader rounded and the mirror unrounded.
+  GlowTuning(
+    velocityLogScale: activeConfig.tuning.glowVelocityLogScale,
+    velocityBase: activeConfig.tuning.glowVelocityBase,
+    densityScale: activeConfig.tuning.glowDensityScale,
+    densityMin: activeConfig.tuning.glowDensityMin,
+    densityMax: activeConfig.tuning.glowDensityMax,
+    divisor: activeConfig.tuning.glowDivisor,
+    warmthGreen: activeConfig.tuning.glowWarmthGreen,
+    warmthBlue: activeConfig.tuning.glowWarmthBlue)
 
 proc getPlaceholderMap*(): Table[string, string] =
   ## Generate placeholder substitutions for the shader bundler

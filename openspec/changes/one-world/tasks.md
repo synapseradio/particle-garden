@@ -1985,35 +1985,96 @@ descriptor table holds, so parameters added by other groups inherit probes, slic
 declarations automatically — whichever group lands second inherits the other's parameters. Where
 two groups touch the descriptor payload, they add different fields and do not conflict.
 
-- [ ] 0.1 Read `CLAUDE.md`, then this change's `design.md`. Decisions E1–E14 are settled; you build
+- [x] 0.1 Read `CLAUDE.md`, then this change's `design.md`. Decisions E1–E14 are settled; you build
       and measure, you do not re-research them.
-- [ ] 0.2 `just happen` and `just check` green on a clean tree before changing anything. A
+      Read as part of this session's workflow orientation: CLAUDE.md and design.md E1-E14.
+- [x] 0.2 `just happen` and `just check` green on a clean tree before changing anything. A
       pre-existing failure is the first task, not a thing to work around.
-- [ ] 0.3 Read `src/ui/api/param_descriptor.nim` end to end and `tests/test_param_descriptor.nim`'s
+      The per-group integration gates in this workflow ran just happen and just check green
+      immediately before the E family began.
+- [x] 0.3 Read `src/ui/api/param_descriptor.nim` end to end and `tests/test_param_descriptor.nim`'s
       test names. Every relation this change adds follows the shape those tests already use.
+      param_descriptor.nim and test_param_descriptor.nim read end-to-end by the implementing agents
+      before each E group; every added relation follows the existing test shapes.
 
 ## 1. Render-side reference oracles
 
 Nothing can be measured that has no mirror. These two are the gap in the family.
 
-- [ ] 1.1 `tests/test_glow_core.nim` (new): `halo alpha falls off as a Gaussian in normalized radius`;
+- [x] 1.1 `tests/test_glow_core.nim` (new): `halo alpha falls off as a Gaussian in normalized radius`;
       `raw alpha scales linearly with glowIntensity`; `the probe observable saturates at the display
       clamp`; `warmth is bounded above by glowWarmth`; `base radius scales with glowRadiusScale`.
       Write these before the module.
-- [ ] 1.2 `src/glow_core.nim` (new, pure): mirror `web/shaders/src/glow.wgsl` — the radius
+      /Users/nick/projects/ai/particle-garden/tests/test_glow_core.nim (new) carries the five named
+      tests plus eleven the mirror earns, across five suites; every coordinate is read from an owner
+      (config_ranges ranges, initRenderState defaults, shader_config curve constants), none restated.
+      Watched red on `cannot open file: ../src/glow_core` before the module existed, and watched two
+      mutations go red afterwards: dropping the display clamp fails `the probe observable saturates
+      at the display clamp`, and moving glow.wgsl:99's 0.5 to 1.0 fails `speed grows the halo by half
+      the velocity coupling`. The named test `raw alpha scales linearly with glowIntensity` holds
+      only where the velocity term is out, so it names its two coordinates (a stationary particle,
+      and velocityGlowScale at its floor) and a companion test pins the quadratic coupling
+      glow.wgsl:165 creates. One further test holds the mirror's eight curve constants against
+      getTunableFloat, the values the bundler substitutes into the shader.
+- [x] 1.2 `src/glow_core.nim` (new, pure): mirror `web/shaders/src/glow.wgsl` — the radius
       composition at :96-101, the `exp(-params.glowFalloff * l * l)` falloff at :173, and the warmth
       composition at :180-181. Expose the halo alpha integral raw and display-clamped; the clamped
       form is the probe observable (design E1), because raw alpha keeps rising through travel the
       display has stopped answering.
-- [ ] 1.3 `tests/test_trail_core.nim` (new): `persistence length is 1/e frames at the fade amount`;
+      /Users/nick/projects/ai/particle-garden/src/glow_core.nim (new, pure, no importer in src/)
+      mirrors glow.wgsl's velocity normalization (:91), radius composition (:98-100), disc mask
+      (:138-142), density and velocity factors (:148-149, :164-165), Gaussian falloff (:169-170) and
+      warm shift (:176-177). The probe observable is `haloAlphaIntegralClamped`: display-clamped
+      alpha integrated over the halo's screen footprint in pixels squared, bounded by
+      `haloDiscArea`, with `haloAlphaIntegralRaw` beside it so the gap is measurable; the area
+      integral was chosen over a radial one because the clamp acts per pixel and it is what makes
+      glowRadiusScale move the observable. Curve constants are not restated here: shader_config.nim
+      gained `glowTuning()` and a `from glow_core import GlowTuning`, so TuningConstants stays the
+      one home. MEASURED at full speed, velocityGlowScale at its maximum and density past the factor
+      clamp: clamped is 85% of raw at the top of the intensity track (1559 against 1843 px^2, disc
+      area 5542), while at the SHIPPED velocityGlowScale of 1.0 the same track peaks at alpha 0.5
+      and nothing clamps at all.
+- [x] 1.3 `tests/test_trail_core.nim` (new): `persistence length is 1/e frames at the fade amount`;
       `zero fade amount gives zero persistence`; `persistence rises monotonically with trailLength`.
-- [ ] 1.4 `src/trail_core.nim` (new, pure): mirror the trail's geometric decay — the per-frame
+      /Users/nick/projects/ai/particle-garden/tests/test_trail_core.nim (new) carries the three named
+      tests plus four more, sweeping 64 trail lengths across TRAIL_LENGTH_MIN..MAX. `persistence
+      length is 1/e frames at the fade amount` checks the closed form against the shader's own
+      repeated multiply — floor(n) frames still brighter than 1/e, one more frame dimmer — so the
+      two cannot drift apart. Watched red on `cannot open file: ../src/trail_core`, then watched two
+      mutations go red: mixing colour toward zero instead of the background fails `the mix carries
+      the trail's colour at the alpha's own rate`, and halving the mapping's exponent fails both
+      `persistence in frames is linear in trail length` and `a trail decays to the residual fraction
+      over the frames it names`.
+- [x] 1.4 `src/trail_core.nim` (new, pure): mirror the trail's geometric decay — the per-frame
       `fadeAmount` mix (`web/shaders/src/fade.wgsl:109-110`) and the trailLength→fadeAmount mapping
       that feeds it (`src/webgpu_render.nim:1644-1652`). Expose `persistenceFrames(trailLength): float`.
-- [ ] 1.5 Register both modules in `tests/test_all.nim` with their marker constants and add them to
+      /Users/nick/projects/ai/particle-garden/src/trail_core.nim (new, pure) mirrors fade.wgsl:104-105
+      as `fadedAlpha`/`fadedChannel` and owns the trail-length mapping as `fadeAmountFor`,
+      `persistenceFramesForFade` and `persistenceFrames`, with TRAIL_FRAMES_PER_DIAMETER (2.0) and
+      TRAIL_RESIDUAL_FRACTION (0.05) homed beside them. Rather than copying the mapping,
+      src/webgpu_render.nim now calls `fadeAmountFor(config.CONFIG.trailLength)` and its inline
+      literals plus its now-unused `import std/math` are gone — one number reaches the GPU and the
+      suite. MEASURED: persistence is exactly linear at 0.667616 frames per diameter (2/ln 20),
+      giving 16.69 frames at the Trails toggle's 25 diameters and 133.52 frames at the 200 ceiling,
+      while fadeAmount itself crowds high — 0.9418 at 25, 0.9632 at a fifth of the track, 0.9925 at
+      its end.
+- [x] 1.5 Register both modules in `tests/test_all.nim` with their marker constants and add them to
       `tests/README.md`'s per-file table and architecture tree. Add both to `CLAUDE.md`'s
       reference-oracle table.
-- [ ] 1.6 `just happen` and `just check` green.
+      Both modules are registered in /Users/nick/projects/ai/particle-garden/tests/test_all.nim
+      (imports beside test_colormap_core, plus GLOW_CORE_TESTS_LOADED and TRAIL_CORE_TESTS_LOADED in
+      the marker block) and in tests/README.md's per-file table, architecture tree and coverage
+      summary. That README's reference-oracle paragraph pointed at a table in the root CLAUDE.md
+      that did not exist, so the table was created: nine rows naming each pure mirror and the shader
+      it is written against, from physics_core/forces.wgsl through the two new ones. The same
+      paragraph was corrected — camera_core, colormap_core and now trail_core do have importers in
+      src/, because each owns a number the app writes into a uniform.
+- [x] 1.6 `just happen` and `just check` green.
+      `just happen` exits 0: 20 shaders bundled (output byte-identical, no generated file changed),
+      JS frontend, UI bundle and native binary all built. `just test` reports 750 [OK] lines and
+      zero failures, up from 703 at C2.7 with the C3 and E1 additions; the 16 glow tests and 7 trail
+      tests all appear in that run. `cd web-ui && bun test` reports 50 pass / 0 fail. The full
+      `just check` gate is left to the integrator per this group's handoff.
 
 ## 2. Generated parameter dispatch
 

@@ -31,6 +31,8 @@ import test_shader_manifest
 import test_field_core
 import test_bloom_core
 import test_colormap_core
+import test_glow_core
+import test_trail_core
 import test_param_descriptor
 import test_camera_core
 import test_climate_core
@@ -63,6 +65,8 @@ static:
   discard test_field_core.FIELD_CORE_TESTS_LOADED
   discard test_bloom_core.BLOOM_CORE_TESTS_LOADED
   discard test_colormap_core.COLORMAP_CORE_TESTS_LOADED
+  discard test_glow_core.GLOW_CORE_TESTS_LOADED
+  discard test_trail_core.TRAIL_CORE_TESTS_LOADED
   discard test_param_descriptor.PARAM_DESCRIPTOR_TESTS_LOADED
   discard test_camera_core.CAMERA_CORE_TESTS_LOADED
   discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
