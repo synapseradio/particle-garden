@@ -507,42 +507,6 @@ proc createBindGroupEntry*(binding: int, buffer: GPUBuffer): JsObject {.importjs
 proc createBindGroupEntryOffset*(binding: int, buffer: GPUBuffer, offset: int, size: int): JsObject {.importjs: "({binding: #, resource: {buffer: #, offset: #, size: #}})".}
 
 # ==============================================================================
-# SECTION 30: TYPE ALIASES FOR BACKWARDS COMPATIBILITY
-# ==============================================================================
-
-type
-  # These match the types used in webgpu_init.nim and webgpu_compute.nim
-  GPUBuffersObject* = ref object of JsObject
-    ## Collection of GPU buffers (matches webgpu_init.nim)
-
-  InitResult* = ref object of JsObject
-    ## Initialization result type
-    success* {.importjs: "success".}: bool
-    error* {.importjs: "error".}: cstring
-    info* {.importjs: "info".}: JsObject
-
-  PhysicsFrameParams* = ref object of JsObject
-    ## Physics frame parameters
-    dt* {.importjs: "dt".}: float
-    particleCount* {.importjs: "particleCount".}: int
-    width* {.importjs: "width".}: float
-    height* {.importjs: "height".}: float
-    gridW* {.importjs: "gridW".}: int
-    gridH* {.importjs: "gridH".}: int
-    rMax* {.importjs: "rMax".}: float
-    fMul* {.importjs: "fMul".}: float
-    friction* {.importjs: "friction".}: float
-    mouseX* {.importjs: "mouseX".}: float
-    mouseY* {.importjs: "mouseY".}: float
-    mouseDown* {.importjs: "mouseDown".}: int
-    matrix* {.importjs: "matrix".}: JsObject
-
-# Alias GPUBuffer to JsObject for flexibility in existing code
-# This allows existing code using JsObject for buffers to continue working
-converter toJsObject*(buffer: GPUBuffer): JsObject = cast[JsObject](buffer)
-converter toGPUBuffer*(obj: JsObject): GPUBuffer = cast[GPUBuffer](obj)
-
-# ==============================================================================
 # SECTION 24: WEBGPU CANVAS CONTEXT
 # ==============================================================================
 

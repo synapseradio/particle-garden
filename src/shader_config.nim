@@ -16,7 +16,6 @@ type
   ShaderProfile* = enum
     ## Build profile affecting shader configuration
     spProduction    ## Validated defaults
-    spDevelopment   ## Debug-friendly, may enable additional checks
 
   WorkgroupConfig* = object
     ## Workgroup sizes for each compute shader.

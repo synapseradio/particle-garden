@@ -21,10 +21,6 @@ const jsFlags = "-d:release " & qualityFlags
 
 const nativeFlags = "-d:release --opt:speed " & qualityFlags
 
-# Release flags - optimized builds with runtime checks preserved
-const jsReleaseFlags = "-d:release " & qualityFlags
-const nativeReleaseFlags = "-d:release --opt:speed " & qualityFlags
-
 # Windows static linking flags - eliminate VCRUNTIME140.dll dependency
 # Uses MinGW static linking to create portable executables
 const windowsStaticFlags = "--passL:-static --passL:-static-libgcc --passL:-static-libstdc++"
@@ -52,10 +48,10 @@ task release, "Build optimized release":
   echo "Bundling shaders..."
   exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
   echo "Building app..."
-  exec "nim js " & jsReleaseFlags & " --out:web/app.js src/app.nim"
+  exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
   echo "Building native app..."
   when defined(windows):
-    exec "nim c " & nativeReleaseFlags & " " & windowsStaticFlags & " --out:main src/main.nim"
+    exec "nim c " & nativeFlags & " " & windowsStaticFlags & " --out:main src/main.nim"
   else:
-    exec "nim c " & nativeReleaseFlags & " --out:main src/main.nim"
+    exec "nim c " & nativeFlags & " --out:main src/main.nim"
   echo "Release build complete. Run with: ./main"

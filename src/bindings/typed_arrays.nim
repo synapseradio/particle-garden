@@ -451,18 +451,3 @@ proc copyWithin*(arr: Int32Array, target: int, start: int, `end`: int): Int32Arr
 proc copyWithin*(arr: Uint32Array, target: int, start: int, `end`: int): Uint32Array {.importjs: "#.copyWithin(#, #, #)".}
 
 proc copyWithin*(arr: Uint8Array, target: int, start: int, `end`: int): Uint8Array {.importjs: "#.copyWithin(#, #, #)".}
-
-# ==============================================================================
-# SECTION 34: TYPE ALIASES FOR BACKWARDS COMPATIBILITY
-# ==============================================================================
-
-# Legacy type aliases used in existing codebase
-type
-  Float32ArrayView* = Float32Array
-  Float64ArrayView* = Float64Array
-  Int32ArrayView* = Int32Array
-  Int16ArrayView* = Int16Array
-  Int8ArrayView* = Int8Array
-  Uint32ArrayView* = Uint32Array
-  Uint16ArrayView* = Uint16Array
-  Uint8ArrayView* = Uint8Array

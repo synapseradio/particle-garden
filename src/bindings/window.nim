@@ -306,27 +306,3 @@ proc removeItem*(storage: Storage, key: cstring) {.importjs: "#.removeItem(#)".}
 proc clear*(storage: Storage) {.importjs: "#.clear()".}
 
 proc key*(storage: Storage, index: int): cstring {.importjs: "#.key(#)".}
-
-# ==============================================================================
-# SECTION 20: TYPE ALIASES FOR MIGRATION COMPATIBILITY
-# ==============================================================================
-
-# These allow existing code to gradually migrate without breaking changes.
-type
-  BrowserWindow* = Window
-    ## Alias for Window type.
-
-  BrowserNavigator* = Navigator
-    ## Alias for Navigator type.
-
-  BrowserScreen* = Screen
-    ## Alias for Screen type.
-
-  BrowserLocation* = Location
-    ## Alias for Location type.
-
-  BrowserHistory* = History
-    ## Alias for History type.
-
-  BrowserStorage* = Storage
-    ## Alias for Storage type.

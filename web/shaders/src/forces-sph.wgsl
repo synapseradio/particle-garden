@@ -67,7 +67,6 @@
 @group(0) @binding(6) var<storage, read_write> sphDensityDeltaFixed: array<atomic<i32>>;
 
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};      // Prevents division-by-zero when particles overlap
-const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};   // 300^2 - mouse influence radius squared
 
 // SPH tuning constants held in the shader (the runtime tunables — rest density,
 // stiffness, viscosity, gamma — arrive through SimParams; XSPH epsilon through
