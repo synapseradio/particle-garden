@@ -27,7 +27,6 @@ type
   ## Cleanup is called before next notification or on unsubscribe.
   Observer*[T] = proc(value: T): proc()
 
-  ## Subscription entry: ID + observer function + current cleanup
   Subscription[T] = object
     id: SubscriptionId
     fn: Observer[T]
@@ -53,7 +52,6 @@ when defined(js):
   proc queueMicrotask(fn: proc()) {.importjs: "queueMicrotask(#)".}
 
 proc flushPending() =
-  ## Execute all pending notifications
   let toFlush = pendingNotifications
   pendingNotifications = @[]
 
@@ -61,7 +59,6 @@ proc flushPending() =
     notify()
 
 proc scheduleNotification(fn: proc()) =
-  ## Schedule a notification for later execution
   pendingNotifications.add(fn)
 
   when defined(js):
@@ -77,11 +74,6 @@ proc scheduleNotification(fn: proc()) =
 # ==============================================================================
 
 proc newObservable*[T](initial: T): Observable[T] =
-  ## Create a new observable with an initial value.
-  ##
-  ## Example:
-  ##   let count = newObservable(0)
-  ##   let name = newObservable("default")
   Observable[T](
     value: initial,
     subscriptions: @[],
@@ -95,10 +87,6 @@ proc newObservable*[T](initial: T): Observable[T] =
 # ==============================================================================
 
 proc get*[T](obs: Observable[T]): T {.inline.} =
-  ## Read the current value. No side effects.
-  ##
-  ## Example:
-  ##   let current = count.get()
   obs.value
 
 # ==============================================================================
@@ -106,8 +94,7 @@ proc get*[T](obs: Observable[T]): T {.inline.} =
 # ==============================================================================
 
 proc doNotify[T](obs: Observable[T]) =
-  ## Execute all observer callbacks with current value.
-  ## Runs cleanup from previous notification first.
+  ## Runs cleanup from the previous notification before calling the new one.
   if obs.notifying:
     return  # Prevent recursive notifications
 
@@ -116,12 +103,10 @@ proc doNotify[T](obs: Observable[T]) =
 
   try:
     for idx in 0 ..< obs.subscriptions.len:
-      # Run previous cleanup if any
       if not obs.subscriptions[idx].cleanup.isNil:
         obs.subscriptions[idx].cleanup()
         obs.subscriptions[idx].cleanup = nil
 
-      # Call observer, store new cleanup
       let newCleanup = obs.subscriptions[idx].fn(obs.value)
       obs.subscriptions[idx].cleanup = newCleanup
   finally:
@@ -132,18 +117,13 @@ proc doNotify[T](obs: Observable[T]) =
 # ==============================================================================
 
 proc set*[T](obs: Observable[T], newValue: T) =
-  ## Update the value and schedule observer notifications.
-  ##
-  ## Notifications are batched - if called multiple times in
+  ## Notifications are batched — if called multiple times in
   ## quick succession, observers see only the final value.
-  ##
-  ## Example:
-  ##   count.set(count.get() + 1)
   obs.value = newValue
 
   if not obs.pendingNotify:
     obs.pendingNotify = true
-    let obsRef = obs  # Capture for closure
+    let obsRef = obs
     scheduleNotification(proc() = doNotify(obsRef))
 
 # ==============================================================================
@@ -151,39 +131,19 @@ proc set*[T](obs: Observable[T], newValue: T) =
 # ==============================================================================
 
 proc subscribe[T](obs: Observable[T], fn: Observer[T]): SubscriptionId =
-  ## Subscribe to value changes. Returns ID for unsubscription.
-  ##
   ## The observer is called immediately with the current value,
   ## then again whenever the value changes.
-  ##
-  ## The observer returns a cleanup function (or nil). Cleanup
-  ## is called before the next notification or on unsubscribe.
-  ##
-  ## Example:
-  ##   let subId = count.subscribe(proc(value: int): proc() =
-  ##     echo "Count is now: ", value
-  ##     # Return cleanup function
-  ##     return proc() = echo "Cleaning up"
-  ##   )
   let id = SubscriptionId(obs.nextId)
   obs.nextId += 1
 
-  # Create subscription entry
   var sub = Subscription[T](id: id, fn: fn, cleanup: nil)
 
-  # Invoke immediately with current value
   sub.cleanup = fn(obs.value)
 
   obs.subscriptions.add(sub)
   result = id
 
 proc subscribeSimple*[T](obs: Observable[T], fn: proc(value: T)) =
-  ## Subscribe without cleanup. Convenience for simple observers.
-  ##
-  ## Example:
-  ##   count.subscribeSimple(proc(value: int) =
-  ##     echo "Count changed to: ", value
-  ##   )
   discard obs.subscribe(proc(value: T): proc() =
     fn(value)
     nil

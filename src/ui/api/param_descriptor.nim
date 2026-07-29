@@ -36,7 +36,7 @@ import ../state/render_state
 type
   ParamKind* = enum
     pkInt    ## Integer values (counts, radius, size, substeps)
-    pkFloat  ## Floating point values
+    pkFloat
 
   ParamStore* = enum
     ## Which mutation path a parameter write routes through.
@@ -157,7 +157,7 @@ type
     precision*: int       ## Decimal places for display (0 for ints)
     defaultValue*: float
     store*: ParamStore
-    reinitOnCommit*: bool ## Commit triggers a particle re-initialization
+    reinitOnCommit*: bool
     hint*: string         ## Optional one-line guidance rendered under the
                           ## slider. Empty for most parameters. Lives here, not
                           ## in the panel, because any value a hint names has to
@@ -329,8 +329,6 @@ func regimeNotches*(axis: RegimeAxis): seq[ParamNotch] =
       regime.label)
 
 func paramStep(kind: ParamKind; precision: int): float =
-  ## The step rule: ints step by 1; floats step by one unit of their display
-  ## precision.
   case kind
   of pkInt: 1.0
   of pkFloat:
@@ -408,7 +406,6 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
   let sim = initSimulationState()
   let visual = initRenderState()
   @[
-    # Main simulation sliders
     intParam("particleCount", "Particles", "simulation",
       PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX, sim.particleCount,
       psSimulation, reinitOnCommit = true,
@@ -473,7 +470,7 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       probe = "motion.softCap",
       horizon = rhSettling, horizonReview = true),
 
-    # Render sliders (outside the collapsible sections)
+    # Outside the collapsible sections
     intParam("particleSize", "Particle Size", "render",
       PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX, visual.particleSize, psRender,
       probe = "render.visibleRadius"),
@@ -481,7 +478,6 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX, visual.trailLength, 0, psRender,
       probe = "render.trailPersistence"),
 
-    # Glow section
     floatParam("glowIntensity", "Intensity", "glow",
       GLOW_INTENSITY_MIN, GLOW_INTENSITY_MAX, visual.glowIntensity, 1,
       psRender, probe = "glow.clampedIntegral"),
@@ -550,7 +546,7 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     # KIND of fluid this is — how far a particle's neighbourhood reaches, how
     # hard it resists compression, what spacing it relaxes to, how fast it
     # shears — while this one says how much of that fluid's verdict on a
-    # particle's velocity actually lands (design D14).
+    # particle's velocity actually lands.
     floatParam("fluidStrength", "Fluid", "fluid",
       FLUID_STRENGTH_MIN, FLUID_STRENGTH_MAX, sim.fluidStrength, 2,
       psSimulation,
@@ -562,9 +558,9 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       horizon = rhSettling, horizonReview = true),
     # Ahead of the other three because it sets the neighbourhood they are
     # measured in: a rest density counts neighbours inside this radius, and a
-    # stiffness is stable only against it (design C7). A fraction rather than a
+    # stiffness is stable only against it. A fraction rather than a
     # length keeps the interaction radius one control instead of two coupled
-    # ones, and caps the kernel at the neighbour sweep's reach (design C5).
+    # ones, and caps the kernel at the neighbour sweep's reach.
     floatParam("sphRadiusFraction", "Fluid Scale", "fluid",
       SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX, sim.sphRadiusFraction,
       2, psSimulation,
@@ -581,7 +577,7 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     # the whole of what can be STORED — a preset carrying 40 loads as 40 — while
     # how much of it the fluid can honour depends on the three controls around
     # it, so the descriptor cites the ceiling instead of claiming its maximum is
-    # always available (design C7).
+    # always available.
     floatParam("sphStiffness", "Stiffness", "fluid",
       SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, sim.sphStiffness, 1,
       psSimulation,

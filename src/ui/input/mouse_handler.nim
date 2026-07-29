@@ -34,7 +34,6 @@ type
 # ==============================================================================
 
 func handleMouseDown*(state: InputState; event: MouseEventData): InputState =
-  ## Process mouse down event. Returns new state.
   result = state.withMousePosition(event.clientX, event.clientY)
   case event.button
   of mbLeft:
@@ -47,7 +46,6 @@ func handleMouseDown*(state: InputState; event: MouseEventData): InputState =
     discard
 
 func handleMouseUp*(state: InputState; event: MouseEventData): InputState =
-  ## Process mouse up event. Returns new state.
   case event.button
   of mbLeft:
     result = state.withMouseDown(false)
@@ -57,16 +55,13 @@ func handleMouseUp*(state: InputState; event: MouseEventData): InputState =
     result = state
 
 func handleMouseMove*(state: InputState; event: MouseEventData): InputState =
-  ## Process mouse move event. Returns new state.
   state.withMousePosition(event.clientX, event.clientY)
 
 func handleMouseLeave*(state: InputState): InputState =
-  ## Process mouse leave event. Releases all buttons.
   state.withAllButtonsUp()
 
 func handleDoubleClick*(state: InputState; event: MouseEventData): InputState =
-  ## Process double-click event. Triggers blast at position.
-  ## Also clears mouseDown to prevent stuck state from event timing.
+  ## Also clears mouseDown, to prevent a stuck state from event timing.
   state.withBlast(event.clientX, event.clientY).withMouseDown(false)
 
 # ==============================================================================
@@ -77,7 +72,6 @@ const
   BLAST_DECAY_FACTOR* = 0.85  ## Per-frame decay (~300ms lifespan at 60fps)
 
 func updateFrame*(state: InputState): InputState =
-  ## Per-frame update. Decays blast effect.
   if state.hasActiveBlast():
     state.withBlastDecay(BLAST_DECAY_FACTOR)
   else:
@@ -91,7 +85,6 @@ when defined(js):
   from std/dom import MouseEvent
 
   proc extractMouseData*(event: MouseEvent): MouseEventData =
-    ## Extract pure data from DOM MouseEvent.
     MouseEventData(
       clientX: event.clientX.float,
       clientY: event.clientY.float,

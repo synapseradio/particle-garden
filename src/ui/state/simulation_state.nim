@@ -29,7 +29,7 @@ type
                               ## Repulsion is untouched at every density, so the
                               ## term caps how tightly attraction can pack a
                               ## colony without cancelling what holds it apart.
-                              ## Zero reproduces today's force law exactly.
+                              ## Zero reproduces the force law with crowding absent.
     friction*: float
     ruleTemperature*: float   ## Std dev sigma for the bell-curve rule randomizer
     timeScale*: float
@@ -41,8 +41,8 @@ type
     expAttractionBeta*: float ## Exponential attraction range
     fluidStrength*: float     ## How much of the fluid's verdict on a particle's
                               ## velocity actually lands: multiplies the SPH
-                              ## pass's whole per-pair contribution, pressure and
-                              ## velocity smoothing together (design D14). The
+                              ## pass's whole per-pair contribution, pressure
+                              ## and velocity smoothing together. The
                               ## three numbers below say what KIND of fluid this
                               ## is; this one says how much of it acts. Zero is
                               ## an ordinary value and skips the pass exactly.
@@ -56,7 +56,7 @@ type
                               ## length, so the fluid keeps its relative scale
                               ## when the interaction radius moves and a
                               ## smoothing radius past the neighbour sweep's
-                              ## reach cannot be expressed (design C5).
+                              ## reach cannot be expressed.
     sphViscosity*: float      ## SPH XSPH viscosity strength
     sphSubsteps*: int         ## SPH physics substeps per rendered frame.
                               ## 2 halves the effective timestep the stiff
@@ -85,17 +85,14 @@ func initSimulationState*(): SimulationState =
     interactionRadius: 50,
     forceStrength: 1.0,
     # Crowding starts off, so the shipped world is the force law every other
-    # default was chosen against. The non-zero default is a measurement one-world
-    # task C1.9 takes once the attraction-matrix bounds are final: a default
-    # tuned against attraction bounds that are about to move would be tuned
-    # against forces that no longer exist.
+    # default was chosen against.
     crowdingStrength: 0.0,
     friction: 0.05,
     ruleTemperature: 0.3,  # Tight bell curve: +/-0.99 is ~3.3 sigma out
     timeScale: 0.5,
     maxVelocity: 50.0,
     repulsionEnd: 0.5,     # Inner 50% is repulsion zone
-    attractionPeak: 0.75,  # Attraction peaks at 75% of radius
+    attractionPeak: 0.75,
     forceModel: 0,         # Polynomial (smooth curves)
     expRepulsionAlpha: 6.0,
     expAttractionBeta: 3.0,
@@ -104,16 +101,14 @@ func initSimulationState*(): SimulationState =
     # watched; forces at 1.0 with chemistry depositing is the world these
     # defaults reach. A fluid acting at full strength on top of both
     # at their defaults is a world nobody has tuned — its stiffness ceiling is
-    # still a hypothesis (design C7) — so it waits behind a slider the panel
+    # an unverified hypothesis — so it waits behind a slider the panel
     # always shows.
     fluidStrength: 0.0,
     sphRestDensity: 3.0,  # ~6 neighbors at r=0.5-0.6h settle at density 2.6-3.5
     sphStiffness: 8.0,
-    # The whole interaction radius, which is the kernel every fluid world so far
-    # has run. Moving it below 1 is a separate, measured decision: one-world
-    # task C2.6 sweeps the fraction downward in the running app with crowding at
-    # zero (design C6) and records the conditions beside the constant. Until
-    # then, a fresh world's fluid is the fluid people have already watched.
+    # The whole interaction radius — every fluid world shipped runs the
+    # fraction at 1.0, so a fresh world's fluid matches the fluid people
+    # have already watched.
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
@@ -121,6 +116,6 @@ func initSimulationState*(): SimulationState =
     rdKill: RD_DEFAULT_KILL,
     rdDeposit: RD_DEFAULT_DEPOSIT,
     rdFieldForce: RD_DEFAULT_FIELD_FORCE,
-    climateDrift: false,     # Weather is opt-in; nothing moves unasked.
+    climateDrift: false,
     climateSpeed: CLIMATE_DEFAULT_SPEED
   )

@@ -9,11 +9,10 @@
 # ONE EVENT CARRIES TWO GESTURES, and which one it names is the modifier. A
 # plain scroll pans, because that is what a trackpad's two-finger swipe means on
 # every desktop and what a wheel means in every document. A scroll with ctrl or
-# cmd held zooms, because that is the only shape a trackpad PINCH takes by the
-# time it reaches a browser runtime — the pinch arrives as a wheel event with
-# ctrlKey set whether or not a key was touched, so honouring the modifier is
-# what makes pinch-to-zoom work at all, and it gives mouse users the same zoom
-# without a second binding.
+# cmd held zooms: a trackpad pinch arrives as a wheel event with ctrlKey set and
+# no key touched, so honouring the modifier is what makes pinch-to-zoom work at
+# all, and it gives mouse users the same zoom without a second binding. See
+# dom_extensions.nim's WheelEvent.ctrlKey doc.
 #
 # THE ANCHOR IS THE POINT OF THE ZOOM PATH. Zooming that ignores the cursor
 # moves whatever you were looking at off-screen, so a user zooming toward a

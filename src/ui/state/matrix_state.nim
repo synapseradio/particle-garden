@@ -27,17 +27,14 @@ const
 # ==============================================================================
 
 func matrixIndex*(row, col: int): int =
-  ## Convert (row, col) to linear index.
   ## Row = species feeling the force
   ## Col = species exerting the force
   row * MATRIX_SIZE + col
 
 func matrixCoords*(index: int): tuple[row, col: int] =
-  ## Convert linear index to (row, col).
   (row: index div MATRIX_SIZE, col: index mod MATRIX_SIZE)
 
 func isValidIndex*(row, col, speciesCount: int): bool =
-  ## Check if indices are valid for given species count.
   row >= 0 and row < speciesCount and
   col >= 0 and col < speciesCount and
   speciesCount <= MATRIX_SIZE
@@ -47,19 +44,15 @@ func isValidIndex*(row, col, speciesCount: int): bool =
 # ==============================================================================
 
 func clampMatrixValue*(value: float): float =
-  ## Clamp value into the served matrix band.
   max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, value))
 
 func isAttraction*(value: float): bool =
-  ## Check if value represents attraction (positive).
   value > 0.0
 
 func isRepulsion*(value: float): bool =
-  ## Check if value represents repulsion (negative).
   value < 0.0
 
 func isNeutral*(value: float): bool =
-  ## Check if value is neutral (zero or very close).
   abs(value) < 0.001
 
 # ==============================================================================
@@ -75,8 +68,6 @@ type
     alpha*: float      ## Fixed at 0.7
 
 func cellColorFromValue*(value: float): CellColor =
-  ## Calculate cell background color from attraction value.
-  ## Positive values → green, negative → red.
   ## Saturation reads strength as a FRACTION of the served bound, so a
   ## full-strength cell saturates fully whatever the band is — a scale
   ## pinned to absolute values goes grey the day the range narrows.
@@ -90,7 +81,6 @@ func cellColorFromValue*(value: float): CellColor =
   )
 
 func toHslaString*(color: CellColor): string =
-  ## Convert to CSS hsla() string.
   "hsla(" & $color.hue & "," & $color.saturation & "%," & $color.lightness & "%," & $color.alpha & ")"
 
 # ==============================================================================
@@ -104,7 +94,6 @@ type
     alpha*: float
 
 func speciesColorFromIndex*(index: int, colors: openArray[float]): SpeciesColor =
-  ## Extract species color from COLORS array.
   ## Colors array is interleaved RGB (3 floats per species).
   let offset = index * 3
   if offset + 2 < colors.len:
@@ -118,7 +107,6 @@ func speciesColorFromIndex*(index: int, colors: openArray[float]): SpeciesColor 
     SpeciesColor(red: 128, green: 128, blue: 128, alpha: 0.5)
 
 func toRgbaString*(color: SpeciesColor): string =
-  ## Convert to CSS rgba() string.
   "rgba(" & $color.red & "," & $color.green & "," & $color.blue & "," & $color.alpha & ")"
 
 # ==============================================================================
