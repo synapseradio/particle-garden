@@ -622,7 +622,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
       wgslUniformSize(FieldParamsLayout), uniformUsage, "Field Parameters Uniform (RD)")
     # Which reaction the field runs. Separate from fieldParams because that
     # layout is full at 32 bytes; see gpu_types.ReactionParamsLayout for why
-    # the slot is reserved now rather than when a second reaction lands.
+    # the uniform exists ahead of a second reaction.
     uniformBuffers["reactionParams"] = device.createBufferLabeled(
       wgslUniformSize(ReactionParamsLayout), uniformUsage, "Reaction Parameters Uniform")
     # Per-species field coupling: secretion (fieldDeposit) and tropism
@@ -634,11 +634,10 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     # Which reaction rd-step runs. Gray-Scott is the only implemented value, so
     # the contents never vary and the upload belongs here rather than in the
-    # frame path. The remaining members stay zero — no reaction reads them.
-    # When a second reaction gains a selector, this write moves into whatever
-    # handles that selection (the setter, or runPhysicsFrame's field block
-    # beside the fieldParams upload), so choosing a reaction stays a value
-    # change rather than a bind-group change.
+    # frame path. When a second reaction gains a selector, this write moves
+    # into whatever handles that selection (the setter, or runPhysicsFrame's
+    # field block beside the fieldParams upload), so choosing a reaction stays
+    # a value change rather than a bind-group change.
     let reactionParamsData = newFloat32Array(REACTION_PARAMS_F32_COUNT)
     reactionParamsData[REACTION_KIND] = float32(0)
     queue.writeBufferTyped(

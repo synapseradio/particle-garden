@@ -277,35 +277,27 @@ const
     totalSize: 32
   )
 
-  # ReactionParams struct (32 bytes, generated into
+  # ReactionParams struct (16 bytes, generated into
   # web/shaders/modules/reaction_params.wgsl)
   #
-  # WHICH reaction the field runs, and the parameters a kernel-and-growth
-  # reaction would need. Separate from FieldParamsLayout because that table is
-  # full at 32 bytes and its static assertions reject a ninth field — and
-  # because the two answer different questions: FieldParams carries the values
-  # a user drags, ReactionParams carries the reaction's identity.
+  # WHICH reaction the field runs. Separate from FieldParamsLayout because that
+  # table is full at 32 bytes and its static assertions reject a ninth field —
+  # and because the two answer different questions: FieldParams carries the
+  # values a user drags, ReactionParams carries the reaction's identity.
   #
-  # RESERVED, NOT DELIVERED. Gray-Scott reads `reactionKind` and ignores every
-  # other member. The uniform exists because adding it later means revisiting
-  # rd-step's bind group, its layout, its entry-count constant, and the shader
-  # manifest — a sweeping edit across files an unrelated change has no reason
-  # to touch. Declaring it beside them costs one layout table and one buffer
-  # write. This reserves an addressable slot; no second reaction is implemented
-  # and none is claimed.
+  # The uniform exists so a second reaction never revisits rd-step's bind
+  # group, its layout, its entry-count constant, or the shader manifest — that
+  # reaction's parameters grow this struct in the same change that reads them,
+  # never as reserved members ahead of a consumer (one-world 3.7).
   ReactionParamsLayout* = GpuStruct(
     name: "ReactionParams",
     fields: @[
       GpuField(name: "reactionKind", kind: gtF32, offset: 0,  size: 4, count: 1),
-      GpuField(name: "kernelRadius", kind: gtF32, offset: 4,  size: 4, count: 1),
-      GpuField(name: "growthMu",     kind: gtF32, offset: 8,  size: 4, count: 1),
-      GpuField(name: "growthSigma",  kind: gtF32, offset: 12, size: 4, count: 1),
-      GpuField(name: "growthDt",     kind: gtF32, offset: 16, size: 4, count: 1),
-      GpuField(name: "pad0",         kind: gtF32, offset: 20, size: 4, count: 1),
-      GpuField(name: "pad1",         kind: gtF32, offset: 24, size: 4, count: 1),
-      GpuField(name: "pad2",         kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "pad0",         kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "pad1",         kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "pad2",         kind: gtF32, offset: 12, size: 4, count: 1),
     ],
-    totalSize: 32
+    totalSize: 16
   )
 
   # SpeciesChemistry struct (64 bytes, generated into
@@ -677,16 +669,15 @@ static:
 # REACTIONPARAMS FIELD INDICES (which reaction the field runs)
 # =============================================================================
 # REACTION_KIND=0 (the macro collapses the duplicated prefix),
-# REACTION_KERNEL_RADIUS=1, ... REACTION_PAD2=7,
-# REACTION_PARAMS_F32_COUNT=8.
+# REACTION_PAD0=1, ... REACTION_PAD2=3, REACTION_PARAMS_F32_COUNT=4.
 
 genFieldIndices(ReactionParamsLayout, "REACTION")
 
 static:
   # Offset agreement rides the layout sweep above; the size this struct must
   # hold is its own.
-  assert ReactionParamsLayout.totalSize == 32, "ReactionParams must be 32 bytes"
-  assert ReactionParamsLayout.wgslUniformSize == 32, "ReactionParams allocates 32 bytes"
+  assert ReactionParamsLayout.totalSize == 16, "ReactionParams must be 16 bytes"
+  assert ReactionParamsLayout.wgslUniformSize == 16, "ReactionParams allocates 16 bytes"
 
 # =============================================================================
 # SPECIESCHEMISTRY FIELD INDICES (per-species field coupling)

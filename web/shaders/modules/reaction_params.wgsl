@@ -6,10 +6,6 @@
 
 struct ReactionParams {
   reactionKind: f32,
-  kernelRadius: f32,
-  growthMu: f32,
-  growthSigma: f32,
-  growthDt: f32,
   pad0: f32,
   pad1: f32,
   pad2: f32,

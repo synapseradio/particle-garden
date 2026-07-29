@@ -30,8 +30,8 @@
 // a value from the named constant set below. It arrived as a pipeline-override
 // constant, which meant selecting a reaction required creating a second pipeline;
 // reading it from a uniform makes a second reaction a new branch in this file and
-// nothing else. RESERVED, NOT DELIVERED — REACTION_GRAY_SCOTT is the only value
-// any code writes, and the other ReactionParams members are untouched by it.
+// nothing else. REACTION_GRAY_SCOTT is the only value any code writes; a second
+// reaction's parameters grow ReactionParams in the change that reads them.
 //
 // CHANNELS: .r = activator (A), .g = inhibitor (B). The .b and .a channels are
 // RESERVED STATE CHANNELS for a multi-channel reaction and are carried through

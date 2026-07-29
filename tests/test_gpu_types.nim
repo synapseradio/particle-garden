@@ -273,25 +273,21 @@ suite "Generated FieldParams Layout (Reaction-Diffusion)":
     check generated.strip.endsWith("}")
 
 
-suite "Generated ReactionParams Layout (Reserved Reaction Slot)":
-  # ReactionParams reserves an addressable slot: it carries which reaction the
-  # field runs plus the parameters a kernel-and-growth reaction would need.
-  # Gray-Scott reads reactionKind and ignores the rest. These tests pin the
-  # layout, not a capability — nothing here claims a second reaction exists.
+suite "Generated ReactionParams Layout (Reaction Identity)":
+  # ReactionParams carries which reaction the field runs. Gray-Scott reads
+  # reactionKind; a future reaction's parameters enter this struct in the
+  # same change that reads them, never as reserved members ahead of a
+  # consumer (one-world 3.7).
 
-  test "ReactionParamsLayout is 8 floats, 32 bytes written and allocated":
-    check ReactionParamsLayout.totalSize == 32
-    check wgslUniformSize(ReactionParamsLayout) == 32
+  test "ReactionParamsLayout is 4 floats, 16 bytes written and allocated":
+    check ReactionParamsLayout.totalSize == 16
+    check wgslUniformSize(ReactionParamsLayout) == 16
 
   test "the generated REACTION_ indices reproduce the declared field order":
     # REACTION_KIND, not REACTION_REACTION_KIND: reactionKind already begins
     # with the prefix, and the macro collapses the duplicate.
     check REACTION_KIND == 0
-    check REACTION_KERNEL_RADIUS == 1
-    check REACTION_GROWTH_MU == 2
-    check REACTION_GROWTH_SIGMA == 3
-    check REACTION_GROWTH_DT == 4
-    check REACTION_PARAMS_F32_COUNT == 8
+    check REACTION_PARAMS_F32_COUNT == 4
 
   test "FieldParams stays closed at 32 bytes":
     # The reason ReactionParams exists as its own uniform rather than as four
@@ -305,8 +301,6 @@ suite "Generated ReactionParams Layout (Reserved Reaction Slot)":
     let generated = toWgslStruct(ReactionParamsLayout)
     check generated.startsWith("struct ReactionParams {")
     check "reactionKind: f32," in generated
-    check "kernelRadius: f32," in generated
-    check "growthMu: f32," in generated
     check generated.strip.endsWith("}")
 
 

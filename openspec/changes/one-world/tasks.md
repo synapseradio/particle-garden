@@ -183,7 +183,7 @@ Done here because the bind groups are already open. Implements no second reactio
       Build and both suites green. The visual identity check is pending the same app run as 4.3 —
       Gray-Scott's math is unchanged (the reaction branch is byte-identical, now selected from a
       uniform instead of a pipeline override), so identity is expected rather than merely hoped for.
-- [ ] 3.7 Decide the reserved `ReactionParams` members' fate. `kernelRadius`, `growthMu`,
+- [x] 3.7 Decide the reserved `ReactionParams` members' fate. `kernelRadius`, `growthMu`,
       `growthSigma`, `growthDt` (`src/gpu_types.nim`) are written by nothing, read by nothing,
       and pinned by name in `tests/test_gpu_types.nim`; in `rd-step.wgsl` the
       `REACTION_GRAY_SCOTT` guard has one reachable value, so its fallthrough is dead code.
@@ -192,6 +192,17 @@ Done here because the bind groups are already open. Implements no second reactio
       binding and entry counts survive either way, so the choice costs one layout edit plus two
       test names. A cleanup review flagged the members; the reservation was deliberate (3.1–3.4),
       so the call belongs to the user and is recorded here rather than made in passing.
+      RESOLVED BY STANDING RULE. The user's ruling "nothing dead ever gets to remain"
+      (engineering-principles article 6) closes this fork: proven-dead members are deleted with
+      the proof, never parked as a question. `kernelRadius`, `growthMu`, `growthSigma`,
+      `growthDt` — written by nothing, read by nothing — are deleted; the uniform shrinks to
+      `{ reactionKind, pad0, pad1, pad2 }` (16 bytes). `reactionKind` stays: webgpu_compute
+      writes it and rd-step's reaction seam reads it, so it is the live identity slot a second
+      reaction branches on. That reaction's parameters grow the struct in the same change that
+      reads them. Failing-first: the 16-byte and 4-float pins in test_gpu_types went red against
+      the 32-byte struct before the layout change; bindings, entry counts, and the manifest are
+      untouched, exactly as this task predicted. reaction_params.wgsl regenerates from the
+      layout.
 
 ## 4. Ignition from life (S3)
 
