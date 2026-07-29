@@ -85,7 +85,7 @@ fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let speciesDeposit = params.depositAmount * secretion;
 
   let cell = fieldCellFor(particle.pos,
-    vec2<f32>(grid.canvasWidth, grid.canvasHeight));
+    vec2<f32>(grid.worldWidth, grid.worldHeight));
   // Splat the deposit across the kernel. The field wraps, so cell offsets wrap
   // with it — a colony sitting on the world edge deposits across the seam
   // exactly as it would anywhere else.

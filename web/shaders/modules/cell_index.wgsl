@@ -1,8 +1,8 @@
 //! import grid_params
 
 fn computeCellIndex(pos: vec2<f32>, params: GridParams) -> u32 {
-  let invCellW = f32(params.gridW) / params.canvasWidth;
-  let invCellH = f32(params.gridH) / params.canvasHeight;
+  let invCellW = f32(params.gridW) / params.worldWidth;
+  let invCellH = f32(params.gridH) / params.worldHeight;
 
   var cx = u32(pos.x * invCellW);
   var cy = u32(pos.y * invCellH);

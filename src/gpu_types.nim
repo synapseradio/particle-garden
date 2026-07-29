@@ -95,8 +95,8 @@ const
     fields: @[
       GpuField(name: "gridW",        kind: gtU32, offset: 0,  size: 4, count: 1),
       GpuField(name: "gridH",        kind: gtU32, offset: 4,  size: 4, count: 1),
-      GpuField(name: "canvasWidth",  kind: gtF32, offset: 8,  size: 4, count: 1),
-      GpuField(name: "canvasHeight", kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "worldWidth",   kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "worldHeight",  kind: gtF32, offset: 12, size: 4, count: 1),
       GpuField(name: "particleCount", kind: gtU32, offset: 16, size: 4, count: 1),
       GpuField(name: "padding0",     kind: gtU32, offset: 20, size: 4, count: 1),
       GpuField(name: "padding1",     kind: gtU32, offset: 24, size: 4, count: 1),
@@ -621,8 +621,8 @@ genFieldIndices(SimParamsLayout, "SIM")
 const
   GRID_W* = 0
   GRID_H* = 1
-  GRID_CANVAS_WIDTH* = 2
-  GRID_CANVAS_HEIGHT* = 3
+  GRID_WORLD_WIDTH* = 2
+  GRID_WORLD_HEIGHT* = 3
   GRID_PARTICLE_COUNT* = 4
   GRID_PAD0* = 5
   GRID_PAD1* = 6

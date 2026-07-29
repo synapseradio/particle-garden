@@ -58,7 +58,7 @@ fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let particle = particles[particleIdx];
 
   let cell = fieldCellFor(particle.pos,
-    vec2<f32>(grid.canvasWidth, grid.canvasHeight));
+    vec2<f32>(grid.worldWidth, grid.worldHeight));
   let gradient = fieldInhibitorGradient(field, cell);
 
   // This species' signed tropism. Packed four species per vec4, the same

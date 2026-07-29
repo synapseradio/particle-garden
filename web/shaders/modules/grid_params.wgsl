@@ -11,8 +11,8 @@
 struct GridParams {
   gridW: u32,
   gridH: u32,
-  canvasWidth: f32,     // World width in pixels
-  canvasHeight: f32,    // World height in pixels
+  worldWidth: f32,
+  worldHeight: f32,
   particleCount: u32,
   padding0: u32,
   padding1: u32,

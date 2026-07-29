@@ -758,8 +758,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   gridParamsData[GRID_W] = gridW
   gridParamsData[GRID_H] = gridH
   gridParamsData[GRID_PARTICLE_COUNT] = particleCount
-  gridParamsFloat[GRID_CANVAS_WIDTH] = width
-  gridParamsFloat[GRID_CANVAS_HEIGHT] = height
+  gridParamsFloat[GRID_WORLD_WIDTH] = width
+  gridParamsFloat[GRID_WORLD_HEIGHT] = height
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["gridParams"]), 0, gridParamsData)
 
   # Scan parameters (used by the prefix-sum passes)
