@@ -13,6 +13,7 @@
 
 import std/unittest
 import ../src/camera_core
+import ../src/config_ranges
 import ../src/physics_core
 
 const CAMERA_CORE_TESTS_LOADED* = true
@@ -344,3 +345,26 @@ suite "Screen UV And World Are Exact Inverses":
     let was = worldToScreenUv(world.x, world.y, before, WORLD_W, WORLD_H)
     check abs(was.x - 0.5'f32) < 1e-4'f32
     check abs(was.y - 0.5'f32) < 1e-4'f32
+
+suite "A Floor On What Can Be Seen":
+  test "the composed radius clears the floor at the worst reachable corner":
+    # Minimum size, the density multiplier at its floor, minimum zoom — the
+    # smallest product any reachable settings compose.
+    let corner = visibleRadiusPx(PARTICLE_SIZE_MIN.float32,
+      DENSITY_SIZE_FLOOR, CAMERA_ZOOM_MIN.float32)
+    checkpoint("worst-corner radius " & $corner & " px")
+    check corner >= PARTICLE_VISIBLE_RADIUS_FLOOR_PX
+
+  test "the floor binds the result, not a factor":
+    # At the retired zoom floor of 0.25, every factor sat inside its own
+    # bound while the product fell under a pixel — the corner this guarantee
+    # exists to catch, and the proof the check above can go red.
+    let retiredCorner = visibleRadiusPx(PARTICLE_SIZE_MIN.float32,
+      DENSITY_SIZE_FLOOR, 0.25'f32)
+    check retiredCorner < PARTICLE_VISIBLE_RADIUS_FLOOR_PX
+
+  test "the composed radius grows with each factor":
+    let base = visibleRadiusPx(2.0'f32, DENSITY_SIZE_FLOOR, 1.0'f32)
+    check visibleRadiusPx(3.0'f32, DENSITY_SIZE_FLOOR, 1.0'f32) > base
+    check visibleRadiusPx(2.0'f32, 1.0'f32, 1.0'f32) > base
+    check visibleRadiusPx(2.0'f32, DENSITY_SIZE_FLOOR, 2.0'f32) > base

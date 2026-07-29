@@ -76,6 +76,14 @@ const
   TIME_SCALE_MAX* = 5.0
   PARTICLE_SIZE_MIN* = 1
   PARTICLE_SIZE_MAX* = 8
+  PARTICLE_VISIBLE_RADIUS_FLOOR_PX* = 0.5
+    ## Floor on the COMPOSED on-screen radius (camera_core.visibleRadiusPx),
+    ## never on any single factor: half a pixel of radius is one pixel of
+    ## diameter, the smallest footprint the rasterizer reliably lights.
+    ## tests/test_camera_core.nim holds the worst reachable corner — minimum
+    ## size, the density multiplier's floor, minimum zoom — above it; a
+    ## re-range that dips the corner goes red there, and shipping a clamp at
+    ## the end of the shader chain is the remedy for that red.
   TRAIL_LENGTH_MIN* = 0.0
   TRAIL_LENGTH_MAX* = 200.0
   GLOW_INTENSITY_MIN* = 0.0

@@ -29,6 +29,19 @@ const
   CAMERA_DEFAULT_ZOOM* = 1.0'f32
     ## The view that reproduces the pre-camera framing exactly: the whole world
     ## once, centred.
+  DENSITY_SIZE_FLOOR* = 0.7'f32
+    ## The density size multiplier's floor. render.wgsl receives it as
+    ## MIN_SIZE_MULTIPLIER through shader_config substitution, so the shader
+    ## and the visibility math below read one number.
+
+func visibleRadiusPx*(sizeParam, sizeMultiplier, zoom: float32): float32 =
+  ## The composed on-screen radius, in pixels — what actually reaches the
+  ## eye. Mirrors render.wgsl's chain: halfSize in pixels, divided into world
+  ## units by resolution/worldSize, into clip by 2*zoom/worldSize, back to
+  ## pixels by resolution/2 — the resolution and world factors cancel, so
+  ## the product is halfSize * zoom. baseSize is sizeParam + 1, as the
+  ## renderer writes it.
+  (sizeParam + 1.0'f32) * sizeMultiplier * 0.5'f32 * zoom
 
 # ==============================================================================
 # THE CAMERA

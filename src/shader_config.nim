@@ -199,6 +199,9 @@ import sph_core
 # overlay_core is pure; it owns the drag overlay's line constants and mirrors
 # overlay.wgsl's coverage math.
 import overlay_core
+# camera_core owns the density size multiplier's floor, which the visibility
+# math and render.wgsl both read.
+from camera_core import DENSITY_SIZE_FLOOR
 # glow_core is pure; it mirrors glow.wgsl, and takes the same curve constants
 # this module substitutes into that shader. Importing its type is what lets the
 # mirror read them from here instead of carrying a second copy.
@@ -276,6 +279,8 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["OVERLAY_HALF_THICKNESS_PX"] = fmt"{OVERLAY_THICKNESS_PX * 0.5'f32:.2f}"
   result["OVERLAY_AA_PX"] = fmt"{OVERLAY_AA_PX:.2f}"
   result["OVERLAY_ALPHA"] = fmt"{OVERLAY_ALPHA:.2f}"
+
+  result["DENSITY_SIZE_FLOOR"] = fmt"{DENSITY_SIZE_FLOOR:.2f}"
 
   result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
   result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)

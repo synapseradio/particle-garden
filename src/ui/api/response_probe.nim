@@ -163,9 +163,6 @@ const
     ## the ratio matters, never the shipped world's absolute size.
   RefWorldSegment = 100.0
     ## World-space length whose apparent on-screen size the zoom probe reads.
-  RefDensitySizeFloor = 0.7
-    ## The density size multiplier's floor (render.wgsl:65-66); the composed
-    ## visible-radius probe holds it at the worst corner.
   RefPaletteCount = 8
     ## Species count for the palette-distance probes.
   RefRuleSamples = 16
@@ -605,11 +602,12 @@ proc cameraZoomProbe(value: float; ctx: ProbeContext): float =
   cameraApparentScale(value)
 
 proc visibleRadiusProbe(value: float; ctx: ProbeContext): float =
-  ## particleSize: the COMPOSED on-screen radius — the size
-  ## parameter through the density multiplier's floor and the camera's
-  ## apparent scale on this slice. The zoom-corner slices are what make the
-  ## sweep, not review, hold the visibility floor.
-  (value + 1.0) * RefDensitySizeFloor * cameraApparentScale(ctx.cameraZoom)
+  ## particleSize: the COMPOSED on-screen radius in pixels, through
+  ## camera_core's chain at the density multiplier's floor on this slice's
+  ## zoom. The zoom-corner slices are what make the sweep, not review, hold
+  ## the visibility floor.
+  visibleRadiusPx(value.float32, DENSITY_SIZE_FLOOR,
+    ctx.cameraZoom.float32).float
 
 proc secretionProbe(value: float; ctx: ProbeContext): float =
   ## secretion (per species): the deposit a species' particle actually lands,

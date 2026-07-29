@@ -63,7 +63,9 @@ const OFFSETS = array<vec2f, 6>(
 // - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)
 // - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
 const SIZE_DECAY_RATE: f32 = 0.07;
-const MIN_SIZE_MULTIPLIER: f32 = 0.7;      // Size multiplier at high density (floor)
+// Substituted from camera_core.DENSITY_SIZE_FLOOR, which the visibility
+// math reads; the two cannot drift.
+const MIN_SIZE_MULTIPLIER: f32 = {{DENSITY_SIZE_FLOOR}};
 const MAX_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at zero density (ceiling)
 
 // Density-based brightness: lonely particles are dimmer
