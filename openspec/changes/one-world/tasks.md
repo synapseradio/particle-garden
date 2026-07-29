@@ -1361,7 +1361,7 @@ in this group:
       knob safe; a fully green substeps-3 configuration was built and then REVERTED by user
       decision — evolution speed wins. Remaining sanctioned levers: `FIELD_PATTERN_SHRINK`
       (chemistry lives in cell space) and whatever 10.1's profiling convicts.
-- [ ] 10.5 Rule on deposit-vs-population normalization, then implement the ruling. Reported by a
+- [x] 10.5 Rule on deposit-vs-population normalization, then implement the ruling. Reported by a
       delegate and spot-verified against source, UNVERIFIED BY THE LEAD beyond that: per-cell
       deposit drive is linear in particle count — the splat deposits per particle with no count
       term anywhere (`field-deposit.wgsl`, the uniform write in `webgpu_compute.nim`) — so
@@ -1371,6 +1371,14 @@ in this group:
       pinning the reference at the shipped default count keeps default-count behaviour
       byte-identical. That meaning change is the user's ruling to make. Confound to separate
       first: dot size also grows as population thins, via the render density term.
+      RULED BY THE USER (2026-07-29): deposits stay per-particle. Halving the population
+      halving the field drive is accepted behaviour, not a defect. The candidate
+      population-normalization (deposit uniform scaled by reference/live count, reference
+      pinned at the shipped default) was declined because it changes the Secretion slider
+      meaning from per-particle to per-population. The dot-size confound the task names
+      (render density term growing dots as population thins) stands recorded and untouched.
+      Implementing the ruling requires no code change. 10.6 note stands: the ignition-harness
+      constant keeps its current calibration since areal drive stays population-dependent.
 - [x] 10.6 Recalibrate the ignition harness's coverage constant. Reported by the same delegate:
       `HARNESS_DEPOSIT_COVERAGE` still models ~6% cell coverage of the retired 512x512 field;
       the shipped field gives ~0.7% at the same population, so the harness measures at roughly
