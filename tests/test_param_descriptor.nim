@@ -160,7 +160,7 @@ suite "Hints Name Only Reachable Slider Positions":
     # The regime coordinates live in the notches, checked by "Notches Mark Only
     # Reachable Positions" below under the same reachability rule plus a label.
     # A hint restating them is a second copy free to drift — one naming a
-    # regime coordinate that no longer matches what the regime table holds.
+    # regime coordinate that does not match what the regime table holds.
     check numeralsIn(byId("rdFeed").hint).len == 0
     check numeralsIn(byId("rdKill").hint).len == 0
     check byId("rdFeed").notches.len == RD_REGIMES.len

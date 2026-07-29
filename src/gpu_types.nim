@@ -742,7 +742,7 @@ static:
   assert SpeciesChemistryLayout.wgslUniformSize == 64, "SpeciesChemistry allocates 64 bytes"
   # Both channels hold the same number of slots, and MAX_SPECIES must fit in
   # them. Raising MAX_SPECIES past 8 means widening the arrays (and the struct
-  # past 64 bytes), not silently dropping the species that no longer fit.
+  # past 64 bytes), not silently dropping the species that do not fit.
   assert SpeciesChemistryLayout.fieldByName("secretion").count * 4 ==
     CHEMISTRY_SPECIES_SLOTS
   assert SpeciesChemistryLayout.fieldByName("tropism").count * 4 ==

@@ -386,7 +386,7 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
   test "every species slot the ceiling allows is addressable in both channels":
     # CONTRACT: the packing holds four species per vec4, two vec4s per channel.
     # Raising MAX_SPECIES past that must widen the struct, not silently drop
-    # the species that no longer fit. gpu_types asserts this statically; this
+    # the species that do not fit. gpu_types asserts this statically; this
     # states the same relation where a reader can see it.
     check MAX_SPECIES <= CHEMISTRY_SPECIES_SLOTS
     check CHEM_SECRETION_START + CHEMISTRY_SPECIES_SLOTS - 1 == CHEM_SECRETION_END

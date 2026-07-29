@@ -105,7 +105,8 @@ suite "SPH Tunables Mirror sph_core's Authoritative Constants":
     # The stability ceiling stableStiffnessCeiling serves is FITTED against the
     # pressure gain: the boundary moves with the product of gain and stiffness,
     # so a gain changed on one side of the mirror alone leaves the ceiling
-    # describing a fluid the shader no longer runs. The clamp joins it because
+    # describing a fluid other than the one the shader runs. The clamp joins it
+    # because
     # runs driven past the ceiling are where it starts binding.
     check getTunableFloat("SPH_FORCE_SCALE") == SPH_FORCE_SCALE
     check getTunableFloat("SPH_MAX_PRESSURE_ACCEL") == SPH_MAX_PRESSURE_ACCEL

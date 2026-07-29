@@ -34,7 +34,7 @@ const
   INTERACTION_RADIUS_MAX* = 150
   FORCE_STRENGTH_MIN* = 0.0
     ## Zero is an ordinary value of a coupling strength.
-    ## `fMul` scales BOTH force zones (`src/physics_core.nim:52-60`), so zero
+    ## `fMul` scales BOTH force zones (`src/physics_core.nim`), so zero
     ## removes short-range repulsion too and particles pass through each other
     ## — at that point the crowding cap is vacuous rather than wrong, since
     ## there is no attraction left to attenuate.
@@ -105,7 +105,7 @@ const
   SPH_RADIUS_FRACTION_MIN* = 0.1
     ## PROVISIONAL, and strictly positive for a reason that is not taste. A zero
     ## smoothing radius divides by zero in BOTH kernel normalizations —
-    ## `4 / (PI * h^8)` and `30 / (PI * h^5)`, `src/sph_core.nim:62` and `:82`
+    ## `4 / (PI * h^8)` and `30 / (PI * h^5)` (`src/sph_core.nim`)
     ## raise h to the 8th and 5th power in a denominator — so zero is a
     ## singularity here rather than a quiet setting, and the floor's job is to
     ## make it unreachable.
@@ -141,7 +141,7 @@ const
     ##
     ## Nothing above it, and by construction rather than by clamp: the SPH
     ## neighbour sweep visits only the cell block around a particle and the
-    ## cells are sized to the interaction radius (`src/grid.nim:61`), so a
+    ## cells are sized to the interaction radius (`src/grid.nim`), so a
     ## smoothing radius past that radius would silently DROP neighbours instead
     ## of gathering more. Capped at 1, that fluid cannot be expressed at all.
   SPH_REST_DENSITY_MIN* = 0.2
@@ -402,7 +402,7 @@ static:
   # both kernel normalizations instead of naming a quieter world.
   doAssert SPH_RADIUS_FRACTION_MIN > 0.0,
     "a zero SPH smoothing radius divides by zero in both kernel " &
-    "normalizations (src/sph_core.nim:62 and :82)"
+    "normalizations (src/sph_core.nim)"
   # At exactly 1 the smoothing radius can never outrun the neighbour sweep,
   # whose cells are sized to the interaction radius. Raising this ceiling would
   # make dropped neighbours expressible, which is the constraint this range
@@ -451,7 +451,7 @@ static:
   doAssert TROPISM_MIN < TROPISM_MAX
   doAssert TROPISM_MAX < -TROPISM_MIN,
     "tropism is bounded asymmetrically: up-gradient authority must stay " &
-    "below down-gradient authority (design D5)"
+    "below down-gradient authority"
   doAssert RD_DEFAULT_SECRETION >= SECRETION_MIN and
     RD_DEFAULT_SECRETION <= SECRETION_MAX
   doAssert RD_DEFAULT_TROPISM >= TROPISM_MIN and

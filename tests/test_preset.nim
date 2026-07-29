@@ -382,7 +382,7 @@ suite "A Legacy Preset Loads As The World It Described":
 
   test "a preset saved before this change applies with crowding strength zero":
     ## Crowding did not exist when a v1 file was written, so no v1 world was ever
-    ## tuned against it. The legacy branch pins the strength to zero rather than
+    ## tuned against it. The v1 branch pins the strength to zero rather than
     ## letting it default, which is what stops the shipped default — measured
     ## later, and non-zero — from reaching back and adding a term to a world
     ## someone saved without one.
@@ -399,7 +399,7 @@ suite "A Legacy Preset Loads As The World It Described":
 
   test "a preset saved before this change applies with fraction 1.0":
     ## The smoothing radius was the whole interaction radius when a v1 file was
-    ## written, so that is the kernel the world it describes ran. The legacy
+    ## written, so that is the kernel the world it describes ran. The v1
     ## branch pins the fraction to 1.0 rather than letting it default, which is
     ## what stops the shipped default — measured later, and below 1 —
     ## from rescaling a fluid someone already watched.
@@ -457,7 +457,7 @@ suite "A Legacy Preset Loads As The World It Described":
 
   test "translated strengths still pass through the ordinary clamp":
     ## The translation writes onto the settings node and lets validateSettings
-    ## run, so a legacy file with an out-of-range value cannot use the legacy
+    ## run, so a v1 file with an out-of-range value cannot use the v1
     ## branch as a second, unclamped way in.
     let node = %*{
       "schemaVersion": 1,

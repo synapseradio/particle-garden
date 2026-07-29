@@ -76,7 +76,7 @@ const SPH_XSPH_EPSILON: f32 = {{TUNABLE_SPH_XSPH_EPSILON}};  // Velocity-smoothi
 // per-pair clamp guarding the fixed-point i32 delta from overflow. Both arrive
 // from src/sph_core.nim: the stable stiffness ceiling served to the panel is
 // fitted against this gain, so a number changed here alone would leave that
-// ceiling describing a fluid this shader no longer runs.
+// ceiling describing a fluid other than the one this shader runs.
 const SPH_FORCE_SCALE: f32 = {{TUNABLE_SPH_FORCE_SCALE}};
 const SPH_MAX_PRESSURE_ACCEL: f32 = {{TUNABLE_SPH_MAX_PRESSURE_ACCEL}};
 // Ceiling on the density fed to Tait, in multiples of rest density. Tait raises

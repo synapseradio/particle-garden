@@ -190,7 +190,7 @@ func crowdingBalance*(density, attraction, strength: float): float =
     (1.0 - packingSeparation(density) / REPULSION_ZONE_END)
 
 func densityCeiling*(attr, fMul, strength: float): float =
-  ## The density past which attenuated attraction can no longer tighten a
+  ## The density past which attenuated attraction cannot further tighten a
   ## crowd — read the scope block above before quoting this number.
   ##
   ## attr - the pair's attraction-matrix entry. A negative entry is repulsive

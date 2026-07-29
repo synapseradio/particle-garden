@@ -49,7 +49,7 @@ type
 const
   GOLDEN_RATIO_CONJUGATE* = 0.6180339887498949
     ## 1/phi. Successive hue steps of this fraction, taken mod 1, land
-    ## maximally far from every previously placed hue (see the classic
+    ## maximally far from every hue already placed (see the classic
     ## "golden angle" color-spacing technique).
 
   DEFAULT_SATURATION* = 0.70

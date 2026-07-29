@@ -150,7 +150,7 @@ const
   RefWorldSegment = 100.0
     ## World-space length whose apparent on-screen size the zoom probe reads.
   RefDensitySizeFloor = 0.7
-    ## The density size multiplier's floor (render.wgsl:65-66); the composed
+    ## The density size multiplier's floor (render.wgsl); the composed
     ## visible-radius probe holds it at the worst corner.
   RefPaletteCount = 8
     ## Species count for the palette-distance probes.

@@ -81,8 +81,8 @@ fn cameraScreenUvToWorld(uv: vec2f, cam: Camera, worldSize: vec2f) -> vec2f {
     (uv * 2.0 - 1.0) * worldSize / (2.0 * cam.zoom);
 }
 
-// World position -> screen UV. The forward direction, used to ask where a world
-// point SAT on a previous frame's screen.
+// World position -> screen UV. The forward direction; callers ask it where a
+// world point SAT on a previous frame's screen.
 fn cameraWorldToScreenUv(world: vec2f, cam: Camera, worldSize: vec2f) -> vec2f {
   return (world - vec2f(cam.centerX, cam.centerY)) * cam.zoom / worldSize + 0.5;
 }

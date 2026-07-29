@@ -231,7 +231,7 @@ func defaultSettings*(): PresetSettings =
     # Mirrors simulation_state.initSimulationState's sphRadiusFraction: the
     # whole interaction radius, which is the kernel every fluid world runs.
     # One-world moves this below 1 for fresh worlds; presets
-    # older than this schema version get 1.0 pinned in the legacy branch below,
+    # older than this schema version get 1.0 pinned in the v1 branch below,
     # never the shipped default.
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
@@ -568,7 +568,7 @@ proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
         settings["rdFieldForce"] =
           %(field(settings, "rdFieldForce").getFloat(0.0) * V1_FIELD_FORCE_SCALE)
       # v1 carries no fluidStrength to keep or drop, so this derives one: a
-      # legacy fluid world runs its fluid at full effect, every other runs none.
+      # v1 fluid world runs its fluid at full effect, every other runs none.
       settings["fluidStrength"] = %(if legacy.keepFluid: 1.0 else: 0.0)
       # Pinned, not defaulted. A v1 file has no crowding strength field, so
       # every world it describes runs the force law without one. Letting the

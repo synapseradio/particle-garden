@@ -377,7 +377,7 @@ const
     ## Seeded compression, in multiples of rest density. Exactly the ceiling
     ## forces-sph.wgsl clamps its Tait input at, so the seed is the most
     ## compressed neighbourhood the equation of state answers to: past it the
-    ## per-pair pressure no longer grows.
+    ## per-pair pressure stops growing.
   HARNESS_FRAMES = 120
     ## Frames per run. Friction alone empties a disturbance long before this
     ## (0.95 per substep is a factor of 1e-3 in 120 frames), so residual motion
