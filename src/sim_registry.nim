@@ -175,7 +175,7 @@ const
   PROFILER_SLOT_GRID_BUILD* = 0
     ## Mirrors gpu_profiler.passGridBuild (that module is JS-only, so the
     ## value is duplicated here; both sides document the pairing).
-    ## TODO(owner: user): no test pins the pairing — gpu_profiler cannot
+    ## TODO(2026-07-29T19:17:40Z): no test pins the pairing — gpu_profiler cannot
     ## compile natively, so an equality check needs the pass constants
     ## extracted to a pure module first.
   PROFILER_SLOT_PHYSICS* = 1
