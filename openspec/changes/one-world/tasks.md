@@ -2464,6 +2464,10 @@ recalibrate the range the editor serves.
       guard reading the swept midpoint's float noise (~1e-17, the representation error of the
       ±0.100 endpoints, where ±1's midpoint was exact zero) as a positive attraction — the
       guard now asks for an AUTHORABLE entry, at least one step.
+      ANNOTATION (user revision, after 7.10): the band widens to ±0.330, step unchanged at
+      0.001. One edit in config_ranges — every consumer reads the authority, fixtures are
+      bound-relative — and both suites stayed green. Still provisional pending the in-app
+      calibration.
 - [x] 6.5 `src/ui/state/matrix_state.nim:140-144`: recalibrate the random-fill distribution to the
       new bounds so a randomized world keeps its character; record the chosen spread beside it.
       DONE. sampleRuleValue scales draws by sigma TIMES the served bound: sigma is a fraction of

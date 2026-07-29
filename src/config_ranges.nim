@@ -60,19 +60,12 @@ const
     ## ask for a stiffer fluid, because its ceiling answers.
   FRICTION_MIN* = 0.0
   FRICTION_MAX* = 0.5
-  MATRIX_MIN_VALUE* = -0.100
-  MATRIX_MAX_VALUE* = 0.100
-    ## The attraction matrix's served band, an order of magnitude gentler
-    ## than the ±1 it replaced. Set TOGETHER with the crowding attenuation's
-    ## introduction, not separately — both shape the same same-species
-    ## pile-up, so each bound tuned against the other's old behaviour would
-    ## leave both wrong. PROVISIONAL like the crowding ceiling above: the
-    ## same in-app calibration that measures the crowding band judges this
-    ## one, and its record lands here. [?]
+  MATRIX_MIN_VALUE* = -0.330
+  MATRIX_MAX_VALUE* = 0.330
+    ## Provisional band, in-app judgment pending like the crowding ceiling
+    ## above; tune it together with crowding attenuation — both shape
+    ## same-species pile-up. [?]
   MATRIX_VALUE_STEP* = 0.001
-    ## One authored increment — 200 positions across the band, displayed
-    ## exactly at MATRIX_VALUE_PRECISION decimals. The editor serves these
-    ## from the boundary and restates neither.
   MATRIX_VALUE_PRECISION* = 3
   RULE_TEMPERATURE_MIN* = 0.1
   RULE_TEMPERATURE_MAX* = 0.6
