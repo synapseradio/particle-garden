@@ -1503,11 +1503,14 @@ Two calibration gates cut across the groups, and both are ordering rules rather 
 
 ## 0. Orientation and prerequisites
 
-- [ ] 0.1 Read `CLAUDE.md`, then `proposal.md` and `design.md` (C0–C7 are settled; you build and
+- [x] 0.1 Read `CLAUDE.md`, then `proposal.md` and `design.md` (C0–C7 are settled; you build and
       measure, you do not re-derive them), then design D7, D11, D12, D13, and D14.
-- [ ] 0.2 Confirm the toolchain: `just happen` and `just check` green on a clean tree before
+      Read as part of this session's workflow orientation: CLAUDE.md, proposal.md, design.md C0-C7
+      and D7/D11/D12/D13/D14.
+- [x] 0.2 Confirm the toolchain: `just happen` and `just check` green on a clean tree before
       changing anything. A pre-existing failure is the first task, not a thing to work around.
-- [ ] 0.3 Verify the strength collapse has landed through group 9: `WorldCouplings` is a strength
+      Preflight gate ran just happen and just check green on a clean tree before any C-family edit.
+- [x] 0.3 Verify the strength collapse has landed through group 9: `WorldCouplings` is a strength
       vector (no booleans, no `couplingsFor` in `src/sim_registry.nim`). D14 settles what the fluid
       strength is: a multiplier of its own over the pass's whole velocity contribution — stiffness
       was not promoted, since the XSPH/viscosity smoothing carries no stiffness factor
@@ -1520,9 +1523,15 @@ Two calibration gates cut across the groups, and both are ordering rules rather 
       advancing a waypoint table rather than the RD regimes specifically). If the tour does not
       exist, C4 is BLOCKED and every other group can proceed — do not write a second loop
       under any circumstances.
-- [ ] 0.4 Check whether the attraction-matrix recalibration has landed:
+      Verified by preflight grep: WorldCouplings is a strength vector with no couplingsFor in
+      src/sim_registry.nim; the schemaVersion-branched legacy decode exists in src/preset.nim; the
+      parameterised tour from 9.4a exists in src/climate_core.nim.
+- [x] 0.4 Check whether the attraction-matrix recalibration has landed:
       `grep MATRIX_VALUE src/preset.nim`. This gates C1.9 only.
-- [ ] 0.5 **No check needed: the ordering is now fixed, and it runs this family first.** "Order of
+      Checked at preflight: the matrix recalibration (±0.100) had not landed at C-family start — it
+      lands with E6.4 later in this same workflow — so C1.9 stays gated and the mechanism ships at
+      default 0.
+- [x] 0.5 **No check needed: the ordering is now fixed, and it runs this family first.** "Order of
       work" puts C0–C5 ahead of the E family, so no probe machinery exists yet and no descriptor
       added here can carry a response probe. The obligation does not vanish, it inverts: E3's sweep
       is total over the descriptor table, so every descriptor this family adds is swept when the E
@@ -1530,22 +1539,37 @@ Two calibration gates cut across the groups, and both are ordering rules rather 
       that, and leave `ParamSlider.tsx` alone — travel metrics belong to E.
       One task escapes this order: C1.9's non-zero crowding default waits on the matrix
       recalibration in E6.4, as "Order of work" records.
+      Acknowledged: no probe machinery exists yet; every descriptor this family adds is swept when
+      E3 runs and will need a probe or written exemption there. ParamSlider.tsx left alone by this
+      family except where a C task names it.
 
 ## 1. Bounded crowding
 
 Leads with the oracle tests; the shader follows. The spec is `specs/bounded-crowding/spec.md`.
 
-- [ ] 1.1 `tests/test_physics.nim`: add `attenuation is identity at zero density`, `attenuation is
+- [x] 1.1 `tests/test_physics.nim`: add `attenuation is identity at zero density`, `attenuation is
       monotone decreasing in density`, `strength zero reproduces the unattenuated force exactly`,
       and `the attenuation commutes with force strength` (attenuated force at `fMul = k` equals `k`
       times the attenuated force at `fMul = 1`), against a new
       `crowdingAttenuation(density, strength)` in `src/physics_core.nim`. Expected: red until 1.2.
-- [ ] 1.2 `src/physics_core.nim`: implement `crowdingAttenuation` as
+      Added suite "Crowding Attenuation" to tests/test_physics.nim with the four named tests plus
+      two the spec requires — `repulsion survives the crowd` (repulsion zone and negative matrix
+      entries unattenuated at every density and strength) and `attenuated attraction matches the
+      closed form`. Watched red: `Error: undeclared identifier: 'crowdingAttenuation'` at
+      test_physics.nim:123. Sweeps run over densities [0, 0.5, 1, 5, 20, 100, 400] and strengths
+      [0, 0.25, 1, 2].
+- [x] 1.2 `src/physics_core.nim`: implement `crowdingAttenuation` as
       `1.0 / (1.0 + strength * ln(1.0 + density))`, and an attenuated force variant that scales ONLY
       attractive contributions — the attraction-zone term when its matrix entry is positive
       (`src/physics_core.nim:54-58`); the repulsion zone (`:51-53`) and negative matrix entries stay
       untouched at every density. 1.1 goes green.
-- [ ] 1.3 `tests/test_physics.nim`: add `a density ceiling exists` — a companion
+      src/physics_core.nim gained `crowdingAttenuation(density, strength) = 1/(1 + strength*ln(1+density))`
+      and `calculateAttenuatedForce(normalizedDistance, attr, fMul, invD, density, crowdingStrength)`,
+      which multiplies the attenuation in only when `normalizedDistance >= 0.3 and attr > 0.0` — the
+      attraction zone entered with a positive matrix entry. The attenuation is applied AFTER fMul so
+      the result at force strength k is exactly k times the result at 1 (design C0). All six tests
+      went green.
+- [x] 1.3 `tests/test_physics.nim`: add `a density ceiling exists` — a companion
       `densityCeiling(attr, fMul, strength)` is finite for every reachable combination swept from
       `FORCE_STRENGTH_MIN/MAX` (`src/config_ranges.nim:37-38`), `MATRIX_VALUE_MIN/MAX`
       (`src/preset.nim:147-148`), and the crowding range — read from the constants, never restated,
@@ -1553,24 +1577,66 @@ Leads with the oracle tests; the shader follows. The spec is `specs/bounded-crow
       crowding strength`. D13 puts force strength zero inside the swept range: include
       the endpoint and assert the ceiling degenerates there (design C0's vacuous case) rather than
       excluding it. Expected: red until 1.4.
-- [ ] 1.4 `src/physics_core.nim`: implement `densityCeiling` — the density at which attenuated
+      Added suite "The Density Ceiling" with `a density ceiling exists`, `the ceiling decreases
+      monotonically in crowding strength`, `the ceiling degenerates at force strength zero`, and a
+      fourth the C0 argument earns — `the ceiling is the same at every non-zero force strength`.
+      Bounds are read, never restated: MATRIX_VALUE_MIN/MAX from src/preset.nim (still +/-1.0 — the
+      recalibration has not landed, so C1.9 stays gated), FORCE_STRENGTH_MIN/MAX and
+      CROWDING_STRENGTH_MIN/MAX from src/config_ranges.nim, swept at 7/5/6 points. Watched red on
+      `undeclared identifier: 'CROWDING_STRENGTH_MIN'`.
+- [x] 1.4 `src/physics_core.nim`: implement `densityCeiling` — the density at which attenuated
       attraction no longer exceeds repulsion at the equilibrium separation. Beside it, state the
       claim's scope as the spec requires: equilibrium not transient, same-species signal
       (`web/shaders/src/forces.wgsl:333`) so the per-cell bound carries a `MAX_SPECIES` factor, and
       attraction-only — the mouse, the blast, and positive tropism sit outside it.
-- [ ] 1.5 `src/config_ranges.nim`: `CROWDING_STRENGTH_MIN = 0.0` (zero is today's force law and must
+      src/physics_core.nim gained `densityCeiling(attr, fMul, strength)`, bisecting the crossing
+      where attenuated attraction stops exceeding the repulsion a crowd's own packing supplies;
+      `packingSeparation` and `CROWD_PACKING_CONSTANT = 2*PI/(3*sqrt(3))` derive the separation from
+      the density signal (the (1-r) weight integrated over a hexagonally packed crowd), and
+      `REPULSION_ZONE_END` is derived from INV_03 rather than written twice. Force strength cancels
+      from both sides and appears only to report the vacuous case: fMul == 0 returns 0.0, attraction
+      concentrates nothing at any density. Measured anchors: the equilibrium packing density is
+      13.44, and at attr 1.0 the ceiling falls 53.7 -> 33.0 -> 23.2 -> 18.4 as strength runs 0.25 ->
+      0.5 -> 1.0 -> 2.0, approaching 13.44 from above. The scope note beside it states all four
+      qualifications the spec demands.
+- [x] 1.5 `src/config_ranges.nim`: `CROWDING_STRENGTH_MIN = 0.0` (zero is today's force law and must
       stay reachable), `CROWDING_STRENGTH_MAX` provisionally 2.0 pending 1.9's calibration, standard
       static assertions. `src/ui/api/param_descriptor.nim`: descriptor `crowdingStrength` in the
       same group as `forceStrength`, default 0.0 until 1.9, notch at 0 labelled "off".
-- [ ] 1.6 `src/gpu_types.nim`: append `crowdingStrength` to `SimParamsLayout` and update the size
+      CROWDING_STRENGTH_MIN = 0.0 and CROWDING_STRENGTH_MAX = 2.0 (provisional, marked [?] pending
+      C1.9) landed in src/config_ranges.nim beside FORCE_STRENGTH, with a non-empty-range assertion
+      and a separate `MIN == 0.0` assertion carrying its own reason — crowding shapes the force law
+      rather than gating a pass, so it stays out of the D13 coupling loop. Descriptor
+      `crowdingStrength` sits in group "species" beside forceStrength, precision 2, default 0.0 from
+      initSimulationState, one notch at 0 labelled "off" (no default notch, which would duplicate
+      it). The task text names only config_ranges and param_descriptor, but a psSimulation
+      descriptor is unreachable without its route, so config.nim, web_api.nim (mirror, getParam,
+      setParam) and the Panel.tsx id list were wired in the same task — test_panel_reachability goes
+      red otherwise. tests/test_param_descriptor.nim's three total tables gained their rows.
+- [x] 1.6 `src/gpu_types.nim`: append `crowdingStrength` to `SimParamsLayout` and update the size
       assertions (`:456`) in the same edit; `src/webgpu_compute.nim` writes it through the generated
       index. `tests/test_gpu_types.nim` pins the new index like the others.
-- [ ] 1.7 `web/shaders/src/forces.wgsl`: multiply the attractive component in BOTH force models by
+      `crowdingStrength` appended to SimParamsLayout at byte offset 248; the struct writes 252 bytes
+      and still allocates 256, so no uniform grew or reallocated. Appended rather than folded into
+      `_pad2` at 228, keeping every existing offset pointing where it did. webgpu_compute writes it
+      through SIM_CROWDING_STRENGTH (index 62, SIM_PARAMS_F32_COUNT now 63); tests/test_gpu_types.nim
+      pins the index, adds `the crowding slot follows the SPH block and closes the struct`, and the
+      SPH-contiguity test now ends at `SIM_SPH_VISCOSITY == SIM_CROWDING_STRENGTH - 1` instead of
+      claiming viscosity is last.
+- [x] 1.7 `web/shaders/src/forces.wgsl`: multiply the attractive component in BOTH force models by
       the attenuation — the polynomial envelope and the exponential attraction term (`:93-96`) —
       gated to attractive sign, using the RECEIVING particle's smoothed density already on the
       particle struct (accumulated at `:333-339`, smoothed by `integrate.wgsl:85-93`); each side of
       the half-neighbour pair uses its own density. No new accumulator, no store, and the
       density accumulation itself is untouched — it is world-intrinsic under D12.
+      web/shaders/src/forces.wgsl gained `crowdingAttenuation`, mirroring physics_core exactly, and
+      both force models now scale their attractive component by it: `exponentialForce` takes an
+      `attenuation` argument applied to `attraction * exp(-beta*r) * 2.0`, and both polynomial
+      attraction-zone branches multiply by it. Every application is gated with
+      `select(1.0, attenuation, attraction > 0.0)`, so a negative matrix entry — repulsive in the
+      attraction zone — is untouched. Each half of the pair uses the density of the particle
+      RECEIVING that half; this particle's is hoisted out of the neighbour loop, the other's is
+      computed per pair. No new accumulator and no store in this task.
 - [ ] 1.7a **Build the crowd-density channel here, where its consumer is.** The density 1.7 reads is
       COLONY density — species-gated at `web/shaders/src/forces.wgsl:333` — and the cap wants crowd
       density, species-blind, because the spatial hash a mixed blob fills costs exactly what a
@@ -1585,19 +1651,51 @@ Leads with the oracle tests; the shader follows. The spec is `specs/bounded-crow
       group 10's established baseline and record the number here. Restate the 1.4 scope note: the
       per-cell bound loses its `MAX_SPECIES` factor once the signal is species-blind, which is the
       point of the change.
-- [ ] 1.8 `src/preset.nim`: schema field `crowdingStrength` with clamping against the
+      PARTIAL — code complete, measurement deferred. The species-blind crowd-density channel now
+      runs beside the colony one: particle offset 28 became `crowdDensity`
+      (PARTICLE_CROWD_DENSITY_OFFSET, previously padding, so the struct stays 32 bytes), forces.wgsl
+      accumulates every neighbour at binding 7 into a new `crowdDensityDelta` buffer, integrate.wgsl
+      resolves it at binding 5 with the same weight and the same temporal smoothing colony density
+      gets, and the attenuation reads `crowdDensity` while the renderer keeps reading `density`.
+      wgsl_lint's manifest, the two bind-group entry-count constants, sim_registry's
+      `sbCrowdDensityDelta` clear, webgpu_init's buffer and gpu_types' ParticleLayout all moved in
+      the same edit. The channel encodes at CROWD_DENSITY_FIXED_POINT_SCALE = 8192 (the same
+      derivation sph_core makes from MAX_PARTICLES) rather than the 65536 velocity scale: a neighbour
+      count reaching 128000 wraps an i32 at 65536, and a negative crowd density hands log(1+d) a
+      negative argument, so the NaN would spread through every force in the frame. The 1.4 scope
+      note is stated species-blind — the per-cell bound carries no MAX_SPECIES factor. DEFERRED: the
+      atomic-traffic measurement against group 10's baseline was not taken (no profiling in this
+      pass). Arithmetic only, not a measurement: density atomics per pair go from 1/S to 1 + 1/S, so
+      at the shipped 4 species per-pair atomics rise from about 2.25 to 3.25 (+44%), plus one extra
+      per-particle atomic closing the pass.
+- [x] 1.8 `src/preset.nim`: schema field `crowdingStrength` with clamping against the
       `config_ranges` bounds, modelled on the pattern task 9.1a establishes (including its
       schemaVersion treatment), plus a round-trip test in the preset suite. In the legacy branch of
       the versioned decode (D8's translate-at-decode boundary), pin `crowdingStrength` to
       exactly 0.0 — today's force law — and test: `a preset saved before this change applies with
       crowding strength zero`, so no saved world gains a term it was not saved with.
+      preset.nim carries `crowdingStrength` through PresetSettings, defaultSettings (0.0, mirroring
+      initSimulationState), validateSettings (clamped against CROWDING_STRENGTH_MIN/MAX) and toJson,
+      with web_api's snapshot and apply paths wired. The v1 legacy branch of `migrate` writes
+      `settings["crowdingStrength"] = 0.0` unconditionally — pinned, not defaulted, so the non-zero
+      default C1.9 measures cannot reach back into a saved world. The test `a preset saved before
+      this change applies with crowding strength zero` puts a crowding strength of 2.0 INTO the v1
+      fixture across all four legacy modes, so it fails without the pin instead of passing on the
+      default happening to be zero; watched red on `undeclared field: 'crowdingStrength'`. A
+      round-trip value (1.25) and a two-sided clamp test landed beside it. No schemaVersion bump: v2
+      is this change's own unreleased schema, and C0.3 names the existing v1 branch as where C1.8
+      pins.
 - [ ] 1.9 GATED on the matrix recalibration landing (C0.4): with SPH off (design C6), measure
       the strength at which a collapsing single-species world visibly stops tightening and the
       strength at which ordinary colonies visibly soften, set the default between them and
       `CROWDING_STRENGTH_MAX` above the second, and record both measurements and their conditions —
       matrix bounds, force strength, particle count — beside the constants per the range authority's
       measured-bound rule. Add the default as a notch.
-- [ ] 1.10 `just happen` and `just check` green.
+- [x] 1.10 `just happen` and `just check` green.
+      `just happen` green (shader bundle, JS frontend, UI bundle, native binary), `just test` green
+      at 698 passing native tests, `web-ui` bun test green at 41 passing. No generated output was
+      hand-edited — web/app.js, web/ui-bundle.* and top-level web/shaders/*.wgsl stay out of the
+      diff. Nothing committed; 26 files modified.
 
 ## 2. SPH scale
 
