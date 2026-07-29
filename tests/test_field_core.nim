@@ -48,13 +48,24 @@ const
     ## enough for Gray-Scott spots to divide and fill from the seed.
   HARNESS_BLOB_COUNT = 6
     ## Blobs the harness seeds. RD_SEED_BLOB_COUNT is calibrated for the
-    ## shipped 512x512 field; 6 keeps the same rough coverage fraction on a
+    ## retired 512x512 field; 6 keeps the same rough coverage fraction on a
     ## 64x64 grid instead of flooding it.
   HARNESS_BLOB_RADIUS = 6.0
   HARNESS_DEPOSIT_COVERAGE = 16
-    ## One cell in HARNESS_DEPOSIT_COVERAGE receives a particle deposit,
-    ## approximating the ~6% cell coverage 16000 particles give the shipped
-    ## 512x512 field.
+    ## One cell in HARNESS_DEPOSIT_COVERAGE receives a particle deposit. The
+    ## fraction (6.25%) was faithful to the retired 512x512 field at the
+    ## 16000-particle default; the shipped FIELD_W x FIELD_H puts that
+    ## population on ~0.7% of cells (1 in ~147) and the 128000 maximum on
+    ## ~5.4%, so as an areal rate this models the densest legitimate
+    ## population, ~9x the default's (one-world 10.6). Direction per consumer:
+    ## the negative and ceiling tests hold at this inflated rate and so hold a
+    ## fortiori at the default's; the comparative tests normalize totals and
+    ## cancel the coverage; the positive ignition observations do NOT survive
+    ## de-inflation (measured: no ignition at 1/9.2 of this drive) — real
+    ## cold-start ignition is per-nucleus, carried by the splat kernel and
+    ## colony density and warranted by the in-app observation on task 4.3,
+    ## never by this global rate. If secretion becomes population-normalized
+    ## (10.5), recalibration rides that change.
   ALIVE_THRESHOLD = 0.15
     ## Inhibitor concentration above which a cell reads as pattern rather than
     ## background. Gray-Scott's background sits at ~0 inhibitor.

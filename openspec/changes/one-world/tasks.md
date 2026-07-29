@@ -1313,13 +1313,27 @@ in this group:
       pinning the reference at the shipped default count keeps default-count behaviour
       byte-identical. That meaning change is the user's ruling to make. Confound to separate
       first: dot size also grows as population thins, via the render density term.
-- [ ] 10.6 Recalibrate the ignition harness's coverage constant. Reported by the same delegate:
+- [x] 10.6 Recalibrate the ignition harness's coverage constant. Reported by the same delegate:
       `HARNESS_DEPOSIT_COVERAGE` still models ~6% cell coverage of the retired 512x512 field;
       the shipped field gives ~0.7% at the same population, so the harness measures at roughly
       9x the real per-cell drive, and the recorded ignition constants (splat radius, default
       deposit) inherit the inflation. Verify the arithmetic, re-measure ignition at faithful
       coverage, and update the constants' recorded observations — or record why the inflation
       is deliberate headroom.
+      VERIFIED AND RECORDED, lead-run. Arithmetic confirmed: 2048x1152 = 2,359,296 cells;
+      16000 particles occupy at most 0.678% (1 in ~147) against the harness's 1 in 16 —
+      9.2x areal inflation, exactly as reported. New fact the delegate could not have had:
+      after the 32000-cap removal the 128000 maximum occupies ~5.4%, so 1-in-16 now models
+      the densest legitimate population almost faithfully. Re-measured as asked: at 1/9.2 of
+      the harness drive the shipped radius/deposit pair does NOT ignite (probe run and
+      deleted; frame count -1). Ruling per consumer, now written on the constant itself:
+      negative and ceiling tests are a-fortiori conservative under inflation; comparative
+      tests normalize totals so coverage cancels; the positive ignition observations depend
+      on the inflated global rate and their real-world warrant is per-nucleus — the splat
+      kernel plus colony density, confirmed in-app under 4.3 — not areal coverage. The
+      constants' recorded observations stand under that reading. Both stale 512x512 comments
+      in the harness now say "retired". If 10.5 lands population-normalized secretion, areal
+      drive becomes population-invariant and this constant is recalibrated in that change.
 - [ ] 10.3 If Fluid Chemistry is over budget, lower that preset's default particle count. Do not
       remove the coupling combination (design D7).
 - [ ] 10.4 Record the numbers in `docs/perf-report.md` beside the existing baseline.
