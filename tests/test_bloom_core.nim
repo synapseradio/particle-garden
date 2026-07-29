@@ -80,3 +80,40 @@ suite "WGSL Weight Emission":
     for part in parts:
       # Every value must carry a decimal point so WGSL types it as f32.
       check "." in part
+
+suite "Tonemap Grade Mirror":
+  # web/shaders/modules/tonemap_grade.wgsl: exposure scales the HDR light,
+  # the Narkowicz ACES curve maps it to display range, then saturation mixes
+  # against luminance, contrast pivots at 0.5, and temperature splits the
+  # red/blue channels by a tenth of its value. These pin the mirror to that
+  # chain so the grading probes measure the shipped math.
+
+  test "aces is anchored at black and saturates toward white":
+    check acesFilmic(0.0) == 0.0
+    check acesFilmic(0.5) > acesFilmic(0.25)
+    check acesFilmic(20.0) > 0.98
+    check acesFilmic(20.0) <= 1.0
+
+  test "saturation leaves the graded luminance unchanged":
+    # mix(vec(lum), color, s) is linear and luminance is a linear functional,
+    # so luminance survives any saturation — which is why the saturation PROBE
+    # observes chroma spread, never luminance.
+    let neutral = gradedRgb(0.9, 0.5, 0.2, 1.0, 1.0, 1.0, 0.0)
+    let drained = gradedRgb(0.9, 0.5, 0.2, 1.0, 0.2, 1.0, 0.0)
+    check abs(tonemapLuminance(neutral.r, neutral.g, neutral.b) -
+      tonemapLuminance(drained.r, drained.g, drained.b)) < 1e-9
+
+  test "contrast one is the identity and larger contrast spreads around half":
+    let flat = gradedRgb(0.9, 0.5, 0.2, 1.0, 1.0, 1.0, 0.0)
+    let spread = gradedRgb(0.9, 0.5, 0.2, 1.0, 1.0, 1.6, 0.0)
+    check abs((spread.r - 0.5) - (flat.r - 0.5) * 1.6) < 1e-9 or spread.r == 1.0
+    check abs((spread.b - 0.5) - (flat.b - 0.5) * 1.6) < 1e-9 or spread.b == 0.0
+
+  test "temperature trades red against blue by a tenth per unit":
+    let warm = gradedRgb(0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0)
+    let cool = gradedRgb(0.5, 0.5, 0.5, 1.0, 1.0, 1.0, -1.0)
+    check warm.r > warm.b
+    check cool.b > cool.r
+    let neutral = gradedRgb(0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.0)
+    check abs(warm.r - neutral.r * 1.1) < 1e-9
+    check abs(warm.b - neutral.b * 0.9) < 1e-9

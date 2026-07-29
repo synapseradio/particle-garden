@@ -502,3 +502,67 @@ suite "Neighbor Cell Index Validity":
             check neighbor.cell >= 0
             check neighbor.cell < gridW * gridH
             check neighbor.cell == neighbor.ny * gridW + neighbor.nx
+
+suite "Configurable Force Curve Mirror":
+  # forces.wgsl's shipped force law: MODEL 0 (polynomial) is a Hermite
+  # repulsion over [0, repulsionEnd] and a squared-bump attraction over
+  # [repulsionEnd, 1] peaking at attractionPeak; MODEL 1 (exponential) is
+  # -exp(-alpha r) + attr * exp(-beta r) * 2. Crowding attenuation multiplies
+  # only a POSITIVE attraction's contribution, in both models. These pin the
+  # mirror to the shader block, coordinates written against the shipped
+  # defaults (repulsionEnd 0.5, attractionPeak 0.65 — src/preset.nim).
+
+  const RepEnd = 0.5'f32
+  const AttPeak = 0.65'f32
+
+  test "repulsion is a Hermite ramp from -1 at contact to 0 at the zone end":
+    check polynomialForce(0.0'f32, 1.0'f32, RepEnd, AttPeak, 1.0'f32) == -1.0'f32
+    # t = 0.5 gives -1 + 3/4 - 1/4 = -0.5 exactly.
+    check abs(polynomialForce(RepEnd * 0.5'f32, 1.0'f32, RepEnd, AttPeak,
+      1.0'f32) - (-0.5'f32)) < 1e-6
+    check abs(polynomialForce(RepEnd, 1.0'f32, RepEnd, AttPeak,
+      1.0'f32)) < 1e-6
+
+  test "attraction bumps to attr * 4 exactly at the peak and dies at both ends":
+    check abs(polynomialForce(AttPeak, 1.0'f32, RepEnd, AttPeak, 1.0'f32) -
+      4.0'f32) < 1e-6
+    check abs(polynomialForce(0.999'f32, 1.0'f32, RepEnd, AttPeak,
+      1.0'f32)) < 0.01'f32
+
+  test "crowding attenuates a positive attraction and nothing else":
+    let full = polynomialForce(AttPeak, 1.0'f32, RepEnd, AttPeak, 1.0'f32)
+    let dimmed = polynomialForce(AttPeak, 1.0'f32, RepEnd, AttPeak, 0.5'f32)
+    check abs(dimmed - full * 0.5'f32) < 1e-6
+    # A negative matrix entry in the attraction zone pushes apart; the shader
+    # never dampens it (select on attraction > 0).
+    check polynomialForce(AttPeak, -1.0'f32, RepEnd, AttPeak, 0.5'f32) ==
+      polynomialForce(AttPeak, -1.0'f32, RepEnd, AttPeak, 1.0'f32)
+    # Repulsion-zone force ignores attenuation entirely.
+    check polynomialForce(0.2'f32, 1.0'f32, RepEnd, AttPeak, 0.5'f32) ==
+      polynomialForce(0.2'f32, 1.0'f32, RepEnd, AttPeak, 1.0'f32)
+
+  test "the exponential model separates its two decays":
+    # attraction 0 isolates the repulsion decay.
+    check abs(exponentialForce(0.3'f32, 0.0'f32, 5.0'f32, 2.0'f32, 1.0'f32) -
+      (-exp(-5.0'f32 * 0.3'f32))) < 1e-6
+    # The attraction term adds attr * exp(-beta r) * 2, attenuated.
+    let base = exponentialForce(0.3'f32, 0.0'f32, 5.0'f32, 2.0'f32, 1.0'f32)
+    let withAttr = exponentialForce(0.3'f32, 1.0'f32, 5.0'f32, 2.0'f32,
+      0.5'f32)
+    check abs(withAttr - base -
+      exp(-2.0'f32 * 0.3'f32) * 2.0'f32 * 0.5'f32) < 1e-6
+
+suite "Post-Step Speed Mirror":
+  # integrate.wgsl:120-137: velocity times friction, then a logarithmic soft
+  # cap that starts at half maxVelocity and hard-caps at maxVelocity.
+
+  test "below the soft-cap threshold only friction acts":
+    check abs(postStepSpeed(10.0'f32, 0.9'f32, 60.0'f32) - 9.0'f32) < 1e-6
+
+  test "above the threshold the excess is compressed logarithmically":
+    # damped = 40, threshold = 30, excess = 10 -> 30 + ln(11).
+    check abs(postStepSpeed(40.0'f32, 1.0'f32, 60.0'f32) -
+      (30.0'f32 + ln(11.0'f32))) < 1e-5
+
+  test "no speed escapes the hard cap":
+    check postStepSpeed(1.0e6'f32, 1.0'f32, 60.0'f32) <= 60.0'f32

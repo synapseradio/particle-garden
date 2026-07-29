@@ -407,3 +407,61 @@ func getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
 
   let cell = ny * gridW + nx
   result = (nx: nx, ny: ny, cell: cell, wrapX: wrapX, wrapY: wrapY)
+
+# ==============================================================================
+# THE CONFIGURABLE FORCE CURVES
+# ==============================================================================
+# forces.wgsl dispatches between two force models by params.forceModel, both
+# parameterized from SimParams; these mirror that shipped block (the MODEL 0 /
+# MODEL 1 branch in the neighbour loop). calculateForce above keeps the fixed
+# 0.3/1.3/0.7 curve that predates the models. Neither model multiplies by the
+# force multiplier or the inverse distance here — the shader applies
+# `* params.forceMultiplier * invDistance` after the branch, and callers of
+# these mirrors do the same.
+
+func polynomialForce*(normalizedDist, attraction, repulsionEnd,
+    attractionPeak, attenuation: float32): float32 =
+  ## forces.wgsl MODEL 0. Repulsion over [0, repulsionEnd] is the Hermite ramp
+  ## -1 + 3t² - 2t³ in the zone-normalized t, so contact costs -1 and the ramp
+  ## lands at 0 with zero slope. Attraction over [repulsionEnd, 1] is a squared
+  ## bump peaking at attractionPeak scaled by 4, and the crowding attenuation
+  ## multiplies it only when the matrix entry attracts (a negative entry pushes
+  ## apart, and damping it would fight the cap — design C1). Zone degeneracy
+  ## (attractionPeak at or outside [repulsionEnd, 1]) is unguarded exactly as
+  ## the shader leaves it unguarded; the ranges keep it unreachable.
+  if normalizedDist < repulsionEnd:
+    let t = normalizedDist / repulsionEnd
+    let t2 = t * t
+    -1.0'f32 + 3.0'f32 * t2 - 2.0'f32 * t2 * t
+  else:
+    let zoneWidth = 1.0'f32 - repulsionEnd
+    let peakPos = (attractionPeak - repulsionEnd) / zoneWidth
+    let t = (normalizedDist - repulsionEnd) / zoneWidth
+    let leftDist = t / peakPos
+    let rightDist = (1.0'f32 - t) / (1.0'f32 - peakPos)
+    let bump = min(leftDist, 1.0'f32) * min(leftDist, 1.0'f32) *
+      min(rightDist, 1.0'f32) * min(rightDist, 1.0'f32)
+    let crowding = (if attraction > 0.0'f32: attenuation else: 1.0'f32)
+    attraction * bump * 4.0'f32 * crowding
+
+func exponentialForce*(normalizedDist, attraction, alpha, beta,
+    attenuation: float32): float32 =
+  ## forces.wgsl MODEL 1: -exp(-alpha r) repulsion plus attr * exp(-beta r) * 2
+  ## attraction, the attraction attenuated under the same positive-entry gate
+  ## as the polynomial bump.
+  let repulsion = exp(-alpha * normalizedDist)
+  let attract = exp(-beta * normalizedDist)
+  let crowding = (if attraction > 0.0'f32: attenuation else: 1.0'f32)
+  -repulsion + attraction * attract * 2.0'f32 * crowding
+
+func postStepSpeed*(speed, friction, maxVelocity: float32): float32 =
+  ## integrate.wgsl:120-137. Friction multiplies the post-delta velocity (it is
+  ## a retention factor, not a drag), then speeds above half maxVelocity are
+  ## compressed as threshold + ln(1 + excess) and hard-capped at maxVelocity.
+  let damped = speed * friction
+  let softCapThreshold = maxVelocity * 0.5'f32
+  if damped > softCapThreshold and damped > 0.0'f32:
+    min(softCapThreshold + ln(1.0'f32 + damped - softCapThreshold),
+      maxVelocity)
+  else:
+    damped

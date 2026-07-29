@@ -79,3 +79,39 @@ func bloomWeightsWgsl*(): string =
   for weight in bloomHalfKernel():
     parts.add formatFloat(weight, ffDecimal, 8)
   parts.join(", ")
+
+# ==============================================================================
+# THE TONEMAP GRADE
+# ==============================================================================
+# web/shaders/modules/tonemap_grade.wgsl, the one grading authority both
+# tonemap.wgsl and field-composite.wgsl run: exposure scales the HDR light,
+# the Narkowicz ACES curve maps it into display range, saturation mixes the
+# colour against its own luminance, contrast pivots at 0.5, and temperature
+# trades red against blue by a tenth per unit. Mirrored per channel — ACES
+# and every grade step act channelwise, so a scalar mirror composes exactly.
+
+func tonemapLuminance*(r, g, b: float): float =
+  ## Rec. 709 luminance, the weights tonemap_grade.wgsl's `luminance` uses.
+  0.2126 * r + 0.7152 * g + 0.0722 * b
+
+func acesFilmic*(hdr: float): float =
+  ## One channel of the Narkowicz ACES approximation, clamped to [0, 1].
+  clamp(hdr * (2.51 * hdr + 0.03) / (hdr * (2.43 * hdr + 0.59) + 0.14),
+    0.0, 1.0)
+
+func gradedRgb*(lightR, lightG, lightB, exposure, saturation, contrast,
+    temperature: float): tuple[r, g, b: float] =
+  ## The full graded colour for an HDR light triple — tonemapGrade verbatim.
+  var cr = acesFilmic(lightR * exposure)
+  var cg = acesFilmic(lightG * exposure)
+  var cb = acesFilmic(lightB * exposure)
+  let lum = tonemapLuminance(cr, cg, cb)
+  cr = lum + saturation * (cr - lum)
+  cg = lum + saturation * (cg - lum)
+  cb = lum + saturation * (cb - lum)
+  cr = (cr - 0.5) * contrast + 0.5
+  cg = (cg - 0.5) * contrast + 0.5
+  cb = (cb - 0.5) * contrast + 0.5
+  cr = cr * (1.0 + temperature * 0.1)
+  cb = cb * (1.0 - temperature * 0.1)
+  (r: clamp(cr, 0.0, 1.0), g: clamp(cg, 0.0, 1.0), b: clamp(cb, 0.0, 1.0))

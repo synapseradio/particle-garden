@@ -34,6 +34,7 @@ import test_colormap_core
 import test_glow_core
 import test_trail_core
 import test_param_descriptor
+import test_response_probe
 import test_camera_core
 import test_climate_core
 import test_camera_input
@@ -68,6 +69,7 @@ static:
   discard test_glow_core.GLOW_CORE_TESTS_LOADED
   discard test_trail_core.TRAIL_CORE_TESTS_LOADED
   discard test_param_descriptor.PARAM_DESCRIPTOR_TESTS_LOADED
+  discard test_response_probe.RESPONSE_PROBE_TESTS_LOADED
   discard test_camera_core.CAMERA_CORE_TESTS_LOADED
   discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
   discard test_camera_input.CAMERA_INPUT_TESTS_LOADED

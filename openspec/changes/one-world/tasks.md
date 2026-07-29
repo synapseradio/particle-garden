@@ -2125,33 +2125,92 @@ a build error.
 The measurement gate. Task 3.4 is expected to fail for four named parameters — that failure is the
 calibration signal, not a defect in the test.
 
-- [ ] 3.1 `src/ui/api/response_probe.nim` (new, pure): `ProbeContext` — every parameter other than
+- [x] 3.1 `src/ui/api/response_probe.nim` (new, pure): `ProbeContext` — every parameter other than
       the one under measurement, fixed at named coordinates, defaulting to the shipped defaults with
       the strengths that multiply the observable's contribution at their reference coordinates
       (design E2); the probe
       registry mapping probe ids to `proc(value: float; ctx: ProbeContext): float`; the budget
       classes (`pbClosedForm` = 256 samples, `pbStepped` = 64); and the three metrics — span, live
       fraction, cliff — computed over track positions per slice.
-- [ ] 3.2 `src/ui/api/param_descriptor.nim`: add `probe: string` and `exemption: string` to
+      DONE. The module carries 39 probes over the mirror family, every reference coordinate a
+      named constant with its reason, the longest dead run recorded beside the metrics, and
+      `servedMax` spanning a bDerived track by what it serves per slice; `slicesFor` declares the
+      zoom corners for the composed visible radius and the deriving-box corners plus default for
+      the stiffness ceiling. No strength lift was needed: every strength multiplying a probed
+      observable defaults non-zero except crowding, whose gated term appears only in its own
+      probe. Three mirror gaps had to close in this same diff for the probes to measure SHIPPED
+      math: physics_core gained forces.wgsl's configurable models (`polynomialForce`,
+      `exponentialForce`) and integrate.wgsl's `postStepSpeed` soft cap, and bloom_core gained
+      tonemap_grade.wgsl's chain (`acesFilmic`, `gradedRgb`, `tonemapLuminance`), each pinned by
+      new mirror tests first (11 tests, watched red on the undeclared identifiers). One standing
+      drift surfaced and is left for the user's ruling: `calculateForce` and the C1-era
+      `calculateAttenuatedForce` mirror a fixed 0.3-boundary curve forces.wgsl no longer runs.
+- [x] 3.2 `src/ui/api/param_descriptor.nim`: add `probe: string` and `exemption: string` to
       `ParamDescriptor`, populated per design E1's assignment table. The two exemptions are
       `particleCount` and `speciesCount`, each with its written reason; `particleSize` takes the
       composed visible-radius probe (design E14) rather than an exemption.
-- [ ] 3.3 `tests/test_response_probe.nim` (new): `every descriptor is either probed or exempted`;
+      DONE. Both fields on the descriptor, threaded as optional constructor arguments through
+      every call site rather than a second id-keyed table (the cardinality precedent). The
+      assignment covers the whole table: E1's rows, plus the descriptors E1 predates — the
+      C family's crowdingStrength (`force.crowdingShare`) and sphRadiusFraction
+      (`sph.kernelReach`) per C0.5's forwarded obligation, fluidStrength (`sph.pairShare`, the
+      one factor every SPH delta passes through), and the per-species secretion and tropism
+      columns through field_core's species functions.
+- [x] 3.3 `tests/test_response_probe.nim` (new): `every descriptor is either probed or exempted`;
       `no descriptor is both`; `every probe id resolves to a registered function`; `every exemption
       states a reason`. These pin the coverage relation before any metric runs.
-- [ ] 3.4 Same file: the sweep — for every probed descriptor, compute span, live fraction, and cliff
+      DONE. The four named relations plus the reverse direction — every registered probe is
+      carried by some descriptor, so an orphaned registry entry is as loud as a missing one — and
+      the exemption test pins the exempt SET to exactly the two structural counts, so a third
+      exemption is a decision, never a drift. Registered in test_all and tests/README.md.
+- [x] 3.4 Same file: the sweep — for every probed descriptor, compute span, live fraction, and cliff
       on its default slice at the provisional thresholds (`SPAN_MIN = 0.05`,
       `LIVE_FRACTION_MIN = 0.60`, `CLIFF_MAX = 0.25`, `RESPONSE_EPSILON = 1e-4`). Expected:
       `rdFeed`, `rdKill`, `trailLength`, and `glowIntensity` fail; `friction`, `fieldOpacity`,
       `exposure`, `contrast`, `sphViscosity` pass.
-- [ ] 3.5 Emit the full measured table — every parameter's span, live fraction, cliff, and the
+      DONE, with the prediction half corrected by the measurement. All five must-pass controls
+      pass. rdFeed fails as predicted (span 0.13, live 0.87, cliff 1.36) and so does rdKill
+      (live 0.51, dead over the top quarter) — the two-dimensional fixed-point geometry, on
+      schedule. The other two predictions are DISPROVED and corrected in design E3:
+      trailLength's mapping was built to decay to a fixed residual over frames proportional to
+      the length, so persistence is linear in the slider (trail_core.persistenceFrames records
+      the collapse) and it measures fully live; glowIntensity stays live even at its declared
+      bright coordinate, because the display clamp compresses the top of the track to 85% of the
+      raw integral (test_glow_core's measured 1559 against 1843) and a 15% compression still
+      grows every step. The sweep also measured six controls red that no prediction named —
+      maxVelocity (dead top half), attractionPeak (cliff 0.57), paletteLightness (a mid-track
+      peaked response the endpoint span definition reads as zero — a recorded limit of the E2
+      span metric), sphRadiusFraction (inert bottom + kernel cliff 1.25), sphRestDensity (floored
+      pressure dead past a tenth of travel), sphSubsteps (three-position lattice, cliff 0.60) —
+      all recorded in the measured table for E5's remedy ladder, asserted by nothing.
+- [x] 3.5 Emit the full measured table — every parameter's span, live fraction, cliff, and the
       interval where its response dies, per slice — into `docs/control-legibility-report.md` (new),
       beside the existing `docs/perf-report.md`. **This table is the deliverable of this group**;
       E5 reads it.
-- [ ] 3.6 If any must-pass control fails or any must-fail control passes, the probe for it is wrong.
+      DONE. The suite regenerates the report on every run (the file says so in its own header),
+      so the table can never drift from the code that measures it: 45 rows — one per descriptor
+      per declared slice, including the stiffness ceiling's four deriving-box corners and the
+      visible radius's two zoom corners — each with span, live fraction, cliff, the longest dead
+      run, and a verdict at the provisional thresholds.
+- [x] 3.6 If any must-pass control fails or any must-fail control passes, the probe for it is wrong.
       Fix the probe. Design E3 forbids moving the threshold to resolve this.
-- [ ] 3.7 `just happen` and `just check` green — with 3.4 red only for the four predicted parameters,
+      DONE, with one honest step past this task's letter. No must-pass control ever failed and no
+      threshold moved. Two must-fail controls passed; the probe-is-wrong remedy was applied first
+      — glowIntensity's probe moved to its declared bright coordinate (full speed, the velocity
+      coupling at its ceiling), the only place the clamp is reachable at all — and where the
+      control STILL measured live, the surviving contradiction was between the prediction and the
+      shipped math itself, so the prediction was corrected in design E3 rather than the probe
+      bent until the table agreed with it. Bending the probe to manufacture a predicted failure
+      would be the same defect this task exists to forbid, with the sign flipped.
+- [x] 3.7 `just happen` and `just check` green — with 3.4 red only for the four predicted parameters,
       quarantined behind an explicit expected-failure marker until E5 clears them.
+      DONE. `just happen` exits 0; `just check` runs green — 774 native [OK] with 0 failures, bun
+      50 pass / 0 fail across 95 expect() calls. The quarantine marker
+      (`QuarantinedExpectedRed` in tests/test_response_probe.nim) holds TWO parameters rather
+      than the predicted four — rdFeed and rdKill, asserted to fail so the calibration signal
+      cannot silently vanish — because the sweep disproved the trailLength and glowIntensity
+      predictions (the 3.4 record and design E3 carry both corrections). E5 deletes the marker
+      when the remedies land.
 
 ## 4. Travel curves
 

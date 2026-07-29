@@ -965,15 +965,24 @@ opacity scales output luminance linearly end to end.
   slice through the default — a metric that passes them unsliced is measuring the wrong thing. That
   they pass sliced pins the second fact: the deadness is two-dimensional geometry, and the joint
   remedy actually repairs it.
-- `trailLength` must fail as a purely one-dimensional case — its persistence is geometric in the
-  slider (E1), steep at one end and flat elsewhere — and is repaired by a curve, not a group. It is
-  what keeps the calibration gap honest for parameters that have no partner.
-- `glowIntensity` must fail at the top of its track: the range spans `[0.0, 3.0]`
-  (src/config_ranges.nim:49-50) while the display-clamped observable saturates well below the
-  ceiling, so the upper travel is blown out and dead — deadness a raw integral would call live,
-  which is why the clamped observable is the probe (E1). Its remedy concentrates authorship at the
-  low end: a re-range, a curve, or both, with the measurement choosing between a strictly positive
-  floor under a log curve and a zero floor under a power curve (E5 binds that choice).
+- `trailLength` was predicted to fail as a purely one-dimensional case, its persistence assumed
+  geometric in the slider. The E3.4 sweep disproved that prediction: the shipped mapping was built
+  to decay to a fixed residual over a frame count proportional to the length, so persistence is
+  LINEAR in the slider — `trail_core.persistenceFrames` records the collapse to a straight line —
+  and the control measures live end to end (span 1.0, live fraction 1.0, cliff 0.005 at the
+  provisional thresholds). The anchor set holds two-dimensional deadness (feed/kill) and clamped
+  deadness (glow) without it.
+- `glowIntensity` was predicted to fail at the top of its track, the display clamp deadening the
+  upper travel. The E3.4 sweep disproved this one too, at the shipped tuning: even at the declared
+  bright coordinate — full speed, the velocity coupling at its ceiling, density past the factor's
+  clamp — the clamp compresses the top of the track to 85% of the raw integral
+  (test_glow_core's measured 1559 against 1843), and a 15% compression still grows every step, so
+  the control measures live end to end (span 1.0, live fraction 1.0, cliff 0.064 at the
+  provisional thresholds). At the shipped velocity coupling of 1.0 nothing clamps at all. The
+  clamped observable stays the probe — it is what would catch a future tuning that does blow out —
+  and the coordinate is recorded beside it. The calibration anchors that survive measurement are
+  the must-pass five against `rdFeed`/`rdKill`; whether glow's low end still deserves the
+  authorship-concentrating remedy is E5's call from the measured table, not a prediction.
 
 Set each threshold inside the gap between the must-pass and must-fail sets. **If no gap exists, the
 probe is wrong, not the threshold** — that is the failure signal, and the response is to fix the
