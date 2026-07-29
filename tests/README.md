@@ -44,6 +44,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_gpu_types.nim` | GPU struct layout helpers (type sizes, field offsets, accessors) and every generated layout's agreement with WGSL's own offset algorithm | Native |
 | `test_shader_config.nim` | Shader workgroup-size and tunable-constant accessors, and the placeholders the bundler emits | Native |
 | `test_shader_manifest.nim` | The compute shaders each coupling declares, and the union an active set composes | Native |
+| `test_wgsl_lint.nim` | The WGSL constructor lint the bundler runs: named-field constructors flagged with their line, valid WGSL left alone, and a sweep proving no shipped shader source uses one | Native |
 | `test_sim_registry.nim` | The frame each couplings set composes: which passes run, in what order, that the delta clears precede every contributor, and which worlds compute particle density | Native |
 | `test_sim_config.nim` | Simulation-kind config and the active-kind observable | Native |
 | `test_observable.nim` | Observable primitive (construct, read, set, subscribe) | Native |
@@ -53,6 +54,8 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_param_descriptor.nim` | The descriptor table: ranges, defaults, store routing, clamping, the per-species chemistry fields, that every routed id names a field of its store's record, and that every notch is a position its slider can reach | Native |
 | `test_response_probe.nim` | Probe coverage over the whole descriptor table, the three track metrics at the calibrated thresholds (every probed control passes every declared slice; the feed/kill joint group is judged by its boundary-shift entry evidence and point liveness), and the measured table `docs/control-legibility-report.md` regenerates from | Native |
 | `test_dormancy.nim` | Dormancy predicates walked against the state records (every named field exists, no control dormant under its own value, each predicate distinguishes dormant from awake), and response horizons executed through the stepped field harness where a mirror exists, review-labelled where none does | Native |
+| `test_slider_curve.nim` | The slider travel curves: position and value as mutual inverses on each descriptor's step lattice, linear as the identity mapping, endpoints and monotonicity under every curve, and clamping at track and range | Native |
+| `test_panel_reachability.nim` | Guard test: every descriptor is placed by `Panel.tsx` by id or by group loop, and the panel derives the climate's written parameters rather than listing them | Native |
 | `test_overlay_core.nim` | The spatial drag overlay: the closed set held against the full descriptor table, and the ring/frame coverage math mirroring overlay.wgsl | Native |
 | `test_help_content.nim` | Help coverage in both directions: docs/help matches the declared file list, every descriptor group has a file, every declared key exists, every descriptor is named by its group's file, no file names a non-descriptor | Native |
 | `test_palette.nim` | HSL-to-RGB conversion, palette generation schemes, flat encoding | Native |
@@ -65,7 +68,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_colormap_core.nim` | Reaction-diffusion field colormap ramps, and the coverage the field claims as light | Native |
 | `test_glow_core.nim` | The particle halo: radius composition, Gaussian falloff, the warm shift, and the display-clamped alpha integral a response probe reads | Native |
 | `test_trail_core.nim` | The trail: its per-frame geometric decay, and the frames of persistence the trail-length slider buys | Native |
-| `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, the shared apparent-scale factor | Native |
+| `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, zoom clamping and anchoring, the screen-UV/world reprojection pair, and the floor on the composed visible radius | Native |
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
 | `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, tours every named regime, and that every parameter it declares it writes has a descriptor to write through | Native |
 | `test_no_modes.nim` | Guard test: no forbidden mode identifier or mode-id string literal survives anywhere in `src/` or `web-ui/src/`, except the one narrow, self-checking exemption for `preset.nim`'s versioned-schema legacy migration table | Native |
@@ -86,6 +89,7 @@ test_all.nim (runner)
     ├── test_gpu_types.nim      → gpu_types.nim (struct layout helpers)
     ├── test_shader_config.nim  → shader_config.nim (workgroup/tuning accessors)
     ├── test_shader_manifest.nim→ shader_manifest.nim (per-coupling shader sets)
+    ├── test_wgsl_lint.nim      → wgsl_lint.nim (WGSL constructor lint, shader-source sweep)
     ├── test_sim_registry.nim   → sim_registry.nim (composed frame description)
     ├── test_sim_config.nim     → ui/state/sim_config.nim (active kind)
     ├── test_observable.nim     → ui/core/observable.nim
@@ -93,6 +97,11 @@ test_all.nim (runner)
     ├── test_matrix.nim         → ui/state/matrix_state.nim (matrix, colors)
     ├── test_app_state.nim      → ui/state/app_state.nim (profiling averages)
     ├── test_param_descriptor.nim → ui/api/param_descriptor.nim (ranges, routing)
+    ├── test_response_probe.nim → ui/api/response_probe.nim (probe coverage, track metrics, report table)
+    ├── test_dormancy.nim       → ui/api/dormancy.nim (predicates, response horizons)
+    ├── test_slider_curve.nim   → ui/api/slider_curve.nim (travel curves as mutual inverses)
+    ├── test_overlay_core.nim   → overlay_core.nim (drag overlay set, ring/frame coverage)
+    ├── test_help_content.nim   → ui/api/help_content.nim (help coverage relations)
     ├── test_palette.nim        → palette.nim (HSL conversion, palette generation)
     ├── test_palette_state.nim  → ui/state/palette_state.nim (editor state)
     ├── test_preset.nim         → preset.nim (versioned schema, validate/migrate)
@@ -103,7 +112,7 @@ test_all.nim (runner)
     ├── test_colormap_core.nim  → colormap_core.nim (field colormap ramps, coverage)
     ├── test_glow_core.nim      → glow_core.nim (halo radius, falloff, warmth, alpha integral)
     ├── test_trail_core.nim     → trail_core.nim (trail decay, persistence in frames)
-    ├── test_camera_core.nim    → camera_core.nim (toroidal camera, apparent scale)
+    ├── test_camera_core.nim    → camera_core.nim (toroidal camera, reprojection, visible-radius floor)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
     ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
     ├── test_no_modes.nim       → src/, web-ui/src/ (guards against a mode concept in source)
@@ -149,7 +158,7 @@ static:
   doAssert OFFSETS.totalSize < 64 * 1024 * 1024
 ```
 
-### 2. Grid Core Tests (`test_grid_core.nim`)
+### 2. Grid Core Tests (`test_grid.nim`)
 
 **What we test:**
 - **Grid Dimension Computation** — Canvas → grid cell mapping
@@ -167,7 +176,7 @@ static:
 **Pure function testing:**
 All functions are pure (no side effects), making tests deterministic and fast.
 
-### 3. Physics Core Tests (`test_physics_core.nim`)
+### 3. Physics Core Tests (`test_physics.nim`)
 
 **What we test:**
 - **Force Calculation Contract** — Repulsion/attraction zones, force curves

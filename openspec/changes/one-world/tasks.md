@@ -1458,11 +1458,13 @@ in this group:
       `test_shader_manifest` (couplings rather than modes), and the TypeScript line (mode gating and
       notch snapping). No pass count is recorded anywhere — the file already tells the reader to run
       the suite instead, which is the right call and stays right.
-- [ ] 11.5 `openspec validate one-world`. **Validate only — never archive.** Archiving folds a
+- [x] 11.5 `openspec validate one-world`. **Validate only — never archive.** Archiving folds a
       change's deltas into `openspec/specs/`, the specification of what the application actually
       does, and doing it here would write unimplemented SHALLs into the app spec as though they were
       true. No task in this file archives; the user decides when to fold, and does it themselves.
       See "Order of work".
+      "Change 'one-world' is valid" (run with the E12 and E13 records in place). Nothing archived;
+      11.5a's staged sync and 11.6's gate stay open with 11.1.
 - [ ] 11.5a **Staged capability sync, under one rule: a capability syncs only when every requirement
       in its merged delta is implemented and verified.** `/opsx:sync` is agent-driven — it reads
       delta specs and edits the main specs directly, merging at requirement granularity rather than
@@ -2730,18 +2732,34 @@ The prose. Everything before this made a place for it that cannot go stale.
 The guarantee moves to the end of the transform chain (design E14). Independent of the remedies;
 needs only the probe machinery from E3.
 
-- [ ] 12.1 `tests/test_camera_core.nim` first: `the composed on-screen radius never falls below the
+- [x] 12.1 `tests/test_camera_core.nim` first: `the composed on-screen radius never falls below the
       visibility floor at the worst reachable corner` — minimum particle size, minimum zoom, the
       density size multiplier at its 0.7 floor (`web/shaders/src/render.wgsl:65`) — and `the floor
       binds the result, not a factor` — a corner where every per-parameter bound holds and only the
       end-of-chain floor keeps the product visible.
-- [ ] 12.2 `src/camera_core.nim`: the visible-radius chain as a pure function — size parameter,
+      DONE (commit bbabb43, suite "A Floor On What Can Be Seen", plus a monotonicity test over all
+      three factors). SENSITIVITY BY RETIRED CORNER RATHER THAN WATCHED RED: at D15's zoom floor of
+      1.0 the worst reachable corner composes to 0.7 px, above the floor, so no reachable settings
+      can show the first test red. The second test carries the proof it can fail — the retired 0.25
+      zoom corner falls under the floor — which is what the task's "only the end-of-chain floor
+      keeps the product visible" corner became once D15 removed that corner from reach.
+- [x] 12.2 `src/camera_core.nim`: the visible-radius chain as a pure function — size parameter,
       density size multiplier, world-to-screen scale, zoom, camera size correction (mirroring
       `render.wgsl:110` and `:160`, `glow.wgsl:105`) — floored at its end by a new pixel constant
       in `src/config_ranges.nim` with its reasoning recorded. Decide from the measurement whether
       `CAMERA_SIZE_FLOOR` (`src/camera_core.nim:30-31`) survives as aesthetic shaping of the
       zoom-size relation or retires into the result floor.
-- [ ] 12.2a **The false guarantee is written in two places, and both are corrected.** Besides
+      DONE (commit bbabb43). `camera_core.visibleRadiusPx(sizeParam, sizeMultiplier, zoom)` — the
+      chain is shorter than this task lists because it simplifies: the resolution and world factors
+      cancel algebraically (recorded in its doc comment), and the size correction was already gone.
+      The floor is `PARTICLE_VISIBLE_RADIUS_FLOOR_PX = 0.5` in config_ranges, its reasoning beside
+      it: half a pixel of radius is one pixel of diameter, the smallest footprint the rasterizer
+      reliably lights. THE CAMERA_SIZE_FLOOR FORK WAS CLOSED BEFORE THIS TASK RAN: D15's zoom floor
+      of 1.0 left it below every reachable zoom, so its branch never executed and commit ffca6f6
+      deleted it with `cameraSizeCorrection` (which had become a multiply by literal 1.0). It
+      retired by proof of deadness rather than by this task's measurement; design E14 records the
+      same.
+- [x] 12.2a **The false guarantee is written in two places, and both are corrected.** Besides
       `camera_core.nim:30-31`, the `CAMERA_ZOOM_MIN` docstring at `src/config_ranges.nim:201-202`
       states it outright: "camera_core.CAMERA_SIZE_FLOOR is what keeps particles legible here rather
       than a quarter-size and sub-pixel." That sentence is the E14 defect in prose — it credits one
@@ -2750,24 +2768,75 @@ needs only the probe machinery from E3.
       `CAMERA_SIZE_FLOOR` as whatever the 12.2 measurement leaves it. `src/shader_config.nim:184-186`
       needs no change: it claims only that the shader mirror must not drift from the native constant,
       which stays true.
-- [ ] 12.3 `web/shaders/src/render.wgsl` and `web/shaders/src/glow.wgsl`: apply the same floor at
+      DONE, mostly by deletion. Both comments went with D15/ffca6f6: `camera_core.nim:30-31` now
+      documents `CAMERA_DEFAULT_ZOOM` and `DENSITY_SIZE_FLOOR`, and `CAMERA_ZOOM_MIN`'s docstring
+      argues nearest-image drawing and names no size floor. The end-of-chain guarantee lives as
+      prose on `PARTICLE_VISIBLE_RADIUS_FLOOR_PX` itself — floor on the COMPOSED radius, "never on
+      any single factor" — which is where a reader adjusting a range will meet it. Verified by grep:
+      `CAMERA_SIZE_FLOOR` and `cameraSizeCorrection` appear nowhere in src/, shaders, or tests.
+- [x] 12.3 `web/shaders/src/render.wgsl` and `web/shaders/src/glow.wgsl`: apply the same floor at
       the same point in the same chain — both shaders and the mirror change together, as for every
       oracle in the family.
-- [ ] 12.4 `particleSize`'s probe measures the composed observable on slices at the zoom corners
+      SUPERSEDED BY MEASUREMENT, recorded at design E14: at the shipped zoom floor the worst
+      reachable corner composes to 0.7 px, above the 0.5 px floor, so a shader clamp could never
+      fire — a gate that cannot fail, and dead on arrival under the standing no-dead-code ruling
+      (engineering-principles article 6). No clamp ships. What DID land in the shader (bbabb43):
+      `MIN_SIZE_MULTIPLIER` is now substituted from `camera_core.DENSITY_SIZE_FLOOR`, so the shader
+      and the visibility math read one number and the mirror pair cannot drift. The clamp's ticket
+      is written on the constant: if a re-range ever dips the worst corner, the native assertion
+      goes red and shipping the end-of-chain clamp in both shaders is that red's remedy.
+- [x] 12.4 `particleSize`'s probe measures the composed observable on slices at the zoom corners
       (design E2, E14); the sweep's corner slices go green against the floor.
+      DONE (bbabb43). `visibleRadiusProbe` routes through `camera_core.visibleRadiusPx` at the
+      slice's zoom with the density multiplier at its floor, replacing a probe that restated the
+      chain; `slicesFor("particleSize")` serves `zoomFloor`/`zoomCeiling` at
+      `CAMERA_ZOOM_MIN`/`MAX`. Both corner slices pass in the pinned report table
+      (`tests/test_response_probe.nim`: travel 0.7778, live 1.000, no dead zones on either). The
+      floor VALUE is held by test_camera_core's worst-corner assertion, which evaluates the same
+      product the zoomFloor slice's low end feeds the probe — one claim, asserted where the
+      constant lives, exercised again through the probe path the panel reports from.
 - [ ] 12.5 Verify in `./main`: minimum particle size, zoomed fully out — every particle remains
       visible.
-- [ ] 12.6 `just happen` and `just check` green.
+- [x] 12.6 `just happen` and `just check` green.
+      Both exit 0: build clean, 826 native [OK] lines with no failures, bun 66 pass / 0 fail.
 
 ## 13. Documentation and close
 
-- [ ] 13.1 `CLAUDE.md`: add `docs/help/` as the feature-documentation source and the in-app help
+- [x] 13.1 `CLAUDE.md`: add `docs/help/` as the feature-documentation source and the in-app help
       source, note the four coverage relations, and add `glow_core`, `trail_core`, `response_probe`,
       `slider_curve`, `help_content`, and `binding_table` to the module inventory. Note that the
       parameter dispatch is generated, so a descriptor id must name a state-record field.
-- [ ] 13.2 `tests/README.md`: every new test module in the per-file table and the architecture tree.
-- [ ] 13.3 `docs/control-legibility-report.md`: confirm it holds both the pre-remedy and post-remedy
+      DONE, against the file as it stands rather than the one this task was written against: the
+      module inventory this task names was replaced by the "Where authority lives" list in 9.5a's
+      rewrite, and rebuilding it for six entries would undo that compaction. `glow_core` and
+      `trail_core` already sit in the reference-oracle table; `response_probe`, `slider_curve`,
+      and `binding_table` joined the authority list with the fact each one homes; `docs/help/`
+      and `help_content` landed as a Help section carrying the four coverage relations and the
+      consequence a feature author needs (a control cannot ship undocumented). The generated
+      dispatch note cites the mechanism (`web_api.nim` unrolls the state records with
+      `fieldPairs`) and the test that holds it.
+- [x] 13.2 `tests/README.md`: every new test module in the per-file table and the architecture tree.
+      DONE. The table was missing `test_slider_curve`, `test_wgsl_lint`, and
+      `test_panel_reachability`; the tree was missing those plus `test_dormancy`,
+      `test_response_probe`, `test_overlay_core`, and `test_help_content` — all seven added, with
+      module paths verified against each test file's imports. Three disproved claims met in the
+      same pass were corrected per the standing rule: `test_camera_core`'s description still
+      claimed "the shared apparent-scale factor" (deleted with D15, commit ffca6f6) and now names
+      the reprojection pair and the visible-radius floor; two prose headings cited
+      `test_grid_core.nim` and `test_physics_core.nim`, files that do not exist — they name
+      `test_grid.nim` and `test_physics.nim` now.
+- [x] 13.3 `docs/control-legibility-report.md`: confirm it holds both the pre-remedy and post-remedy
       tables, the feed/kill slice measurements, and names the calibration gap the thresholds sit in.
-- [ ] 13.4 `openspec validate`. Validation only — archiving is the user's manual act and no task
+      CONFIRMED, no edit needed. The calibrated table (20 pass rows plus the feed/kill joint rows
+      across all six regime slices), the pre-calibration table with its FAIL rows and the remedy
+      each one answers to, and a calibration section placing every threshold inside the measured
+      gap between its must-pass and must-fail anchors — SPAN_MIN against rdFeed 0.131 /
+      sphViscosity 0.667, LIVE_FRACTION_MIN against rdKill 0.514 / 1.000, CLIFF_MAX already inside
+      its gap, RESPONSE_EPSILON recorded as unseparated by either anchor set. The file states it
+      regenerates from `tests/test_response_probe.nim` and that hand edits are overwritten.
+- [x] 13.4 `openspec validate`. Validation only — archiving is the user's manual act and no task
       schedules it; see "Order of work".
-- [ ] 13.5 `just happen` and `just check` green.
+      "Change 'one-world' is valid." Nothing archived.
+- [x] 13.5 `just happen` and `just check` green.
+      Both exit 0 after the 13.1/13.2 documentation edits and the E12 records: build clean,
+      826 native [OK] lines with no failures, bun 66 pass / 0 fail.

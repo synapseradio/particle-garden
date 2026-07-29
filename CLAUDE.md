@@ -25,8 +25,23 @@ conditions beside a constant, one or two lines of conditions satisfy it.
 
 One home per fact: `config_ranges.nim` (ranges), `memory_layout.nim` (particle buffer),
 `ui/api/param_descriptor.nim` (parameter contract), `preset.nim` (preset schema),
-`sim_registry.nim` (what a frame dispatches), `wgsl_lint.nim` (shader binding manifest).
+`sim_registry.nim` (what a frame dispatches), `wgsl_lint.nim` (shader binding manifest),
+`ui/api/response_probe.nim` (probe registry and context slices), `ui/api/slider_curve.nim`
+(slider travel mapping — the panel computes none), `ui/input/binding_table.nim` (every mouse,
+touch, and key binding as data).
 Shader sources live in `web/shaders/src/` and share code from `modules/`, bundled by `tools/wgsl_bundle.nim`.
+
+Parameter dispatch is generated: `web_api.nim` unrolls the state records with `fieldPairs` at
+compile time, so a descriptor id must name a field of its store's record —
+`test_param_descriptor` holds every routed id to one.
+
+## Help
+
+`docs/help/` documents features, one file per descriptor group, and the app serves the same
+files as its in-app help (`ui/api/help_content.nim` compiles them in; `?` opens the panel).
+Four coverage relations are test-held: every group has a file, every declared group id exists,
+every descriptor is named by its group's file, no file names a non-existent id. A control
+therefore cannot ship undocumented — write the help line with the feature.
 
 ## Reference oracles
 
