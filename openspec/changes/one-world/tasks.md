@@ -334,7 +334,7 @@ Done here because the bind groups are already open. Implements no second reactio
       −0.2339 (100) — reproducing this task's offline measurement to three decimals from the
       independent native harness — then green after the floor. 657 native checks, both suites
       green in the implementing worktree; re-verified on main after integration.
-- [ ] 5.9 Fold `ChemistryField` into the descriptor table. One parameter-metadata contract
+- [x] 5.9 Fold `ChemistryField` into the descriptor table. One parameter-metadata contract
       currently has two record shapes, two clamps, two Nim→JS serializers, and two TS
       interfaces (`param_descriptor.nim`'s `ChemistryField`; `web_api.nim`'s
       `chemistryFieldArray`/`clampChemistryImpl`; `garden-api.ts`'s `ChemistryField`;
@@ -346,6 +346,25 @@ Done here because the bind groups are already open. Implements no second reactio
       branching on the member to render a grid row rather than a slider. Three cleanup
       reviewers converged on this independently; it changes the gardenAPI contract, so it is a
       task of its own rather than a cleanup-pass edit.
+      DONE, delegate-built, lead-integrated. `ParamDescriptor` is an object variant on a new
+      `ParamArity` (`paScalar`/`paPerSpecies`, the latter carrying `slot` — in the branch
+      because slot 0 is secretion's real slot, so a flat default-0 would alias it); secretion
+      and tropism join the one table under group `chemistry` with a `psSpeciesChemistry`
+      store. Deleted: the `ChemistryField` record and its builder, `chemistryFieldArray`,
+      `clampChemistryImpl`, `clampChemistryValue`, the TS `ChemistryField` interface, and the
+      `chemistryFields`/`clampChemistry` API members; the surface gained `clampParam(id,
+      value)` and TS narrows a discriminated union before any `slot` read. Staged reds:
+      compile-red on the missing store, five runtime reds on the coverage/range/default/
+      column suites, one TS red pinning that `getParam` cannot serve a per-species column.
+      TASK-TEXT CORRECTION from the delegate: the editor never re-implemented clamp or
+      format — it routed clamp through the API and format through shared `formatParamValue`;
+      what it owned was the binding. The two clamps lived in Nim. Everything else in the
+      finding verified true. NOTCHES: deliberately none — the columns render as grid cells
+      with no track to mark; the chemistry columns are now inside the notch/hint/range
+      coherence sweeps, so a future notch is auto-checked the moment a renderer gives it a
+      track. Chemistry remains outside the preset schema (5.6's open decision, now cheaper:
+      iterate descriptors, branch on the store). Verified on main after cherry-pick: survivor
+      grep returns nothing; full gate runs once after 8.11 integrates.
 
 ## 6. Field as light (S5)
 
