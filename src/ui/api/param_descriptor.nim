@@ -227,6 +227,17 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       notches = @[
         notch(FORCE_STRENGTH_MIN, "no forces"),
       ]).withDefaultNotch(1),
+    # Beside forceStrength because it shapes that force rather than adding
+    # another: it scales the ATTRACTIVE half alone, so a crowded colony pulls
+    # itself in less hard while the short-range repulsion holding it apart is
+    # untouched. Off at zero, which is today's force law exactly.
+    floatParam("crowdingStrength", "Crowding", "species",
+      CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX, sim.crowdingStrength, 2,
+      psSimulation,
+      hint = "how much a crowd weakens its own attraction; repulsion is never weakened",
+      notches = @[
+        notch(CROWDING_STRENGTH_MIN, "off"),
+      ]),
     floatParam("friction", "Friction", "simulation",
       FRICTION_MIN, FRICTION_MAX, sim.friction, 2, psSimulation),
     floatParam("timeScale", "Time Scale", "simulation",
@@ -294,17 +305,30 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psPalette),
 
     # SPH Fluid section. fluidStrength leads it because it is the coupling
-    # strength and the three below it are the fluid's character: they say what
-    # KIND of fluid this is — how hard it resists compression, what spacing it
-    # relaxes to, how fast it shears — while this one says how much of that
-    # fluid's verdict on a particle's velocity actually lands (design D14).
+    # strength and the four below it are the fluid's character: they say what
+    # KIND of fluid this is — how far a particle's neighbourhood reaches, how
+    # hard it resists compression, what spacing it relaxes to, how fast it
+    # shears — while this one says how much of that fluid's verdict on a
+    # particle's velocity actually lands (design D14).
     floatParam("fluidStrength", "Fluid", "fluid",
       FLUID_STRENGTH_MIN, FLUID_STRENGTH_MAX, sim.fluidStrength, 2,
       psSimulation,
-      hint = "how much of the fluid acts; the three below shape what kind of fluid it is",
+      hint = "how much of the fluid acts; the four below shape what kind of fluid it is",
       notches = @[
         notch(FLUID_STRENGTH_MIN, "no fluid"),
         notch(FLUID_STRENGTH_MAX, "full"),
+      ]),
+    # Ahead of the other three because it sets the neighbourhood they are
+    # measured in: a rest density counts neighbours inside this radius, and a
+    # stiffness is stable only against it (design C7). A fraction rather than a
+    # length keeps the interaction radius one control instead of two coupled
+    # ones, and caps the kernel at the neighbour sweep's reach (design C5).
+    floatParam("sphRadiusFraction", "Fluid Scale", "fluid",
+      SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX, sim.sphRadiusFraction,
+      2, psSimulation,
+      hint = "how far the fluid's kernel reaches, as a fraction of the interaction radius",
+      notches = @[
+        notch(SPH_RADIUS_FRACTION_MAX, "whole radius"),
       ]),
     floatParam("sphRestDensity", "Rest Density", "fluid",
       SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX, sim.sphRestDensity, 2,

@@ -72,6 +72,31 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check defaults.glowFalloff == 6.0
     check defaults.glowWarmth == 0.4
 
+  test "an out-of-range crowding strength clamps instead of rejecting":
+    # Same treatment every slider-backed field gets, against the same authority
+    # the panel reads — a hand-edited preset cannot hand the force law a
+    # crowding strength the slider could never produce.
+    var node = toJson(defaultPreset())
+    node["settings"]["crowdingStrength"] = %99.0
+    check validate(node).preset.settings.crowdingStrength ==
+      CROWDING_STRENGTH_MAX
+    node["settings"]["crowdingStrength"] = %(-4.0)
+    check validate(node).preset.settings.crowdingStrength ==
+      CROWDING_STRENGTH_MIN
+
+  test "an out-of-range fluid scale clamps instead of rejecting":
+    # Same treatment every slider-backed field gets. The floor matters more
+    # here than elsewhere: a hand-edited zero would divide by zero in both SPH
+    # kernel normalizations, and clamping to SPH_RADIUS_FRACTION_MIN is what
+    # keeps that value out of the shader.
+    var node = toJson(defaultPreset())
+    node["settings"]["sphRadiusFraction"] = %4.0
+    check validate(node).preset.settings.sphRadiusFraction ==
+      SPH_RADIUS_FRACTION_MAX
+    node["settings"]["sphRadiusFraction"] = %0.0
+    check validate(node).preset.settings.sphRadiusFraction ==
+      SPH_RADIUS_FRACTION_MIN
+
   test "out-of-range glow knobs clamp instead of rejecting":
     var node = toJson(defaultPreset())
     node["settings"]["glowRadiusScale"] = %99.0
@@ -105,6 +130,7 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.speciesCount = 6
     customPreset.settings.interactionRadius = 80
     customPreset.settings.forceStrength = 2.5
+    customPreset.settings.crowdingStrength = 1.25
     customPreset.settings.friction = 0.12
     customPreset.settings.ruleTemperature = 0.45
     customPreset.settings.timeScale = 1.5
@@ -124,6 +150,7 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.glowWarmth = 0.7
     customPreset.settings.sphRestDensity = 2.0
     customPreset.settings.sphStiffness = 20.0
+    customPreset.settings.sphRadiusFraction = 0.35
     customPreset.settings.sphViscosity = 0.5
     customPreset.settings.sphSubsteps = 2
     customPreset.settings.rdFeed = 0.045
@@ -375,6 +402,43 @@ suite "A Legacy Preset Loads As The World It Described":
     check validate(v1Preset("particle-life")).preset.settings.fluidStrength == 0.0
     check validate(
       v1Preset("reaction-diffusion")).preset.settings.fluidStrength == 0.0
+
+  test "a preset saved before this change applies with crowding strength zero":
+    ## Crowding did not exist when a v1 file was written, so no v1 world was ever
+    ## tuned against it. The legacy branch pins the strength to zero rather than
+    ## letting it default, which is what stops the shipped default — measured
+    ## later, and non-zero — from reaching back and adding a term to a world
+    ## someone saved without one.
+    ##
+    ## THE FIXTURE CARRIES A CROWDING STRENGTH ON PURPOSE. Pinning that a value
+    ## the file DOES hold still decodes to zero is what makes this able to fail:
+    ## a fixture without the field would pass with or without the pin, for as
+    ## long as the shipped default happened to be zero.
+    for mode in ["particle-life", "sph", "reaction-diffusion", "some-future-mode"]:
+      var legacy = v1Preset(mode)
+      legacy["settings"]["crowdingStrength"] = %2.0
+      checkpoint("legacy mode " & mode)
+      check validate(legacy).preset.settings.crowdingStrength == 0.0
+
+  test "a preset saved before this change applies with fraction 1.0":
+    ## The smoothing radius was the whole interaction radius when a v1 file was
+    ## written, so that is the kernel the world it describes ran. The legacy
+    ## branch pins the fraction to 1.0 rather than letting it default, which is
+    ## what stops the shipped default — measured later by C2.6, and below 1 —
+    ## from rescaling a fluid someone already watched.
+    ##
+    ## THE FIXTURE CARRIES A FRACTION ON PURPOSE, for the reason the crowding
+    ## test above carries a strength: pinning that a value the file DOES hold
+    ## still decodes to 1.0 is what makes this able to fail, where a fixture
+    ## without the key would pass for as long as the default happened to be 1.
+    for mode in ["particle-life", "sph", "reaction-diffusion",
+        "some-future-mode"]:
+      var legacy = v1Preset(mode)
+      legacy["settings"]["sphRadiusFraction"] = %0.2
+      checkpoint("legacy mode " & mode)
+      check validate(legacy).preset.settings.sphRadiusFraction == 1.0
+      check validate(legacy).preset.settings.sphRadiusFraction ==
+        SPH_RADIUS_FRACTION_MAX
 
   test "an unrecognised legacy mode keeps what it carries rather than emptying":
     ## Forward-compatible in the same spirit v1's free-form `mode` field was: a

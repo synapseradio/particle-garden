@@ -1701,34 +1701,94 @@ Leads with the oracle tests; the shader follows. The spec is `specs/bounded-crow
 
 The spec is `specs/sph-scale/spec.md`. Independent of C1.
 
-- [ ] 2.1 `tests/test_sph_core.nim`: add `fraction one reproduces today's kernels` (both kernels at
+- [x] 2.1 `tests/test_sph_core.nim`: add `fraction one reproduces today's kernels` (both kernels at
       `h = R * 1.0` equal their values at `h = R`) and `kernel normalization holds across the
       fraction range` (the numeric-integration check the suite already runs — cited at
       `src/sph_core.nim:58-59` — swept at several effective radii). Expected: green immediately for
       the kernels (`sph_core` already takes `h` as a parameter, `src/sph_core.nim:11-13`); these pin
       the property the shader change relies on.
-- [ ] 2.2 `src/gpu_types.nim`: append `sphRadiusFraction` to `SimParamsLayout`, update the size
+      tests/test_sph_core.nim gained suite "The Smoothing Radius Is A Fraction Of The Interaction
+      Radius" with `fraction one reproduces today's kernels`, `kernel normalization holds across the
+      fraction range`, and a third the spec's relative-scale scenario earns, `the fluid keeps its
+      relative scale when the interaction radius moves`. Bounds are read, never restated:
+      SPH_RADIUS_FRACTION_MIN/MAX and INTERACTION_RADIUS_MIN/MAX come from src/config_ranges.nim,
+      swept at 7 fractions across 3 interaction radii (21 numeric integrations, 50,000 trapezoid
+      steps, tolerance 1e-3), so raising either range re-scopes the sweep without a second edit. Two
+      local helpers mirror forces-sph.wgsl:248-249's self-weight division, so the pressure and XSPH
+      terms are compared rather than the raw kernels alone. Watched red on `undeclared identifier:
+      'SPH_RADIUS_FRACTION_MIN'` — sph_core itself needed no change, which is what the task's "green
+      immediately for the kernels" predicted.
+- [x] 2.2 `src/gpu_types.nim`: append `sphRadiusFraction` to `SimParamsLayout`, update the size
       assertions in the same edit; `src/webgpu_compute.nim` writes it; `tests/test_gpu_types.nim`
       pins the index.
-- [ ] 2.3 `web/shaders/src/forces-sph.wgsl:104`: `let smoothingRadius = params.interactionRadius *
+      src/gpu_types.nim's SimParamsLayout gained `sphRadiusFraction` at offset 252, appended after
+      crowdingStrength for the reason crowding was appended (every write that exists keeps the
+      offset it targets); totalSize moved 252 -> 256 while the WGSL allocation stays 256, so the
+      struct now fills its allocation exactly and the next field costs a fresh 16-byte block.
+      src/webgpu_compute.nim writes SIM_SPH_RADIUS_FRACTION from config.CONFIG.sphRadiusFraction, and
+      tests/test_gpu_types.nim pins SIM_SPH_RADIUS_FRACTION == 63, SIM_PARAMS_F32_COUNT == 64, and
+      the radius fraction as the slot that now closes the struct. The task named only gpu_types,
+      webgpu_compute and test_gpu_types, but the writer cannot read a CONFIG field that does not
+      exist, so src/ui/state/simulation_state.nim (sphRadiusFraction, default 1.0) and src/config.nim
+      (field plus its createConfig mirror) landed in the same task.
+- [x] 2.3 `web/shaders/src/forces-sph.wgsl:104`: `let smoothingRadius = params.interactionRadius *
       params.sphRadiusFraction;`. The one change site — everything downstream already takes the
       radius as a value.
-- [ ] 2.4 `src/config_ranges.nim`: `SPH_RADIUS_FRACTION_MIN = 0.1` provisionally (strictly positive
+      web/shaders/src/forces-sph.wgsl:120 now reads `let smoothingRadius = params.interactionRadius *
+      params.sphRadiusFraction;`, the one change site, with the comment stating why the cap at 1
+      makes an over-reaching smoothing radius unrepresentable rather than clamped: the sweep visits
+      only the cell block around a particle and cells are sized to the interaction radius
+      (src/grid.nim), so a larger kernel would silently drop neighbours. Everything downstream —
+      radiusSq, both self-weights, both kernel calls at :248-249 — already took the radius as a
+      value, so nothing else in the shader moved. Verified in the bundled output:
+      web/shaders/forces-sph.wgsl carries the product and the regenerated
+      web/shaders/modules/sim_params.wgsl carries the new field.
+- [x] 2.4 `src/config_ranges.nim`: `SPH_RADIUS_FRACTION_MIN = 0.1` provisionally (strictly positive
       — record beside it that zero divides by zero in both kernel normalizations,
       `src/sph_core.nim:62` and `:82`, and that C3's notch sweep may raise this floor so every
       labelled stiffness notch stays below the minimum ceiling), `SPH_RADIUS_FRACTION_MAX = 1.0`
       exactly, static assertions. Descriptor `sphRadiusFraction` in the SPH group, default 1.0 until 2.6, notch at
       1.0 labelled "whole radius".
-- [ ] 2.5 `src/preset.nim`: schema field `sphRadiusFraction` with clamping, same pattern and
+      src/config_ranges.nim gained SPH_RADIUS_FRACTION_MIN = 0.1 (provisional, marked [?], with the
+      divide-by-zero reason recorded beside it — h to the 8th and 5th power in a denominator at
+      src/sph_core.nim:62 and :82 — and a note that C3's notch sweep may raise it) and
+      SPH_RADIUS_FRACTION_MAX = 1.0, under three static assertions: non-empty range, strictly
+      positive floor with its own reason, and MAX == 1.0 so the smoothing radius cannot outrun the
+      neighbour sweep. Both new assertions were watched firing, by temporarily setting MIN to 0.0 and
+      MAX to 1.5. Descriptor `sphRadiusFraction` labelled "Fluid Scale" sits in group "fluid"
+      directly after fluidStrength — ahead of the other three because it sets the neighbourhood they
+      are measured in — precision 2, default 1.0 from initSimulationState, one notch at
+      SPH_RADIUS_FRACTION_MAX labelled "whole radius". The task named only config_ranges and
+      param_descriptor, but a psSimulation descriptor is unreachable without its route, so
+      src/web_api.nim's CONFIG mirror, getParam and setParam were wired here and
+      tests/test_param_descriptor.nim's three tables gained their rows; Panel.tsx needed no edit
+      because it already loops groupIds("fluid").
+- [x] 2.5 `src/preset.nim`: schema field `sphRadiusFraction` with clamping, same pattern and
       schemaVersion treatment as 1.8, plus a round-trip test. In the legacy decode branch, pin the
       fraction to exactly 1.0 — the kernel every saved fluid world ran when it was saved — and
       test: `a preset saved before this change applies with fraction 1.0`, not the shipped default.
+      src/preset.nim gained `sphRadiusFraction` in PresetSettings, clamped at decode against
+      SPH_RADIUS_FRACTION_MIN/MAX, serialized in toJson, and defaulted at 1.0 mirroring
+      initSimulationState; the `fromVersion < 2` legacy branch pins it unconditionally to 1.0 beside
+      C1.8's crowding pin, because 1.0 is the kernel every saved fluid world ran. Tests: `an
+      out-of-range fluid scale clamps instead of rejecting` (4.0 and 0.0 clamp to the range ends),
+      the fully-custom round trip now carries 0.35, and `a preset saved before this change applies
+      with fraction 1.0` over four legacy modes with the fixture deliberately carrying 0.2, so the
+      pin is what makes it pass. Watched that test go [FAILED] with the pin line removed, then
+      restored. src/web_api.nim's save path (settings <- CONFIG) and apply path (simState <-
+      settings) carry the field.
 - [ ] 2.6 With crowding strength at 0 (design C6), measure the fraction at which the fluid reads as
       local incompressibility rather than large-scale organisation — sweep downward from 1.0 in the
       running app at the default interaction radius — set the default well below 1, record the
       conditions beside the constant, and notch the default. Release-note the new default for fresh
       worlds; saved worlds are untouched because the legacy decode pins 1.0 (C2.5).
-- [ ] 2.7 `just happen` and `just check` green.
+- [x] 2.7 `just happen` and `just check` green.
+      `just happen` exits 0: shaders bundled (forces-sph.wgsl and forces.wgsl rebundled,
+      sim_params.wgsl regenerated), JS frontend, UI bundle and native binary all built. The native
+      suite `just test` exits 0 with 703 [OK] lines and no failures, and `web-ui` `bun test` reports
+      41 pass / 0 fail. The full `just check` gate is left to the integrator per this group's
+      handoff, so what is recorded here is the build plus both suites run once at the end of the
+      group.
 
 ## 3. The stiffness ceiling becomes derived
 

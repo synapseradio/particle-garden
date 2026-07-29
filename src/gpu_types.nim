@@ -90,7 +90,7 @@ const
       GpuField(name: "species", kind: gtU32,     offset: 16, size: 4,  count: 1),
       GpuField(name: "density", kind: gtF32,     offset: 20, size: 4,  count: 1),
       GpuField(name: "sphDensity", kind: gtF32,  offset: 24, size: 4,  count: 1),
-      GpuField(name: "_pad1",   kind: gtU32,     offset: 28, size: 4,  count: 1),
+      GpuField(name: "crowdDensity", kind: gtF32, offset: 28, size: 4, count: 1),
     ],
     totalSize: 32
   )
@@ -123,9 +123,12 @@ const
     totalSize: 16
   )
 
-  # SimParams struct (248 bytes, matches forces.wgsl / forces-sph.wgsl)
+  # SimParams struct (256 bytes written, 256 allocated; matches forces.wgsl /
+  # forces-sph.wgsl)
   # Layout: 16 scalar fields (64 bytes) + 9 vec4 matrix (144 bytes) + 6 force-model
-  # fields (24 bytes) + 4 SPH fields (16 bytes)
+  # fields (24 bytes) + 4 SPH fields (16 bytes) + crowding (4 bytes) + the SPH
+  # radius fraction (4 bytes). The written size now fills the allocation
+  # exactly, so the next field costs a 16-byte block rather than a pad.
   SimParamsLayout* = GpuStruct(
     name: "SimParams",
     fields: @[
@@ -164,8 +167,19 @@ const
       GpuField(name: "sphStiffness",    kind: gtF32, offset: 236, size: 4, count: 1),
       GpuField(name: "sphGamma",        kind: gtF32, offset: 240, size: 4, count: 1),
       GpuField(name: "sphViscosity",    kind: gtF32, offset: 244, size: 4, count: 1),
+      # Crowding (248-252). forces.wgsl reads it; the fluid ignores it. Appended
+      # rather than spending _pad2 above, so the force-model block and the SPH
+      # block keep the offsets every existing write targets.
+      GpuField(name: "crowdingStrength", kind: gtF32, offset: 248, size: 4, count: 1),
+      # The SPH smoothing radius as a fraction of interactionRadius (252-256).
+      # forces-sph.wgsl multiplies the two; the fraction is capped at 1 by its
+      # range, so the smoothing radius can never outrun the neighbour sweep,
+      # whose cells are sized to the interaction radius (src/grid.nim). Appended
+      # for the reason crowding was, rather than joining the SPH block above:
+      # every write that exists keeps the offset it targets.
+      GpuField(name: "sphRadiusFraction", kind: gtF32, offset: 252, size: 4, count: 1),
     ],
-    totalSize: 248
+    totalSize: 256
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
@@ -557,6 +571,8 @@ static:
   assert ParticleLayout.fieldOffset("density") == memory_layout.PARTICLE_DENSITY_OFFSET
   assert ParticleLayout.fieldOffset("sphDensity") ==
     memory_layout.PARTICLE_SPH_DENSITY_OFFSET
+  assert ParticleLayout.fieldOffset("crowdDensity") ==
+    memory_layout.PARTICLE_CROWD_DENSITY_OFFSET
 
   # Validate GridParams struct
   assert GridParamsLayout.totalSize == 32, "GridParams must be 32 bytes"
@@ -576,6 +592,7 @@ static:
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
         "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
+    assert SimParamsLayout.totalSize == 256, "SimParams writes 256 bytes"
     assert SimParamsLayout.wgslUniformSize == 256, "SimParams allocates 256 bytes"
 
 # =============================================================================
@@ -583,8 +600,9 @@ static:
 # =============================================================================
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
 # emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
-# _END=51, ... SIM_PAD2=57, and SIM_PARAMS_F32_COUNT=58, so webgpu_compute.nim
-# hand-writes no magic number.
+# _END=51, ... SIM_PAD2=57, SIM_CROWDING_STRENGTH=62,
+# SIM_SPH_RADIUS_FRACTION=63, and SIM_PARAMS_F32_COUNT=64, so
+# webgpu_compute.nim hand-writes no magic number.
 
 genFieldIndices(SimParamsLayout, "SIM")
 

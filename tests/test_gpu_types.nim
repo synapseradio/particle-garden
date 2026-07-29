@@ -109,8 +109,8 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     # leave the tail of the struct unchecked there.
     check wgslComputedOffsets(SimParamsLayout).len == SimParamsLayout.fields.len
 
-  test "SimParams is 248 bytes written and 256 bytes allocated (16-byte round-up)":
-    check SimParamsLayout.totalSize == 248
+  test "SimParams is 256 bytes written and 256 bytes allocated (no round-up left)":
+    check SimParamsLayout.totalSize == 256
     check wgslUniformSize(SimParamsLayout) == 256
 
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
@@ -149,13 +149,28 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_ATTRACTION_MATRIX_END == 51
     check SIM_REPULSION_END == 52
     check SIM_PAD2 == 57
-    check SIM_PARAMS_F32_COUNT == 62
+    check SIM_CROWDING_STRENGTH == 62
+    check SIM_SPH_RADIUS_FRACTION == 63
+    check SIM_PARAMS_F32_COUNT == 64
 
   test "the attraction matrix spans exactly its 36 float slots":
     check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 == 36
 
-  test "SIM_PARAMS_F32_COUNT covers the whole 248-byte struct":
+  test "SIM_PARAMS_F32_COUNT covers the whole 256-byte struct":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
+
+  test "the crowding and radius-fraction slots close the struct in order":
+    # Both were appended rather than folded into _pad2, so every offset that
+    # existed before them still points at the field it did. The radius fraction
+    # is last, and a slot that stopped being last would mean something else was
+    # appended without this test seeing it.
+    check SIM_CROWDING_STRENGTH ==
+      SimParamsLayout.fieldOffset("crowdingStrength") div 4
+    check SIM_CROWDING_STRENGTH == SIM_SPH_VISCOSITY + 1
+    check SIM_SPH_RADIUS_FRACTION ==
+      SimParamsLayout.fieldOffset("sphRadiusFraction") div 4
+    check SIM_SPH_RADIUS_FRACTION == SIM_CROWDING_STRENGTH + 1
+    check SIM_SPH_RADIUS_FRACTION == SIM_PARAMS_F32_COUNT - 1
 
 
 suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
@@ -174,8 +189,10 @@ suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
     check SIM_SPH_STIFFNESS == SIM_SPH_REST_DENSITY + 1
     check SIM_SPH_GAMMA == SIM_SPH_STIFFNESS + 1
     check SIM_SPH_VISCOSITY == SIM_SPH_GAMMA + 1
-    # The last SPH slot is the final f32 in the struct.
-    check SIM_SPH_VISCOSITY == SIM_PARAMS_F32_COUNT - 1
+    # The last SPH slot is the last of the four; the crowding slot and then the
+    # radius fraction follow it — pinned in the suite above, which owns where
+    # the struct now ends.
+    check SIM_SPH_VISCOSITY == SIM_CROWDING_STRENGTH - 1
 
 
 suite "Generated Render Struct Layouts":

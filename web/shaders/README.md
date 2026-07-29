@@ -138,9 +138,9 @@ Each particle is stored as a single 32-byte block containing all its data. This 
 │    8     │  vel.x   │  4    │ X velocity (f32)                              │
 │   12     │  vel.y   │  4    │ Y velocity (f32)                              │
 │   16     │  species │  4    │ Species ID (u32, 0-5)                         │
-│   20     │  density │  4    │ Local density (f32)                           │
-│   24     │  _pad0   │  4    │ Padding for 32-byte alignment                 │
-│   28     │  _pad1   │  4    │ Padding for 32-byte alignment                 │
+│   20     │  density │  4    │ Colony density: same-species, smoothed (f32)  │
+│   24     │sphDensity│  4    │ SPH kernel density, fluid-private (f32)       │
+│   28     │crowdDens.│  4    │ Crowd density: species-blind, smoothed (f32)  │
 └──────────┴──────────┴───────┴───────────────────────────────────────────────┘
 
 Why 32 bytes:
@@ -160,6 +160,7 @@ Buffer Bindings (forces.wgsl):
 │   4   │ storage u32[]            │ cellParticleCounts (read)                │
 │   5   │ storage atomic<i32>[]    │ velocityDeltaFixed (read/write)          │
 │   6   │ storage atomic<i32>[]    │ densityDeltaFixed (read/write)           │
+│   7   │ storage atomic<i32>[]    │ crowdDensityDeltaFixed (read/write)      │
 └───────┴──────────────────────────┴──────────────────────────────────────────┘
 
 Fixed-Point Atomics (why integers instead of floats?):

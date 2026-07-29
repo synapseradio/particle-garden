@@ -61,9 +61,9 @@ const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL* = 4
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 6        # AoS: merged pass
-const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 7             # AoS: velocity + density deltas for symmetric accumulation
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 8             # AoS: velocity + colony and crowd density deltas
 const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: forces' slots, with its own density at 6
-const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 5          # AoS: + both density deltas for temporal smoothing
+const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6          # AoS: + all three density deltas to resolve
 # Reaction-diffusion passes (S8). See the four field shaders' binding manifests.
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED* = 2         # dstField(storage) + fieldParams (for the nonce)
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particles + deposit + fieldParams + speciesChemistry
@@ -361,7 +361,8 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard forcesEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.gridOffsets)))
   discard forcesEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.gridCounts)))
   discard forcesEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.velocityDelta)))
-  discard forcesEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.densityDelta)))  # Symmetric density
+  discard forcesEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.densityDelta)))  # Symmetric colony density
+  discard forcesEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Species-blind crowd density
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
   bindGroups["forces"] = await createBindGroupWithValidation(
@@ -401,6 +402,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard integrateEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.velocityDelta)))
   discard integrateEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.densityDelta)))  # Colony density
   discard integrateEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.sphDensityDelta)))  # Fluid's kernel density
+  discard integrateEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Crowd density
 
   validateBindGroupEntryCount(integrateEntries, "integrate", "bind group creation")
   bindGroups["integrate"] = await createBindGroupWithValidation(
@@ -794,6 +796,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[SIM_SPH_STIFFNESS] = float32(config.CONFIG.sphStiffness)
   simParamsData[SIM_SPH_GAMMA] = float32(SPH_DEFAULT_GAMMA)
   simParamsData[SIM_SPH_VISCOSITY] = float32(config.CONFIG.sphViscosity)
+
+  # Crowding: how hard local density attenuates the attractive half of the
+  # species force. Zero is the force law without it.
+  simParamsData[SIM_CROWDING_STRENGTH] = float32(config.CONFIG.crowdingStrength)
+
+  # The fraction of the interaction radius the fluid's kernel spans. One is the
+  # whole radius, which is the kernel every fluid world ran before this field
+  # existed; the range caps it there, so the smoothing radius can never exceed
+  # the sweep's reach.
+  simParamsData[SIM_SPH_RADIUS_FRACTION] =
+    float32(config.CONFIG.sphRadiusFraction)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Integration parameters
@@ -860,6 +873,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbVelocityDelta: cast[GPUBuffer](gpuBuffers.velocityDelta)
     of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
     of sbSphDensityDelta: cast[GPUBuffer](gpuBuffers.sphDensityDelta)
+    of sbCrowdDensityDelta: cast[GPUBuffer](gpuBuffers.crowdDensityDelta)
     of sbFieldDeposit: webgpu_init.fieldDepositGpuBuffer()
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
@@ -869,7 +883,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       # TWO i32 per particle — x and y. Clearing only particleCount * 4 would
       # zero every x and leave every y holding the previous frame's impulse,
       # which reads as a world that drifts steadily downward.
-    of sbDensityDelta, sbSphDensityDelta: particleCount * 4  # i32 per particle
+    of sbDensityDelta, sbSphDensityDelta, sbCrowdDensityDelta:
+      particleCount * 4  # i32 per particle
     of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
 
   # The 2D field dispatch (dsFieldWorkgroups) covers FIELD_W x FIELD_H in

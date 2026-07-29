@@ -35,6 +35,7 @@ type
     speciesCount* {.exportc.}: int
     interactionRadius* {.exportc.}: int
     forceStrength* {.exportc.}: float
+    crowdingStrength* {.exportc.}: float  # Density attenuation on attraction
     friction* {.exportc.}: float
     ruleTemperature* {.exportc.}: float  # Std dev sigma for the bell-curve rule randomizer
     timeScale* {.exportc.}: float
@@ -63,6 +64,7 @@ type
     fluidStrength* {.exportc.}: float     # How much of the fluid's velocity verdict lands
     sphRestDensity* {.exportc.}: float    # SPH target density (Tait EOS rest density)
     sphStiffness* {.exportc.}: float      # SPH pressure gain (Tait stiffness)
+    sphRadiusFraction* {.exportc.}: float # SPH smoothing radius / interactionRadius
     sphViscosity* {.exportc.}: float      # SPH XSPH viscosity strength
     sphSubsteps* {.exportc.}: int         # SPH physics substeps per rendered frame
     rdFeed* {.exportc.}: float            # Gray-Scott feed rate F
@@ -183,6 +185,7 @@ proc createConfig(): ConfigObject =
   result.speciesCount = sim.speciesCount
   result.interactionRadius = sim.interactionRadius
   result.forceStrength = sim.forceStrength
+  result.crowdingStrength = sim.crowdingStrength
   result.friction = sim.friction
   result.ruleTemperature = sim.ruleTemperature
   result.timeScale = sim.timeScale
@@ -195,6 +198,7 @@ proc createConfig(): ConfigObject =
   result.fluidStrength = sim.fluidStrength
   result.sphRestDensity = sim.sphRestDensity
   result.sphStiffness = sim.sphStiffness
+  result.sphRadiusFraction = sim.sphRadiusFraction
   result.sphViscosity = sim.sphViscosity
   result.sphSubsteps = sim.sphSubsteps
   result.rdFeed = sim.rdFeed

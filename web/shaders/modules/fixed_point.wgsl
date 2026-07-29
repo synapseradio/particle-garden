@@ -38,3 +38,12 @@ const INV_FIXED_POINT_SCALE: f32 = {{TUNABLE_INV_FIXED_POINT_SCALE}};  // 1.0 / 
 // SPH kernel density only. Derived from MAX_PARTICLES, not chosen.
 const SPH_DENSITY_FIXED_POINT_SCALE: f32 = {{SPH_DENSITY_FIXED_POINT_SCALE}};
 const SPH_DENSITY_INV_FIXED_POINT_SCALE: f32 = {{SPH_DENSITY_INV_FIXED_POINT_SCALE}};
+
+// Crowd density only: forces.wgsl encodes, integrate.wgsl decodes. Same value
+// as the pair above and the same derivation from MAX_PARTICLES, because both
+// count neighbours contributing at most 1.0 each. It carries its own name
+// because a scale with two encoders is a scale nobody owns — and this is the
+// channel where wrapping costs most, since a negative density hands log(1 + d)
+// a negative argument and the NaN spreads through every force in the frame.
+const CROWD_DENSITY_FIXED_POINT_SCALE: f32 = {{CROWD_DENSITY_FIXED_POINT_SCALE}};
+const CROWD_DENSITY_INV_FIXED_POINT_SCALE: f32 = {{CROWD_DENSITY_INV_FIXED_POINT_SCALE}};

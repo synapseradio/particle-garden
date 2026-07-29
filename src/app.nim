@@ -122,7 +122,11 @@ proc initParticles*() {.exportc.} =
   let worldHeight = config.WORLD_H
 
   # Initialize particlesA buffer using AoS layout
-  # Struct: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5), pad(6-7)
+  # Struct: pos.x(0), pos.y(1), vel.x(2), vel.y(3), species(4), density(5),
+  # sphDensity(6), crowdDensity(7). The two density channels the GPU owns are
+  # left at the zero the shared buffer was allocated with — no CPU writer
+  # touches either slot, so a fresh world starts uncrowded and the integrate
+  # pass fills them from the first frame onward.
   for particleIndex in 0 ..< newCount:
     let base = particleIndex * buffers.FLOATS_PER_PARTICLE  # 8 floats per particle
     buffers.particlesA[base + buffers.FIELD_POS_X] = jsRandom() * worldWidth

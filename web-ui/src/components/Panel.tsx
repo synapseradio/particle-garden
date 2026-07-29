@@ -63,6 +63,7 @@ export function Panel(props: { ctrl: PanelController }) {
             "speciesCount",
             "interactionRadius",
             "forceStrength",
+            "crowdingStrength",
             "friction",
             "timeScale",
             "ruleTemperature",

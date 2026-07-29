@@ -39,6 +39,19 @@ const
     ## removes short-range repulsion too and particles pass through each other.
     ## Design C0 covers what that means for the crowding cap.
   FORCE_STRENGTH_MAX* = 5.0
+  CROWDING_STRENGTH_MIN* = 0.0
+    ## Zero is today's force law exactly — `1 / (1 + 0 * log(1 + density))` is 1
+    ## at every density — so it must stay reachable, and any regression the
+    ## crowding term introduces bisects to this one number.
+  CROWDING_STRENGTH_MAX* = 2.0
+    ## PROVISIONAL, pending the calibration one-world task C1.9 carries. That
+    ## task measures the strength at which a collapsing single-species world
+    ## stops tightening and the strength at which ordinary colonies visibly
+    ## soften, sets the default between them, and sets this ceiling above the
+    ## second — with the conditions recorded here, per the measured-bound rule.
+    ## Until then this is a working bound, not a measured one, and the ceiling
+    ## sweep in tests/test_physics.nim reads it from here so the calibration
+    ## re-scopes that sweep without a second edit. [?]
   FLUID_STRENGTH_MIN* = 0.0
   FLUID_STRENGTH_MAX* = 1.0
     ## One is the whole fluid. Nothing above it: this multiplies the pass's
@@ -79,6 +92,32 @@ const
   PALETTE_SATURATION_MAX* = 1.0
   PALETTE_LIGHTNESS_MIN* = 0.0
   PALETTE_LIGHTNESS_MAX* = 1.0
+  SPH_RADIUS_FRACTION_MIN* = 0.1
+    ## PROVISIONAL, and strictly positive for a reason that is not taste. A zero
+    ## smoothing radius divides by zero in BOTH kernel normalizations —
+    ## `4 / (PI * h^8)` and `30 / (PI * h^5)`, `src/sph_core.nim:62` and `:82`
+    ## raise h to the 8th and 5th power in a denominator — so zero is a
+    ## singularity here rather than a quiet setting, and the floor's job is to
+    ## make it unreachable.
+    ##
+    ## The VALUE 0.1 is a working bound, not a measured one: it is the smallest
+    ## kernel the slider offers, chosen to leave room below the default while
+    ## staying clear of the singularity. One-world task C3 may RAISE it, because
+    ## the stable stiffness ceiling falls quadratically with this fraction
+    ## (design C7) and every labelled stiffness notch has to sit below the
+    ## minimum ceiling over the reachable box — the floor is what decides that
+    ## worst case. [?]
+  SPH_RADIUS_FRACTION_MAX* = 1.0
+    ## Exactly one, and the assertion below holds it there. One is the whole
+    ## interaction radius, which is the kernel every fluid world ran before this
+    ## fraction existed, so keeping it representable is what stops this change
+    ## from silently altering a saved world (design C5).
+    ##
+    ## Nothing above it, and by construction rather than by clamp: the SPH
+    ## neighbour sweep visits only the cell block around a particle and the
+    ## cells are sized to the interaction radius (`src/grid.nim:61`), so a
+    ## smoothing radius past that radius would silently DROP neighbours instead
+    ## of gathering more. Capped at 1, that fluid cannot be expressed at all.
   SPH_REST_DENSITY_MIN* = 0.2
   SPH_REST_DENSITY_MAX* = 4.0
   SPH_STIFFNESS_MIN* = 1.0
@@ -310,6 +349,13 @@ static:
   doAssert SPH_STIFFNESS_MIN < SPH_STIFFNESS_MAX
   doAssert FORCE_STRENGTH_MIN < FORCE_STRENGTH_MAX
   doAssert FLUID_STRENGTH_MIN < FLUID_STRENGTH_MAX
+  doAssert CROWDING_STRENGTH_MIN < CROWDING_STRENGTH_MAX
+  # Crowding shapes the force law rather than gating a pass, so it is absent
+  # from the coupling loop below. Its floor still has to be zero, and for its
+  # own reason: zero reproduces today's force exactly, and a floor above it
+  # would make the pre-crowding world unreachable.
+  doAssert CROWDING_STRENGTH_MIN == 0.0,
+    "crowding strength zero is today's force law and must stay reachable"
   # Every coupling strength reaches zero (design D13). One loop rather than an
   # assertion each, so a fifth coupling with a nonzero floor fails here.
   for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
@@ -319,6 +365,21 @@ static:
       "every coupling can be turned off through its own slider"
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
+  doAssert SPH_RADIUS_FRACTION_MIN < SPH_RADIUS_FRACTION_MAX
+  # The radius fraction shapes the fluid rather than gating a pass, so it is
+  # absent from the coupling loop above — and its floor has to clear zero for
+  # the opposite reason crowding's has to reach it: zero divides by zero in
+  # both kernel normalizations instead of naming a quieter world.
+  doAssert SPH_RADIUS_FRACTION_MIN > 0.0,
+    "a zero SPH smoothing radius divides by zero in both kernel " &
+    "normalizations (src/sph_core.nim:62 and :82)"
+  # At exactly 1 the smoothing radius can never outrun the neighbour sweep,
+  # whose cells are sized to the interaction radius. Raising this ceiling would
+  # make dropped neighbours expressible, which is the constraint design C5
+  # chose to make unrepresentable rather than to clamp.
+  doAssert SPH_RADIUS_FRACTION_MAX == 1.0,
+    "the SPH smoothing radius must stay at or below the interaction radius " &
+    "the neighbour sweep's cells are sized to"
   doAssert RD_FEED_MIN < RD_FEED_MAX
   doAssert RD_KILL_MIN < RD_KILL_MAX
   doAssert RD_DEPOSIT_MIN < RD_DEPOSIT_MAX

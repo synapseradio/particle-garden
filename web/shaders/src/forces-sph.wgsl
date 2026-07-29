@@ -117,7 +117,17 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let thisOriginalIdx = sortedToOriginal[thisSortedIdx];
 
   // Precompute constants (avoid recomputing in inner loops)
-  let smoothingRadius = params.interactionRadius;
+  //
+  // THE SMOOTHING RADIUS IS A FRACTION OF THE INTERACTION RADIUS, never a
+  // length of its own. The fraction's range tops out at 1, so this product can
+  // never exceed the interaction radius — which matters because the neighbour
+  // sweep below visits only the cell block around a particle and the cells are
+  // sized to the interaction radius (src/grid.nim), so a larger smoothing
+  // radius would silently drop the neighbours that fall outside the block. The
+  // constraint is unrepresentable rather than clamped (design C5). Everything
+  // downstream already takes the radius as a value: both kernels recompute
+  // their normalization from it (src/sph_core.nim).
+  let smoothingRadius = params.interactionRadius * params.sphRadiusFraction;
   let radiusSq = smoothingRadius * smoothingRadius;
   let invCellWidth = f32(params.gridCellsX) / params.worldWidth;
   let invCellHeight = f32(params.gridCellsY) / params.worldHeight;

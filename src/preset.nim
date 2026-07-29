@@ -57,8 +57,11 @@ const CURRENT_SCHEMA_VERSION* = 2
   ## `migrate` translates the first shape into the second — see
   ## LEGACY_MODE_COUPLINGS for why translation is the only mechanism that works.
   ##
-  ## v2 also adds three fields v1 has no slot for: per-species chemistry,
-  ## the fluid strength, and the two climate-drift settings.
+  ## v2 also adds fields v1 has no slot for: per-species chemistry, the fluid
+  ## strength, the two climate-drift settings, and the crowding strength. The
+  ## v1 branch derives the fluid strength from the mode and PINS the crowding
+  ## strength at zero — a world saved before a term existed must not acquire it
+  ## from a default that moves later.
 
 # ==============================================================================
 # SECTION 2: SHAPE
@@ -98,6 +101,7 @@ type
     speciesCount*: int
     interactionRadius*: int
     forceStrength*: float
+    crowdingStrength*: float
     friction*: float
     ruleTemperature*: float
     timeScale*: float
@@ -118,6 +122,7 @@ type
     fluidStrength*: float
     sphRestDensity*: float
     sphStiffness*: float
+    sphRadiusFraction*: float
     sphViscosity*: float
     sphSubsteps*: int
     rdFeed*: float
@@ -202,6 +207,10 @@ func defaultSettings*(): PresetSettings =
     speciesCount: 4,
     interactionRadius: 50,
     forceStrength: 1.0,
+    # Mirrors simulation_state.initSimulationState's crowdingStrength: the
+    # shipped world runs the force law without the crowding term, so a preset
+    # that never mentions one restores none.
+    crowdingStrength: 0.0,
     friction: 0.05,
     ruleTemperature: 0.3,
     timeScale: 0.5,
@@ -224,6 +233,12 @@ func defaultSettings*(): PresetSettings =
     fluidStrength: 1.0,
     sphRestDensity: 3.0,
     sphStiffness: 8.0,
+    # Mirrors simulation_state.initSimulationState's sphRadiusFraction: the
+    # whole interaction radius, which is the kernel every fluid world so far has
+    # run. One-world task C2.6 moves this below 1 for fresh worlds; presets
+    # older than this schema version get 1.0 pinned in the legacy branch below,
+    # never the shipped default.
+    sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
     # Mirrors field_core.RD_DEFAULT_FEED/KILL/DEPOSIT/FIELD_FORCE as literals
@@ -346,6 +361,9 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "interactionRadius").getInt(defaults.interactionRadius), INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX)
   result.forceStrength = clampFloat(
     field(node, "forceStrength").getFloat(defaults.forceStrength), FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX)
+  result.crowdingStrength = clampFloat(
+    field(node, "crowdingStrength").getFloat(defaults.crowdingStrength),
+    CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX)
   result.friction = clampFloat(
     field(node, "friction").getFloat(defaults.friction), FRICTION_MIN, FRICTION_MAX)
   result.ruleTemperature = clampFloat(
@@ -386,6 +404,9 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "sphRestDensity").getFloat(defaults.sphRestDensity), SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX)
   result.sphStiffness = clampFloat(
     field(node, "sphStiffness").getFloat(defaults.sphStiffness), SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX)
+  result.sphRadiusFraction = clampFloat(
+    field(node, "sphRadiusFraction").getFloat(defaults.sphRadiusFraction),
+    SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX)
   result.sphViscosity = clampFloat(
     field(node, "sphViscosity").getFloat(defaults.sphViscosity), SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX)
   result.sphSubsteps = clampInt(
@@ -554,6 +575,21 @@ proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
       # v1 carries no fluidStrength to keep or drop, so this derives one: a
       # legacy fluid world runs its fluid at full effect, every other runs none.
       settings["fluidStrength"] = %(if legacy.keepFluid: 1.0 else: 0.0)
+      # PINNED, NOT DEFAULTED. Crowding did not exist when a v1 file was
+      # written, so every v1 world ran the force law without it and none was
+      # tuned against it. Letting the field default would hand a saved world the
+      # shipped default the moment that default moves off zero — a term the
+      # world was never saved with. Written unconditionally, so a v1 file that
+      # somehow carries the key is overwritten rather than trusted.
+      settings["crowdingStrength"] = %0.0
+      # PINNED FOR THE SAME REASON, at the other end of its range. The
+      # smoothing radius was the whole interaction radius when a v1 file was
+      # written, so 1.0 is the kernel that world's fluid ran — not the shipped
+      # default, which C2.6 measures below 1. Defaulting instead would rescale
+      # every saved fluid the moment that measurement lands. Written
+      # unconditionally, so a v1 file that somehow carries the key is
+      # overwritten rather than trusted.
+      settings["sphRadiusFraction"] = %1.0
 
 proc validate*(node: JsonNode): PresetLoadResult =
   ## Validates and normalizes an already-parsed JSON node into a `Preset`.
@@ -621,6 +657,7 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["speciesCount"] = %settings.speciesCount
   result["interactionRadius"] = %settings.interactionRadius
   result["forceStrength"] = %settings.forceStrength
+  result["crowdingStrength"] = %settings.crowdingStrength
   result["friction"] = %settings.friction
   result["ruleTemperature"] = %settings.ruleTemperature
   result["timeScale"] = %settings.timeScale
@@ -641,6 +678,7 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["fluidStrength"] = %settings.fluidStrength
   result["sphRestDensity"] = %settings.sphRestDensity
   result["sphStiffness"] = %settings.sphStiffness
+  result["sphRadiusFraction"] = %settings.sphRadiusFraction
   result["sphViscosity"] = %settings.sphViscosity
   result["sphSubsteps"] = %settings.sphSubsteps
   result["rdFeed"] = %settings.rdFeed

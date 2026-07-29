@@ -80,6 +80,7 @@ when defined(js):
     CONFIG.speciesCount = simState.speciesCount
     CONFIG.interactionRadius = simState.interactionRadius
     CONFIG.forceStrength = simState.forceStrength
+    CONFIG.crowdingStrength = simState.crowdingStrength
     CONFIG.friction = simState.friction
     CONFIG.ruleTemperature = simState.ruleTemperature
     CONFIG.timeScale = simState.timeScale
@@ -91,6 +92,7 @@ when defined(js):
     CONFIG.expAttractionBeta = simState.expAttractionBeta
     CONFIG.sphRestDensity = simState.sphRestDensity
     CONFIG.sphStiffness = simState.sphStiffness
+    CONFIG.sphRadiusFraction = simState.sphRadiusFraction
     CONFIG.sphViscosity = simState.sphViscosity
     CONFIG.sphSubsteps = simState.sphSubsteps
     CONFIG.rdFeed = simState.rdFeed
@@ -340,6 +342,7 @@ when defined(js):
     of "speciesCount": CONFIG.speciesCount.float
     of "interactionRadius": CONFIG.interactionRadius.float
     of "forceStrength": CONFIG.forceStrength
+    of "crowdingStrength": CONFIG.crowdingStrength
     of "friction": CONFIG.friction
     of "timeScale": CONFIG.timeScale
     of "ruleTemperature": CONFIG.ruleTemperature
@@ -365,6 +368,7 @@ when defined(js):
     of "sphRestDensity": CONFIG.sphRestDensity
     of "fluidStrength": CONFIG.fluidStrength
     of "sphStiffness": CONFIG.sphStiffness
+    of "sphRadiusFraction": CONFIG.sphRadiusFraction
     of "sphViscosity": CONFIG.sphViscosity
     of "sphSubsteps": CONFIG.sphSubsteps.float
     of "rdFeed": CONFIG.rdFeed
@@ -397,6 +401,8 @@ when defined(js):
         simState.interactionRadius = value.int)
     of "forceStrength": updateSimulation(
       proc(simState: var SimulationState) = simState.forceStrength = value)
+    of "crowdingStrength": updateSimulation(
+      proc(simState: var SimulationState) = simState.crowdingStrength = value)
     of "friction": updateSimulation(
       proc(simState: var SimulationState) = simState.friction = value)
     of "timeScale": updateSimulation(
@@ -450,6 +456,8 @@ when defined(js):
       proc(simState: var SimulationState) = simState.sphRestDensity = value)
     of "sphStiffness": updateSimulation(
       proc(simState: var SimulationState) = simState.sphStiffness = value)
+    of "sphRadiusFraction": updateSimulation(
+      proc(simState: var SimulationState) = simState.sphRadiusFraction = value)
     of "sphViscosity": updateSimulation(
       proc(simState: var SimulationState) = simState.sphViscosity = value)
     of "sphSubsteps": updateSimulation(
@@ -668,6 +676,7 @@ when defined(js):
     settings.speciesCount = CONFIG.speciesCount
     settings.interactionRadius = CONFIG.interactionRadius
     settings.forceStrength = CONFIG.forceStrength
+    settings.crowdingStrength = CONFIG.crowdingStrength
     settings.friction = CONFIG.friction
     settings.ruleTemperature = CONFIG.ruleTemperature
     settings.timeScale = CONFIG.timeScale
@@ -700,6 +709,7 @@ when defined(js):
     # across a save and load. tests/test_preset.nim pins the whole round trip.
     settings.sphRestDensity = CONFIG.sphRestDensity
     settings.sphStiffness = CONFIG.sphStiffness
+    settings.sphRadiusFraction = CONFIG.sphRadiusFraction
     settings.sphViscosity = CONFIG.sphViscosity
     settings.sphSubsteps = CONFIG.sphSubsteps
     settings.rdFeed = CONFIG.rdFeed
@@ -788,6 +798,7 @@ when defined(js):
         updateSimulation(proc(simState: var SimulationState) =
           simState.interactionRadius = settings.interactionRadius
           simState.forceStrength = settings.forceStrength
+          simState.crowdingStrength = settings.crowdingStrength
           simState.friction = settings.friction
           simState.ruleTemperature = settings.ruleTemperature
           simState.timeScale = settings.timeScale
@@ -798,6 +809,7 @@ when defined(js):
           simState.expAttractionBeta = settings.expAttractionBeta
           simState.sphRestDensity = settings.sphRestDensity
           simState.sphStiffness = settings.sphStiffness
+          simState.sphRadiusFraction = settings.sphRadiusFraction
           simState.sphViscosity = settings.sphViscosity
           simState.sphSubsteps = settings.sphSubsteps
           simState.rdFeed = settings.rdFeed

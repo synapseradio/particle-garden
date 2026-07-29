@@ -273,6 +273,18 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["SPH_DENSITY_FIXED_POINT_SCALE"] = fmt"{sphDensityScale:.1f}"
   result["SPH_DENSITY_INV_FIXED_POINT_SCALE"] = fmt"{1.0 / sphDensityScale:.16f}"
 
+  # The crowd-density accumulator (forces.wgsl encodes, integrate.wgsl decodes).
+  # Same value as the kernel-density scale above and the same derivation reached
+  # twice: both count neighbours where each contributes at most 1.0, so both
+  # reach MAX_PARTICLES in the worst case and both would wrap an i32 at the
+  # shared 2^16 scale. Its own name because each scale owns one encoder and one
+  # decoder — sharing a name across four shaders is how a decode ends up at the
+  # wrong scale. Crowding is the channel where wrapping matters most: a negative
+  # density feeds log(1 + d) a negative argument, and the NaN that comes back
+  # would spread through every force in the frame.
+  result["CROWD_DENSITY_FIXED_POINT_SCALE"] = fmt"{sphDensityScale:.1f}"
+  result["CROWD_DENSITY_INV_FIXED_POINT_SCALE"] = fmt"{1.0 / sphDensityScale:.16f}"
+
   # HDR-bloom separable-blur kernel (consumed by blur.wgsl). The half kernel
   # (centre + one side) and its element count come from bloom_core, the single
   # native-tested source of the Gaussian shape.

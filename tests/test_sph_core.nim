@@ -20,6 +20,12 @@ import std/[unittest, math]
 import ../src/sph_core
 
 from ../src/memory_layout import MAX_PARTICLES
+# The smoothing radius is the interaction radius times a fraction, so the
+# reachable effective radii are the product of two ranges the slider contract
+# owns. Read from there rather than restated here: raising either range
+# re-scopes the sweep below without a second edit.
+from ../src/config_ranges import SPH_RADIUS_FRACTION_MIN,
+  SPH_RADIUS_FRACTION_MAX, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX
 
 const SPH_CORE_TESTS_LOADED* = true
 
@@ -42,6 +48,29 @@ proc integratePoly6OverDisc(smoothingRadius: float; steps: int): float =
     else:
       total += integrand
   total * stepWidth
+
+proc radiusFractionSweep(steps: int): seq[float] =
+  ## The fraction range sampled end to end, endpoints included. The endpoints
+  ## are the two that matter: the minimum is the smallest kernel the sliders
+  ## reach, and the maximum is today's fluid.
+  result = @[]
+  for stepIndex in 0 .. steps:
+    result.add SPH_RADIUS_FRACTION_MIN +
+      (SPH_RADIUS_FRACTION_MAX - SPH_RADIUS_FRACTION_MIN) *
+        stepIndex.float / steps.float
+
+func normalizedDensityWeight(distance, smoothingRadius: float): float =
+  ## The density weight forces-sph.wgsl:248 forms: the poly6 weight divided by
+  ## the self-weight, which is what makes an isolated particle read 1.0 and the
+  ## accumulated density count neighbours.
+  poly6Weight2d(distance, smoothingRadius) / poly6Weight2d(0.0, smoothingRadius)
+
+func normalizedGradientWeight(distance, smoothingRadius: float): float =
+  ## The gradient weight forces-sph.wgsl:249 forms, by the same division. The
+  ## pressure acceleration is this times the pair pressure, so the smoothing
+  ## radius reaches the pressure term through here and nowhere else.
+  spikyGradientMagnitude2d(distance, smoothingRadius) /
+    spikyGradientMagnitude2d(0.0, smoothingRadius)
 
 
 suite "Poly6 Kernel Is 2D-Normalized":
@@ -93,6 +122,91 @@ suite "Spiky Gradient Produces A Monotone Repulsive Magnitude":
       let current = spikyGradientMagnitude2d(radius, smoothingRadius)
       check current < previous
       previous = current
+
+
+# ==============================================================================
+# THE SMOOTHING RADIUS IS A FRACTION OF THE INTERACTION RADIUS
+# ==============================================================================
+#
+# forces-sph.wgsl multiplies the interaction radius by params.sphRadiusFraction
+# to get the smoothing radius, so the reachable effective radii run from
+# INTERACTION_RADIUS_MIN * SPH_RADIUS_FRACTION_MIN up to INTERACTION_RADIUS_MAX.
+# Nothing in sph_core changes for that: every function already takes h as a
+# parameter and recomputes its normalization from it. These tests pin the
+# properties the shader change relies on, over the whole box the two ranges
+# open.
+
+suite "The Smoothing Radius Is A Fraction Of The Interaction Radius":
+  test "fraction one reproduces today's kernels":
+    # CONTRACT: the top of the fraction range is exactly 1, so the fluid a world
+    # ran before the fraction existed stays expressible — and expressible as the
+    # identical arithmetic, not an approximation of it. Both kernels and both
+    # weights the shader forms from them are compared exactly, because
+    # multiplying by one is exact in binary and anything less than exact would
+    # mean the top of the range had moved off 1.
+    for interactionRadius in [INTERACTION_RADIUS_MIN.float, 50.0,
+        INTERACTION_RADIUS_MAX.float]:
+      let scaled = interactionRadius * SPH_RADIUS_FRACTION_MAX
+      checkpoint("interaction radius " & $interactionRadius)
+      check scaled == interactionRadius
+      for distanceRatio in [0.0, 0.1, 0.25, 0.5, 0.75, 0.99]:
+        let distance = distanceRatio * interactionRadius
+        check poly6Weight2d(distance, scaled) ==
+          poly6Weight2d(distance, interactionRadius)
+        check spikyGradientMagnitude2d(distance, scaled) ==
+          spikyGradientMagnitude2d(distance, interactionRadius)
+        check normalizedDensityWeight(distance, scaled) ==
+          normalizedDensityWeight(distance, interactionRadius)
+        # The pressure term is the pair pressure times this weight and the XSPH
+        # term is epsilon times the density weight times the velocity gap, so
+        # holding the two weights fixed holds both terms fixed.
+        check normalizedGradientWeight(distance, scaled) ==
+          normalizedGradientWeight(distance, interactionRadius)
+        check xsphVelocityCorrection(3.0, 11.0,
+            normalizedDensityWeight(distance, scaled), SPH_XSPH_EPSILON) ==
+          xsphVelocityCorrection(3.0, 11.0,
+            normalizedDensityWeight(distance, interactionRadius),
+            SPH_XSPH_EPSILON)
+
+  test "kernel normalization holds across the fraction range":
+    # CONTRACT: the poly6 constant is derived from h rather than precomputed
+    # against one, so it stays a partition of unity at every effective radius
+    # the fraction opens — including the smallest, where h to the 8th power in
+    # the denominator is at its most extreme. Verified the way the suite
+    # verifies it at full radius: by integrating over the support disc.
+    for interactionRadius in [INTERACTION_RADIUS_MIN.float, 50.0,
+        INTERACTION_RADIUS_MAX.float]:
+      for fraction in radiusFractionSweep(6):
+        let smoothingRadius = interactionRadius * fraction
+        checkpoint("interaction radius " & $interactionRadius &
+          ", fraction " & $fraction)
+        check abs(integratePoly6OverDisc(smoothingRadius, 50_000) - 1.0) <
+          INTEGRAL_TOLERANCE
+
+  test "the fluid keeps its relative scale when the interaction radius moves":
+    # CONTRACT: what a particle feels depends on distance measured in smoothing
+    # radii, never on the radius itself — which is what makes a FRACTION the
+    # right control. Move the interaction radius with the fraction held fixed
+    # and the whole neighbourhood scales with it, so the interaction radius
+    # stays one meaningful control rather than two coupled ones.
+    for distanceRatio in [0.0, 0.2, 0.5, 0.9]:
+      var densityReference = NaN
+      var gradientReference = NaN
+      for interactionRadius in [INTERACTION_RADIUS_MIN.float, 37.0, 50.0,
+          INTERACTION_RADIUS_MAX.float]:
+        for fraction in radiusFractionSweep(4):
+          let smoothingRadius = interactionRadius * fraction
+          let distance = distanceRatio * smoothingRadius
+          checkpoint("ratio " & $distanceRatio & ", radius " &
+            $interactionRadius & ", fraction " & $fraction)
+          if densityReference.isNaN:
+            densityReference = normalizedDensityWeight(distance, smoothingRadius)
+            gradientReference =
+              normalizedGradientWeight(distance, smoothingRadius)
+          check abs(normalizedDensityWeight(distance, smoothingRadius) -
+            densityReference) < EPSILON
+          check abs(normalizedGradientWeight(distance, smoothingRadius) -
+            gradientReference) < EPSILON
 
 
 suite "Tait Equation Of State":

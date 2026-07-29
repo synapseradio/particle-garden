@@ -35,6 +35,10 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
     # The interface contract with the TypeScript UI: these ids, no others.
     let expectedIds = toHashSet([
       "particleCount", "speciesCount", "interactionRadius", "forceStrength",
+      # crowdingStrength shapes the species force rather than adding a coupling:
+      # it scales the attractive half by the receiving particle's local density,
+      # and zero is the force law without it.
+      "crowdingStrength",
       "friction", "timeScale", "ruleTemperature", "maxVelocity",
       "particleSize", "trailLength",
       "glowIntensity", "velocityGlowScale", "glowRadiusScale", "glowFalloff",
@@ -47,6 +51,10 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       # fluid's other three numbers say what kind of fluid it is, and none says
       # how much of it acts.
       "fluidStrength",
+      # sphRadiusFraction sets the neighbourhood the other fluid numbers are
+      # measured in: the smoothing radius as a fraction of the interaction
+      # radius, capped at 1 so it can never outrun the neighbour sweep.
+      "sphRadiusFraction",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
       "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
       # climateSpeed drives the drifting climate. This set is the interface
@@ -170,6 +178,7 @@ suite "Descriptors Agree With The Range Authority":
     ("interactionRadius", INTERACTION_RADIUS_MIN.float,
       INTERACTION_RADIUS_MAX.float),
     ("forceStrength", FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX),
+    ("crowdingStrength", CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX),
     ("friction", FRICTION_MIN, FRICTION_MAX),
     ("timeScale", TIME_SCALE_MIN, TIME_SCALE_MAX),
     ("ruleTemperature", RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX),
@@ -196,6 +205,7 @@ suite "Descriptors Agree With The Range Authority":
     # Palette, SPH, and the reaction-diffusion field
     ("paletteSaturation", PALETTE_SATURATION_MIN, PALETTE_SATURATION_MAX),
     ("paletteLightness", PALETTE_LIGHTNESS_MIN, PALETTE_LIGHTNESS_MAX),
+    ("sphRadiusFraction", SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX),
     ("sphRestDensity", SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX),
     ("sphStiffness", SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX),
     ("sphViscosity", SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX),
@@ -234,6 +244,7 @@ suite "Descriptors Agree With The Default Authority":
     ("speciesCount", simDefaults.speciesCount.float),
     ("interactionRadius", simDefaults.interactionRadius.float),
     ("forceStrength", simDefaults.forceStrength),
+    ("crowdingStrength", simDefaults.crowdingStrength),
     ("friction", simDefaults.friction),
     ("timeScale", simDefaults.timeScale),
     ("ruleTemperature", simDefaults.ruleTemperature),
@@ -242,6 +253,7 @@ suite "Descriptors Agree With The Default Authority":
     ("attractionPeak", simDefaults.attractionPeak),
     ("expRepulsionAlpha", simDefaults.expRepulsionAlpha),
     ("expAttractionBeta", simDefaults.expAttractionBeta),
+    ("sphRadiusFraction", simDefaults.sphRadiusFraction),
     ("sphRestDensity", simDefaults.sphRestDensity),
     ("sphStiffness", simDefaults.sphStiffness),
     ("sphViscosity", simDefaults.sphViscosity),

@@ -23,6 +23,13 @@ type
     speciesCount*: int
     interactionRadius*: int
     forceStrength*: float
+    crowdingStrength*: float  ## How hard local density attenuates attraction:
+                              ## every attractive contribution is scaled by
+                              ## `1 / (1 + crowdingStrength * ln(1 + density))`.
+                              ## Repulsion is untouched at every density, so the
+                              ## term caps how tightly attraction can pack a
+                              ## colony without cancelling what holds it apart.
+                              ## Zero reproduces today's force law exactly.
     friction*: float
     ruleTemperature*: float   ## Std dev sigma for the bell-curve rule randomizer
     timeScale*: float
@@ -44,6 +51,12 @@ type
                               ## self-density of 1.0, or isolation becomes the
                               ## zero-pressure state and the fluid disperses.
     sphStiffness*: float      ## SPH pressure gain (Tait stiffness)
+    sphRadiusFraction*: float ## The SPH smoothing radius as a fraction of
+                              ## interactionRadius. A fraction rather than a
+                              ## length, so the fluid keeps its relative scale
+                              ## when the interaction radius moves and a
+                              ## smoothing radius past the neighbour sweep's
+                              ## reach cannot be expressed (design C5).
     sphViscosity*: float      ## SPH XSPH viscosity strength
     sphSubsteps*: int         ## SPH physics substeps per rendered frame.
                               ## 2 halves the effective timestep the stiff
@@ -71,6 +84,12 @@ func initSimulationState*(): SimulationState =
     speciesCount: 4,
     interactionRadius: 50,
     forceStrength: 1.0,
+    # Crowding starts off, so the shipped world is the force law every other
+    # default was chosen against. The non-zero default is a measurement one-world
+    # task C1.9 takes once the attraction-matrix bounds are final: a default
+    # tuned against attraction bounds that are about to move would be tuned
+    # against forces that no longer exist.
+    crowdingStrength: 0.0,
     friction: 0.05,
     ruleTemperature: 0.3,  # Tight bell curve: +/-0.99 is ~3.3 sigma out
     timeScale: 0.5,
@@ -90,6 +109,12 @@ func initSimulationState*(): SimulationState =
     fluidStrength: 0.0,
     sphRestDensity: 3.0,  # ~6 neighbors at r=0.5-0.6h settle at density 2.6-3.5
     sphStiffness: 8.0,
+    # The whole interaction radius, which is the kernel every fluid world so far
+    # has run. Moving it below 1 is a separate, measured decision: one-world
+    # task C2.6 sweeps the fraction downward in the running app with crowding at
+    # zero (design C6) and records the conditions beside the constant. Until
+    # then, a fresh world's fluid is the fluid people have already watched.
+    sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
     rdFeed: RD_DEFAULT_FEED,

@@ -110,6 +110,12 @@ type
       ## Separate from sbDensityDelta because the two carry different
       ## quantities: this one feeds the Tait equation of state, that one feeds
       ## the renderer. Sharing a buffer makes the glow track the fluid strength.
+    sbCrowdDensityDelta
+      ## The species-blind crowd-density accumulator, one i32 per particle.
+      ## Separate from sbDensityDelta for the same reason again: the crowding
+      ## cap has to count every neighbour the spatial hash counts, while the
+      ## renderer wants same-species neighbours only. One buffer serving both
+      ## would make dot size track species mixing.
     sbFieldDeposit
       ## The reaction-diffusion fixed-point splat buffer: one i32 per FIELD_W x
       ## FIELD_H cell. fieldDeposit accumulates each particle's inhibitor
@@ -227,13 +233,14 @@ func buildFrame*(couplings: WorldCouplings): FrameDescription =
   ## executor encodes this description N times in one command encoder. The
   ## description stays one substep's worth of work.
 
-  # Both delta buffers, every frame. Clearing a buffer no pass writes this frame
+  # Every delta buffer, every frame. Clearing a buffer no pass writes this frame
   # costs one encoder operation and removes a whole class of question about what
   # the previous frame left behind.
   result = @[
     clearBufferNode(sbVelocityDelta),
     clearBufferNode(sbDensityDelta),
     clearBufferNode(sbSphDensityDelta),
+    clearBufferNode(sbCrowdDensityDelta),
     # gridCounts must start at zero for bin-count's atomic increments.
     clearBufferNode(sbGridCounts),
   ]

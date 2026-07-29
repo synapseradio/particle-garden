@@ -54,6 +54,9 @@ type
     densityDelta* {.importjs: "densityDelta".}: GPUBuffer  ## i32 per particle (fixed-point)
     sphDensityDelta* {.importjs: "sphDensityDelta".}: GPUBuffer
       ## The fluid's private kernel density, i32 per particle (fixed-point).
+    crowdDensityDelta* {.importjs: "crowdDensityDelta".}: GPUBuffer
+      ## Species-blind crowd density, i32 per particle (fixed-point). What the
+      ## crowding cap reads; the renderer keeps reading the colony channel.
 
     # Grid structure
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
@@ -84,6 +87,7 @@ type
     ## fixed-point i32 (scale=65536) and apply in integrate pass.
     densityDelta* {.importjs: "densityDelta".}: int
     sphDensityDelta* {.importjs: "sphDensityDelta".}: int
+    crowdDensityDelta* {.importjs: "crowdDensityDelta".}: int
     gridCounts* {.importjs: "gridCounts".}: int
     gridOffsets* {.importjs: "gridOffsets".}: int
     sync* {.importjs: "sync".}: int
@@ -158,6 +162,7 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   # Required for symmetric density in half-neighbor iteration
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
+  result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 4
 
   # Grid: u32 per cell
   result.gridCounts = gridCells * 4
@@ -414,6 +419,8 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   buffers.densityDelta = createBuf(sizes.densityDelta, bufferUsage, "Density Delta (fixed-point i32)")
   buffers.sphDensityDelta = createBuf(
     sizes.sphDensityDelta, bufferUsage, "SPH Kernel Density Delta (fixed-point i32)")
+  buffers.crowdDensityDelta = createBuf(
+    sizes.crowdDensityDelta, bufferUsage, "Crowd Density Delta (fixed-point i32)")
 
   # Grid buffers
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")

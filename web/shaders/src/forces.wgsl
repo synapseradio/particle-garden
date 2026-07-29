@@ -45,8 +45,9 @@
 // |   4   | storage array<u32>        | cellParticleCounts     | read   |
 // |   5   | storage atomic<i32>       | velocityDeltaFixed     | r/w    |
 // |   6   | storage atomic<i32>       | densityDeltaFixed      | r/w    |
+// |   7   | storage atomic<i32>       | crowdDensityDeltaFixed | r/w    |
 // +-------+---------------------------+------------------------+--------+
-// TOTAL: 6 storage buffers (under 8-buffer limit)
+// TOTAL: 7 storage buffers (under 8-buffer limit)
 //
 // THREAD MAPPING: One particle per thread (sorted index space)
 // =============================================================================
@@ -74,6 +75,11 @@
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
+// The second density channel: every neighbour, no species gate. Encoded at the
+// crowd scale rather than the velocity one — see fixed_point.wgsl for why a
+// neighbour count needs the coarser of the two.
+@group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
+
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};  // Prevents division-by-zero when particles overlap
 const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};  // 300² - mouse influence radius squared
 
@@ -90,10 +96,31 @@ const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};  // 300² - mouse influe
 // - The 2.0 factor balances repulsion/attraction magnitudes
 //
 // Typical values: alpha=6.0 (steep repulsion), beta=3.0 (broad attraction)
-fn exponentialForce(r: f32, attraction: f32, alpha: f32, beta: f32) -> f32 {
+//
+// `attenuation` is the crowding term, and it multiplies the ATTRACTION term
+// alone. A negative matrix entry turns that term repulsive, so the gate below
+// leaves it at full strength: damping repulsion would partly cancel the cap the
+// term exists to serve.
+fn exponentialForce(r: f32, attraction: f32, alpha: f32, beta: f32, attenuation: f32) -> f32 {
   let repulsion = exp(-alpha * r);
   let attract = exp(-beta * r);
-  return -repulsion + attraction * attract * 2.0;
+  let crowding = select(1.0, attenuation, attraction > 0.0);
+  return -repulsion + attraction * attract * 2.0 * crowding;
+}
+
+// =============================================================================
+// CROWDING ATTENUATION
+// =============================================================================
+// The fraction of its attraction a particle keeps at this local density.
+// Mirrored by physics_core.crowdingAttenuation, which the native suite checks;
+// read the density-ceiling block there for what the cap does and does not claim.
+//
+// Logarithmic because the range that matters spans two orders of magnitude — a
+// few neighbours against a collapsing blob. Three properties follow by
+// construction: identity at zero density, monotone decreasing in density, and
+// identity at strength zero, which is today's force law exactly.
+fn crowdingAttenuation(density: f32, strength: f32) -> f32 {
+  return 1.0 / (1.0 + strength * log(1.0 + density));
 }
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
@@ -122,11 +149,21 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var forceOnThisX = 0.0;
   var forceOnThisY = 0.0;
   var densityAccum = 0.0;
+  var crowdDensityAccum = 0.0;
 
-  // THIS PASS ACCUMULATES ONLY. The frame clears velocityDelta and densityDelta
-  // before anything writes them (sim_registry.buildFrame opens with both clears),
-  // so a self-reset here would erase whatever a co-running contributor — the
-  // field force, or forces-sph — had already added.
+  // THIS PASS ACCUMULATES ONLY. The frame clears velocityDelta and both density
+  // deltas before anything writes them (sim_registry.buildFrame opens with those
+  // clears), so a self-reset here would erase whatever a co-running
+  // contributor — the field force, or forces-sph — had already added.
+
+  // How much of its attraction THIS particle keeps, at the crowd density it
+  // carried into this frame. Hoisted: this particle's density does not change
+  // while the loop runs, so the neighbour loop reads it rather than recomputing
+  // a log per pair. Each side of a half-neighbour pair is attenuated by the
+  // density of the particle RECEIVING the force, so the other side's is
+  // computed per pair.
+  let attenuationOnThis =
+    crowdingAttenuation(thisParticle.crowdDensity, params.crowdingStrength);
 
   // Find this particle's grid cell
   var cellX = i32(thisParticle.pos.x * invCellWidth);
@@ -254,10 +291,14 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         var forceMagnitudeOnThis: f32;
         var forceMagnitudeOnOther: f32;
 
+        // The crowding term for the particle receiving each half of the pair.
+        let attenuationOnOther =
+          crowdingAttenuation(otherParticle.crowdDensity, params.crowdingStrength);
+
         if (params.forceModel == 1u) {
           // EXPONENTIAL MODEL
-          forceMagnitudeOnThis = exponentialForce(normalizedDist, attractionThisToOther, params.expAlpha, params.expBeta);
-          forceMagnitudeOnOther = exponentialForce(normalizedDist, attractionOtherToThis, params.expAlpha, params.expBeta);
+          forceMagnitudeOnThis = exponentialForce(normalizedDist, attractionThisToOther, params.expAlpha, params.expBeta, attenuationOnThis);
+          forceMagnitudeOnOther = exponentialForce(normalizedDist, attractionOtherToThis, params.expAlpha, params.expBeta, attenuationOnOther);
         } else {
           // POLYNOMIAL MODEL (default)
           let repEnd = params.repulsionEnd;
@@ -278,7 +319,12 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
             let leftDist = t / peakPos;
             let rightDist = (1.0 - t) / (1.0 - peakPos);
             let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
-            forceMagnitudeOnThis = attractionThisToOther * bump * 4.0;  // Scale to match old peak magnitude
+            // Scale to match old peak magnitude, then attenuate by how crowded
+            // the RECEIVING particle is. Gated on the sign: a negative entry
+            // makes this branch repulsive and the crowding term never touches
+            // repulsion.
+            let crowdingOnThis = select(1.0, attenuationOnThis, attractionThisToOther > 0.0);
+            forceMagnitudeOnThis = attractionThisToOther * bump * 4.0 * crowdingOnThis;
           }
 
           // Force on OTHER particle (Newton's 3rd law: uses OTHER's attraction coefficient)
@@ -293,7 +339,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
             let leftDist = t / peakPos;
             let rightDist = (1.0 - t) / (1.0 - peakPos);
             let bump = min(leftDist, 1.0) * min(leftDist, 1.0) * min(rightDist, 1.0) * min(rightDist, 1.0);
-            forceMagnitudeOnOther = attractionOtherToThis * bump * 4.0;
+            let crowdingOnOther = select(1.0, attenuationOnOther, attractionOtherToThis > 0.0);
+            forceMagnitudeOnOther = attractionOtherToThis * bump * 4.0 * crowdingOnOther;
           }
         }
 
@@ -320,22 +367,35 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], deltaVxOtherFixed);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], deltaVyOtherFixed);
 
-        // SYMMETRIC DENSITY ACCUMULATION:
-        // Density measures "crowding" - how many same-species neighbors are nearby.
-        // Used for visual effects (particle size based on population pressure).
+        // SYMMETRIC DENSITY ACCUMULATION, TWO CHANNELS:
+        //
+        // COLONY density counts same-species neighbours. It says what a colony
+        // looks like, and dot size, brightness and glow read it.
+        //
+        // CROWD density counts every neighbour, whatever its species. It says
+        // what the spatial hash is carrying, which is what the crowding cap has
+        // to bound: a cell filled by a mixed blob costs exactly what a cell
+        // filled by one species costs, so a species-gated signal would let a
+        // mixed blob pack MAX_SPECIES times tighter before the cap noticed.
+        //
+        // Both share one proximity weight — (1.0 - normalizedDist), touching=1,
+        // at the radius edge=0 — and differ only in the gate above them.
         //
         // CRITICAL: Half-neighbor iteration means each pair is processed ONCE.
-        // Both particles must receive the density contribution from this pair.
-        // Same atomic pattern as velocity - write to OTHER immediately,
-        // accumulate THIS in register and write once at the end.
-        //
-        // Weighted by proximity: (1.0 - normalizedDist) means touching=1.0, at edge=0.0
+        // Both particles must receive the contribution from this pair. Same
+        // atomic pattern as velocity: write to OTHER immediately, accumulate
+        // THIS in a register and write once at the end.
+        let proximityWeight = 1.0 - normalizedDist;
+
+        crowdDensityAccum += proximityWeight;
+        atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx],
+          i32(proximityWeight * CROWD_DENSITY_FIXED_POINT_SCALE));
+
         if (otherParticle.species == thisParticle.species) {
-          let densityContribution = 1.0 - normalizedDist;
-          densityAccum += densityContribution;  // THIS particle (register)
+          densityAccum += proximityWeight;  // THIS particle (register)
 
           // OTHER particle gets same contribution via atomic (like velocity)
-          let densityFixed = i32(densityContribution * FIXED_POINT_SCALE);
+          let densityFixed = i32(proximityWeight * FIXED_POINT_SCALE);
           atomicAdd(&densityDeltaFixed[otherOriginalIdx], densityFixed);
         }
       }
@@ -397,9 +457,12 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], deltaVxThisFixed);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], deltaVyThisFixed);
 
-  // Apply accumulated density for THIS particle via atomic
+  // Apply accumulated density for THIS particle via atomic, both channels.
   // Same pattern as velocity: accumulated in register, written once at end.
   // Temporal smoothing happens in integrate pass (needs previous density value).
   let densityThisFixed = i32(densityAccum * FIXED_POINT_SCALE);
   atomicAdd(&densityDeltaFixed[thisOriginalIdx], densityThisFixed);
+
+  atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx],
+    i32(crowdDensityAccum * CROWD_DENSITY_FIXED_POINT_SCALE));
 }

@@ -39,8 +39,9 @@
 // |   2   | storage array<i32>        | velocityDelta     | read   |
 // |   3   | storage array<i32>        | densityDelta      | read   |
 // |   4   | storage array<i32>        | sphDensityDelta   | read   |
+// |   5   | storage array<i32>        | crowdDensityDelta | read   |
 // +-------+---------------------------+-------------------+--------+
-// TOTAL: 4 storage buffers (well under 8-buffer limit)
+// TOTAL: 5 storage buffers (well under 8-buffer limit)
 //
 // THREAD MAPPING: One particle per thread (original index space)
 // =============================================================================
@@ -64,6 +65,7 @@ struct IntegrationParams {
 @group(0) @binding(2) var<storage, read> velocityDeltaFixed: array<i32>;
 @group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
 @group(0) @binding(4) var<storage, read> sphDensityDeltaFixed: array<i32>;
+@group(0) @binding(5) var<storage, read> crowdDensityDeltaFixed: array<i32>;
 
 const DENSITY_SMOOTH_FACTOR: f32 = {{TUNABLE_DENSITY_SMOOTH_FACTOR}};  // 70% old + 30% new for temporal smoothing
 
@@ -93,6 +95,16 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // Prevents flickering as particles move in/out of interaction radius
   let smoothedDensity = p.density * DENSITY_SMOOTH_FACTOR + deltaDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
   p.density = smoothedDensity;
+
+  // Crowd density, resolved exactly the way colony density is: same weight, same
+  // smoothing, decoded at its own scale (fixed_point.wgsl says why a neighbour
+  // count cannot share the velocity scale). Smoothed rather than raw, because
+  // the crowding cap reading a flickering density would make the force law
+  // flicker with it — the opposite of what a cap is for.
+  let deltaCrowdDensity =
+    f32(crowdDensityDeltaFixed[particleIdx]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
+  p.crowdDensity = p.crowdDensity * DENSITY_SMOOTH_FACTOR +
+    deltaCrowdDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
 
   // The fluid's kernel density, resolved the same way but kept in its own
   // field. Unsmoothed: the Tait equation of state wants this frame's density,

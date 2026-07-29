@@ -8,8 +8,11 @@
 #
 # ==============================================================================
 
+import std/math
 import std/unittest
 import ../src/physics_core
+import ../src/config_ranges
+import ../src/preset
 
 # ==============================================================================
 # TEST HELPERS
@@ -95,6 +98,173 @@ suite "Force Calculation (scaled)":
     let scaled = calculateForce(0.5f, attr = 1.0f, fMul = fMul, invD = invD)
 
     check approxEq(scaled, base * fMul * invD, EPSILON_TIGHT)
+
+
+# ==============================================================================
+# CROWDING ATTENUATION TESTS
+# ==============================================================================
+#
+# The attenuation is 1 / (1 + strength * ln(1 + density)) and it multiplies the
+# ATTRACTIVE contribution alone. These pin the three properties design C2 gets
+# by construction rather than by tuning, plus the commutation with force
+# strength design C0 requires: the term is a fraction of whatever attraction
+# survives fMul, never an absolute force.
+
+const
+  CROWDING_DENSITIES = [0.0f, 0.5f, 1.0f, 5.0f, 20.0f, 100.0f, 400.0f]
+  CROWDING_STRENGTHS = [0.0f, 0.25f, 1.0f, 2.0f]
+  ATTRACTION_ZONE_DIST = 0.65f  ## Peak of the attraction envelope.
+  REPULSION_ZONE_DIST = 0.15f   ## Inside the repulsion zone (r < 0.3).
+
+suite "Crowding Attenuation":
+  test "attenuation is identity at zero density":
+    # log(1 + 0) = 0, so an isolated particle feels exactly today's force at
+    # every strength. This is what makes the change provably invisible in a
+    # sparse world.
+    for strength in CROWDING_STRENGTHS:
+      check approxEq(crowdingAttenuation(0.0f, strength), 1.0f, EPSILON_TIGHT)
+
+  test "attenuation is monotone decreasing in density":
+    # Crowding is never rewarded. At strength zero the curve is flat, which is
+    # the same statement with the strength turned off.
+    for strength in CROWDING_STRENGTHS:
+      for densityIndex in 1 ..< CROWDING_DENSITIES.len:
+        let looser = crowdingAttenuation(
+          CROWDING_DENSITIES[densityIndex - 1], strength)
+        let denser = crowdingAttenuation(
+          CROWDING_DENSITIES[densityIndex], strength)
+        check denser <= looser
+        if strength > 0.0f:
+          check denser < looser
+
+  test "strength zero reproduces the unattenuated force exactly":
+    # One number, and every regression under it is bisectable to that number.
+    for density in CROWDING_DENSITIES:
+      for attr in [-1.0f, -0.4f, 0.0f, 0.4f, 1.0f]:
+        for normDist in [0.0f, REPULSION_ZONE_DIST, 0.3f,
+            ATTRACTION_ZONE_DIST, 1.0f]:
+          let plain = calculateForce(normDist, attr, fMul = 1.7f, invD = 0.2f)
+          let attenuated = calculateAttenuatedForce(normDist, attr,
+            fMul = 1.7f, invD = 0.2f, density = density, crowdingStrength = 0.0f)
+          check approxEq(attenuated, plain, EPSILON_TIGHT)
+
+  test "the attenuation commutes with force strength":
+    # The attenuated force at fMul = k is k times the attenuated force at
+    # fMul = 1, so the term means the same thing across the whole force-strength
+    # range instead of drifting into an absolute force (design C0).
+    for strength in CROWDING_STRENGTHS:
+      for density in CROWDING_DENSITIES:
+        for forceMultiplier in [0.0f, 0.5f, 1.0f, 5.0f]:
+          let atOne = calculateAttenuatedForce(ATTRACTION_ZONE_DIST,
+            attr = 0.8f, fMul = 1.0f, invD = 0.25f, density = density,
+            crowdingStrength = strength)
+          let atK = calculateAttenuatedForce(ATTRACTION_ZONE_DIST,
+            attr = 0.8f, fMul = forceMultiplier, invD = 0.25f,
+            density = density, crowdingStrength = strength)
+          check approxEq(atK, forceMultiplier * atOne, EPSILON_TIGHT)
+
+  test "repulsion survives the crowd":
+    # Attenuating repulsion would partly cancel the cap it exists to serve
+    # (design C1). The repulsion zone and every negative matrix entry keep
+    # today's force at every density and every strength.
+    for strength in CROWDING_STRENGTHS:
+      for density in CROWDING_DENSITIES:
+        let inRepulsionZone = calculateAttenuatedForce(REPULSION_ZONE_DIST,
+          attr = 1.0f, fMul = 1.0f, invD = 1.0f, density = density,
+          crowdingStrength = strength)
+        check approxEq(inRepulsionZone,
+          calculateForce(REPULSION_ZONE_DIST, attr = 1.0f, fMul = 1.0f,
+            invD = 1.0f), EPSILON_TIGHT)
+        let negativeEntry = calculateAttenuatedForce(ATTRACTION_ZONE_DIST,
+          attr = -0.6f, fMul = 1.0f, invD = 1.0f, density = density,
+          crowdingStrength = strength)
+        check approxEq(negativeEntry,
+          calculateForce(ATTRACTION_ZONE_DIST, attr = -0.6f, fMul = 1.0f,
+            invD = 1.0f), EPSILON_TIGHT)
+
+  test "attenuated attraction matches the closed form":
+    # The oracle the WGSL mirrors, written out once so the shader has something
+    # to be wrong against.
+    for strength in CROWDING_STRENGTHS:
+      for density in CROWDING_DENSITIES:
+        let expected = calculateForce(ATTRACTION_ZONE_DIST, attr = 0.8f,
+          fMul = 1.3f, invD = 0.5f) /
+          (1.0f + strength * ln(1.0f + density))
+        check approxEq(calculateAttenuatedForce(ATTRACTION_ZONE_DIST,
+          attr = 0.8f, fMul = 1.3f, invD = 0.5f, density = density,
+          crowdingStrength = strength), expected, EPSILON_TIGHT)
+
+
+# ==============================================================================
+# DENSITY CEILING TESTS
+# ==============================================================================
+#
+# The performance argument rests on a ceiling EXISTING and being computable from
+# the parameters, not on blobs having looked smaller. This sweep reads every
+# bound from the constant that owns it — FORCE_STRENGTH_MIN/MAX from the range
+# authority, MATRIX_VALUE_MIN/MAX from the preset schema, and the crowding range
+# from the range authority — so a later recalibration re-scopes the sweep with no
+# second edit here.
+
+func sweepPoints(lowBound, highBound: float; count: int): seq[float] =
+  ## `count` evenly spaced values across a closed range, endpoints included.
+  for step in 0 ..< count:
+    result.add lowBound +
+      (highBound - lowBound) * float(step) / float(count - 1)
+
+const
+  SWEPT_MATRIX_VALUES = sweepPoints(MATRIX_VALUE_MIN, MATRIX_VALUE_MAX, 7)
+  SWEPT_FORCE_STRENGTHS = sweepPoints(FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX, 5)
+  SWEPT_CROWDING_STRENGTHS = sweepPoints(
+    CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX, 6)
+
+suite "The Density Ceiling":
+  test "a density ceiling exists":
+    for attr in SWEPT_MATRIX_VALUES:
+      for forceStrength in SWEPT_FORCE_STRENGTHS:
+        for crowding in SWEPT_CROWDING_STRENGTHS:
+          if crowding == 0.0:
+            continue  # today's force law caps nothing; the endpoint below
+          let ceiling = densityCeiling(attr, forceStrength, crowding)
+          checkpoint("attr " & $attr & " force " & $forceStrength &
+            " crowding " & $crowding)
+          check ceiling >= 0.0
+          check classify(ceiling) notin {fcInf, fcNegInf, fcNan}
+
+  test "the ceiling degenerates at force strength zero":
+    # D13 puts zero inside the force-strength range and design C0 says what it
+    # means: no force acts, so species attraction concentrates nothing at any
+    # density. The bound on what attraction concentrates is therefore zero —
+    # vacuous rather than wrong, and swept rather than excluded.
+    for attr in SWEPT_MATRIX_VALUES:
+      for crowding in SWEPT_CROWDING_STRENGTHS:
+        check densityCeiling(attr, FORCE_STRENGTH_MIN, crowding) == 0.0
+
+  test "the ceiling decreases monotonically in crowding strength":
+    for attr in SWEPT_MATRIX_VALUES:
+      for forceStrength in SWEPT_FORCE_STRENGTHS:
+        for strengthIndex in 1 ..< SWEPT_CROWDING_STRENGTHS.len:
+          let looser = densityCeiling(attr, forceStrength,
+            SWEPT_CROWDING_STRENGTHS[strengthIndex - 1])
+          let firmer = densityCeiling(attr, forceStrength,
+            SWEPT_CROWDING_STRENGTHS[strengthIndex])
+          checkpoint("attr " & $attr & " force " & $forceStrength)
+          check firmer <= looser
+          if forceStrength > 0.0 and attr > 0.0:
+            check firmer < looser
+
+  test "the ceiling is the same at every non-zero force strength":
+    # Design C0: the attenuation is a fraction of the attraction that survives
+    # fMul, never an absolute force. So force strength scales both sides of the
+    # balance and cancels out of the ceiling entirely, and the cap means the
+    # same thing across the whole force-strength range.
+    for attr in SWEPT_MATRIX_VALUES:
+      for crowding in SWEPT_CROWDING_STRENGTHS:
+        let atMax = densityCeiling(attr, FORCE_STRENGTH_MAX, crowding)
+        for forceStrength in SWEPT_FORCE_STRENGTHS:
+          if forceStrength == 0.0:
+            continue
+          check densityCeiling(attr, forceStrength, crowding) == atMax
 
 
 # ==============================================================================

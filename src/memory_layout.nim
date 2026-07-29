@@ -16,9 +16,9 @@
 # │ 8       │ vel.x    │ 4     │ X velocity (f32)                            │
 # │ 12      │ vel.y    │ 4     │ Y velocity (f32)                            │
 # │ 16      │ species  │ 4     │ Species ID (u32)                            │
-# │ 20      │ density  │ 4     │ Local density (f32)                         │
-# │ 24      │ _pad0    │ 4     │ Padding for 32-byte alignment               │
-# │ 28      │ _pad1    │ 4     │ Padding for 32-byte alignment               │
+# │ 20      │ density  │ 4     │ Colony density, same-species (f32)          │
+# │ 24      │sphDensity│ 4     │ SPH kernel density, fluid-private (f32)      │
+# │ 28      │crowdDens.│ 4     │ Crowd density, species-blind (f32)          │
 # └─────────┴──────────┴───────┴─────────────────────────────────────────────┘
 #
 # WHY 32 BYTES:
@@ -73,7 +73,12 @@ const
     ## equation of state. A separate field because the two measure different
     ## things, and one field carrying both makes the glow track the fluid.
     ## Free: this word pads the struct to its 32-byte alignment anyway.
-  # Offset 28 is padding
+  PARTICLE_CROWD_DENSITY_OFFSET* = 28
+    ## Crowd density: every neighbour, proximity-weighted, with no species gate.
+    ## What the crowding cap reads, because the spatial hash a mixed blob fills
+    ## costs exactly what a single-species one costs — so the signal that bounds
+    ## that cost must count neighbours the same way the hash does.
+    ## The last word of the 32-byte struct, previously padding.
 
 # ==============================================================================
 # SECTION 3: SHARED BUFFER CONFIGURATION
