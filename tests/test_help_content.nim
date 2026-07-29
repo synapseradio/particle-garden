@@ -40,8 +40,8 @@ suite "Help Files Match The Directory":
         onDisk.incl path.extractFilename
     check onDisk == HelpFileNames.toSeq.toHashSet
 
-  test "keys are unique across files":
-    check entriesByKey.len == HelpFileNames.len
+  test "keys are unique across entries":
+    check entriesByKey.len == HelpEntries.len
 
 suite "Coverage Runs In Both Directions":
   test "every descriptor group has a help file":

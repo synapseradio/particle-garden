@@ -13,40 +13,22 @@
 # ==============================================================================
 
 import ../../camera_core
+import binding_table
+
+export CameraKey
 
 # ==============================================================================
 # SECTION 1: KEY EVENT DATA (extracted from DOM events)
 # ==============================================================================
 
-type
-  CameraKey* = enum
-    ## The keys this handler acts on. Anything else leaves the camera alone,
-    ## which is why the DOM layer maps unknown keys to ckNone rather than
-    ## deciding for itself whether a key is interesting.
-    ckNone
-    ckPanLeft
-    ckPanRight
-    ckPanUp
-    ckPanDown
-    ckZoomIn
-    ckZoomOut
-    ckReset
-
 func cameraKeyFor*(key: string): CameraKey =
-  ## Map a DOM `KeyboardEvent.key` value to a camera action.
-  ##
-  ## Both "+" and "=" zoom in: on most layouts "+" is shift-"=", and a user
-  ## pressing the unshifted key means the same thing. "_" pairs with "-" for the
-  ## same reason.
-  case key
-  of "ArrowLeft": ckPanLeft
-  of "ArrowRight": ckPanRight
-  of "ArrowUp": ckPanUp
-  of "ArrowDown": ckPanDown
-  of "+", "=": ckZoomIn
-  of "-", "_": ckZoomOut
-  of "0": ckReset
-  else: ckNone
+  ## Map a DOM `KeyboardEvent.key` value to a camera action, from the binding
+  ## table — the single declaration. Both "+" and "=" zoom in ("+" is
+  ## shift-"=" on most layouts), and "_" pairs with "-" the same way.
+  for binding in InputBindings:
+    if binding.action != ckNone and key in binding.keys:
+      return binding.action
+  ckNone
 
 # ==============================================================================
 # SECTION 2: TUNING

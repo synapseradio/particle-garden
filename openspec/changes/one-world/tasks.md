@@ -2663,16 +2663,32 @@ recalibrate the range the editor serves.
 
 ## 10. The binding table and the generated gesture reference
 
-- [ ] 10.1 `src/ui/input/binding_table.nim` (new, pure): every mouse gesture, touch gesture, and key
+- [x] 10.1 `src/ui/input/binding_table.nim` (new, pure): every mouse gesture, touch gesture, and key
       binding as data, each with a description. Include the bindings `src/canvas_input.nim` and
       `src/ui/input/` already implement.
-- [ ] 10.2 `tests/test_input.nim`: `every binding carries a non-empty description`; `no two bindings
+      DONE. Seventeen rows across mouse, wheel/trackpad, touch, and keys — including the help
+      panel's "?" and Escape so they appear in the reference. CameraKey moved here from
+      key_handler (re-exported, so canvas_input is untouched).
+- [x] 10.2 `tests/test_input.nim`: `every binding carries a non-empty description`; `no two bindings
       claim the same key`.
-- [ ] 10.3 `src/canvas_input.nim` and `src/ui/input/`: consume the table rather than declaring bindings
+      DONE, plus two more: every camera-key row dispatches through cameraKeyFor, and an
+      off-table key maps to no action.
+- [x] 10.3 `src/canvas_input.nim` and `src/ui/input/`: consume the table rather than declaring bindings
       inline, so the table is the single declaration.
-- [ ] 10.4 `src/ui/api/help_content.nim`: render the binding table into the help reference section, so
+      DONE for keys: cameraKeyFor is now a lookup over the table's key rows, and
+      test_camera_input's existing pins held through the rewrite. LIMIT, stated plainly: mouse,
+      wheel, and touch rows cannot be consumed as data — the gesture IS the DOM listener
+      canvas_input wires — so those rows describe the handlers and are held to them by review.
+      The panel's "?"/Escape literals in Panel.tsx/HelpPanel.tsx are the same kind of copy, on
+      the far side of the boundary.
+- [x] 10.4 `src/ui/api/help_content.nim`: render the binding table into the help reference section, so
       a binding cannot exist without appearing in help.
-- [ ] 10.5 `just happen` and `just check` green.
+      DONE. bindingReferenceBody() renders the table grouped by device; the generated
+      "reference" entry slots in before the glossary at compile time under a reserved key.
+      Gesture rows use strong emphasis, not code spans, so the control-coverage parser keeps
+      reading only control lines.
+- [x] 10.5 `just happen` and `just check` green.
+      DONE. Both green — native through with the four new binding tests, bun 66 pass / 0 fail.
 
 ## 11. Writing the help
 

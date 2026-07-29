@@ -9,6 +9,7 @@
 # shape tests/test_help_content.nim holds the coverage relations over.
 
 import std/strutils
+import ../input/binding_table
 
 const HelpSourceDir* = "docs/help"
   ## Repo-relative; the native suite walks it and holds the listing equal to
@@ -34,8 +35,9 @@ const HelpFileNames* = [
 ]
   ## The panel's section order.
 
-const ReservedHelpKeys* = ["orientation", "glossary"]
-  ## Keys that name no descriptor group.
+const ReservedHelpKeys* = ["orientation", "reference", "glossary"]
+  ## Keys that name no descriptor group. "reference" is generated from the
+  ## binding table rather than read from a file.
 
 type HelpEntry* = object
   key*: string   ## Descriptor group id, or a reserved key.
@@ -59,9 +61,27 @@ func namedControlIds*(body: string): seq[string] =
       if closeTick > 0:
         result.add rest[0 ..< closeTick]
 
+func bindingReferenceBody*(): string =
+  ## The gesture and key reference, generated from the binding table — a
+  ## binding cannot exist without appearing here, because this renders the
+  ## same rows the handlers read. Bulleted with strong gestures, not code
+  ## spans, so namedControlIds keeps reading only control lines.
+  result = "# Gestures & Keys"
+  var lastDevice = bdMouse
+  var first = true
+  for binding in InputBindings:
+    if first or binding.device != lastDevice:
+      result.add "\n\n## " & $binding.device & "\n"
+      lastDevice = binding.device
+      first = false
+    result.add "\n- **" & binding.gesture & "** — " & binding.description
+
 const HelpEntries* = block:
-  # Parsed at compile time, so a malformed file fails the build.
+  # Parsed at compile time, so a malformed file fails the build. The
+  # generated reference slots in just before the glossary.
   var entries: seq[HelpEntry] = @[]
   for name in HelpFileNames:
     entries.add parseHelpEntry(staticRead("../../../" & HelpSourceDir & "/" & name))
+  entries.insert(HelpEntry(key: "reference", body: bindingReferenceBody()),
+    entries.len - 1)
   entries

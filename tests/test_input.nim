@@ -9,8 +9,10 @@
 #
 # ==============================================================================
 
-import std/unittest
+import std/[sets, unittest]
 import ../src/ui/state/input_state
+import ../src/ui/input/binding_table
+import ../src/ui/input/key_handler
 import ../src/ui/input/mouse_handler
 import ../src/ui/input/touch_handler
 
@@ -332,3 +334,29 @@ suite "TouchHandler - Two Finger Tap":
   test "no touches at all leaves the state untouched":
     let before = initInputState().withMouseDown(true)
     check handleTwoFingerTap(before, TouchEventData(touches: @[])) == before
+
+suite "The Binding Table Is The Single Declaration":
+  test "every binding carries a non-empty description":
+    for binding in InputBindings:
+      if binding.description.len == 0:
+        checkpoint(binding.gesture & " has no description")
+      check binding.description.len > 0
+
+  test "no two bindings claim the same key":
+    var claimed = initHashSet[string]()
+    for binding in InputBindings:
+      for key in binding.keys:
+        if key in claimed:
+          checkpoint("key \"" & key & "\" is claimed twice")
+        check key notin claimed
+        claimed.incl key
+
+  test "every camera-key row dispatches through cameraKeyFor":
+    for binding in InputBindings:
+      if binding.action != ckNone:
+        check binding.keys.len > 0
+        for key in binding.keys:
+          check cameraKeyFor(key) == binding.action
+
+  test "a key outside the table maps to no action":
+    check cameraKeyFor("F13") == ckNone
