@@ -1177,6 +1177,14 @@ when defined(js):
         states[cstring(descriptor.id)] = toJs(predicate.eval(values))
       states)
 
+    # The drag-active signal for the spatial overlay; overlay_core owns the
+    # closed set, so a non-spatial id crosses and draws nothing.
+    result["dragOverlay"] = toJs(proc(id: cstring, active: bool) =
+      if active:
+        canvas_input.dragOverlayId = $id
+      elif canvas_input.dragOverlayId == $id:
+        canvas_input.dragOverlayId = "")
+
     # Attraction matrix (live Float32Array references; valid after onReady)
     result["matrix"] = toJs(proc(): Float32Array = buffers.matrix)
     result["matrixCellColor"] = toJs(proc(value: float): cstring =

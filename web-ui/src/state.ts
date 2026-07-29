@@ -183,6 +183,9 @@ export function createPanelController(api: GardenAPI) {
       // particle re-init); re-read everything rather than guessing.
       if (byId.get(id)?.reinitOnCommit) syncAll();
     },
+    dragOverlay(id: string, active: boolean) {
+      api.dragOverlay(id, active);
+    },
     setTrails(enabled: boolean) {
       api.setTrails(enabled);
       setTrailsSignal(api.getTrails());

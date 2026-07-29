@@ -169,4 +169,5 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   "field-composite": @[0, 1, 2, 3],
   "composite": @[0, 1],
   "blur": @[0, 1, 2],
+  "overlay": @[0, 1, 2],
 }.toTable

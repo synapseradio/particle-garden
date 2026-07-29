@@ -196,6 +196,9 @@ import colormap_core
 # the particle budget, so the scale the shader encodes with and the
 # native-tested one are one number.
 import sph_core
+# overlay_core is pure; it owns the drag overlay's line constants and mirrors
+# overlay.wgsl's coverage math.
+import overlay_core
 # glow_core is pure; it mirrors glow.wgsl, and takes the same curve constants
 # this module substitutes into that shader. Importing its type is what lets the
 # mirror read them from here instead of carrying a second copy.
@@ -269,6 +272,11 @@ proc getPlaceholderMap*(): Table[string, string] =
   # probes agree about what "lit" means.
   result["FIELD_ALIVE_THRESHOLD"] = fmt"{FIELD_ALIVE_THRESHOLD:.4f}"
   result["RD_DEPOSIT_FRAME_SCALE"] = fmt"{RD_DEPOSIT_FRAME_SCALE:.6f}"
+  # Drag overlay line constants, from the overlay mirror.
+  result["OVERLAY_HALF_THICKNESS_PX"] = fmt"{OVERLAY_THICKNESS_PX * 0.5'f32:.2f}"
+  result["OVERLAY_AA_PX"] = fmt"{OVERLAY_AA_PX:.2f}"
+  result["OVERLAY_ALPHA"] = fmt"{OVERLAY_ALPHA:.2f}"
+
   result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
   result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)
   result["RD_DEPOSIT_SPLAT_SIGMA"] = fmt"{RD_DEPOSIT_SPLAT_SIGMA:.4f}"

@@ -2585,16 +2585,41 @@ recalibrate the range the editor serves.
 
 ## 8. Spatial overlays
 
-- [ ] 8.1 `web-ui/src/` and `src/web_api.nim`: a drag-active signal carrying the parameter id, crossing
+- [x] 8.1 `web-ui/src/` and `src/web_api.nim`: a drag-active signal carrying the parameter id, crossing
       the boundary the same way parameter writes do.
-- [ ] 8.2 `src/webgpu_render.nim`: draw the transient overlay at world scale while a spatial parameter
+      DONE. gardenAPI.dragOverlay(id, active): ParamSlider fires it on pointerdown and clears on
+      pointerup/pointercancel/change; web_api writes canvas_input.dragOverlayId (canvas_input sits
+      below both web_api and webgpu_render in app.nim's layer order, so the id crosses with no new
+      wiring). The panel reports every slider's drag; Nim owns which ids draw.
+- [x] 8.2 `src/webgpu_render.nim`: draw the transient overlay at world scale while a spatial parameter
       is being dragged — `interactionRadius` as a ring at the cursor, the deposit splat radius as a
       disc, camera zoom as a frame. Clear on release.
-- [ ] 8.3 The set stays closed to parameters that are literally a world distance (design E9). Do not
+      DONE, minus the disc — CORRECTION, carried into design E9/proposal/spec in the upkeep pass:
+      the deposit splat radius is RD_DEPOSIT_SPLAT_RADIUS, a compile-time constant in field_core
+      with no control to drag, so no disc can exist. Shipped: overlay.wgsl (new), a fullscreen SDF
+      pass drawn last inside BOTH present paths (bloom tonemap and the quality floor), alpha-
+      blended, skipped entirely when nothing is dragged. The ring follows the cursor through
+      camera_core.screenUvToWorld with toroidal distance (a ring near the seam stays a ring); the
+      frame draws the world's seam lines, repeating with the torus. Coverage math and the closed
+      set live in src/overlay_core.nim (new pure mirror; constants substituted into the shader via
+      shader_config), tested by tests/test_overlay_core.nim. OverlayParams is a generated struct
+      module (gpu_types + wgsl_bundle); manifest entry "overlay": bindings 0-2 (overlay + camera +
+      renderParams uniforms).
+- [x] 8.3 The set stays closed to parameters that are literally a world distance (design E9). Do not
       extend it while implementing.
+      DONE. overlayKindFor: interactionRadius → ring, cameraZoom → frame, everything else → none;
+      the native suite sweeps the full descriptor table and fails if any other id enters.
 - [ ] 8.4 Verify in `./main`: dragging interaction radius shows a ring whose size tracks the slider,
       and it disappears on release.
-- [ ] 8.5 `just happen` and `just check` green.
+      TO THE USER VERIFICATION QUEUE, with the standing render-binding caveat: the overlay bind
+      group's counts are build-checked, but which resource lands at each binding shows only in a
+      running app.
+- [x] 8.5 `just happen` and `just check` green.
+      DONE. `just happen` exits 0 (overlay_params.wgsl generated, overlay.wgsl bundled and
+      linted); `just check` green — native 0 fail with the new overlay suite registered, bun 58
+      pass / 0 fail. DEVIATION from strict red-first: the mirror and its tests landed in one
+      batch and the suite was watched green standalone before the shader work; the observable red
+      for this group was the module's absence at first compile.
 
 ## 9. Help content pipeline
 

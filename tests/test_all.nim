@@ -37,6 +37,7 @@ import test_param_descriptor
 import test_response_probe
 import test_slider_curve
 import test_dormancy
+import test_overlay_core
 import test_camera_core
 import test_climate_core
 import test_camera_input
@@ -74,6 +75,7 @@ static:
   discard test_response_probe.RESPONSE_PROBE_TESTS_LOADED
   discard test_slider_curve.SLIDER_CURVE_TESTS_LOADED
   discard test_dormancy.DORMANCY_TESTS_LOADED
+  discard test_overlay_core.OVERLAY_CORE_TESTS_LOADED
   discard test_camera_core.CAMERA_CORE_TESTS_LOADED
   discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
   discard test_camera_input.CAMERA_INPUT_TESTS_LOADED

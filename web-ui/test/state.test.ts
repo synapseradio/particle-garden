@@ -81,6 +81,7 @@ function fakeGarden() {
       values[id] = value;
     },
     commitParam: () => {},
+    dragOverlay: () => {},
     getTrails: () => false,
     setTrails: () => {},
     getBloom: () => false,

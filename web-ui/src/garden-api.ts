@@ -179,6 +179,9 @@ export interface GardenAPI {
   getParam(id: string): number;
   setParam(id: string, value: number): void;
   commitParam(id: string): void;
+  /** Drag-active signal for the spatial overlay. Nim owns the closed set of
+   * spatial ids; a non-spatial id crosses and draws nothing. */
+  dragOverlay(id: string, active: boolean): void;
   // Bound a value against its descriptor without writing it, for controls that
   // own their own storage — the per-species grid writes cells of chemistry()
   // by reference and clamps them through here.

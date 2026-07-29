@@ -140,7 +140,13 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
               ),
             );
           }}
-          onChange={() => props.ctrl.commitParam(props.id)}
+          onPointerDown={() => props.ctrl.dragOverlay(props.id, true)}
+          onPointerUp={() => props.ctrl.dragOverlay(props.id, false)}
+          onPointerCancel={() => props.ctrl.dragOverlay(props.id, false)}
+          onChange={() => {
+            props.ctrl.dragOverlay(props.id, false);
+            props.ctrl.commitParam(props.id);
+          }}
         />
         <Show when={ticks().length > 0}>
           <div class="notch-rail" aria-hidden="true">

@@ -338,6 +338,9 @@ proc generateStructModules() =
   generateStructModule("tonemap_params",
     structModuleHeader("tonemap_params", "TonemapParamsLayout"),
     toWgslStruct(TonemapParamsLayout))
+  generateStructModule("overlay_params",
+    structModuleHeader("overlay_params", "OverlayParamsLayout"),
+    toWgslStruct(OverlayParamsLayout))
 
 # ==============================================================================
 # MAIN

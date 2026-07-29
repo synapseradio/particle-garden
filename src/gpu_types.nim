@@ -278,6 +278,21 @@ const
     totalSize: 32
   )
 
+  # OverlayParams struct (16 bytes, generated into
+  # web/shaders/modules/overlay_params.wgsl). The spatial drag overlay:
+  # kind selects ring/frame per overlay_core.OverlayKind's ordinals, the
+  # centre is in world coordinates, the radius in world units.
+  OverlayParamsLayout* = GpuStruct(
+    name: "OverlayParams",
+    fields: @[
+      GpuField(name: "kind",    kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "centerX", kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "centerY", kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "radius",  kind: gtF32, offset: 12, size: 4, count: 1),
+    ],
+    totalSize: 16
+  )
+
   # FieldParams struct (32 bytes, generated into web/shaders/modules/field_params.wgsl)
   # The chemical field's uniform: the two Gray-Scott tunables (feed,
   # kill), the diffusion rates and timestep field_core.nim's grayScottStep
@@ -661,6 +676,7 @@ const
 genFieldIndices(RenderParamsLayout, "RENDER")
 genFieldIndices(FadeParamsLayout, "FADE")
 genFieldIndices(CameraLayout, "CAMERA")
+genFieldIndices(OverlayParamsLayout, "OVERLAY")
 
 static:
   # The generated WGSL and the Nim writer must agree on every offset, exactly as
@@ -668,7 +684,8 @@ static:
   # check: a layout added to this list is checked, and the per-struct size
   # assertions stay beside the struct they size.
   for layout in [RenderParamsLayout, FadeParamsLayout, CameraLayout,
-      FieldParamsLayout, ReactionParamsLayout, SpeciesChemistryLayout]:
+      OverlayParamsLayout, FieldParamsLayout, ReactionParamsLayout,
+      SpeciesChemistryLayout]:
     let computedOffsets = layout.wgslComputedOffsets
     for fieldIndex in 0 ..< layout.fields.len:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
@@ -678,6 +695,9 @@ static:
   assert FadeParamsLayout.wgslUniformSize == 16, "FadeParams allocates 16 bytes"
   assert CameraLayout.totalSize == 32, "Camera must be 32 bytes"
   assert CameraLayout.wgslUniformSize == 32, "Camera allocates 32 bytes"
+  assert OverlayParamsLayout.totalSize == 16, "OverlayParams must be 16 bytes"
+  assert OverlayParamsLayout.wgslUniformSize == 16,
+    "OverlayParams allocates 16 bytes"
 
 # =============================================================================
 # FIELDPARAMS FIELD INDICES (the chemical field, webgpu_compute.nim)

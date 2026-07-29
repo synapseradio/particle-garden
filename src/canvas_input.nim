@@ -63,6 +63,11 @@ var panSession = initPanSession()
   ## than physics input, so it lives beside the camera hooks instead of in
   ## currentInput, and left-drag interaction is untouched by it.
 
+var dragOverlayId* = ""
+  ## Parameter id of the slider mid-drag, "" when none. web_api writes it from
+  ## the panel's drag events; webgpu_render reads it to draw the spatial
+  ## overlay. Lives here so both sit on the right side of the layer order.
+
 proc getMouseX*(): float = currentInput.get().mouseX
 proc getMouseY*(): float = currentInput.get().mouseY
 proc getMouseDown*(): bool = currentInput.get().mouseDown

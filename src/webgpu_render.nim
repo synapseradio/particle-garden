@@ -41,6 +41,12 @@ import colormap_core
 # mapping's output, so the number the GPU receives is the one the native suite
 # measures rather than a second copy of the same arithmetic.
 import trail_core
+# overlay_core is pure; it owns the spatial drag overlay's closed set and
+# mirrors overlay.wgsl's coverage math.
+import overlay_core
+# canvas_input sits a layer below (app.nim's import order); it carries the
+# drag-active parameter id the panel writes and the cursor the ring follows.
+import canvas_input
 
 # ==============================================================================
 # SECTION 1: TYPE DEFINITIONS
@@ -56,6 +62,9 @@ var renderPipeline: GPURenderPipeline
 var glowPipeline: GPURenderPipeline
 var fadePipeline: GPURenderPipeline
 var blitPipeline: GPURenderPipeline
+var overlayPipeline: GPURenderPipeline
+var overlayBindGroup: GPUBindGroup
+var overlayParamsBuffer: GPUBuffer
 var renderBindGroup: GPUBindGroup
 var glowBindGroup: GPUBindGroup
 var renderParamsBuffer: GPUBuffer
@@ -95,6 +104,7 @@ let cameraData = newFloat32Array(CAMERA_PARAMS_F32_COUNT)
 # stay at the zero they were allocated with, exactly as a freshly allocated
 # array gave them.
 let renderParamsData = newFloat32Array(RENDER_PARAMS_F32_COUNT)
+let overlayParamsData = newFloat32Array(OVERLAY_PARAMS_F32_COUNT)
 let fadeData = newFloat32Array(FADE_PARAMS_F32_COUNT)
 let tonemapData = newFloat32Array(TONEMAP_PARAMS_F32_COUNT)
 let colorData = newFloat32Array(24)
@@ -227,6 +237,8 @@ const EXPECTED_BIND_GROUP_ENTRIES_BLUR* = 3
   ## source texture + sampler + bloomParams.
 const EXPECTED_BIND_GROUP_ENTRIES_TONEMAP* = 6
   ## trail texture + bloom texture + sampler + tonemapParams + field + camera.
+const EXPECTED_BIND_GROUP_ENTRIES_OVERLAY* = 3
+  ## overlayParams + camera + renderParams.
 
 proc validateEntryCount(entries: JsObject, groupName: string, expected: int) =
   ## Raise unless an entries array holds exactly the count its layout declares.
@@ -254,6 +266,7 @@ const FIELD_COMPOSITE_SHADER = staticRead("../web/shaders/field-composite.wgsl")
 # HDR bloom shaders (S9); staticRead-embedded like the render shaders above.
 const BLUR_SHADER = staticRead("../web/shaders/blur.wgsl")
 const TONEMAP_SHADER = staticRead("../web/shaders/tonemap.wgsl")
+const OVERLAY_SHADER = staticRead("../web/shaders/overlay.wgsl")
 
 const BLOOM_HDR_FORMAT = "rgba16float".cstring
 
@@ -772,6 +785,111 @@ proc initWebGPURender*(): bool =
   blitPipelineDesc["depthStencil"] = blitDepthStencil
 
   blitPipeline = webgpu_init.device.createRenderPipeline(blitPipelineDesc)
+
+  # ==========================================================================
+  # OVERLAY PIPELINE (spatial parameter drags)
+  # ==========================================================================
+  # Drawn last in both present paths, only while a spatial slider is dragged.
+  # Three uniform buffers; the camera and render-params buffers are the shared
+  # ones every present pass reads, so the overlay sees the same view.
+
+  let overlayParamsDesc = newJsObject()
+  overlayParamsDesc["size"] = wgslUniformSize(OverlayParamsLayout).toJs
+  overlayParamsDesc["usage"] =
+    bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
+  overlayParamsDesc["label"] = "Overlay Params Buffer".cstring.toJs
+  overlayParamsBuffer = webgpu_init.device.createBuffer(overlayParamsDesc)
+
+  let overlayShaderDesc = newJsObject()
+  overlayShaderDesc["label"] = "Overlay Shader".cstring.toJs
+  overlayShaderDesc["code"] = OVERLAY_SHADER.cstring.toJs
+  let overlayShaderModule = webgpu_init.device.createShaderModule(overlayShaderDesc)
+
+  let overlayLayoutDesc = newJsObject()
+  overlayLayoutDesc["label"] = "Overlay Bind Group Layout".cstring.toJs
+  let overlayLayoutEntries = newJsArray()
+  for binding in 0 .. 2:
+    let entry = newJsObject()
+    entry["binding"] = binding.toJs
+    entry["visibility"] = gpuShaderStageFragment.toJs
+    let bufferKind = newJsObject()
+    bufferKind["type"] = "uniform".cstring.toJs
+    entry["buffer"] = bufferKind
+    discard overlayLayoutEntries.push(entry)
+  validateEntryCount(overlayLayoutEntries, "Overlay Bind Group Layout",
+    EXPECTED_BIND_GROUP_ENTRIES_OVERLAY)
+  overlayLayoutDesc["entries"] = overlayLayoutEntries
+  let overlayBindGroupLayout =
+    webgpu_init.device.createBindGroupLayout(overlayLayoutDesc)
+
+  let overlayPipelineLayoutDesc = newJsObject()
+  let overlayLayouts = newJsArray()
+  discard overlayLayouts.push(overlayBindGroupLayout)
+  overlayPipelineLayoutDesc["bindGroupLayouts"] = overlayLayouts
+  let overlayPipelineLayout =
+    webgpu_init.device.createPipelineLayout(overlayPipelineLayoutDesc)
+
+  let overlayPipelineDesc = newJsObject()
+  overlayPipelineDesc["label"] = "Overlay Pipeline".cstring.toJs
+  overlayPipelineDesc["layout"] = overlayPipelineLayout.toJs
+
+  let overlayVertexStage = newJsObject()
+  overlayVertexStage["module"] = overlayShaderModule.toJs
+  overlayVertexStage["entryPoint"] = "vs_main".cstring.toJs
+  overlayPipelineDesc["vertex"] = overlayVertexStage
+
+  let overlayFragmentStage = newJsObject()
+  overlayFragmentStage["module"] = overlayShaderModule.toJs
+  overlayFragmentStage["entryPoint"] = "fs_main".cstring.toJs
+
+  let overlayTargets = newJsArray()
+  let overlayTarget0 = newJsObject()
+  overlayTarget0["format"] = canvasFormat.toJs
+  # Premultiplied alpha over the finished frame.
+  let overlayBlend = newJsObject()
+  let overlayColorBlend = newJsObject()
+  overlayColorBlend["srcFactor"] = "one".cstring.toJs
+  overlayColorBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  overlayColorBlend["operation"] = "add".cstring.toJs
+  overlayBlend["color"] = overlayColorBlend
+  let overlayAlphaBlend = newJsObject()
+  overlayAlphaBlend["srcFactor"] = "one".cstring.toJs
+  overlayAlphaBlend["dstFactor"] = "one-minus-src-alpha".cstring.toJs
+  overlayAlphaBlend["operation"] = "add".cstring.toJs
+  overlayBlend["alpha"] = overlayAlphaBlend
+  overlayTarget0["blend"] = overlayBlend
+  discard overlayTargets.push(overlayTarget0)
+  overlayFragmentStage["targets"] = overlayTargets
+  overlayPipelineDesc["fragment"] = overlayFragmentStage
+
+  let overlayPrimitive = newJsObject()
+  overlayPrimitive["topology"] = "triangle-list".cstring.toJs
+  overlayPrimitive["cullMode"] = "none".cstring.toJs
+  overlayPipelineDesc["primitive"] = overlayPrimitive
+
+  # Matches the present passes' depth attachment without touching it.
+  let overlayDepthStencil = newJsObject()
+  overlayDepthStencil["format"] = "depth24plus".cstring.toJs
+  overlayDepthStencil["depthWriteEnabled"] = false.toJs
+  overlayDepthStencil["depthCompare"] = "always".cstring.toJs
+  overlayPipelineDesc["depthStencil"] = overlayDepthStencil
+
+  overlayPipeline = webgpu_init.device.createRenderPipeline(overlayPipelineDesc)
+
+  let overlayBindGroupDesc = newJsObject()
+  overlayBindGroupDesc["label"] = "Overlay Bind Group".cstring.toJs
+  overlayBindGroupDesc["layout"] = overlayBindGroupLayout.toJs
+  let overlayBindEntries = newJsArray()
+  for (binding, buffer) in [(0, overlayParamsBuffer), (1, cameraBuffer),
+      (2, renderParamsBuffer)]:
+    let entry = newJsObject()
+    entry["binding"] = binding.toJs
+    let resource = newJsObject()
+    resource["buffer"] = buffer.toJs
+    entry["resource"] = resource
+    discard overlayBindEntries.push(entry)
+  overlayBindGroupDesc["entries"] = overlayBindEntries
+  overlayBindGroup = webgpu_init.device.createBindGroup(overlayBindGroupDesc)
 
   # ==========================================================================
   # FIELD COMPOSITE PIPELINE (reaction-diffusion LDR backdrop)
@@ -1721,6 +1839,26 @@ proc render*(particleCount: int) =
   tonemapData[TONEMAP_PAD2] = 0.0
   webgpu_init.queue.writeBuffer(tonemapParamsBuffer, 0, tonemapData)
 
+  # The spatial drag overlay: uniform written only while a spatial slider is
+  # dragged; the closed set lives in overlay_core.
+  let overlayKind = overlayKindFor(canvas_input.dragOverlayId)
+  if overlayKind != okNone:
+    overlayParamsData[OVERLAY_KIND] = float32(ord(overlayKind))
+    if overlayKind == okRing:
+      let cursor = screenUvToWorld(
+        float32(canvas_input.getMouseX() / float(canvas.width)),
+        float32(canvas_input.getMouseY() / float(canvas.height)),
+        activeCamera, float32(config.WORLD_W), float32(config.WORLD_H))
+      overlayParamsData[OVERLAY_CENTER_X] = cursor.x
+      overlayParamsData[OVERLAY_CENTER_Y] = cursor.y
+      overlayParamsData[OVERLAY_RADIUS] =
+        float32(config.CONFIG.interactionRadius)
+    else:
+      overlayParamsData[OVERLAY_CENTER_X] = 0.0
+      overlayParamsData[OVERLAY_CENTER_Y] = 0.0
+      overlayParamsData[OVERLAY_RADIUS] = 0.0
+    webgpu_init.queue.writeBuffer(overlayParamsBuffer, 0, overlayParamsData)
+
   # Select pre-created resources based on trail parity (ZERO allocations)
   let writeView = if trailParity == 0: trailViewB else: trailViewA
   let fadeReadBG = if trailParity == 0: fadeBindGroupReadA else: fadeBindGroupReadB
@@ -1882,6 +2020,12 @@ proc render*(particleCount: int) =
     presentPass.setPipeline(tonemapPipeline)
     presentPass.setBindGroup(0, tonemapBG)
     presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+
+    if overlayKind != okNone:
+      presentPass.setPipeline(overlayPipeline)
+      presentPass.setBindGroup(0, overlayBindGroup)
+      presentPass.draw(3, 1, 0, 0)
+
     presentPass.endPass()
 
   else:
@@ -1943,6 +2087,11 @@ proc render*(particleCount: int) =
     presentPass.setPipeline(blitPipeline)
     presentPass.setBindGroup(0, blitBG)
     presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
+
+    if overlayKind != okNone:
+      presentPass.setPipeline(overlayPipeline)
+      presentPass.setBindGroup(0, overlayBindGroup)
+      presentPass.draw(3, 1, 0, 0)
 
     presentPass.endPass()
 
