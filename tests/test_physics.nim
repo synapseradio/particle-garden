@@ -202,9 +202,9 @@ suite "Crowding Attenuation":
 # The performance argument rests on a ceiling EXISTING and being computable from
 # the parameters, not on blobs having looked smaller. This sweep reads every
 # bound from the constant that owns it — FORCE_STRENGTH_MIN/MAX from the range
-# authority, MATRIX_VALUE_MIN/MAX from the preset schema, and the crowding range
-# from the range authority — so a later recalibration re-scopes the sweep with no
-# second edit here.
+# authority, MATRIX_MIN_VALUE/MAX_VALUE and the crowding range from the range
+# authority — so a later recalibration re-scopes the sweep with no second edit
+# here.
 
 func sweepPoints(lowBound, highBound: float; count: int): seq[float] =
   ## `count` evenly spaced values across a closed range, endpoints included.
@@ -213,7 +213,7 @@ func sweepPoints(lowBound, highBound: float; count: int): seq[float] =
       (highBound - lowBound) * float(step) / float(count - 1)
 
 const
-  SWEPT_MATRIX_VALUES = sweepPoints(MATRIX_VALUE_MIN, MATRIX_VALUE_MAX, 7)
+  SWEPT_MATRIX_VALUES = sweepPoints(MATRIX_MIN_VALUE, MATRIX_MAX_VALUE, 7)
   SWEPT_FORCE_STRENGTHS = sweepPoints(FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX, 5)
   SWEPT_CROWDING_STRENGTHS = sweepPoints(
     CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX, 6)
@@ -250,7 +250,12 @@ suite "The Density Ceiling":
             SWEPT_CROWDING_STRENGTHS[strengthIndex])
           checkpoint("attr " & $attr & " force " & $forceStrength)
           check firmer <= looser
-          if forceStrength > 0.0 and attr > 0.0:
+          # Strict decrease is asserted only for AUTHORABLE attractions — at
+          # least one editor step. The sweep's midpoint is float noise
+          # (~1e-17, the representation error of the band's endpoints), and
+          # an attraction that small moves the crossing by less than one ulp
+          # of the ceiling, so equality there is the vacuous zero case.
+          if forceStrength > 0.0 and attr >= MATRIX_VALUE_STEP:
             check firmer < looser
 
   test "the ceiling is the same at every non-zero force strength":

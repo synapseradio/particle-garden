@@ -51,6 +51,7 @@ when defined(js):
   from bindings/dom_extensions import HTMLElement
 
   import config
+  import config_ranges
   import buffers
   import field_core
   import preset
@@ -1118,6 +1119,15 @@ when defined(js):
       cstring(toHslaString(cellColorFromValue(clampMatrixValue(value)))))
     result["clampMatrixValue"] = toJs(proc(value: float): float =
       clampMatrixValue(value))
+    result["matrixSpec"] = toJs(proc(): JsObject =
+      # The served band, step, and display precision, from the range
+      # authority — the editor serves these and restates none of them.
+      let spec = newJsObject()
+      spec["min"] = toJs(MATRIX_MIN_VALUE)
+      spec["max"] = toJs(MATRIX_MAX_VALUE)
+      spec["step"] = toJs(MATRIX_VALUE_STEP)
+      spec["precision"] = toJs(MATRIX_VALUE_PRECISION)
+      spec)
     result["matrixStride"] = toJs(proc(): int = MATRIX_SIZE)
     result["speciesColor"] = toJs(proc(index: int): cstring =
       var channels = newSeq[float](config.MAX_SPECIES * 3)

@@ -1,20 +1,30 @@
 // The attraction-matrix grid: reads the live Float32Array by reference,
-// writes edited cells straight back into it (the GPU reads the buffer every
-// frame, so a write is live immediately). Cell colors and clamping come
-// from the Nim side; the stride never appears as a literal here.
+// writes committed cells straight back into it (the GPU reads the buffer
+// every frame, so a write is live immediately). Cell colors, clamping, and
+// the band's step and precision come from the Nim side; neither the stride
+// nor any bound appears as a literal here.
+//
+// An edit belongs to the user until commit. The in-progress text — empty
+// included — is held in a signal and survives external matrix updates; only
+// commit parses, clamps through the boundary, and writes. The pure machine
+// lives in lib/matrix-cell so the suite pins it without a DOM.
 
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type { PanelController } from "../state";
+import { commitValue, editText } from "../lib/matrix-cell";
+import type { MatrixEdit } from "../lib/matrix-cell";
 
 interface CellData {
   row: number;
   col: number;
-  value: number;
+  text: string;
   background: string;
 }
 
 export function MatrixEditor(props: { ctrl: PanelController }) {
   const { api } = props.ctrl;
+
+  const [edit, setEdit] = createSignal<MatrixEdit>(null);
 
   const grid = createMemo(() => {
     props.ctrl.matrixVersion();
@@ -22,6 +32,7 @@ export function MatrixEditor(props: { ctrl: PanelController }) {
     const species = props.ctrl.params["speciesCount"] ?? 0;
     const stride = api.matrixStride();
     const matrix = api.matrix();
+    const spec = api.matrixSpec();
     const rows: CellData[][] = [];
     const headers: string[] = [];
     for (let index = 0; index < species; index += 1) {
@@ -34,23 +45,22 @@ export function MatrixEditor(props: { ctrl: PanelController }) {
         cells.push({
           row,
           col,
-          value,
+          text: value.toFixed(spec.precision),
           background: api.matrixCellColor(value),
         });
       }
       rows.push(cells);
     }
-    return { species, headers, rows };
+    return { species, headers, rows, spec };
   });
 
-  const editCell = (row: number, col: number, rawText: string) => {
-    const parsed = parseFloat(rawText);
-    if (Number.isNaN(parsed)) {
-      props.ctrl.bumpMatrix(); // re-render resets the input to the live value
-      return;
+  const commitCell = (row: number, col: number, rawText: string) => {
+    const value = commitValue(rawText, api.clampMatrixValue);
+    if (value !== null) {
+      api.matrix()[row * api.matrixStride() + col] = value;
     }
-    const clamped = api.clampMatrixValue(parsed);
-    api.matrix()[row * api.matrixStride() + col] = clamped;
+    // A null commit is a revert: the bump below redraws the live value.
+    setEdit(null);
     props.ctrl.bumpMatrix();
   };
 
@@ -89,11 +99,30 @@ export function MatrixEditor(props: { ctrl: PanelController }) {
                       >
                         <input
                           type="number"
-                          step="0.1"
-                          value={cell.value.toFixed(2)}
-                          onChange={(event) =>
-                            editCell(cell.row, cell.col, event.currentTarget.value)
+                          min={data().spec.min}
+                          max={data().spec.max}
+                          step={data().spec.step}
+                          value={editText(
+                            edit(),
+                            cell.row,
+                            cell.col,
+                            cell.text,
+                          )}
+                          onInput={(event) =>
+                            setEdit({
+                              row: cell.row,
+                              col: cell.col,
+                              text: event.currentTarget.value,
+                            })
                           }
+                          onChange={(event) =>
+                            commitCell(
+                              cell.row,
+                              cell.col,
+                              event.currentTarget.value,
+                            )
+                          }
+                          onBlur={() => setEdit(null)}
                         />
                       </div>
                     )}

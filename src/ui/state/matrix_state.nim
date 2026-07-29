@@ -7,14 +7,20 @@
 #
 # ==============================================================================
 
+import std/math
+
+import ../../config_ranges
+
 # ==============================================================================
 # SECTION 1: CONSTANTS
 # ==============================================================================
+#
+# The served value band lives with every other range in config_ranges
+# (MATRIX_MIN_VALUE/MATRIX_MAX_VALUE, step, display precision); this module
+# reads it like every other consumer.
 
 const
   MATRIX_SIZE* = 6                    ## Maximum species count
-  MATRIX_MIN_VALUE* = -1.0            ## Maximum repulsion
-  MATRIX_MAX_VALUE* = 1.0             ## Maximum attraction
 
 # ==============================================================================
 # SECTION 2: INDEX CALCULATIONS (pure functions)
@@ -41,7 +47,7 @@ func isValidIndex*(row, col, speciesCount: int): bool =
 # ==============================================================================
 
 func clampMatrixValue*(value: float): float =
-  ## Clamp value to valid matrix range [-1, 1].
+  ## Clamp value into the served matrix band.
   max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, value))
 
 func isAttraction*(value: float): bool =
@@ -71,9 +77,11 @@ type
 func cellColorFromValue*(value: float): CellColor =
   ## Calculate cell background color from attraction value.
   ## Positive values → green, negative → red.
-  ## Saturation indicates strength.
+  ## Saturation reads strength as a FRACTION of the served bound, so a
+  ## full-strength cell saturates fully whatever the band is — a scale
+  ## pinned to absolute values goes grey the day the range narrows.
   let hue = if value > 0: 120 else: 0
-  let saturation = int(abs(value) * 100.0)
+  let saturation = int(round(abs(value) / MATRIX_MAX_VALUE * 100.0))
   CellColor(
     hue: hue,
     saturation: min(100, saturation),
@@ -137,9 +145,11 @@ func newlyExposedCells*(oldCount, newCount: int): seq[MatrixCell] =
 
 proc sampleRuleValue*(sigma: float, nextGaussian: proc(): float): float =
   ## One matrix rule value: standard-normal draws from nextGaussian scaled by
-  ## sigma, rejecting any product outside [MATRIX_MIN_VALUE, MATRIX_MAX_VALUE]
-  ## (boundaries accepted). Rejection keeps the true bell shape instead of
-  ## piling clamped mass onto the boundaries.
-  result = nextGaussian() * sigma
+  ## sigma TIMES the served bound, rejecting any product outside
+  ## [MATRIX_MIN_VALUE, MATRIX_MAX_VALUE] (boundaries accepted). Sigma is a
+  ## fraction of the bound, so a re-ranged matrix re-scales the whole
+  ## distribution and a randomized world keeps its character; rejection keeps
+  ## the true bell shape instead of piling clamped mass onto the boundaries.
+  result = nextGaussian() * sigma * MATRIX_MAX_VALUE
   while result < MATRIX_MIN_VALUE or result > MATRIX_MAX_VALUE:
-    result = nextGaussian() * sigma
+    result = nextGaussian() * sigma * MATRIX_MAX_VALUE

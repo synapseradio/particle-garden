@@ -60,8 +60,25 @@ const
     ## ask for a stiffer fluid, because its ceiling answers.
   FRICTION_MIN* = 0.0
   FRICTION_MAX* = 0.5
+  MATRIX_MIN_VALUE* = -0.100
+  MATRIX_MAX_VALUE* = 0.100
+    ## The attraction matrix's served band, an order of magnitude gentler
+    ## than the ±1 it replaced. Set TOGETHER with the crowding attenuation's
+    ## introduction, not separately — both shape the same same-species
+    ## pile-up, so each bound tuned against the other's old behaviour would
+    ## leave both wrong. PROVISIONAL like the crowding ceiling above: the
+    ## same in-app calibration that measures the crowding band judges this
+    ## one, and its record lands here. [?]
+  MATRIX_VALUE_STEP* = 0.001
+    ## One authored increment — 200 positions across the band, displayed
+    ## exactly at MATRIX_VALUE_PRECISION decimals. The editor serves these
+    ## from the boundary and restates neither.
+  MATRIX_VALUE_PRECISION* = 3
   RULE_TEMPERATURE_MIN* = 0.1
   RULE_TEMPERATURE_MAX* = 0.6
+    ## Sigma for the matrix rule sampler, as a FRACTION of MATRIX_MAX_VALUE
+    ## (matrix_state.sampleRuleValue applies the scale), so this range keeps
+    ## its meaning across any matrix re-range.
   TIME_SCALE_MIN* = 0.1
   TIME_SCALE_MAX* = 5.0
   PARTICLE_SIZE_MIN* = 1
@@ -381,6 +398,10 @@ static:
       "every coupling can be turned off through its own slider"
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
+  doAssert MATRIX_MIN_VALUE == -MATRIX_MAX_VALUE,
+    "the matrix band is symmetric: the cell colour scale and the rule " &
+    "sampler both read magnitude against MATRIX_MAX_VALUE alone"
+  doAssert MATRIX_VALUE_STEP > 0.0
   doAssert SPH_RADIUS_FRACTION_MIN < SPH_RADIUS_FRACTION_MAX
   # The radius fraction shapes the fluid rather than gating a pass, so it is
   # absent from the coupling loop above — and its floor has to clear zero for

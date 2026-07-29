@@ -10,6 +10,7 @@
 # ==============================================================================
 
 import std/[sets, unittest]
+import ../src/config_ranges
 import ../src/ui/state/matrix_state
 
 # Exported symbol for test_all.nim to reference
@@ -67,21 +68,22 @@ suite "Matrix Index - Validation":
 # ==============================================================================
 
 suite "Matrix Values - Clamping":
-  test "clampMatrixValue within range":
-    check abs(clampMatrixValue(0.5) - 0.5) < 0.001
-    check abs(clampMatrixValue(-0.5) - (-0.5)) < 0.001
+  test "clampMatrixValue passes in-band values through":
+    let inBand = MATRIX_MAX_VALUE / 2.0
+    check clampMatrixValue(inBand) == inBand
+    check clampMatrixValue(-inBand) == -inBand
 
-  test "clampMatrixValue at boundaries":
-    check abs(clampMatrixValue(1.0) - 1.0) < 0.001
-    check abs(clampMatrixValue(-1.0) - (-1.0)) < 0.001
+  test "clampMatrixValue keeps the boundaries themselves":
+    check clampMatrixValue(MATRIX_MAX_VALUE) == MATRIX_MAX_VALUE
+    check clampMatrixValue(MATRIX_MIN_VALUE) == MATRIX_MIN_VALUE
 
-  test "clampMatrixValue exceeds max":
-    check abs(clampMatrixValue(1.5) - 1.0) < 0.001
-    check abs(clampMatrixValue(100.0) - 1.0) < 0.001
+  test "clampMatrixValue caps values past the top of the band":
+    check clampMatrixValue(MATRIX_MAX_VALUE * 1.5) == MATRIX_MAX_VALUE
+    check clampMatrixValue(100.0) == MATRIX_MAX_VALUE
 
-  test "clampMatrixValue exceeds min":
-    check abs(clampMatrixValue(-1.5) - (-1.0)) < 0.001
-    check abs(clampMatrixValue(-100.0) - (-1.0)) < 0.001
+  test "clampMatrixValue floors values past the bottom of the band":
+    check clampMatrixValue(MATRIX_MIN_VALUE * 1.5) == MATRIX_MIN_VALUE
+    check clampMatrixValue(-100.0) == MATRIX_MIN_VALUE
 
 
 suite "Matrix Values - Classification":
@@ -118,25 +120,29 @@ suite "Matrix Values - Classification":
 # ==============================================================================
 
 suite "Cell Color - From Value":
+  # Saturation reads the value AS A FRACTION OF THE SERVED BOUND, so a
+  # full-strength attraction saturates fully whatever the bound is — a colour
+  # scale pinned to absolute values goes grey the day the range narrows.
+
   test "cellColorFromValue positive (attraction)":
-    let color = cellColorFromValue(0.5)
+    let color = cellColorFromValue(MATRIX_MAX_VALUE / 2.0)
     check color.hue == 120  # Green
     check color.saturation == 50
     check color.lightness == 40
     check abs(color.alpha - 0.7) < 0.001
 
   test "cellColorFromValue negative (repulsion)":
-    let color = cellColorFromValue(-0.5)
+    let color = cellColorFromValue(MATRIX_MIN_VALUE / 2.0)
     check color.hue == 0  # Red
     check color.saturation == 50
 
   test "cellColorFromValue max attraction":
-    let color = cellColorFromValue(1.0)
+    let color = cellColorFromValue(MATRIX_MAX_VALUE)
     check color.hue == 120
     check color.saturation == 100
 
   test "cellColorFromValue max repulsion":
-    let color = cellColorFromValue(-1.0)
+    let color = cellColorFromValue(MATRIX_MIN_VALUE)
     check color.hue == 0
     check color.saturation == 100
 
@@ -144,14 +150,14 @@ suite "Cell Color - From Value":
     let color = cellColorFromValue(0.0)
     check color.saturation == 0  # No saturation at zero
 
-  test "cellColorFromValue clamps saturation to 100 when magnitude exceeds 1.0":
-    # CONTRACT: saturation = min(100, int(abs(v)*100)). Values beyond +/-1.0 must
-    # not produce a >100 saturation (an invalid CSS percentage). The existing
-    # v=1.0 cases land exactly on 100 and never exercise the clamp branch.
-    check cellColorFromValue(2.0).saturation == 100
-    check cellColorFromValue(-3.5).saturation == 100
-    check cellColorFromValue(1.5).hue == 120
-    check cellColorFromValue(-1.5).hue == 0
+  test "cellColorFromValue clamps saturation to 100 past the served bound":
+    # Values beyond the bound must not produce a >100 saturation (an invalid
+    # CSS percentage). The bound cases land exactly on 100 and never exercise
+    # the clamp branch.
+    check cellColorFromValue(MATRIX_MAX_VALUE * 2.0).saturation == 100
+    check cellColorFromValue(MATRIX_MIN_VALUE * 3.5).saturation == 100
+    check cellColorFromValue(MATRIX_MAX_VALUE * 1.5).hue == 120
+    check cellColorFromValue(MATRIX_MIN_VALUE * 1.5).hue == 0
 
 
 suite "Cell Color - String Conversion":
@@ -214,17 +220,26 @@ proc scriptedSampler(draws: seq[float]): proc(): float =
     draw
 
 suite "Rule Randomization - Rejection Sampling":
-  test "sampleRuleValue scales the first in-range draw by sigma":
-    check sampleRuleValue(0.3, scriptedSampler(@[0.5])) == 0.5 * 0.3
+  # Sigma is a FRACTION of the attraction bound: the draw scales by
+  # sigma * MATRIX_MAX_VALUE, so re-ranging the matrix re-scales the whole
+  # distribution and a randomized world keeps its character, instead of
+  # inheriting a sampler tuned for bounds ten times wider whose rejection
+  # loop flattens the bell against the new walls.
+
+  test "sampleRuleValue scales the first in-range draw by sigma and the bound":
+    check sampleRuleValue(0.3, scriptedSampler(@[0.5])) ==
+      0.5 * 0.3 * MATRIX_MAX_VALUE
 
   test "sampleRuleValue rejects draws that scale outside the matrix range":
-    # 5.0 * 0.5 and -4.0 * 0.5 both leave [-1, 1]; the third draw lands.
-    check sampleRuleValue(0.5, scriptedSampler(@[5.0, -4.0, 0.2])) == 0.2 * 0.5
+    # 5.0 * 0.5 and -4.0 * 0.5 both leave the bound in fraction units; the
+    # third draw lands.
+    check sampleRuleValue(0.5, scriptedSampler(@[5.0, -4.0, 0.2])) ==
+      0.2 * 0.5 * MATRIX_MAX_VALUE
 
   test "sampleRuleValue accepts the range boundaries inclusively":
     # The ui.nim loop rejected only strictly-outside products; pin that.
-    check sampleRuleValue(1.0, scriptedSampler(@[1.0])) == 1.0
-    check sampleRuleValue(1.0, scriptedSampler(@[-1.0])) == -1.0
+    check sampleRuleValue(1.0, scriptedSampler(@[1.0])) == MATRIX_MAX_VALUE
+    check sampleRuleValue(1.0, scriptedSampler(@[-1.0])) == MATRIX_MIN_VALUE
 
   test "sampleRuleValue result always lies within the matrix range":
     let pattern = @[3.2, -7.7, 0.9, -0.4, 1.4, 0.05]

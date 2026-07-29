@@ -88,6 +88,20 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check validate(node).preset.settings.crowdingStrength ==
       CROWDING_STRENGTH_MIN
 
+  test "a matrix authored at the old [-1, 1] clamps into the served bounds":
+    # The one stored-data change this schema makes: the attraction range is
+    # an order of magnitude gentler, and an old preset's contrasts compress
+    # into it rather than rejecting the file.
+    var node = toJson(defaultPreset())
+    node["matrix"].elems[0] = %1.0
+    node["matrix"].elems[1] = %(-1.0)
+    node["matrix"].elems[2] = %0.5
+    let loaded = validate(node)
+    check loaded.isOk
+    check loaded.preset.matrix[0] == MATRIX_MAX_VALUE
+    check loaded.preset.matrix[1] == MATRIX_MIN_VALUE
+    check loaded.preset.matrix[2] == MATRIX_MAX_VALUE
+
   test "an out-of-range fluid scale clamps instead of rejecting":
     # Same treatment every slider-backed field gets. The floor matters more
     # here than elsewhere: a hand-edited zero would divide by zero in both SPH
@@ -169,7 +183,7 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.temperature = -0.4
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
-        (if matrixIndex mod 2 == 0: 0.5 else: -0.5)
+        (if matrixIndex mod 2 == 0: 0.05 else: -0.05)
     customPreset.palette = [
       [0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9],
       [0.15, 0.25, 0.35], [0.45, 0.55, 0.65], [0.75, 0.85, 0.95]
@@ -307,18 +321,18 @@ suite "Preset Malformed Input Contract":
     check result.preset.matrix == defaultMatrix()
 
   test "a short matrix array fills missing entries with 0.0":
-    let node = %*{"matrix": [0.5, -0.5]}
+    let node = %*{"matrix": [0.05, -0.05]}
     let result = validate(node)
-    check result.preset.matrix[0] == 0.5
-    check result.preset.matrix[1] == -0.5
+    check result.preset.matrix[0] == 0.05
+    check result.preset.matrix[1] == -0.05
     check result.preset.matrix[2] == 0.0
     check result.preset.matrix[MATRIX_LEN - 1] == 0.0
 
   test "a non-numeric matrix entry defaults that slot to 0.0 without discarding the rest":
-    let node = %*{"matrix": ["oops", 0.7]}
+    let node = %*{"matrix": ["oops", 0.07]}
     let result = validate(node)
     check result.preset.matrix[0] == 0.0
-    check result.preset.matrix[1] == 0.7
+    check result.preset.matrix[1] == 0.07
 
   test "a malformed palette entry falls back to that species' default color":
     let node = %*{"palette": [[0.9, 0.9, 0.9], "not a color"]}
@@ -589,14 +603,14 @@ suite "Preset Clamp Behavior Contract":
     check result.preset.settings.bloomEnabled == defaultSettings().bloomEnabled
     check result.preset.settings.exposure == defaultSettings().exposure
 
-  test "matrix values clamp into [-1, 1]":
+  test "matrix values clamp into the served band":
     var arr = newSeq[float](MATRIX_LEN)
     arr[0] = 5.0
     arr[1] = -5.0
     let node = %*{"matrix": arr}
     let result = validate(node)
-    check result.preset.matrix[0] == MATRIX_VALUE_MAX
-    check result.preset.matrix[1] == MATRIX_VALUE_MIN
+    check result.preset.matrix[0] == MATRIX_MAX_VALUE
+    check result.preset.matrix[1] == MATRIX_MIN_VALUE
 
   test "palette channel values clamp into [0, 1]":
     let node = %*{"palette": [[2.0, -1.0, 0.5]]}

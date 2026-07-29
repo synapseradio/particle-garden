@@ -172,11 +172,6 @@ type
 const
   FORCE_MODEL_MIN* = 0
   FORCE_MODEL_MAX* = 1              ## 0=polynomial, 1=exponential (config.nim comment).
-  MATRIX_VALUE_MIN* = -1.0
-  MATRIX_VALUE_MAX* = 1.0
-    ## Matches src/ui/state/matrix_state.MATRIX_MIN_VALUE/MAX_VALUE.
-    ## Duplicated rather than imported: that module lives under src/ui/,
-    ## which this module must not depend on.
   PALETTE_CHANNEL_MIN* = 0.0
   PALETTE_CHANNEL_MAX* = 1.0        ## Each RGB channel, matching config.nim's COLORS values.
 
@@ -447,7 +442,7 @@ proc validateMatrix(node: JsonNode): Matrix =
   ## otherwise-good 36-element array does not discard the other 35.
   for matrixIndex in 0 ..< MATRIX_LEN:
     result[matrixIndex] = clampFloat(
-      elemAt(node, matrixIndex).getFloat(0.0), MATRIX_VALUE_MIN, MATRIX_VALUE_MAX)
+      elemAt(node, matrixIndex).getFloat(0.0), MATRIX_MIN_VALUE, MATRIX_MAX_VALUE)
 
 proc validateChemistry(node: JsonNode): Chemistry =
   ## Repaired per slot, like the matrix: a missing or non-numeric entry falls

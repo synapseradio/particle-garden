@@ -2420,29 +2420,74 @@ Built before the remedies that use them.
 The fifth defect class: a control whose own handler reverts the edit. Fix the ownership first, then
 recalibrate the range the editor serves.
 
-- [ ] 6.1 `bun test` first: the cell edit-state machine as pure functions — an edit holds any
+- [x] 6.1 `bun test` first: the cell edit-state machine as pure functions — an edit holds any
       intermediate text including empty; commit parses, clamps, and writes; an external matrix
       update while an edit is in progress leaves the edited cell's text alone and refreshes every
       other cell. Expected to fail against the current handler
       (`web-ui/src/components/MatrixEditor.tsx:46-55`, which maps an emptied field through `NaN` to
       a forced re-render back to the live value).
-- [ ] 6.2 `MatrixEditor.tsx`: hold uncommitted cell state, clamp on commit through the boundary's
+      DONE. web-ui/test/matrix-cell.test.ts pins the machine as pure functions (editText /
+      commitValue in web-ui/src/lib/matrix-cell.ts): an edit holds any intermediate text
+      including empty; commit parses and clamps through the handed-in clamp, null for a
+      no-number text (a revert, not a write); an external update refreshes every cell but the
+      edited one. Red first as an unresolvable import — no DOM harness runs the shipped handler,
+      so the module's absence is where the red lives — then green once the module landed.
+- [x] 6.2 `MatrixEditor.tsx`: hold uncommitted cell state, clamp on commit through the boundary's
       `clampMatrixValue`, and stop restating the step and display precision
       (`MatrixEditor.tsx:92-93`) — both now arrive from the boundary.
-- [ ] 6.3 `src/web_api.nim`: serve the matrix bounds, step, and display precision beside the existing
+      DONE. The in-progress edit lives in a signal routed through the pure machine: onInput
+      holds the text, onChange commits through api.clampMatrixValue, onBlur ends the edit, and
+      a null commit reverts by redraw. Step, band, and display precision arrive from
+      api.matrixSpec(); the hardcoded step="0.1" and toFixed(2) restatements are gone, and the
+      input carries the band as its min/max so the spinner cannot leave it.
+- [x] 6.3 `src/web_api.nim`: serve the matrix bounds, step, and display precision beside the existing
       matrix surface (`src/web_api.nim:960-964`).
-- [ ] 6.4 `src/config_ranges.nim`: `MATRIX_MIN_VALUE = -0.100`, `MATRIX_MAX_VALUE = 0.100`, step
+      DONE. gardenAPI.matrixSpec() serves {min, max, step, precision} beside matrix() and
+      clampMatrixValue(), read from the range authority — web_api now imports config_ranges
+      directly rather than reaching bounds through intermediaries.
+- [x] 6.4 `src/config_ranges.nim`: `MATRIX_MIN_VALUE = -0.100`, `MATRIX_MAX_VALUE = 0.100`, step
       `0.001`, display precision 3, with the calibration recorded beside the constants — made
       together with the crowding attenuation (C1-C2), not separately.
       `src/ui/state/matrix_state.nim` consumes these instead of defining them
       (matrix_state.nim:16-17); `src/preset.nim`'s documented copy (preset.nim:147-149) collapses to
       a read of the same constants, which the range authority's layering permits where `src/ui/`
       does not.
-- [ ] 6.5 `src/ui/state/matrix_state.nim:140-144`: recalibrate the random-fill distribution to the
+      DONE. Constants landed with the calibration record beside them (set together with the
+      crowding attenuation; provisional like the crowding ceiling, the same in-app calibration
+      judges both) and a symmetry doAssert — the colour scale and the rule sampler both read
+      magnitude against MATRIX_MAX_VALUE alone. matrix_state consumes the authority instead of
+      defining ±1; preset's documented duplicate is deleted and the schema clamp reads the same
+      names. RIPPLES, each measured: cellColorFromValue's saturation now reads magnitude as a
+      FRACTION of the bound (an absolute scale goes grey the day the range narrows — the
+      colour-pin tests went red exactly there); and the density-ceiling sweep, re-scoped by the
+      authority with no second edit as its comment promised, surfaced its strict-monotonicity
+      guard reading the swept midpoint's float noise (~1e-17, the representation error of the
+      ±0.100 endpoints, where ±1's midpoint was exact zero) as a positive attraction — the
+      guard now asks for an AUTHORABLE entry, at least one step.
+- [x] 6.5 `src/ui/state/matrix_state.nim:140-144`: recalibrate the random-fill distribution to the
       new bounds so a randomized world keeps its character; record the chosen spread beside it.
-- [ ] 6.6 `tests/`: a preset carrying matrix values in `[-1, 1]` loads with every value clamped into
+      DONE. sampleRuleValue scales draws by sigma TIMES the served bound: sigma is a fraction of
+      the band, so the re-range re-scales the whole distribution and the bell survives — a
+      sampler tuned for ±1 would have its rejection loop flatten the bell against walls ten
+      times closer. The spread is recorded beside the proc and beside RULE_TEMPERATURE's range
+      (unchanged 0.1..0.6, now explicitly in fraction units); ruleTemperature's report row is
+      unchanged because the sweep's metrics are scale-free. DEVIATION from strict red-first:
+      the law and the constants landed in one edit batch, so the sampling relation tests —
+      written against the constants — pinned both sides without an observable red; the
+      observable reds for this group were the colour pins, the preset fixtures, and the bun
+      module's absence.
+- [x] 6.6 `tests/`: a preset carrying matrix values in `[-1, 1]` loads with every value clamped into
       the served bounds — the one stored-data change this change makes, priced in design E13.
-- [ ] 6.7 `just happen` and `just check` green.
+      DONE. tests/test_preset.nim: `a matrix authored at the old [-1, 1] clamps into the served
+      bounds` — 1.0 / -1.0 / 0.5 load as 0.100 / -0.100 / 0.100. Fixtures that round-tripped
+      ±0.5-scale values moved in-band (the round trip pins the wire shape, not the bounds), and
+      the hostile 5.0 / -5.0 clamp test now reads the authority's names.
+- [x] 6.7 `just happen` and `just check` green.
+      DONE. `just happen` exits 0; `just check` green — 784 native [OK], bun 54 pass / 0 fail.
+      Reds on the way, in order: two missed consumers of the deleted preset-side names
+      (test_physics's sweep, test_preset's assertions), JsonNode array assignment (through
+      .elems), the density-ceiling float-noise guard, and the colour and clamp absolute pins —
+      each resolved in its task's record above.
 
 ## 7. Acknowledgement, horizon, and dormancy
 

@@ -208,6 +208,9 @@ export interface GardenAPI {
   matrix(): Float32Array;
   matrixCellColor(value: number): string;
   clampMatrixValue(value: number): number;
+  /** The served band, step, and display precision, from the range
+   * authority. The editor serves these and restates none of them. */
+  matrixSpec(): { min: number; max: number; step: number; precision: number };
   matrixStride(): number;
   speciesColor(index: number): string;
   randomizeMatrix(): void;
