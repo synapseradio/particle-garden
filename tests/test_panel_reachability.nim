@@ -1,10 +1,6 @@
-# ==============================================================================
-# PARTICLE GARDEN - PANEL AGREEMENT GUARD TESTS
-# ==============================================================================
-#
 # Nim owns every parameter fact and the panel restates none of them, but the
 # two sides cannot type-check each other. These suites read the panel's own
-# source and fail on the disagreements a compiler cannot see. Two so far.
+# source and fail on the disagreements a compiler cannot see.
 #
 # REACHABILITY. A descriptor is a promise that a control exists. Nim builds the
 # descriptor table and the panel lays it out, and a descriptor the panel never
@@ -21,10 +17,6 @@
 # Precedent: tests/test_no_modes.nim reads real source from disk and asserts
 # the file it read was actually found, so a sweep over a missing or wrong-cwd
 # tree cannot pass by finding nothing. These suites follow that shape.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, os, strutils]
 import ../src/ui/api/param_descriptor
@@ -54,7 +46,7 @@ suite "Every Descriptor Reaches The Panel":
     check readFile(PANEL_FILE).len > 0
 
   test "every descriptor is placed by its id or by its group":
-    # THE DEFECT THIS PINS. A control the panel never places is unreachable by
+    # The defect this pins: a control the panel never places is unreachable by
     # anyone using the panel, however complete its descriptor looks: range,
     # step, notches and hint all describe a slider that is not on screen.
     # Keyboard and mouse gestures do not excuse it — they are a second path to
@@ -87,7 +79,7 @@ suite "The Panel Derives The Climate's Written Parameters":
     check readFile(STATE_FILE).len > 0
 
   test "the controller quotes no parameter the climate writes":
-    # THE DEFECT THIS PINS. The weather walks these ids from the frame loop and
+    # The defect this pins: the weather walks these ids from the frame loop and
     # the controller re-reads them; held as a second copy in TypeScript, an
     # added axis leaves the simulation drifting on a coordinate the panel never
     # reads back, and every file still compiles. The controller must ask

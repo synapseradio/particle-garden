@@ -1,14 +1,10 @@
-# ==============================================================================
-# PARTICLE GARDEN - GLOW CORE TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/glow_core.nim, the pure mirror of
 # web/shaders/src/glow.wgsl. The halo runs in a fragment shader no native test
 # can execute, so what is checked here is the arithmetic the shader is written
 # against: the radius composition, the Gaussian falloff, the warm shift, and
 # the halo-alpha integral a response probe reads.
 #
-# THE PROBE OBSERVABLE IS THE CLAMPED INTEGRAL. A screen answers alpha up to 1
+# The probe observable is the clamped integral. A screen answers alpha up to 1
 # and no further, so the raw integral keeps climbing through slider travel the
 # display has stopped showing. Both forms are exercised here, and the pair is
 # what makes the deadness visible rather than averaged away.
@@ -16,10 +12,6 @@
 # Every coordinate comes from an owner: ranges from config_ranges.nim, shipped
 # defaults from initRenderState(), curve constants from shader_config.nim's
 # TuningConstants — the same values the bundler substitutes into the shader.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, math]
 import ../src/glow_core
@@ -36,15 +28,15 @@ const
   QUADRATURE_TOLERANCE = 1e-3
     ## Relative slack on integrals, which the module evaluates by midpoint rule.
   FULL_SPEED = 1.0
-    ## velocityNorm at or above maxVelocity (glow.wgsl:91 clamps there).
+    ## velocityNorm at or above maxVelocity, where glow.wgsl clamps.
   SETTLED_DENSITY = 50.0
     ## Far above the density that saturates the density factor, so the tests
     ## that hold density fixed sit on the flat part of its clamp.
 
 func defaultUniforms(): GlowUniforms =
   ## The halo the app draws at its shipped defaults. baseSize mirrors
-  ## webgpu_render.nim:1630 (`particleSize + 1`), and glowDensityFloor mirrors
-  ## :1643, where the renderer writes zero because every world measures density.
+  ## webgpu_render.nim's `particleSize + 1`, and glowDensityFloor mirrors the
+  ## renderer writing zero there, because every world measures density.
   let shipped = initRenderState()
   GlowUniforms(
     baseSize: float(shipped.particleSize + 1),
@@ -58,7 +50,7 @@ func defaultUniforms(): GlowUniforms =
 
 suite "The Halo Falls Off As A Gaussian":
   test "halo alpha falls off as a Gaussian in normalized radius":
-    # CONTRACT: glow.wgsl:169-170. Everything except `gauss` is constant across
+    # CONTRACT: glow.wgsl. Everything except `gauss` is constant across
     # the billboard, so alpha at radius l is the centre value times
     # exp(-glowFalloff * l * l) — the shape the slider promises to tighten.
     let tuning = glowTuning()
@@ -78,7 +70,7 @@ suite "The Halo Falls Off As A Gaussian":
         previous = alpha
 
   test "nothing is drawn outside the unit disc":
-    # CONTRACT: glow.wgsl:140-142 discards past l = 1, so the square billboard
+    # CONTRACT: glow.wgsl discards past l = 1, so the square billboard
     # never shows. A mirror that integrated past the edge would credit the halo
     # with light the shader throws away.
     let tuning = glowTuning()
@@ -104,8 +96,8 @@ suite "The Halo Falls Off As A Gaussian":
 
 suite "Glow Intensity Reaches The Halo":
   test "raw alpha scales linearly with glowIntensity":
-    # CONTRACT: glow.wgsl:170 multiplies by glowIntensity once. The velocity
-    # term multiplies by it a second time (:165), so the plain linear promise
+    # CONTRACT: glow.wgsl multiplies by glowIntensity once. The velocity
+    # term multiplies by it a second time, so the plain linear promise
     # holds exactly where that term is out: a stationary particle, or a world
     # with the velocity coupling turned down to zero.
     let tuning = glowTuning()
@@ -128,10 +120,10 @@ suite "Glow Intensity Reaches The Halo":
         check abs(alpha - intensity * unit) < EPSILON
 
   test "the velocity coupling makes alpha quadratic in glowIntensity":
-    # WHY THE LINEAR TEST NAMES ITS COORDINATE. glow.wgsl:165 folds
+    # Why the linear test names its coordinate: glow.wgsl folds
     # velocityGlowScale * glowIntensity into the velocity factor, so a moving
     # particle's halo grows as intensity squared — the shader's own documented
-    # "velocity contribution is the AREA of the square" (:153-162). A mirror
+    # "velocity contribution is the area of the square". A mirror
     # that dropped the second factor would still pass the linear test above.
     let tuning = glowTuning()
     var uniforms = defaultUniforms()
@@ -143,8 +135,8 @@ suite "Glow Intensity Reaches The Halo":
     check full > 2.0 * half
 
   test "the mirror's curve constants are the ones the bundler substitutes":
-    # THE LOCKSTEP. glow.wgsl reads these as {{TUNABLE_GLOW_*}} placeholders
-    # (shader_config.nim:267-274). This is the check that a renamed or
+    # The lockstep: glow.wgsl reads these as {{TUNABLE_GLOW_*}} placeholders
+    # from shader_config.nim. This is the check that a renamed or
     # re-homed constant cannot leave the mirror measuring a different curve
     # from the one the GPU runs.
     let tuning = glowTuning()
@@ -160,15 +152,15 @@ suite "Glow Intensity Reaches The Halo":
 
 suite "The Probe Observable Is What The Display Can Answer":
   test "the probe observable saturates at the display clamp":
-    # CONTRACT: design E1. The clamped integral is bounded by the halo's own
+    # CONTRACT: the clamped integral is bounded by the halo's own
     # disc area, because no pixel inside it can show more than alpha 1; the raw
     # integral has no ceiling at all. Measured at the brightest coordinate the
     # shipped sliders reach — full speed, velocityGlowScale at its maximum,
     # density past the factor's clamp.
     #
-    # MEASURED, at that coordinate: the clamped integral is 85% of the raw one
+    # Measured, at that coordinate: the clamped integral is 85% of the raw one
     # at the top of the intensity track (1559 against 1843 pixels squared, of a
-    # 5542 disc). At the SHIPPED velocityGlowScale of 1.0 the same track peaks
+    # 5542 disc). At the shipped velocityGlowScale of 1.0 the same track peaks
     # at alpha 0.5 and nothing clamps at all, so a sweep looking for saturation
     # has to say which velocity coupling it measured under.
     let tuning = glowTuning()
@@ -241,9 +233,9 @@ suite "The Probe Observable Is What The Display Can Answer":
 
 suite "The Halo Radius Composes From Size, Scale And Speed":
   test "base radius scales with glowRadiusScale":
-    # CONTRACT: glow.wgsl:98-100. The slider multiplies the particle's own
+    # CONTRACT: glow.wgsl. The slider multiplies the particle's own
     # size, so the halo tracks particle size rather than drifting out of step
-    # with it (design D9).
+    # with it.
     var uniforms = defaultUniforms()
     for scale in [GLOW_RADIUS_SCALE_MIN, uniforms.glowRadiusScale,
         GLOW_RADIUS_SCALE_MAX]:
@@ -263,7 +255,7 @@ suite "The Halo Radius Composes From Size, Scale And Speed":
         EPSILON
 
   test "speed grows the halo by half the velocity coupling":
-    # CONTRACT: glow.wgsl:99-100 — at full speed the halo is
+    # CONTRACT: glow.wgsl — at full speed the halo is
     # (1 + velocityGlowScale * 0.5) times its base radius.
     var uniforms = defaultUniforms()
     for coupling in [VELOCITY_GLOW_SCALE_MIN, uniforms.velocityGlowScale,
@@ -273,7 +265,6 @@ suite "The Halo Radius Composes From Size, Scale And Speed":
       check abs(haloRadius(uniforms, FULL_SPEED) - expected) < EPSILON
 
   test "speed is normalized against maxVelocity and clamps there":
-    # CONTRACT: glow.wgsl:91.
     check normalizedVelocity(0.0, 50.0) == 0.0
     check normalizedVelocity(25.0, 50.0) == 0.5
     check normalizedVelocity(50.0, 50.0) == 1.0
@@ -284,7 +275,7 @@ suite "The Halo Radius Composes From Size, Scale And Speed":
 
 suite "Warmth Is Bounded By The Warmth Slider":
   test "warmth is bounded above by glowWarmth":
-    # CONTRACT: glow.wgsl:176 — warmth is densityFactor * glowWarmth, and the
+    # CONTRACT: glow.wgsl — warmth is densityFactor * glowWarmth, and the
     # density factor is clamped at densityMax. The bound is the slider's own
     # value exactly when that clamp sits at 1.
     let tuning = glowTuning()
@@ -306,7 +297,7 @@ suite "Warmth Is Bounded By The Warmth Slider":
       GLOW_WARMTH_MAX * tuning.densityMax) < EPSILON
 
   test "the warm shift attenuates green and blue and leaves red alone":
-    # CONTRACT: glow.wgsl:177. Warmth removes green and blue; it never adds.
+    # CONTRACT: glow.wgsl. Warmth removes green and blue; it never adds.
     let tuning = glowTuning()
     let neutral = warmShift(tuning, 0.0)
     check neutral == (r: 1.0, g: 1.0, b: 1.0)

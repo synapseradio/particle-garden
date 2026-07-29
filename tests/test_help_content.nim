@@ -1,15 +1,9 @@
-# ==============================================================================
 # PARTICLE GARDEN - HELP COVERAGE TESTS
-# ==============================================================================
 #
 # The four coverage relations that keep the documentation true: every group
 # has a file, every declared key exists, every descriptor is named by its
 # group's file, and no file names a non-descriptor. A control renamed without
 # its documentation following goes red here, at the rename.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[os, sequtils, sets, tables, unittest]
 

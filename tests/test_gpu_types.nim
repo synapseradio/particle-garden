@@ -1,15 +1,7 @@
-# ==============================================================================
-# PARTICLE GARDEN - GPU TYPE LAYOUT TESTS
-# ==============================================================================
-#
 # Behavioral tests for the pure layout helpers in gpu_types.nim. The compile-time
 # static asserts in that module pin a handful of specific offsets; these tests
-# exercise the helper FUNCTIONS that buffer-write code calls at runtime and the
+# exercise the helper functions that buffer-write code calls at runtime and the
 # structural relationships (non-overlap, contiguity) the GPU depends on.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import std/strutils
@@ -20,7 +12,6 @@ const GPU_TYPES_TESTS_LOADED* = true
 
 suite "GPU Type Sizes":
   test "gpuTypeSize returns the WGSL byte size for each scalar and vector type":
-    # CONTRACT: these sizes mirror the WGSL type system the shaders rely on.
     check gpuTypeSize(gtF32) == 4
     check gpuTypeSize(gtU32) == 4
     check gpuTypeSize(gtI32) == 4
@@ -87,8 +78,8 @@ suite "GPU Field Accessors":
       discard ParticleLayout.fieldByName("nonexistent")
 
   test "fieldIndex equals byte offset divided by 4 for scalar fields":
-    check ParticleLayout.fieldIndex("species") == 4    # offset 16 / 4
-    check SimParamsLayout.fieldIndex("repulsionEnd") == 52  # offset 208 / 4
+    check ParticleLayout.fieldIndex("species") == 4
+    check SimParamsLayout.fieldIndex("repulsionEnd") == 52
 
   test "fieldIndex raises ValueError for vector and array fields":
     expect ValueError:
@@ -174,7 +165,7 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
 
 
 suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
-  # S7 appends four SPH f32 fields after the force-model block. Their write
+  # Four SPH f32 fields append after the force-model block. Their write
   # indices must equal their byte offset / 4, and sit immediately after
   # SIM_PAD2, or webgpu_compute's SPH uniform writes land on the wrong slot.
 
@@ -196,7 +187,7 @@ suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
 
 
 suite "Generated Render Struct Layouts":
-  # S2: RenderParams and FadeParams join SimParams as layout-table-generated
+  # RenderParams and FadeParams join SimParams as layout-table-generated
   # structs. The generated indices must hold the exact values below, or every
   # uniform write in webgpu_render.nim shifts.
 
@@ -261,10 +252,9 @@ suite "The Camera Uniform Carries The World It Looks At":
     check CAMERA_PARAMS_F32_COUNT == 8
 
   test "the world extent sits in the camera and in neither pass's params":
-    # The fade and composite passes used to carry their own copies. Two structs
-    # holding one number is two chances to disagree about how big the world is
-    # within a single frame, which lands the field and the trail in different
-    # places on the same screen.
+    # Two structs holding one number would be two chances to disagree about
+    # how big the world is within a single frame, landing the field and the
+    # trail in different places on the same screen.
     check CameraLayout.fieldOffset("worldWidth") == 12
     check CameraLayout.fieldOffset("worldHeight") == 16
     expect KeyError:
@@ -273,9 +263,8 @@ suite "The Camera Uniform Carries The World It Looks At":
       discard TonemapParamsLayout.fieldByName("worldWidth")
 
   test "the previous frame's view is a Camera record, not FadeParams fields":
-    # fade.wgsl used to rebuild a Camera positionally out of three FadeParams
-    # scalars, with a comment about field order as its only guard. A second
-    # binding of this layout retires that constructor.
+    # The previous frame's view is bound as a second Camera record rather
+    # than reconstructed positionally from loose FadeParams scalars.
     expect KeyError:
       discard FadeParamsLayout.fieldByName("prevCenterX")
     expect KeyError:
@@ -291,9 +280,9 @@ suite "The Camera Uniform Carries The World It Looks At":
 
 
 suite "RenderParams Glow Knob Indices":
-  # S1 promotes three RenderParams pad slots into glow knobs; S10 grows the
-  # struct with a glowDensityFloor and pads it back to 64 bytes. The knob
-  # indices hold the exact positions below.
+  # Three RenderParams pad slots serve as glow knobs, and a glowDensityFloor
+  # field extends the struct, padded back to 64 bytes. The knob indices hold
+  # the exact positions below.
 
   test "the three former pad slots are the glow knob indices":
     check RENDER_GLOW_RADIUS_SCALE == 9
@@ -308,7 +297,7 @@ suite "RenderParams Glow Knob Indices":
 
 
 suite "Generated FieldParams Layout (Reaction-Diffusion)":
-  # S8a: FieldParams joins SimParams/RenderParams/FadeParams as a
+  # FieldParams joins SimParams/RenderParams/FadeParams as a
   # layout-table-generated struct — the reaction-diffusion field's uniform.
 
   test "FieldParamsLayout is 8 floats, 32 bytes written and allocated":
@@ -344,7 +333,7 @@ suite "Generated ReactionParams Layout (Reaction Identity)":
   # ReactionParams carries which reaction the field runs. Gray-Scott reads
   # reactionKind; a future reaction's parameters enter this struct in the
   # same change that reads them, never as reserved members ahead of a
-  # consumer (one-world 3.7).
+  # consumer.
 
   test "ReactionParamsLayout is 4 floats, 16 bytes written and allocated":
     check ReactionParamsLayout.totalSize == 16
@@ -422,7 +411,7 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
 
 
 suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
-  # S9: BloomParams and TonemapParams join the layout-table-generated structs.
+  # BloomParams and TonemapParams join the layout-table-generated structs.
   # The blur pass writes bloomParamsData[BLOOM_*]; the tonemap pass writes
   # tonemapParamsData[TONEMAP_*] — a wrong index writes the wrong uniform slot.
 
@@ -452,7 +441,7 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check TONEMAP_SATURATION == 2
     check TONEMAP_CONTRAST == 3
     check TONEMAP_TEMPERATURE == 4
-    # S10 claims two pad slots for the field-visualization pair.
+    # Two pad slots carry the field-visualization pair.
     check TONEMAP_COLORMAP_INDEX == 5
     check TONEMAP_FIELD_OPACITY == 6
     check TONEMAP_PAD2 == 7

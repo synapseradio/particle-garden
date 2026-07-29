@@ -1,24 +1,8 @@
-# ==============================================================================
-# PARTICLE GARDEN - MATRIX STATE TESTS
-# ==============================================================================
-#
-# Unit tests for matrix state pure functions.
-# Tests index calculations, value operations, and color generation.
-#
-# Run with: just test
-#
-# ==============================================================================
-
 import std/[sets, unittest]
 import ../src/config_ranges
 import ../src/ui/state/matrix_state
 
-# Exported symbol for test_all.nim to reference
 const MATRIX_STATE_TESTS_LOADED* = true
-
-# ==============================================================================
-# INDEX CALCULATION TESTS
-# ==============================================================================
 
 suite "Matrix Index - Calculations":
   test "matrixIndex at origin":
@@ -62,10 +46,6 @@ suite "Matrix Index - Validation":
     check isValidIndex(0, 0, 7) == false
     check isValidIndex(0, 0, 6) == true
 
-
-# ==============================================================================
-# VALUE OPERATION TESTS
-# ==============================================================================
 
 suite "Matrix Values - Clamping":
   test "clampMatrixValue passes in-band values through":
@@ -115,10 +95,6 @@ suite "Matrix Values - Classification":
     check isNeutral(-0.01) == false
 
 
-# ==============================================================================
-# COLOR CALCULATION TESTS
-# ==============================================================================
-
 suite "Cell Color - From Value":
   # Saturation reads the value AS A FRACTION OF THE SERVED BOUND, so a
   # full-strength attraction saturates fully whatever the bound is — a colour
@@ -126,14 +102,14 @@ suite "Cell Color - From Value":
 
   test "cellColorFromValue positive (attraction)":
     let color = cellColorFromValue(MATRIX_MAX_VALUE / 2.0)
-    check color.hue == 120  # Green
+    check color.hue == 120
     check color.saturation == 50
     check color.lightness == 40
     check abs(color.alpha - 0.7) < 0.001
 
   test "cellColorFromValue negative (repulsion)":
     let color = cellColorFromValue(MATRIX_MIN_VALUE / 2.0)
-    check color.hue == 0  # Red
+    check color.hue == 0
     check color.saturation == 50
 
   test "cellColorFromValue max attraction":
@@ -148,7 +124,7 @@ suite "Cell Color - From Value":
 
   test "cellColorFromValue neutral":
     let color = cellColorFromValue(0.0)
-    check color.saturation == 0  # No saturation at zero
+    check color.saturation == 0
 
   test "cellColorFromValue clamps saturation to 100 past the served bound":
     # Values beyond the bound must not produce a >100 saturation (an invalid
@@ -176,7 +152,7 @@ suite "Species Color - From Index":
     let colors = [1.0, 0.5, 0.0, 0.0, 1.0, 0.5]  # 2 species
     let color = speciesColorFromIndex(0, colors)
     check color.red == 255
-    check color.green == 127  # 0.5 * 255 ≈ 127
+    check color.green == 127
     check color.blue == 0
 
   test "speciesColorFromIndex second species":
@@ -189,7 +165,7 @@ suite "Species Color - From Index":
   test "speciesColorFromIndex out of bounds":
     let colors = [1.0, 0.5, 0.0]  # Only 1 species
     let color = speciesColorFromIndex(5, colors)
-    check color.red == 128  # Default gray
+    check color.red == 128
     check color.green == 128
     check color.blue == 128
 
@@ -199,10 +175,6 @@ suite "Species Color - String Conversion":
     let color = SpeciesColor(red: 255, green: 128, blue: 0, alpha: 0.5)
     check toRgbaString(color) == "rgba(255,128,0,0.5)"
 
-# ==============================================================================
-# RULE RANDOMIZATION - REJECTION SAMPLING
-# ==============================================================================
-#
 # sampleRuleValue is the pure core of the matrix randomizer: it scales draws
 # from an injected standard-normal source by sigma (CONFIG.ruleTemperature)
 # and rejects any product outside [-1, 1], preserving the bell shape instead
@@ -237,7 +209,8 @@ suite "Rule Randomization - Rejection Sampling":
       0.2 * 0.5 * MATRIX_MAX_VALUE
 
   test "sampleRuleValue accepts the range boundaries inclusively":
-    # The ui.nim loop rejected only strictly-outside products; pin that.
+    # The boundary itself is inclusive: a draw landing exactly on ±1 must not
+    # be rejected.
     check sampleRuleValue(1.0, scriptedSampler(@[1.0])) == MATRIX_MAX_VALUE
     check sampleRuleValue(1.0, scriptedSampler(@[-1.0])) == MATRIX_MIN_VALUE
 
@@ -252,10 +225,6 @@ suite "Rule Randomization - Rejection Sampling":
       check sampled >= MATRIX_MIN_VALUE
       check sampled <= MATRIX_MAX_VALUE
 
-# ==============================================================================
-# SPECIES GROWTH - NEWLY EXPOSED CELLS
-# ==============================================================================
-#
 # When the species count grows interactively, only the newly exposed matrix
 # cells get randomized; established rules survive. Shrinking preserves the
 # hidden values in the buffer so they reappear on re-grow.

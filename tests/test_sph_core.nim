@@ -1,20 +1,12 @@
-# ==============================================================================
-# PARTICLE GARDEN - SPH CORE TESTS
-# ==============================================================================
-#
 # Analytic tests for src/sph_core.nim: the pure 2D SPH kernel math, Tait
 # equation of state, and XSPH velocity smoothing that the forces-sph.wgsl
-# compute shader mirrors (roadmap S7). Every function takes the smoothing
-# radius h as a runtime parameter — nothing is precomputed against a fixed h —
-# so these tests exercise the identities across two different radii.
+# compute shader mirrors. Every function takes the smoothing radius h as a
+# runtime parameter — nothing is precomputed against a fixed h — so these
+# tests exercise the identities across two different radii.
 #
 # The poly6 normalization is verified by numerical integration rather than by
 # pinning the closed-form constant: if the derived constant were wrong, the
 # integral over the support disc would not equal 1.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, math]
 import ../src/sph_core
@@ -58,7 +50,7 @@ proc integratePoly6OverDisc(smoothingRadius: float; steps: int): float =
 proc radiusFractionSweep(steps: int): seq[float] =
   ## The fraction range sampled end to end, endpoints included. The endpoints
   ## are the two that matter: the minimum is the smallest kernel the sliders
-  ## reach, and the maximum is today's fluid.
+  ## reach, and the maximum is the shipped default.
   result = @[]
   for stepIndex in 0 .. steps:
     result.add SPH_RADIUS_FRACTION_MIN +
@@ -66,13 +58,13 @@ proc radiusFractionSweep(steps: int): seq[float] =
         stepIndex.float / steps.float
 
 func normalizedDensityWeight(distance, smoothingRadius: float): float =
-  ## The density weight forces-sph.wgsl:248 forms: the poly6 weight divided by
+  ## The density weight forces-sph.wgsl forms: the poly6 weight divided by
   ## the self-weight, which is what makes an isolated particle read 1.0 and the
   ## accumulated density count neighbours.
   poly6Weight2d(distance, smoothingRadius) / poly6Weight2d(0.0, smoothingRadius)
 
 func normalizedGradientWeight(distance, smoothingRadius: float): float =
-  ## The gradient weight forces-sph.wgsl:249 forms, by the same division. The
+  ## The gradient weight forces-sph.wgsl forms, by the same division. The
   ## pressure acceleration is this times the pair pressure, so the smoothing
   ## radius reaches the pressure term through here and nowhere else.
   spikyGradientMagnitude2d(distance, smoothingRadius) /
@@ -99,7 +91,6 @@ suite "Poly6 Kernel Is 2D-Normalized":
   test "poly6 is strictly positive and peaks at the center":
     let smoothingRadius = 50.0
     check poly6Weight2d(0.0, smoothingRadius) > 0.0
-    # Monotonically decreasing from the center out to the support edge.
     check poly6Weight2d(0.0, smoothingRadius) >
       poly6Weight2d(25.0, smoothingRadius)
     check poly6Weight2d(25.0, smoothingRadius) >
@@ -130,10 +121,6 @@ suite "Spiky Gradient Produces A Monotone Repulsive Magnitude":
       previous = current
 
 
-# ==============================================================================
-# THE SMOOTHING RADIUS IS A FRACTION OF THE INTERACTION RADIUS
-# ==============================================================================
-#
 # forces-sph.wgsl multiplies the interaction radius by params.sphRadiusFraction
 # to get the smoothing radius, so the reachable effective radii run from
 # INTERACTION_RADIUS_MIN * SPH_RADIUS_FRACTION_MIN up to INTERACTION_RADIUS_MAX.
@@ -144,9 +131,9 @@ suite "Spiky Gradient Produces A Monotone Repulsive Magnitude":
 
 suite "The Smoothing Radius Is A Fraction Of The Interaction Radius":
   test "fraction one reproduces today's kernels":
-    # CONTRACT: the top of the fraction range is exactly 1, so the fluid a world
-    # ran before the fraction existed stays expressible — and expressible as the
-    # identical arithmetic, not an approximation of it. Both kernels and both
+    # The top of the fraction range is exactly 1, so the fluid at full
+    # interaction radius stays expressible — and expressible as the identical
+    # arithmetic, not an approximation of it. Both kernels and both
     # weights the shader forms from them are compared exactly, because
     # multiplying by one is exact in binary and anything less than exact would
     # mean the top of the range had moved off 1.
@@ -285,7 +272,6 @@ suite "XSPH Velocity Correction Is Bounded By Epsilon Times The Velocity Gap":
             check abs(correction) <= epsilon * velocityGap + EPSILON
 
   test "the correction points toward the neighbor velocity":
-    # A slower neighbor drags the velocity down; a faster one pulls it up.
     check xsphVelocityCorrection(5.0, 10.0, 0.5, SPH_XSPH_EPSILON) > 0.0
     check xsphVelocityCorrection(5.0, 0.0, 0.5, SPH_XSPH_EPSILON) < 0.0
 
@@ -305,19 +291,15 @@ suite "SPH Tuning Constants Are In Physical Range":
     check SPH_XSPH_EPSILON <= 1.0
 
 
-# ==============================================================================
-# THE DENSITY A FIXED-POINT BUFFER CAN HOLD
-# ==============================================================================
-#
-# WHAT SETS THE WORST CASE. forces-sph.wgsl divides each neighbour's poly6
+# What sets the worst case: forces-sph.wgsl divides each neighbour's poly6
 # weight by the self-weight, so one neighbour contributes at most 1.0 and the
 # accumulated density counts neighbours. Nothing bounds how many particles share
 # a smoothing radius, so the largest density the world can produce is exactly
 # MAX_PARTICLES: every particle the slider allows, gathered into one place.
 #
-# THE ACCUMULATOR MUST HOLD THAT, not clamp it. A shared FIXED_POINT_SCALE of
+# The accumulator must hold that, not clamp it. A shared FIXED_POINT_SCALE of
 # 65536 spans 32768, which MAX_PARTICLES passes by 3.9x, and an i32 past its
-# maximum wraps NEGATIVE — a density the equation of state reads as maximal
+# maximum wraps negative — a density the equation of state reads as maximal
 # expansion and answers with force in the wrong direction. Clamping would answer
 # the overflow by making the particle ceiling unreachable, so the density
 # accumulator takes its own coarser scale instead, derived from the budget.
@@ -327,8 +309,9 @@ suite "The Full Particle Budget Encodes Without Saturating":
   let scale = sphDensityFixedPointScale(MAX_PARTICLES)
 
   test "the whole particle budget in one smoothing radius encodes as itself":
-    # THE CONTRACT: 128000 particles is a reachable setting, so the density it
-    # produces has to survive the round trip rather than saturate on the way in.
+    # The full particle budget (MAX_PARTICLES) is a reachable setting, so the
+    # density it produces has to survive the round trip rather than saturate on
+    # the way in.
     check float(MAX_PARTICLES) * scale < I32_MAX
     check fixedPointCeiling(scale) > float(MAX_PARTICLES)
 
@@ -357,23 +340,19 @@ suite "The Full Particle Budget Encodes Without Saturating":
     # value is resolved with room to spare, or the fluid loses its rest state.
     check 1.0 / scale < 0.001
 
-# ==============================================================================
-# THE STABILITY HARNESS
-# ==============================================================================
-#
-# WHAT IT IS. A small periodic world running the fluid alone: the density,
+# What it is: a small periodic world running the fluid alone: the density,
 # pressure and XSPH loop of `web/shaders/src/forces-sph.wgsl` and the friction,
 # soft velocity cap and toroidal wrap of `web/shaders/src/integrate.wgsl`,
-# stepped substepCount times per frame the way `src/webgpu_compute.nim:753-762`
+# stepped substepCount times per frame the way `src/webgpu_compute.nim`
 # steps them. Same shape as test_field_core's chemotaxis harness: the shipped
 # arithmetic, run natively, so a bound on it is measured rather than asserted.
 #
-# WHAT IT MEASURES. The largest stiffness at which a compressed neighbourhood
+# What it measures: the largest stiffness at which a compressed neighbourhood
 # still comes to rest. Past that the pressure solver overshoots every substep,
 # friction cannot remove what it injects, and the fluid churns for as long as it
 # runs. That is the boundary `stableStiffnessCeiling` is fitted under.
 #
-# WHY NOT DIVERGENCE. Nothing here can reach infinity, and that is by design in
+# Why not divergence: nothing here can reach infinity, and that is by design in
 # the shader rather than an accident: the Tait input is clamped at
 # SPH_MAX_DENSITY_RATIO times rest, each pair's acceleration at
 # SPH_MAX_PRESSURE_ACCEL, and every speed at maxVelocity through the log soft
@@ -381,7 +360,7 @@ suite "The Full Particle Budget Encodes Without Saturating":
 # reports the residual speed and the non-finite check below stays as the guard
 # it is — it fires only if one of those clamps is ever removed.
 #
-# THE CONFIGURATION IS DIMENSIONLESS. Each run seeds the same neighbourhood
+# The configuration is dimensionless: each run seeds the same neighbourhood
 # measured in smoothing radii: the box is HARNESS_BOX_RADII radii across and
 # holds the particle count that puts the seeded density at
 # HARNESS_SEED_DENSITY_RATIO times rest. Only the discretisation then varies
@@ -458,9 +437,10 @@ func harnessSeed(count: int; boxSide: float): seq[HarnessParticle] =
 
 func harnessWrap(position, span: float): float =
   ## Toroidal wrap by true modulo rather than integrate.wgsl's single subtract.
-  ## One span suffices in the shipped world — 3840 px across against a 50 px per
-  ## frame cap — and does not here, where the box is a few smoothing radii wide
-  ## and a saturated run crosses it several times in one frame.
+  ## One span suffices in the shipped world — WORLD_W across against the
+  ## shipped default maxVelocity per frame — and does not here, where the box
+  ## is a few smoothing radii wide and a saturated run crosses it several times
+  ## in one frame.
   result = position - span * floor(position / span)
   if result >= span or result < 0.0: result = 0.0
 
@@ -619,7 +599,7 @@ proc measuredBoundary(smoothingRadius: float; substeps: int;
 # five tests read the same numbers.
 let
   harnessDefaultRadius = initSimulationState().interactionRadius.float
-    ## The shipped interaction radius, at fraction 1 — today's fluid.
+    ## The shipped interaction radius, at fraction 1.
   harnessDefaultTimeScale = initSimulationState().timeScale
   boundaryReference =
     measuredBoundary(harnessDefaultRadius, 1, harnessDefaultTimeScale)
@@ -632,8 +612,19 @@ let
 
 
 suite "The Fluid Has A Measured Stability Boundary":
-  # Design C7 says the stiffness envelope is a function of the fluid's
-  # configuration written down as a constant. These tests measure the function.
+  # The stiffness envelope is a function of the fluid's configuration written
+  # down as a constant. These tests measure the function.
+  #
+  # The fit behind sph_core.SPH_STABILITY_COEFFICIENT: written as the
+  # coefficient k * dt / (h * substeps), the boundary measured 0.00312 at the
+  # widest kernel the sliders reach (150 px, one substep), 0.00367 at the
+  # default 50 px kernel, and 0.0111 at a 5 px one. It falls as the kernel
+  # widens, so the smallest of those anchors a law linear in h; 0.0025 sits a
+  # fifth below it, leaving margin from 1.25x at the anchor to about 4x at a
+  # narrow kernel. The growth in h is sublinear — about 0.86 over the wide
+  # end, flattening below a few pixels where the shader's 2 px minimum
+  # separation takes over — which is why the linear law anchored at the widest
+  # kernel under-promises everywhere else.
 
   test "the harness separates a fluid that settles from one that never does":
     # Without this the tests below are vacuous: a harness that called every run
@@ -665,18 +656,18 @@ suite "The Fluid Has A Measured Stability Boundary":
     check boundaryMoreSubsteps <= substepRatio * substepRatio * boundaryReference
 
   test "a wider kernel raises the boundary, and by LESS than in proportion":
-    # THE DEVIATION FROM DESIGN C7, and the one the derived ceiling is built on.
-    # C7 predicted the textbook weakly-compressible result, a boundary growing
-    # like (h * substeps / dt) SQUARED, and marked it a hypothesis pending this
+    # A deviation from the textbook weakly-compressible prediction, and the one
+    # the derived ceiling is built on. That prediction has the boundary growing
+    # like (h * substeps / dt) squared, and marked it a hypothesis pending this
     # measurement. Tripling the smoothing radius multiplies the boundary by
     # about 2.5 — sublinear, where the square predicts nine.
     #
-    # WHY, read off the shader rather than fitted: the textbook form collects
+    # Read off the shader rather than fitted: the textbook form collects
     # one factor of 1/h from the pressure gradient and one from advancing
     # position by velocity times dt. This integrator has neither. Both kernels
-    # are divided by their self-weight (`forces-sph.wgsl:258-259`), which makes
+    # are divided by their self-weight (forces-sph.wgsl), which makes
     # the pressure magnitude radius-independent on purpose, and integrate.wgsl
-    # advances position by the velocity itself (`:144-145`), not by velocity
+    # advances position by the velocity itself, not by velocity
     # times a timestep. One factor of 1/h survives, through the kernel's spatial
     # derivative, and one factor of dt, through the velocity update.
     #
@@ -703,7 +694,8 @@ suite "The Fluid Has A Measured Stability Boundary":
       check abs(product - products[0]) <= 0.05 * products[0]
 
   test "the boundary sits inside the stiffness envelope at the shipped default":
-    # The envelope the range authority declares is 1 to 40. At the default
+    # The envelope the range authority declares (SPH_STIFFNESS_MIN to
+    # SPH_STIFFNESS_MAX). At the default
     # fluid — whole interaction radius, one substep, default time scale — the
     # measured boundary lands inside it, which is what makes a derived ceiling
     # worth serving: most of that slider's upper travel is already a place the
@@ -714,18 +706,14 @@ suite "The Fluid Has A Measured Stability Boundary":
     check boundaryReference < SPH_STIFFNESS_MAX
 
 
-# ==============================================================================
-# THE STIFFNESS CEILING IS DERIVED FROM THE FLUID'S CONFIGURATION
-# ==============================================================================
-#
 # The suite above measures where the fluid stops holding still. This one holds
 # `stableStiffnessCeiling` under that measurement, so re-running the suite
 # re-checks the fit rather than trusting the coefficient's comment.
 
 const CEILING_BOX_RADII = [5.0, 50.0, INTERACTION_RADIUS_MAX.float]
   ## Smoothing radii spanning the reachable box. 5 is a tenth of the default
-  ## interaction radius — a narrow kernel that still reaches past the shader's
-  ## 2 px minimum separation — and the top is the widest kernel the sliders
+  ## interaction radius — a narrow kernel that still reaches past the distance
+  ## floor MIN_DISTANCE_SQ enforces — and the top is the widest kernel the sliders
   ## offer, which is where the linear law is anchored and therefore tightest.
 const CEILING_BOX_TIME_SCALES = [TIME_SCALE_MIN, TIME_SCALE_MAX]
 

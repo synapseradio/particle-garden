@@ -1,15 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - SPATIAL OVERLAY TESTS
-# ==============================================================================
-#
-# The drag overlay's closed set and its coverage math, mirrored by
-# overlay.wgsl. The set is closed to parameters that are literally a world
-# distance, held here against the full descriptor table.
-#
-# Run with: just test
-#
-# ==============================================================================
-
 import std/unittest
 
 const OVERLAY_CORE_TESTS_LOADED* = true

@@ -1,14 +1,6 @@
-# ==============================================================================
-# PARTICLE GARDEN - PRESET SCHEMA TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/preset.nim: the versioned preset serialization
 # contract. Covers round-trip fidelity, newer-schema-version rejection,
 # clamp/default degradation of hostile input, and the migrate hook.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import std/json
@@ -17,26 +9,18 @@ import ../src/preset
 import ../src/colormap_core  # the authority preset.nim mirrors fieldOpacity from
 import ../src/field_core     # and the chemistry defaults it mirrors
 import ../src/climate_core   # and the climate speed default
-# A preset is stored intent; what the fluid honours of its stiffness is the
-# derived bound's business, so the two live sources meet in this suite.
 import ../src/ui/api/param_descriptor
 import ../src/ui/state/simulation_state
 
 const PRESET_TESTS_LOADED* = true
 
-# ==============================================================================
-# CLAMP BOUNDS TRACK THE LIVE SLIDER REGISTRATIONS
-# ==============================================================================
-
 suite "Clamp Bounds Are The Live Slider Ranges":
-  # STRUCTURE: preset.nim re-exports config_ranges.nim, the range authority the
-  # panel's descriptors read — so preset bounds and UI ranges agree by
-  # construction, not by mirrored literals. What remains testable here are the
-  # relations between independent sources.
+  # preset.nim re-exports config_ranges.nim, the range authority the panel's
+  # descriptors read — so preset bounds and UI ranges agree by construction,
+  # not by mirrored literals. What remains testable here are the relations
+  # between independent sources.
 
   test "the particle ceiling is the buffer allocation limit, not a stale UI copy":
-    # What this forbids: a preset ceiling pinned to a UI copy rather than to the
-    # allocation limit — a 64000 ceiling against a 128000 slider.
     check PARTICLE_COUNT_MAX == memory_layout.MAX_PARTICLES
 
   test "the species ceiling equals the preset's own array sizing":
@@ -126,21 +110,14 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check loaded.preset.settings.glowFalloff == GLOW_FALLOFF_MIN
     check loaded.preset.settings.glowWarmth == GLOW_WARMTH_MAX
 
-# ==============================================================================
-# ROUND-TRIP CONTRACT
-# ==============================================================================
-
 suite "Preset Round-Trip Contract":
   test "default preset survives serialize then parse unchanged":
-    ## CONTRACT: toJson -> toJsonString -> parsePreset reproduces the same preset
-    ## WHY: This is the save/load contract every future preset_store call depends on
     let original = defaultPreset()
     let loaded = parsePreset(toJsonString(original))
     check loaded.isOk
     check loaded.preset == original
 
   test "a fully custom preset survives round-trip unchanged":
-    ## CONTRACT: Non-default values for every field round-trip exactly
     var customPreset = defaultPreset()
     customPreset.name = "My Garden"
     customPreset.createdAt = "2026-07-19T12:00:00Z"
@@ -194,8 +171,6 @@ suite "Preset Round-Trip Contract":
     check loaded.preset == customPreset
 
   test "serialized preset is valid JSON carrying the documented top-level keys":
-    ## CONTRACT: the wire shape is
-    ## {schemaVersion, name, createdAt, settings, matrix, chemistry, palette}
     let node = toJson(defaultPreset())
     check node.kind == JObject
     for key in ["schemaVersion", "name", "createdAt", "settings", "matrix",
@@ -209,19 +184,14 @@ suite "Preset Round-Trip Contract":
     check node["palette"].len == preset.MAX_SPECIES
 
   test "a saved preset names no mode":
-    ## CONTRACT: there is one world, so a preset is a POINT in it rather than a
+    ## There is one world, so a preset is a point in it rather than a
     ## selection among worlds. A `mode` key on the wire is a world type under a
     ## label, and every reader then has to decide what it means.
     check not toJson(defaultPreset()).hasKey("mode")
 
-# ==============================================================================
-# SCHEMA VERSION CONTRACT
-# ==============================================================================
-
 suite "Preset Schema Version Contract":
   test "a preset claiming a newer schemaVersion is rejected":
-    ## CONTRACT: validate refuses to interpret fields from a schema it postdates
-    ## WHY: guessing at unknown future fields risks silently corrupting user intent
+    ## Guessing at unknown future fields risks silently corrupting user intent
     let node = %*{
       "schemaVersion": CURRENT_SCHEMA_VERSION + 1,
       "name": "From the future",
@@ -233,7 +203,6 @@ suite "Preset Schema Version Contract":
     check result.errorMessage.len > 0
 
   test "rejection still returns a safe usable default preset":
-    ## CONTRACT: even a rejected load never leaves the caller without a valid Preset
     let node = %*{"schemaVersion": CURRENT_SCHEMA_VERSION + 100}
     let result = validate(node)
     check result.preset == defaultPreset()
@@ -244,8 +213,8 @@ suite "Preset Schema Version Contract":
     check result.isOk
 
   test "a missing schemaVersion is treated as the current version, not rejected":
-    ## BEHAVIORAL: absence degrades to "assume compatible", matching the
-    ## module's defaulting stance for every other missing field
+    ## Absence degrades to "assume compatible", matching the module's
+    ## defaulting stance for every other missing field
     let node = %*{"name": "No version field"}
     let result = validate(node)
     check result.isOk
@@ -256,13 +225,8 @@ suite "Preset Schema Version Contract":
     let result = validate(node)
     check result.isOk
 
-# ==============================================================================
-# MALFORMED INPUT CONTRACT
-# ==============================================================================
-
 suite "Preset Malformed Input Contract":
   test "unparseable JSON text never raises, and is reported as invalid":
-    ## CONTRACT: parsePreset on garbage text degrades to a typed error, never an unhandled exception
     let result = parsePreset("{not: valid json,,,")
     check result.errorKind == pekInvalidJson
     check result.preset == defaultPreset()
@@ -272,8 +236,8 @@ suite "Preset Malformed Input Contract":
     check result.errorKind == pekInvalidJson
 
   test "structurally invalid JSON text is rejected outright: isOk false with a non-empty error":
-    ## CONTRACT: "not JSON at all" is a structural error (pekInvalidJson) and
-    ## never returns isOk == true. This is distinct from a wrong-typed FIELD
+    ## "not JSON at all" is a structural error (pekInvalidJson) and never
+    ## returns isOk == true. This is distinct from a wrong-typed field
     ## inside an otherwise well-formed JSON object, which defaults/clamps
     ## per-field and stays isOk == true (see "wrong-typed scalar fields
     ## default rather than crash" below) — the schema's documented
@@ -291,7 +255,6 @@ suite "Preset Malformed Input Contract":
     check result.errorKind == pekInvalidJson
 
   test "wrong-typed scalar fields default rather than crash":
-    ## CONTRACT: a string where a number is expected degrades to the field default
     let node = %*{
       "schemaVersion": CURRENT_SCHEMA_VERSION,
       "settings": {
@@ -348,7 +311,7 @@ suite "Preset Malformed Input Contract":
     check result.preset.chemistry[2] == defaultChemistry()[2]
 
   test "chemistry clamps each channel against its own asymmetric bound":
-    ## Tropism's ceiling sits below the magnitude of its floor (design D5), so
+    ## Tropism's ceiling sits below the magnitude of its floor, so
     ## the two channels cannot share one clamp. A hand-edited preset asking for
     ## strong positive tropism comes back to the bound rather than landing raw
     ## in the uniform.
@@ -360,12 +323,8 @@ suite "Preset Malformed Input Contract":
     check result.preset.chemistry[3] == TROPISM_MIN
 
 
-# ==============================================================================
-# LEGACY TRANSLATION CONTRACT (design D8)
-# ==============================================================================
-
 suite "A Legacy Preset Loads As The World It Described":
-  # THE MECHANISM IS TRANSLATION, NOT SUBTRACTION, and these tests make the
+  # The mechanism is translation, not subtraction, and these tests make the
   # difference observable. A v1 file carries a value for every scalar, including
   # the couplings its mode hides, so treating an absent strength as zero does
   # nothing at all — nothing is absent — and the hidden defaults switch their
@@ -387,9 +346,9 @@ suite "A Legacy Preset Loads As The World It Described":
     }
 
   test "a legacy particle-life preset does NOT switch chemistry on":
-    ## THE REGRESSION SUBTRACTION SHIPS. This file carries deposit 0.02 and
-    ## field force 30 from sliders sitting at their defaults behind a mode that
-    ## hides them. A world with no chemistry must not acquire it on reopening.
+    ## This file carries deposit 0.02 and field force 30 from sliders sitting
+    ## at their defaults behind a mode that hides them. A world with no
+    ## chemistry must not acquire it on reopening.
     let result = validate(v1Preset("particle-life"))
     check result.isOk
     check result.preset.settings.rdDeposit == 0.0
@@ -428,7 +387,7 @@ suite "A Legacy Preset Loads As The World It Described":
     ## later, and non-zero — from reaching back and adding a term to a world
     ## someone saved without one.
     ##
-    ## THE FIXTURE CARRIES A CROWDING STRENGTH ON PURPOSE. Pinning that a value
+    ## The fixture carries a crowding strength on purpose. Pinning that a value
     ## the file DOES hold still decodes to zero is what makes this able to fail:
     ## a fixture without the field would pass with or without the pin, for as
     ## long as the shipped default happened to be zero.
@@ -442,10 +401,10 @@ suite "A Legacy Preset Loads As The World It Described":
     ## The smoothing radius was the whole interaction radius when a v1 file was
     ## written, so that is the kernel the world it describes ran. The legacy
     ## branch pins the fraction to 1.0 rather than letting it default, which is
-    ## what stops the shipped default — measured later by C2.6, and below 1 —
+    ## what stops the shipped default — measured later, and below 1 —
     ## from rescaling a fluid someone already watched.
     ##
-    ## THE FIXTURE CARRIES A FRACTION ON PURPOSE, for the reason the crowding
+    ## The fixture carries a fraction on purpose, for the reason the crowding
     ## test above carries a strength: pinning that a value the file DOES hold
     ## still decodes to 1.0 is what makes this able to fail, where a fixture
     ## without the key would pass for as long as the default happened to be 1.
@@ -507,10 +466,6 @@ suite "A Legacy Preset Loads As The World It Described":
     }
     let result = validate(node)
     check result.preset.settings.forceStrength == FORCE_STRENGTH_MAX
-
-# ==============================================================================
-# CLAMP BEHAVIOR CONTRACT
-# ==============================================================================
 
 suite "Preset Clamp Behavior Contract":
   test "particleCount above the slider max clamps down to the max":
@@ -597,8 +552,8 @@ suite "Preset Clamp Behavior Contract":
     check result.preset.settings.temperature == TEMPERATURE_MAX
 
   test "a missing bloom field defaults rather than crashing":
-    ## A pre-S9 preset carries no bloom fields; they must fall back to the
-    ## defaults on load without a schema bump.
+    ## A preset missing the bloom fields entirely falls back to the defaults
+    ## on load without a schema bump.
     let result = validate(%*{"settings": {}})
     check result.preset.settings.bloomEnabled == defaultSettings().bloomEnabled
     check result.preset.settings.exposure == defaultSettings().exposure
@@ -618,8 +573,8 @@ suite "Preset Clamp Behavior Contract":
     check result.preset.palette[0] == [PALETTE_CHANNEL_MAX, PALETTE_CHANNEL_MIN, 0.5]
 
   test "the default preset's own settings already fall inside every clamp range":
-    ## DEFENSIVE: validating the defaults must be a no-op; otherwise
-    ## defaultPreset() and validate(toJson(defaultPreset())) would diverge
+    ## Validating the defaults must be a no-op; otherwise defaultPreset() and
+    ## validate(toJson(defaultPreset())) would diverge
     let defaults = defaultSettings()
     check defaults.particleCount == clamp(defaults.particleCount, PARTICLE_COUNT_MIN, PARTICLE_COUNT_MAX)
     check defaults.speciesCount == clamp(defaults.speciesCount, SPECIES_COUNT_MIN, SPECIES_COUNT_MAX)
@@ -639,20 +594,14 @@ suite "Preset Clamp Behavior Contract":
     check defaults.expRepulsionAlpha == clamp(defaults.expRepulsionAlpha, EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX)
     check defaults.expAttractionBeta == clamp(defaults.expAttractionBeta, EXP_ATTRACTION_BETA_MIN, EXP_ATTRACTION_BETA_MAX)
 
-# ==============================================================================
-# MIGRATION HOOK CONTRACT
-# ==============================================================================
-
 suite "Preset Migration Hook Contract":
   test "migrate is the identity transform at the current version":
-    ## CONTRACT: migrating a node already at CURRENT_SCHEMA_VERSION returns it
-    ## unchanged — no step applies to a preset that needs no upgrade
     let node = toJson(defaultPreset())
     let migrated = migrate(node, CURRENT_SCHEMA_VERSION)
     check migrated == node
 
   test "validate routes an older-versioned node through migrate before field validation":
-    ## FIXTURE: a pre-v1 preset (schemaVersion 0) proves the migrate hook is
+    ## A pre-v1 preset (schemaVersion 0) proves the migrate hook is
     ## wired into the validate path rather than only defined. A v0-tagged node
     ## falls through the same steps a v1 node does and is then field-validated,
     ## so this pins the wiring each added migration step extends.
@@ -683,19 +632,13 @@ suite "Preset Migration Hook Contract":
     check result.preset.schemaVersion == CURRENT_SCHEMA_VERSION
 
 
-# ==============================================================================
-# A PRESET IS INTENT, WHATEVER FLUID IT LANDS IN
-# ==============================================================================
-#
 # The stiffness a preset carries is stored absolutely and clamped at load
-# against the ENVELOPE, exactly as every other field is. What the fluid can
+# against the envelope, exactly as every other field is. What the fluid can
 # honour of it depends on the radius fraction and substeps that same preset
-# carries, and that bound applies where the value takes effect — after the apply
-# lands, from the final state, never during the apply.
-#
-# WHICH IS WHY THE APPLY PATH NEEDS NO CHANGE. presetApplySteps writes every
-# scalar in one pasScalars step (src/ui/presets/preset_store_core.nim), so there
-# is no ordering among scalars to get wrong, and none is needed.
+# carries, and that bound applies only where the value takes effect — after
+# the apply lands, from the final state, never during the apply. That is why
+# presetApplySteps needs no ordering among scalars: it writes every scalar in
+# one pass (src/ui/presets/preset_store_core.nim).
 
 suite "A Preset's Stiffness Survives A Fluid That Cannot Hold It":
   test "a preset carrying envelope-max stiffness with a narrow kernel round-trips intact":

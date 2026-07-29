@@ -1,16 +1,8 @@
-# ==============================================================================
-# PARTICLE GARDEN - PARAM DESCRIPTOR TESTS
-# ==============================================================================
-#
 # Behavioral tests for the parameter descriptor table — the boundary contract
 # the TypeScript UI reads instead of duplicating any range, default, or step.
 # Every descriptor must agree with config_ranges (the range authority) and
 # with the typed state defaults (the default authority), so the UI cannot
 # drift from the simulation.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, sets, math, strutils, sequtils]
 import ../src/ui/api/param_descriptor
@@ -72,9 +64,9 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       "repulsionEnd", "attractionPeak", "expRepulsionAlpha",
       "expAttractionBeta",
       "paletteSaturation", "paletteLightness",
-      # fluidStrength is the coupling strength design D14 introduces: the
-      # fluid's other three numbers say what kind of fluid it is, and none says
-      # how much of it acts.
+      # fluidStrength is the coupling strength: the fluid's other three
+      # numbers say what kind of fluid it is, and none says how much of it
+      # acts.
       "fluidStrength",
       # sphRadiusFraction sets the neighbourhood the other fluid numbers are
       # measured in: the smoothing radius as a fraction of the interaction
@@ -82,8 +74,7 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       "sphRadiusFraction",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
       "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
-      # climateSpeed drives the drifting climate. This set is the interface
-      # contract with the panel, so every id the panel reads appears in it.
+      # climateSpeed drives the drifting climate.
       "climateSpeed",
       # cameraZoom is view state, routed through psCamera to the live camera
       # rather than to CONFIG, which is also why it never reaches the preset
@@ -153,9 +144,8 @@ suite "Hints Name Only Reachable Slider Positions":
   test "every hint numeral and notch coordinate stays reachable under its parameter's curve":
     # The curve warps the handle's travel, never the value set — so every
     # position a hint or a notch names must survive the round trip through
-    # the curve pair exactly (design E5). Under cLinear this repeats the
-    # lattice checks above; the moment a remedy assigns a curve, it starts
-    # earning its keep.
+    # the curve pair exactly. Under cLinear this repeats the lattice checks
+    # above; the moment a remedy assigns a curve, it starts earning its keep.
     for descriptor in descriptors:
       if descriptor.arity == paPerSpecies:
         continue # a grid cell has no track to curve
@@ -169,8 +159,8 @@ suite "Hints Name Only Reachable Slider Positions":
   test "the regime coordinates are no longer carried as hint numerals":
     # The regime coordinates live in the notches, checked by "Notches Mark Only
     # Reachable Positions" below under the same reachability rule plus a label.
-    # A hint restating them is a second copy free to drift — one naming a coral
-    # at (0.055, 0.062) against the regime table's (0.082, 0.059).
+    # A hint restating them is a second copy free to drift — one naming a
+    # regime coordinate that no longer matches what the regime table holds.
     check numeralsIn(byId("rdFeed").hint).len == 0
     check numeralsIn(byId("rdKill").hint).len == 0
     check byId("rdFeed").notches.len == RD_REGIMES.len
@@ -377,8 +367,8 @@ suite "Store Routing Sends Each Parameter To Its Mutation Path":
       check descriptor.reinitOnCommit == expectReinit
 
 suite "Every Routed Id Names A Field Of Its Store":
-  # THE relation src/web_api.nim's generated dispatch stands on (design E6).
-  # That dispatch walks the routed record's field names and assigns the one the
+  # The relation src/web_api.nim's generated dispatch stands on. That dispatch
+  # walks the routed record's field names and assigns the one the
   # descriptor id spells, so an id naming no field would write nowhere; the
   # build gate there turns that into a compile error, and these tests report the
   # same break natively, in a second rather than after a JS compile.
@@ -593,17 +583,15 @@ suite "Notches Mark Only Reachable Positions":
       it.value == RD_REGIME_HIGH_FEED_DEPOSIT)
 
   test "the particle-count notch is only the default — its range ceiling is the one budget":
-    # PARTICLE_BUDGET is gone: PARTICLE_COUNT_MAX (the allocation capability)
-    # is the only ceiling this slider has, and "descriptors agree with the
-    # range authority" above already pins its max there. No second notch
-    # survives to drift from it.
+    # PARTICLE_COUNT_MAX (the allocation capability) is the only ceiling this
+    # slider has, and "descriptors agree with the range authority" above
+    # already pins its max there. No second notch survives to drift from it.
     check byId("particleCount").notches.len == 1
     check byId("particleCount").notches[0].label == "default"
 
   test "every coupling strength offers a notch at zero":
-    # Zero is an ordinary value of a coupling strength (design D13), and an
-    # unmarked off position hides the setting that isolates what a coupling
-    # contributes.
+    # Zero is an ordinary value of a coupling strength, and an unmarked off
+    # position hides the setting that isolates what a coupling contributes.
     for id in ["forceStrength", "fluidStrength", "rdDeposit", "rdFieldForce"]:
       let descriptor = byId(id)
       checkpoint("coupling strength " & id)
@@ -618,10 +606,6 @@ suite "Notches Mark Only Reachable Positions":
       check value <= CAMERA_ZOOM_MAX
 
 
-# ==============================================================================
-# A BOUND MAY DERIVE FROM OTHER PARAMETERS
-# ==============================================================================
-#
 # Most bounds are the envelope in the descriptor and nothing else. One is not:
 # the stiffness the fluid can hold depends on how far its kernel reaches, how
 # many substeps it takes, and how long a frame is, so the descriptor cites a

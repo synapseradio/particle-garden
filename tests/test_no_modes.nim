@@ -1,6 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - NO MODES GUARD TESTS
-# ==============================================================================
 #
 # The simulation MODE concept is deleted: a world composes couplings freely,
 # never selects one of a fixed list of kinds. This suite sweeps src/ and
@@ -12,18 +9,10 @@
 # the directory it reads was actually found, so a sweep over an empty or
 # wrong-cwd tree cannot pass by finding nothing. This suite follows the same
 # shape: a sweep, plus a check that the sweep looked at real files.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, os, strutils]
 
 const NO_MODES_TESTS_LOADED* = true
-
-# ==============================================================================
-# SECTION 1: THE FORBIDDEN VOCABULARY
-# ==============================================================================
 
 const FORBIDDEN_IDENTIFIERS = [
   "SimKind", "simKindId", "parseSimKind", "couplingsFor", "controlGroupsFor",
@@ -46,9 +35,6 @@ const FORBIDDEN_MODE_STRINGS = [
 const SWEEP_ROOTS = ["src", "web-ui" / "src"]
 const SWEEP_EXTENSIONS = [".nim", ".ts", ".tsx"]
 
-# ==============================================================================
-# SECTION 2: THE ONE EXEMPTION
-# ==============================================================================
 #
 # src/preset.nim's LEGACY_MODE_COUPLINGS maps each pre-2.0 mode id to the
 # coupling strengths that mode meant, so migrate's fromVersion < 2 branch can
@@ -67,10 +53,8 @@ const LEGACY_TABLE_START = "const LEGACY_MODE_COUPLINGS"
 const LEGACY_TABLE_END = "proc legacyCouplingsFor"
 
 func maskLegacyTable(content: string): string =
-  ## Blanks the LEGACY_MODE_COUPLINGS declaration and its doc comment (the
-  ## span from LEGACY_TABLE_START up to LEGACY_TABLE_END) to spaces,
-  ## preserving newlines so every other line keeps its real line number, and
-  ## leaving nothing in that span for the mode-string sweep to match.
+  ## Preserves newlines so every other line keeps its real line number; the
+  ## masked span leaves nothing for the mode-string sweep to match.
   result = content
   let startIdx = content.find(LEGACY_TABLE_START)
   let endIdx = content.find(LEGACY_TABLE_END)
@@ -78,10 +62,6 @@ func maskLegacyTable(content: string): string =
     for i in startIdx ..< endIdx:
       if result[i] != '\n':
         result[i] = ' '
-
-# ==============================================================================
-# SECTION 3: TEXT SCANNING
-# ==============================================================================
 
 func isIdentChar(c: char): bool =
   c in {'a'..'z', 'A'..'Z', '0'..'9', '_'}
@@ -124,10 +104,6 @@ proc sweptFiles(): seq[string] =
     for path in walkDirRec(root):
       if path.splitFile.ext in SWEEP_EXTENSIONS:
         result.add path
-
-# ==============================================================================
-# SECTION 4: THE GUARD
-# ==============================================================================
 
 suite "The Legacy Mode Table Stays Honest":
   test "LEGACY_MODE_COUPLINGS is where the exemption says it is":

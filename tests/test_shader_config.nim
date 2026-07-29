@@ -1,15 +1,7 @@
-# ==============================================================================
-# PARTICLE GARDEN - SHADER CONFIG TESTS
-# ==============================================================================
-#
 # Behavioral tests for the shader configuration accessors. tools/wgsl_bundle.nim
 # feeds these values into WGSL placeholder substitution, so a bad lookup silently
 # misconfigures the GPU (wrong workgroup size, or a zero tunable that divides by
 # zero in atomic accumulation). Tests run against the default activeConfig.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[math, strutils, tables, unittest]
 import ../src/shader_config
@@ -54,8 +46,8 @@ suite "Tunable Constants Stay In Physical Range":
   test "the emitted fixed-point reciprocal inverts the emitted scale":
     # fixed_point.wgsl declares both FIXED_POINT_SCALE and its reciprocal, and
     # multiplies by the latter to decode accumulated forces. Deriving the
-    # reciprocal from the scale is the whole point: the two were independent
-    # hand-written literals before, free to drift apart silently.
+    # reciprocal from the scale here is what keeps the two from drifting
+    # apart independently.
     let placeholders = getPlaceholderMap()
     let scale = parseFloat(placeholders["TUNABLE_FIXED_POINT_SCALE"])
     let inverse = parseFloat(placeholders["TUNABLE_INV_FIXED_POINT_SCALE"])
@@ -70,7 +62,7 @@ suite "Tunable Constants Stay In Physical Range":
 const glowTunables = [
   ## The glow curve constants glow.wgsl consumes as {{TUNABLE_GLOW_*}}
   ## placeholders, with the defaults that reproduce the shader's former
-  ## hard-coded values (glow.wgsl's retired const block).
+  ## hard-coded values.
   ("GLOW_VELOCITY_LOG_SCALE", 5.0),
   ("GLOW_VELOCITY_BASE", 0.5),
   ("GLOW_DENSITY_SCALE", 0.15),
@@ -83,8 +75,8 @@ const glowTunables = [
 
 suite "Glow Tunables Feed The Bundler":
   test "getTunableFloat resolves every glow curve constant to its appearance-preserving default":
-    # CONTRACT: these defaults must equal the constants glow.wgsl hard-coded
-    # before S1, or the default visuals change silently.
+    # CONTRACT: these defaults must equal the values the glow knobs replaced,
+    # or the default visuals change silently.
     for (name, expected) in glowTunables:
       check getTunableFloat(name) == expected
 

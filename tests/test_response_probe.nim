@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - RESPONSE PROBE TESTS
-# ==============================================================================
-#
 # Two layers. The coverage relations pin that the probe apparatus reaches the
 # WHOLE descriptor table — every parameter probed or exempted with a reason,
 # every carried probe id resolving, no orphans — before any metric runs. The
@@ -17,10 +13,6 @@
 # Every assertion and the emitted report read ONE shared measuring pass
 # (allSliceMeasurements), so the stepped field probes integrate their grids
 # once however many claims are checked against them.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[os, sets, strutils, tables, unittest]
 

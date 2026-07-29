@@ -1,19 +1,5 @@
-# ==============================================================================
-# PARTICLE GARDEN - GRID CORE TESTS
-# ==============================================================================
-#
-# Unit tests for pure grid functions in grid_core.nim
-#
-# Run with: just test
-#
-# ==============================================================================
-
 import std/unittest
 import ../src/grid_core
-
-# ==============================================================================
-# TEST HELPERS
-# ==============================================================================
 
 const
   EPSILON* = 1e-6
@@ -21,24 +7,19 @@ const
 proc approxEq(lhs, rhs: float; epsilon: float = EPSILON): bool =
   abs(lhs - rhs) <= epsilon
 
-# ==============================================================================
-# GRID DIMENSION TESTS
-# ==============================================================================
-
 suite "Grid Dimension Computation":
   test "computes grid from canvas and interaction radius":
     let (gridW, gridH, cellSize) = computeGridDims(
       canvasW = 1000, canvasH = 800, interactionRadius = 50)
 
-    check gridW == 20  # 1000 / 50
-    check gridH == 16  # 800 / 50
+    check gridW == 20
+    check gridH == 16
     check cellSize == 50
 
   test "clamps minimum grid to 1x1":
     let (gridW, gridH, _) = computeGridDims(
       canvasW = 10, canvasH = 10, interactionRadius = 100)
 
-    # Canvas smaller than cell size
     check gridW == 1
     check gridH == 1
 
@@ -46,7 +27,6 @@ suite "Grid Dimension Computation":
     let (gridW, gridH, _) = computeGridDims(
       canvasW = 100000, canvasH = 100000, interactionRadius = 10)
 
-    # Would be 10000x10000, clamped to 256x256
     check gridW == MAX_GRID
     check gridH == MAX_GRID
 
@@ -54,7 +34,6 @@ suite "Grid Dimension Computation":
     let (gridW, gridH, _) = computeGridDims(
       canvasW = 1920, canvasH = 1080, interactionRadius = 50)
 
-    # 1920/50 = 38.4 -> 38, 1080/50 = 21.6 -> 21
     check gridW == 38
     check gridH == 21
 
@@ -69,14 +48,13 @@ suite "Inverse Cell Dimensions":
     let (invCellW, invCellH) = computeInverseCellDims(
       gridW = 10, gridH = 8, canvasW = 1000.0, canvasH = 800.0)
 
-    check approxEq(invCellW, 0.01)  # 10/1000
-    check approxEq(invCellH, 0.01)  # 8/800
+    check approxEq(invCellW, 0.01)
+    check approxEq(invCellH, 0.01)
 
   test "multiplication gives same result as division":
     let (invCellW, invCellH) = computeInverseCellDims(
       gridW = 20, gridH = 16, canvasW = 1000.0, canvasH = 800.0)
 
-    # Test that px * invCellW gives same cell as px / cellW
     let px = 350.0
     let py = 450.0
 
@@ -90,10 +68,6 @@ suite "Inverse Cell Dimensions":
     check cellY_mult == cellY_div
 
 
-# ==============================================================================
-# CELL INDEX TESTS
-# ==============================================================================
-
 suite "Position to Cell Index":
   test "maps center position to correct cell":
     let idx = positionToCellIndex(
@@ -101,7 +75,6 @@ suite "Position to Cell Index":
       gridW = 10, gridH = 10,
       invCellW = 0.01, invCellH = 0.01)  # 10/1000
 
-    # Cell (2, 3) -> index 32
     check idx == 32
 
   test "clamps negative positions to first row/column":
@@ -110,7 +83,7 @@ suite "Position to Cell Index":
       gridW = 10, gridH = 10,
       invCellW = 0.01, invCellH = 0.01)
 
-    check idx == 0  # Cell (0, 0)
+    check idx == 0
 
   test "clamps positions beyond canvas to last row/column":
     let idx = positionToCellIndex(
@@ -118,16 +91,15 @@ suite "Position to Cell Index":
       gridW = 10, gridH = 10,
       invCellW = 0.01, invCellH = 0.01)
 
-    check idx == 99  # Cell (9, 9) = 9*10 + 9
+    check idx == 99
 
   test "handles edge of canvas":
-    # Position at 999 should map to cell 9 (0-indexed)
     let idx = positionToCellIndex(
       px = 999.0, py = 999.0,
       gridW = 10, gridH = 10,
       invCellW = 0.01, invCellH = 0.01)
 
-    check idx == 99  # Cell (9, 9)
+    check idx == 99
 
   test "all positions map to valid cells":
     let gridW = 20
@@ -135,13 +107,11 @@ suite "Position to Cell Index":
     let invCellW = 20.0 / 1000.0
     let invCellH = 16.0 / 800.0
 
-    # Test various positions including edge cases
     for px in [-100.0, 0.0, 500.0, 999.0, 1500.0]:
       for py in [-100.0, 0.0, 400.0, 799.0, 1500.0]:
         let idx = positionToCellIndex(px, py, gridW, gridH, invCellW, invCellH)
         check idx >= 0
         check idx < gridW * gridH
-
 
 suite "Cell Index to Coordinates":
   test "converts index 0 to (0, 0)":
@@ -163,10 +133,6 @@ suite "Cell Index to Coordinates":
         check rx == cx
         check ry == cy
 
-
-# ==============================================================================
-# PREFIX SUM TESTS
-# ==============================================================================
 
 suite "Prefix Sum Computation":
   test "computes exclusive prefix sum":
@@ -219,14 +185,14 @@ suite "Grid Offset Validation":
   test "rejects out-of-bounds access":
     let counts = @[3, 2, 5]
     let offsets = @[0, 3, 6]  # Last cell would access indices 6-10
-    let particleCount = 9    # Only 9 particles
+    let particleCount = 9
 
     check not validateGridOffsets(offsets, counts, particleCount)
 
   test "rejects wrong total count":
-    let counts = @[3, 2, 5]  # Total = 10
+    let counts = @[3, 2, 5]
     let offsets = @[0, 3, 5]
-    let particleCount = 11    # Mismatch
+    let particleCount = 11
 
     check not validateGridOffsets(offsets, counts, particleCount)
 
@@ -251,10 +217,6 @@ suite "Grid Offset Validation":
 
     check not validateGridOffsets(offsets, counts, particleCount)
 
-
-# ==============================================================================
-# INVARIANT CHECKING TESTS
-# ==============================================================================
 
 suite "Cell Index Validation":
   test "valid indices pass":

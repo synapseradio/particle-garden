@@ -1,6 +1,4 @@
-# ==============================================================================
 # PARTICLE GARDEN - DORMANCY AND HORIZON TESTS
-# ==============================================================================
 #
 # Dormancy: what a predicate READS is checked here (named fields walked
 # against the state records, so a rename breaks loudly); what it MEANS is
@@ -8,10 +6,6 @@
 # exists — the field parameters run through the stepped alive-fraction
 # harness, every other non-instant declaration carries the review label,
 # and this suite holds the labels to that rule in both directions.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[sets, tables, unittest]
 

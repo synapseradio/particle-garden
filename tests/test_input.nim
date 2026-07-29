@@ -1,14 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - INPUT STATE TESTS
-# ==============================================================================
-#
-# Unit tests for input state and event handlers.
-# Tests pure state transitions without DOM.
-#
-# Run with: just test
-#
-# ==============================================================================
-
 import std/[sets, unittest]
 import ../src/ui/state/input_state
 import ../src/ui/input/binding_table
@@ -16,12 +5,7 @@ import ../src/ui/input/key_handler
 import ../src/ui/input/mouse_handler
 import ../src/ui/input/touch_handler
 
-# Exported symbol for test_all.nim to reference
 const INPUT_TESTS_LOADED* = true
-
-# ==============================================================================
-# INPUT STATE TESTS
-# ==============================================================================
 
 suite "InputState - Basic Operations":
   test "initInputState creates zeroed state":
@@ -82,7 +66,7 @@ suite "InputState - Blast Effect":
 
     check inactive.hasActiveBlast() == false
     check active.hasActiveBlast() == true
-    check decayed.hasActiveBlast() == false  # Below threshold
+    check decayed.hasActiveBlast() == false
 
 
 suite "InputState - Queries":
@@ -98,10 +82,6 @@ suite "InputState - Queries":
     let state = initInputState()
     check state.isAnyButtonDown() == false
 
-
-# ==============================================================================
-# MOUSE HANDLER TESTS
-# ==============================================================================
 
 suite "MouseHandler - Mouse Down":
   test "left click sets mouseDown":
@@ -210,10 +190,6 @@ suite "MouseHandler - Frame Update":
     check state.blastStrength == 0.0
 
 
-# ==============================================================================
-# TOUCH HANDLER TESTS
-# ==============================================================================
-
 suite "TouchHandler - Touch Start":
   test "first touch acts as left mouse down":
     let event = TouchEventData(touches: @[
@@ -268,7 +244,7 @@ suite "TouchHandler - Touch Move":
     ])
     let state = handleTouchMove(initInputState(), event)
 
-    check state.mouseX == 100.0  # First touch only
+    check state.mouseX == 100.0
     check state.mouseY == 100.0
 
 
@@ -299,8 +275,8 @@ suite "TouchHandler - Two Finger Tap":
     check state.blastStrength > 0.0
 
   test "the midpoint does not depend on which finger is reported first":
-    # Guards the property the comment above claims: the browser may report the
-    # two touches in either order.
+    # Guards against order-dependence: the browser may report the two touches
+    # in either order, and the midpoint must not depend on which.
     let forward = TouchEventData(touches: @[
       TouchPoint(clientX: 10.0, clientY: 20.0),
       TouchPoint(clientX: 90.0, clientY: 60.0)])

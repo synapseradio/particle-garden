@@ -1,15 +1,7 @@
-# ==============================================================================
-# PARTICLE GARDEN - BLOOM CORE TESTS
-# ==============================================================================
-#
 # Behavioral tests for src/bloom_core.nim: the separable Gaussian blur kernel
 # computed in Nim and substituted into blur.wgsl. A bad kernel would blur the
 # HDR bloom source with the wrong shape or brightness — visible, but invisible
 # to the shader compiler, so it is pinned here.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, strutils]
 import ../src/bloom_core
@@ -37,7 +29,6 @@ suite "Gaussian Kernel Is Normalized, Symmetric, And Falls Off From The Centre":
   test "weights fall off monotonically as they leave the centre":
     let kernel = gaussianKernel1D(BLOOM_BLUR_RADIUS, BLOOM_BLUR_SIGMA)
     for offset in 1 .. BLOOM_BLUR_RADIUS:
-      # Each tap is strictly dimmer than the one nearer the centre.
       check kernel[BLOOM_BLUR_RADIUS + offset] <
             kernel[BLOOM_BLUR_RADIUS + offset - 1]
 
@@ -83,10 +74,11 @@ suite "WGSL Weight Emission":
 
 suite "Tonemap Grade Mirror":
   # web/shaders/modules/tonemap_grade.wgsl: exposure scales the HDR light,
-  # the Narkowicz ACES curve maps it to display range, then saturation mixes
-  # against luminance, contrast pivots at 0.5, and temperature splits the
-  # red/blue channels by a tenth of its value. These pin the mirror to that
-  # chain so the grading probes measure the shipped math.
+  # an ACES curve maps it to display range, then saturation mixes against
+  # luminance, contrast pivots at 0.5, and temperature splits the red/blue
+  # channels by a tenth of its value. These pin the mirror to that chain so
+  # the grading probes measure the shipped math. Narkowicz ACES fit;
+  # citation in web/shaders/modules/tonemap_grade.wgsl.
 
   test "aces is anchored at black and saturates toward white":
     check acesFilmic(0.0) == 0.0

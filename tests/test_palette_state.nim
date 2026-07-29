@@ -1,32 +1,21 @@
-# ==============================================================================
-# PARTICLE GARDEN - PALETTE EDITOR STATE TESTS
-# ==============================================================================
-#
 # Unit tests for the palette editor's pure typed state in
 # ui/state/palette_state.nim: determinism, scheme inertness (mirroring
 # palette.nim's documented psOpenColor inertness both ways), scheme-id
 # round-trip, defaults, and channel range invariants.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/ui/state/palette_state
 import ../src/config_ranges
 
-# Exported symbol for test_all.nim to reference
 const PALETTE_STATE_TESTS_LOADED* = true
 
 const
   EPSILON = 1e-9
 
 proc approxEq(left, right: float; epsilon: float = EPSILON): bool =
-  ## Epsilon-based float comparison for testing.
   abs(left - right) <= epsilon
 
 proc palettesEqual(left, right: seq[RgbColor]): bool =
-  ## Element-wise epsilon comparison of two palettes.
   if left.len != right.len:
     return false
   for colorIndex in 0 ..< left.len:
@@ -36,19 +25,11 @@ proc palettesEqual(left, right: seq[RgbColor]): bool =
       return false
   true
 
-# ==============================================================================
-# DETERMINISM
-# ==============================================================================
-
 suite "PaletteEditorState - Determinism":
   test "equal states produce element-wise equal palettes":
     let stateA = PaletteEditorState(scheme: psGolden, saturation: 0.6, lightness: 0.4)
     let stateB = PaletteEditorState(scheme: psGolden, saturation: 0.6, lightness: 0.4)
     check palettesEqual(paletteFor(stateA), paletteFor(stateB))
-
-# ==============================================================================
-# LENGTH INVARIANT
-# ==============================================================================
 
 suite "PaletteEditorState - Length Invariant":
   test "paletteFor returns MAX_SPECIES colors for every scheme":
@@ -56,10 +37,7 @@ suite "PaletteEditorState - Length Invariant":
       let state = PaletteEditorState(scheme: scheme, saturation: 0.7, lightness: 0.5)
       check paletteFor(state).len == MAX_SPECIES
 
-# ==============================================================================
-# SCHEME INERTNESS (psOpenColor ignores saturation/lightness; others don't)
-# ==============================================================================
-
+# psOpenColor ignores saturation/lightness differences; the other schemes don't.
 suite "PaletteEditorState - Scheme Inertness":
   test "psOpenColor ignores saturation/lightness differences":
     let stateA = PaletteEditorState(scheme: psOpenColor, saturation: 0.1, lightness: 0.9)
@@ -71,10 +49,6 @@ suite "PaletteEditorState - Scheme Inertness":
     let stateB = PaletteEditorState(scheme: psGolden, saturation: 0.9, lightness: 0.1)
     check not palettesEqual(paletteFor(stateA), paletteFor(stateB))
 
-# ==============================================================================
-# SCHEME ID ROUND-TRIP
-# ==============================================================================
-
 suite "PaletteEditorState - Scheme Id Round-Trip":
   test "parsePaletteScheme inverts schemeId for every scheme":
     for scheme in PaletteScheme:
@@ -83,10 +57,6 @@ suite "PaletteEditorState - Scheme Id Round-Trip":
   test "an unknown id raises ValueError":
     expect ValueError:
       discard parsePaletteScheme("not-a-real-scheme")
-
-# ==============================================================================
-# DEFAULTS
-# ==============================================================================
 
 suite "PaletteEditorState - Defaults":
   test "initPaletteEditorState defaults to psOpenColor":
@@ -104,10 +74,7 @@ suite "PaletteEditorState - Defaults":
     check state.lightness >= PALETTE_LIGHTNESS_MIN and
       state.lightness <= PALETTE_LIGHTNESS_MAX
 
-# ==============================================================================
-# CUSTOM FLAG (preset-loaded colors suspend the generated palette)
-# ==============================================================================
-
+# Preset-loaded colors suspend the generated palette.
 suite "PaletteEditorState - Custom Flag":
   test "the initial state is not custom":
     check initPaletteEditorState().isCustom == false
@@ -119,10 +86,6 @@ suite "PaletteEditorState - Custom Flag":
     let state = initPaletteEditorState().withCustom().withScheme(psGolden)
     check state.scheme == psGolden
     check state.isCustom == false
-
-# ==============================================================================
-# CHANNEL RANGE
-# ==============================================================================
 
 suite "PaletteEditorState - Channel Range":
   test "every channel of every scheme's palette lies within [0, 1]":

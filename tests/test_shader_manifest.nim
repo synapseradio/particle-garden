@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - SHADER MANIFEST TESTS
-# ==============================================================================
-#
 # Relation tests for src/shader_manifest.nim against src/sim_registry.nim. The
 # manifest lists the compute shaders the world needs; the frame description
 # lists the pipeline keys a world dispatches. These must agree: a frame that
@@ -11,10 +7,6 @@
 #
 # The relation is swept across the corners of the strength space, so a pipeline
 # reachable only from some setting of some strength is still covered.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/[unittest, sets, strutils]
 import ../src/sim_registry
@@ -39,10 +31,6 @@ let manifestKeys = block:
 
 suite "Every Dispatched Pipeline Has A Registered Shader Spec":
   test "every key any world dispatches is registered":
-    # THE red light: a pipelineKey dispatched by a frame with no matching
-    # ShaderSpec means the pipeline is never loaded or created. Swept over the
-    # corners of the strength space, so a pass reachable only when one coupling
-    # acts is still covered.
     for couplings in ALL_COUPLINGS:
       for dispatchKey in dispatchKeysOf(buildFrame(couplings)):
         if dispatchKey notin manifestKeys:

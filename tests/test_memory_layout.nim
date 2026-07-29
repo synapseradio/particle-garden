@@ -1,23 +1,9 @@
-# ==============================================================================
 # PARTICLE GARDEN - MEMORY LAYOUT TESTS
-# ==============================================================================
-#
-# Unit tests for memory layout constants and offset calculations.
-# Verifies alignment, no overlap, and total size constraints.
-#
-# Run with: just test
-#
-# ==============================================================================
 
 import std/unittest
 import ../src/memory_layout
 
-# Export a constant so test_all.nim can reference it
 const MEMORY_LAYOUT_TESTS_LOADED* = true
-
-# ==============================================================================
-# ALIGNMENT TESTS
-# ==============================================================================
 
 suite "Memory Layout Alignment":
   test "particle buffers are 4-byte aligned":
@@ -41,10 +27,6 @@ suite "Memory Layout Alignment":
   test "matrix is 4-byte aligned":
     check OFFSETS.matrix mod 4 == 0
 
-# ==============================================================================
-# NO OVERLAP TESTS
-# ==============================================================================
-
 suite "Memory Layout No Overlap":
   const PARTICLE_BUFFER_SIZE = MAX_PARTICLES * PARTICLE_STRIDE
   const GRID_CELLS = MAX_GRID * MAX_GRID
@@ -64,10 +46,6 @@ suite "Memory Layout No Overlap":
   test "sync buffer starts after matrix":
     check OFFSETS.sync >= OFFSETS.matrix + 36 * 4
 
-# ==============================================================================
-# SIZE CONSTRAINT TESTS
-# ==============================================================================
-
 suite "Memory Layout Size Constraints":
   test "total size fits in allocated memory":
     let allocatedBytes = WASM_MEMORY_PAGES * 65536
@@ -78,10 +56,6 @@ suite "Memory Layout Size Constraints":
 
   test "data starts at WASM_DATA_OFFSET":
     check OFFSETS.particlesA == WASM_DATA_OFFSET
-
-# ==============================================================================
-# CONSTANT EXPORT TESTS
-# ==============================================================================
 
 suite "Alignment Helper":
   # align4 places every buffer offset; an off-by-one here silently misaligns a
@@ -102,11 +76,10 @@ suite "Alignment Helper":
 
 
 suite "Memory Layout Constants":
-  # Literal-value pins for MAX_PARTICLES / MAX_SPECIES / MAX_GRID / PARTICLE_STRIDE /
-  # WASM_DATA_OFFSET were removed: they were change-detectors that proved no behavior.
-  # The structural contracts now live as compile-time `static: assert`s beside the
-  # constants in memory_layout.nim (PARTICLE_STRIDE, MAX_SPECIES) and are guarded by
-  # the relationship invariants below and the totalSize / non-overlap asserts in source.
+  # Structural contracts for MAX_PARTICLES, MAX_SPECIES, MAX_GRID, PARTICLE_STRIDE,
+  # and WASM_DATA_OFFSET live as compile-time `static: assert`s beside the constants
+  # in memory_layout.nim, guarded here by the relationship invariants below plus the
+  # totalSize / non-overlap asserts in source.
   test "individual offset exports match OFFSETS object":
     check PARTICLES_A_OFFSET == OFFSETS.particlesA
     check PARTICLES_SORTED_OFFSET == OFFSETS.particlesSorted
