@@ -7,6 +7,7 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { GardenAPI, StatsSample } from "./garden-api";
+import { scalarParamIds } from "./lib/param-groups";
 
 // The two coordinates a Gray-Scott regime is. A drag on either lands the pair
 // on a regime or off it, and the drifting climate walks the pair from the frame
@@ -17,9 +18,13 @@ const REGIME_COORDINATE_IDS: readonly string[] = ["rdFeed", "rdKill"];
 export function createPanelController(api: GardenAPI) {
   const descriptors = api.descriptor();
   const byId = new Map(descriptors.map((entry) => [entry.id, entry]));
+  // This store mirrors one number per id, which is what a scalar descriptor
+  // is. The per-species columns hold one value per species in the live array
+  // chemistry() returns, and ChemistryEditor reads that array directly.
+  const scalarIds = scalarParamIds(descriptors);
 
   const initialParams: Record<string, number> = {};
-  for (const entry of descriptors) initialParams[entry.id] = api.getParam(entry.id);
+  for (const id of scalarIds) initialParams[id] = api.getParam(id);
   const [params, setParams] = createStore(initialParams);
 
   const [trails, setTrailsSignal] = createSignal(api.getTrails());
@@ -53,7 +58,7 @@ export function createPanelController(api: GardenAPI) {
   // simulation says they are, so anything that can move several of them at once
   // ends by asking rather than by tracking which ones moved.
   const syncParams = () => {
-    for (const entry of descriptors) syncParam(entry.id);
+    for (const id of scalarIds) syncParam(id);
   };
 
   const syncAll = () => {

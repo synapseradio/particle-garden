@@ -157,6 +157,7 @@ when defined(js):
     of psSimulation: cstring"sim"
     of psRender: cstring"render"
     of psPalette: cstring"palette"
+    of psSpeciesChemistry: cstring"chemistry"
     of psCamera: cstring"camera"
 
   proc descriptorToJs(descriptor: ParamDescriptor): JsObject =
@@ -183,6 +184,16 @@ when defined(js):
       notchObj["label"] = toJs(cstring(entry.label))
       notchArray.push(notchObj)
     result["notches"] = toJs(notchArray)
+    # Cardinality. The panel branches on it to draw a grid row rather than a
+    # slider, and only a per-species entry carries the slot that indexes a
+    # species' stride — so the two shapes stay distinguishable on the TS side
+    # without a second table to tell them apart.
+    case descriptor.arity
+    of paScalar:
+      result["arity"] = toJs(cstring"scalar")
+    of paPerSpecies:
+      result["arity"] = toJs(cstring"perSpecies")
+      result["slot"] = toJs(descriptor.slot)
 
   let descriptorArray = block:
     let jsArray = newJsArray()
@@ -190,43 +201,18 @@ when defined(js):
       jsArray.push(descriptorToJs(descriptor))
     jsArray
 
-  # Per-species chemistry: its own small table, because there is one value per
-  # species rather than one per id. The panel loops over it and uses `slot` to
-  # index the live chemistry array, so no stride arithmetic crosses the
-  # boundary as a literal.
-  let chemistryFields = buildChemistryFields()
-
-  let chemistryFieldsById: Table[string, ChemistryField] = block:
-    var lookup = initTable[string, ChemistryField]()
-    for field in chemistryFields:
-      lookup[field.id] = field
-    lookup
-
-  let chemistryFieldArray = block:
-    let jsArray = newJsArray()
-    for field in chemistryFields:
-      let entry = newJsObject()
-      entry["id"] = toJs(cstring(field.id))
-      entry["label"] = toJs(cstring(field.label))
-      entry["slot"] = toJs(field.slot)
-      entry["min"] = toJs(field.minValue)
-      entry["max"] = toJs(field.maxValue)
-      entry["step"] = toJs(field.step)
-      entry["precision"] = toJs(field.precision)
-      entry["defaultValue"] = toJs(field.defaultValue)
-      entry["hint"] = toJs(cstring(field.hint))
-      jsArray.push(entry)
-    jsArray
-
-  proc clampChemistryImpl(id: string; value: float): float =
-    ## Clamp a chemistry edit against its field's range. An unknown id returns
-    ## the value untouched and warns, the same shape setParamImpl uses — the
-    ## panel builds its inputs from the served table, so an unknown id means
-    ## the two sides have drifted rather than that a user typed something odd.
-    if id notin chemistryFieldsById:
-      consoleWarn(toJs("[gardenAPI] unknown chemistry field: " & id))
+  proc clampParamImpl(id: string; value: float): float =
+    ## Clamp a value against its descriptor's range without writing it. The
+    ## per-species grid needs this because it writes cells of the live
+    ## chemistry array by reference rather than through setParam, and a cell
+    ## must still be bounded by the table. An unknown id returns the value
+    ## untouched and warns: the panel builds its inputs from the served
+    ## descriptors, so an unknown id means the two sides have drifted rather
+    ## than that a user typed something odd.
+    if id notin paramsById:
+      consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
       return value
-    clampChemistryValue(chemistryFieldsById[id], value)
+    clampParamValue(paramsById[id], value)
 
   # ============================================================================
   # SECTION 3: PALETTE EDITOR STATE
@@ -498,7 +484,13 @@ when defined(js):
             CAMERA_ZOOM_MAX.float32),
           0.0'f32, 0.0'f32,
           float32(config.WORLD_W), float32(config.WORLD_H)))
-    else: discard
+    else:
+      # Reached by an id the table serves that this switch does not route: the
+      # per-species columns, whose cells the panel writes into the live
+      # chemistry array by reference. Silence would read as a dead control, so
+      # name the path the caller wanted instead.
+      consoleWarn(toJs("[gardenAPI] setParam does not route " & id &
+        "; per-species values are written through chemistry()"))
 
   # The named regimes, and what selecting one does. A regime is a POINT in the
   # feed/kill plane, so both axes move together — a notch on one axis alone
@@ -743,9 +735,9 @@ when defined(js):
           buffers.matrix[matrixIdx] = sourcePreset.matrix[matrixIdx]
       of pasChemistry:
         # Already clamped per channel by validateChemistry, against the same
-        # asymmetric bounds clampChemistryValue enforces on a slider edit — so
-        # a hand-edited preset cannot put a secretion or tropism into the
-        # uniform that the editor would refuse.
+        # asymmetric bounds the secretion and tropism descriptors enforce on a
+        # grid edit — so a hand-edited preset cannot put a secretion or tropism
+        # into the uniform that the editor would refuse.
         for chemistryIdx in 0 ..< sourcePreset.chemistry.len:
           config.SPECIES_CHEMISTRY[chemistryIdx] =
             sourcePreset.chemistry[chemistryIdx]
@@ -906,6 +898,12 @@ when defined(js):
     result["setParam"] = toJs(proc(id: cstring; value: float) =
       setParamImpl($id, value))
     result["commitParam"] = toJs(proc(id: cstring) = commitParamImpl($id))
+    # Bound a value against its descriptor without writing it, for the controls
+    # that write their own storage: the per-species grid edits cells of the
+    # live chemistry array directly, and this is how those edits meet the same
+    # clamp a slider does.
+    result["clampParam"] = toJs(proc(id: cstring; value: float): float =
+      clampParamImpl($id, value))
 
     # Toggles
     result["getTrails"] = toJs(proc(): bool = CONFIG.trails)
@@ -961,12 +959,11 @@ when defined(js):
 
     # Species chemistry (live Float32Array, same contract as the matrix: the
     # frame loop copies it into the SpeciesChemistry uniform every frame, so an
-    # edit written straight into the array lands on the next frame).
+    # edit written straight into the array lands on the next frame). Which
+    # columns exist, and where each sits inside a species' stride, come from
+    # the descriptor table's per-species entries — there is no second table.
     result["chemistry"] = toJs(proc(): Float32Array = config.SPECIES_CHEMISTRY)
     result["chemistryStride"] = toJs(proc(): int = SPECIES_CHEMISTRY_STRIDE)
-    result["chemistryFields"] = toJs(proc(): JsObject = chemistryFieldArray)
-    result["clampChemistry"] = toJs(proc(id: cstring; value: float): float =
-      clampChemistryImpl($id, value))
 
     # Particles
     result["resetParticles"] = toJs(proc() = triggerParticleReinit())

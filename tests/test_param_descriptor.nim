@@ -30,8 +30,8 @@ proc byId(id: string): ParamDescriptor =
       return descriptor
   raise newException(KeyError, "no descriptor with id: " & id)
 
-suite "Descriptor Table Covers The Full Slider Inventory":
-  test "every slider the panel offers has exactly one descriptor":
+suite "Descriptor Table Covers The Full Tunable Inventory":
+  test "every control the panel offers has exactly one descriptor":
     # The interface contract with the TypeScript UI: these ids, no others.
     let expectedIds = toHashSet([
       "particleCount", "speciesCount", "interactionRadius", "forceStrength",
@@ -55,7 +55,13 @@ suite "Descriptor Table Covers The Full Slider Inventory":
       # cameraZoom is view state, routed through psCamera to the live camera
       # rather than to CONFIG, which is also why it never reaches the preset
       # schema.
-      "cameraZoom"])
+      "cameraZoom",
+      # The per-species chemistry columns. They hold one value per SPECIES
+      # rather than one for the world, which is a cardinality the descriptor
+      # carries, not a reason for a second table: every rule below — range
+      # against the authority, default inside the range, notch reachability,
+      # one clamp — is the same rule a slider answers to.
+      "secretion", "tropism"])
     var seenIds = initHashSet[string]()
     for descriptor in descriptors:
       check descriptor.id notin seenIds
@@ -199,6 +205,11 @@ suite "Descriptors Agree With The Range Authority":
     ("rdDeposit", RD_DEPOSIT_MIN, RD_DEPOSIT_MAX),
     ("rdFieldForce", RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX),
     ("fieldOpacity", FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX),
+    # The per-species columns answer to the same authority as every slider.
+    # TROPISM_MAX is deliberately not -TROPISM_MIN (config_ranges records the
+    # chemotaxis-stability asymmetry), so a symmetric guess here would be wrong.
+    ("secretion", SECRETION_MIN, SECRETION_MAX),
+    ("tropism", TROPISM_MIN, TROPISM_MAX),
   ]
 
   test "every listed parameter's range is the one config_ranges holds":
@@ -256,6 +267,9 @@ suite "Descriptors Agree With The Default Authority":
     # palette.nim
     ("paletteSaturation", DEFAULT_SATURATION),
     ("paletteLightness", DEFAULT_LIGHTNESS),
+    # field_core, which owns what a species does to the field by default
+    ("secretion", RD_DEFAULT_SECRETION),
+    ("tropism", RD_DEFAULT_TROPISM),
   ]
 
   test "every listed parameter's default is the one its authority holds":
@@ -277,6 +291,12 @@ suite "Store Routing Sends Each Parameter To Its Mutation Path":
         check descriptor.store == psPalette
       elif descriptor.id == "cameraZoom":
         check descriptor.store == psCamera
+      elif descriptor.id in ["secretion", "tropism"]:
+        # The per-species columns reach CONFIG too, but by reference rather
+        # than through updateSimulation: the panel writes cells of the live
+        # SPECIES_CHEMISTRY array and the frame loop uploads it. Naming that
+        # path is what keeps setParam from looking like it should serve them.
+        check descriptor.store == psSpeciesChemistry
       else:
         check descriptor.store in [psSimulation, psRender]
 
@@ -324,66 +344,60 @@ suite "Clamping Is The Descriptor's Job":
     check clampParamValue(byId("particleSize"), 2.2) == 2.0
 
 
-suite "The Chemistry Field Table Is Its Own Small Contract":
-  # Secretion and tropism are per-species, so they cannot live in the slider
-  # table (every consumer of that table assumes one value per id). They get
-  # their own table, and it owes the panel the same guarantees: a range to
-  # clamp against, a default inside it, and a distinct slot to index by.
+suite "Cardinality Rides On The Descriptor, Not On A Second Table":
+  # Secretion and tropism hold one value per SPECIES where a slider holds one
+  # for the world. That difference is a member — an arity, plus the slot the
+  # value occupies inside a species' stride — so the panel branches on it to
+  # render a grid row instead of a slider. A second record shape would owe the
+  # panel every guarantee this one already gives (range, default, clamp, notch
+  # reachability) and would be free to drift from it on each one.
 
-  test "the table names exactly secretion and tropism":
+  proc perSpecies(): seq[ParamDescriptor] =
+    for descriptor in descriptors:
+      if descriptor.arity == paPerSpecies:
+        result.add descriptor
+
+  test "the per-species columns are exactly secretion and tropism":
     var ids: HashSet[string]
-    for field in buildChemistryFields():
-      ids.incl field.id
+    for descriptor in perSpecies():
+      ids.incl descriptor.id
     check ids == toHashSet(["secretion", "tropism"])
 
-  test "every chemistry field carries a non-empty range holding its default":
-    # The same relation the slider table asserts against config_ranges: a
-    # default outside its own range would mean the panel opens on a value it
-    # will not let the user return to.
-    for field in buildChemistryFields():
-      check field.minValue < field.maxValue
-      check field.defaultValue >= field.minValue
-      check field.defaultValue <= field.maxValue
+  test "every other descriptor is scalar":
+    # The default cardinality, stated so a new descriptor cannot acquire a slot
+    # by accident and start indexing a per-species array it has no place in.
+    for descriptor in descriptors:
+      if descriptor.id notin ["secretion", "tropism"]:
+        check descriptor.arity == paScalar
 
-  test "chemistry ranges come from the range authority":
-    for field in buildChemistryFields():
-      case field.id
-      of "secretion":
-        check field.minValue == SECRETION_MIN
-        check field.maxValue == SECRETION_MAX
-      of "tropism":
-        check field.minValue == TROPISM_MIN
-        check field.maxValue == TROPISM_MAX
-      else:
-        check false  # a new field needs its range relation stated here
-
-  test "each field occupies a distinct slot inside one species' stride":
-    # The panel computes an index as species * stride + slot. Two fields
-    # sharing a slot, or a slot past the stride, would alias or overrun.
+  test "the columns fill one species' stride exactly, with no slot spare":
+    # The panel indexes as species * stride + slot. A repeated slot aliases two
+    # columns onto one number; a gap means the stride reserves space nothing
+    # writes, and a slot at or past the stride overruns into the next species.
     var slots: HashSet[int]
-    for field in buildChemistryFields():
-      check field.slot >= 0
-      check field.slot < SPECIES_CHEMISTRY_STRIDE
-      slots.incl field.slot
-    check slots.len == buildChemistryFields().len
+    for descriptor in perSpecies():
+      check descriptor.slot >= 0
+      check descriptor.slot < SPECIES_CHEMISTRY_STRIDE
+      slots.incl descriptor.slot
+    check slots == toHashSet(toSeq(0 ..< SPECIES_CHEMISTRY_STRIDE))
 
-  test "every chemistry field carries a hint, because neither name explains itself":
+  test "one clamp serves both cardinalities":
+    # THE FOLD'S POINT. clampParamValue is the only clamp on the boundary, so a
+    # grid cell and a slider cannot disagree about what a range means.
+    for descriptor in perSpecies():
+      check clampParamValue(descriptor, descriptor.minValue - 100.0) ==
+        descriptor.minValue
+      check clampParamValue(descriptor, descriptor.maxValue + 100.0) ==
+        descriptor.maxValue
+      check clampParamValue(descriptor, descriptor.defaultValue) ==
+        descriptor.defaultValue
+
+  test "every per-species column carries a hint, because neither name explains itself":
     # "Secretion" and "Tropism" are the field's own vocabulary, not the user's,
     # and both are signed — which direction a negative value means is exactly
     # what a bare label cannot say.
-    for field in buildChemistryFields():
-      check field.hint.len > 0
-
-  test "the step is one unit of the field's own display precision":
-    for field in buildChemistryFields():
-      check field.precision > 0
-      check abs(field.step - pow(10.0, -float(field.precision))) < 1e-12
-
-  test "clamping holds a chemistry value inside its range":
-    for field in buildChemistryFields():
-      check clampChemistryValue(field, field.minValue - 100.0) == field.minValue
-      check clampChemistryValue(field, field.maxValue + 100.0) == field.maxValue
-      check clampChemistryValue(field, field.defaultValue) == field.defaultValue
+    for descriptor in perSpecies():
+      check descriptor.hint.len > 0
 
 
 suite "Notches Mark Only Reachable Positions":

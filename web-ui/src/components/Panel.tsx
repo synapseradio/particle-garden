@@ -230,8 +230,9 @@ export function Panel(props: { ctrl: PanelController }) {
 
         {/* Beside the attraction matrix: what a species secretes into the field
             and how hard the field steers it back are the same kind of per-species
-            number the matrix holds. */}
-        <ChemistryEditor ctrl={ctrl} />
+            number the matrix holds. The group comes from the one descriptor
+            table, so these columns are placed the way every other control is. */}
+        <ChemistryEditor ctrl={ctrl} ids={groupIds("chemistry")} />
 
         <Section title="Palette">
           <div class="control-group model-selector">

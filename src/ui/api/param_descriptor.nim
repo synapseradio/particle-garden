@@ -9,6 +9,12 @@
 # number, and web_api clamps every setParam against it — the one clamp
 # authority.
 #
+# How many values a tunable stands for is a member of the descriptor (see
+# ParamArity), not a reason for a second table: the per-species chemistry
+# columns answer to the same range, default, step, clamp and notch rules the
+# sliders do, and the panel branches on the arity to draw a grid row instead
+# of a slider.
+#
 # Ranges come from config_ranges (the range authority) and defaults from the
 # typed state records (the default authority); tests/test_param_descriptor.nim
 # pins both relations natively, so the UI and the simulation cannot drift.
@@ -36,6 +42,13 @@ type
     psSimulation  ## updateSimulation -> CONFIG (physics mirror)
     psRender      ## updateRender -> CONFIG (visual mirror)
     psPalette     ## palette editor state -> COLORS regeneration
+    psSpeciesChemistry
+      ## a cell of the live SPECIES_CHEMISTRY array -> the field passes
+      ## Written by reference, the same contract the attraction matrix uses:
+      ## the frame loop copies the array into its uniform every frame, so an
+      ## edit lands next frame with no upload call and no updateSimulation
+      ## round trip. setParam therefore does not route these — the panel writes
+      ## the cell it edited and clamps it against this table first.
     psCamera      ## the live camera -> webgpu_render, NOT CONFIG
       ## The camera is VIEW state, not world state, and this is the whole
       ## reason it needs its own route. It is deliberately absent from CONFIG
@@ -43,6 +56,16 @@ type
       ## should not also seize where the user is standing to look at it.
       ## Loading a preset and being teleported reads as a bug, not a feature.
       ## `0` on the keyboard is the way back, and it cannot itself get lost.
+
+  ParamArity* = enum
+    ## How many values one descriptor stands for. This is the member that lets
+    ## secretion and tropism sit in the table beside the sliders instead of in
+    ## a parallel one: everything else about a tunable — its range, default,
+    ## step, precision, hint, notches and clamp — is the same question whether
+    ## the world holds one of it or each species holds its own.
+    paScalar      ## One value for the world, reached by id through getParam.
+    paPerSpecies  ## One value per species, interleaved in a live array; `slot`
+                  ## says where inside a species' stride it sits.
 
   ParamNotch* = object
     ## A value on a slider worth stopping at, and what to call it.
@@ -84,6 +107,16 @@ type
                           ## a specific value is known to produce something,
                           ## and inventing one would be the same defect as a
                           ## hint naming an unreachable number.
+    case arity*: ParamArity
+    of paScalar: discard
+    of paPerSpecies:
+      slot*: int          ## Offset inside one species' stride. The panel reads
+                          ## a cell as species * stride + slot, so the stride
+                          ## arithmetic crosses the boundary as two numbers the
+                          ## simulation owns rather than as a TypeScript
+                          ## literal. Only reachable on this branch: slot 0 is
+                          ## a real slot, so a scalar carrying a default 0
+                          ## would be indistinguishable from secretion's.
 
 func notch(value: float; label: string): ParamNotch =
   ParamNotch(value: value, label: label)
@@ -120,7 +153,7 @@ func intParam(id, label, group: string; minValue, maxValue, defaultValue: int;
     minValue: minValue.float, maxValue: maxValue.float,
     step: paramStep(pkInt, 0), precision: 0,
     defaultValue: defaultValue.float, store: store,
-    reinitOnCommit: reinitOnCommit, notches: notches)
+    reinitOnCommit: reinitOnCommit, notches: notches, arity: paScalar)
 
 func floatParam(id, label, group: string;
     minValue, maxValue, defaultValue: float; precision: int;
@@ -131,7 +164,26 @@ func floatParam(id, label, group: string;
     minValue: minValue, maxValue: maxValue,
     step: paramStep(pkFloat, precision), precision: precision,
     defaultValue: defaultValue, store: store,
-    reinitOnCommit: false, hint: hint, notches: notches)
+    reinitOnCommit: false, hint: hint, notches: notches, arity: paScalar)
+
+func perSpeciesParam(id, label, group: string; slot: int;
+    minValue, maxValue, defaultValue: float; precision: int;
+    hint = ""): ParamDescriptor =
+  ## A column of the per-species grid. Continuous and signed like the sliders
+  ## it sits beside, so it takes pkFloat and the same step rule; what differs
+  ## is that one of these exists per species, at `slot` inside the stride.
+  ##
+  ## No notches parameter. A notch marks a position on a track, and a column
+  ## renders as a numeric cell with no track to mark — so one added here would
+  ## reach nobody. Whoever gives the grid something to draw a notch on adds the
+  ## parameter back in that same change.
+  ParamDescriptor(
+    id: id, label: label, group: group, kind: pkFloat,
+    minValue: minValue, maxValue: maxValue,
+    step: paramStep(pkFloat, precision), precision: precision,
+    defaultValue: defaultValue, store: psSpeciesChemistry,
+    reinitOnCommit: false, hint: hint,
+    arity: paPerSpecies, slot: slot)
 
 func withDefaultNotch(descriptor: ParamDescriptor;
     position: Natural): ParamDescriptor =
@@ -314,6 +366,21 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     floatParam("fieldOpacity", "Field Opacity", "rd-field",
       FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX, visual.fieldOpacity,
       2, psRender),
+
+    # Species chemistry: what each species does to the field, and what the
+    # field does back. One value per species, so these carry paPerSpecies and a
+    # slot; the panel renders the pair as grid columns beside the attraction
+    # matrix rather than as sliders. Both hints name the sign, because both
+    # values are signed and a bare label cannot say which way negative runs.
+    perSpeciesParam("secretion", "Secretion", "chemistry",
+      SPECIES_SECRETION_SLOT, SECRETION_MIN, SECRETION_MAX,
+      RD_DEFAULT_SECRETION, 2,
+      hint = "this species' share of the Secretion Rate; negative erodes the " &
+        "field instead of building it"),
+    perSpeciesParam("tropism", "Tropism", "chemistry",
+      SPECIES_TROPISM_SLOT, TROPISM_MIN, TROPISM_MAX, RD_DEFAULT_TROPISM, 2,
+      hint = "negative flees its own trail, positive chases it"),
+
     # The camera. psCamera, not psRender: this writes the live view, never
     # CONFIG, so it stays out of the preset schema for the reason recorded on
     # the enum. Its notches name the two scales worth stopping at rather than
@@ -331,58 +398,6 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         notch(CAMERA_ZOOM_NOTCH_CREATURE, "creature"),
       ]),
   ]
-
-# ==============================================================================
-# SPECIES CHEMISTRY FIELDS
-# ==============================================================================
-#
-# Secretion and tropism are not sliders on a single CONFIG field — there is one
-# of each per species, edited in a grid beside the attraction matrix. They get
-# their own small table rather than entries in buildParamDescriptors because
-# every consumer of that table assumes one value per id.
-#
-# The table is what the panel loops over: it carries the slot each field
-# occupies in the interleaved chemistry array, so the TypeScript side computes
-# an index without knowing what a stride is. Ranges come from config_ranges and
-# defaults from field_core, the same two authorities the slider table uses.
-
-type
-  ChemistryField* = object
-    id*: string           ## Stable id the UI passes back to clamp a value
-    label*: string        ## Display label
-    slot*: int            ## Index within one species' chemistry stride
-    minValue*: float
-    maxValue*: float
-    step*: float
-    precision*: int
-    defaultValue*: float
-    hint*: string         ## One-line guidance, same role as ParamDescriptor's
-
-func chemistryField(id, label: string; slot: int;
-    minValue, maxValue, defaultValue: float; precision: int;
-    hint = ""): ChemistryField =
-  ChemistryField(
-    id: id, label: label, slot: slot,
-    minValue: minValue, maxValue: maxValue,
-    step: paramStep(pkFloat, precision), precision: precision,
-    defaultValue: defaultValue, hint: hint)
-
-func buildChemistryFields*(): seq[ChemistryField] =
-  ## The per-species chemistry inventory, in the order the editor shows it.
-  @[
-    chemistryField("secretion", "Secretion", SPECIES_SECRETION_SLOT,
-      SECRETION_MIN, SECRETION_MAX, RD_DEFAULT_SECRETION, 2,
-      hint = "this species' share of the Secretion Rate; negative erodes the " &
-        "field instead of building it"),
-    chemistryField("tropism", "Tropism", SPECIES_TROPISM_SLOT,
-      TROPISM_MIN, TROPISM_MAX, RD_DEFAULT_TROPISM, 2,
-      hint = "negative flees its own trail, positive chases it"),
-  ]
-
-func clampChemistryValue*(field: ChemistryField; value: float): float =
-  ## Coerce a raw UI value into the field's range. No integer case: both
-  ## chemistry fields are continuous and signed.
-  max(field.minValue, min(field.maxValue, value))
 
 func clampParamValue*(descriptor: ParamDescriptor; value: float): float =
   ## Coerce a raw UI value into the descriptor's range. Integer parameters

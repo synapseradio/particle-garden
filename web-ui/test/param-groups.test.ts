@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { groupParamIds, type GroupedParam } from "../src/lib/param-groups";
+import {
+  groupParamIds,
+  scalarParamIds,
+  type ArityParam,
+  type GroupedParam,
+} from "../src/lib/param-groups";
 
 // The group taxonomy the Nim side attaches to each descriptor. Membership is
 // Nim's to decide; these fixtures only mirror it closely enough that a
@@ -45,5 +50,44 @@ describe("groupParamIds", () => {
       groupParamIds(descriptors, group),
     );
     expect(collected.sort()).toEqual(descriptors.map((e) => e.id).sort());
+  });
+});
+
+// One table serves both cardinalities, so the panel filters rather than reading
+// a second one. Mirrors what Nim serves: sliders alongside the two per-species
+// chemistry columns.
+const mixed: ArityParam[] = [
+  { id: "friction", arity: "scalar" },
+  { id: "secretion", arity: "perSpecies" },
+  { id: "rdFeed", arity: "scalar" },
+  { id: "tropism", arity: "perSpecies" },
+];
+
+describe("scalarParamIds", () => {
+  test("keeps the scalars in descriptor order", () => {
+    expect(scalarParamIds(mixed)).toEqual(["friction", "rdFeed"]);
+  });
+
+  test("drops the per-species columns, which getParam cannot serve", () => {
+    // THE DEFECT THIS PINS. A per-species column holds one value per species in
+    // a live array, so there is no single number for getParam to return. Asking
+    // for one warns on the Nim side and would seed the panel with a zero that
+    // looks like a real setting.
+    expect(scalarParamIds(mixed)).not.toContain("secretion");
+    expect(scalarParamIds(mixed)).not.toContain("tropism");
+  });
+
+  test("returns every id when nothing is per-species", () => {
+    const scalars: ArityParam[] = [
+      { id: "friction", arity: "scalar" },
+      { id: "timeScale", arity: "scalar" },
+    ];
+    expect(scalarParamIds(scalars)).toEqual(["friction", "timeScale"]);
+  });
+
+  test("returns nothing rather than guessing when every column is per-species", () => {
+    expect(scalarParamIds([{ id: "secretion", arity: "perSpecies" }])).toEqual(
+      [],
+    );
   });
 });

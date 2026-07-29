@@ -12,7 +12,19 @@ export type ParamKind = "int" | "float";
 // "camera" writes the live view rather than CONFIG, and is excluded from
 // preset serialization: a preset restores a world, not where the user stands
 // to look at it.
-export type ParamStore = "sim" | "render" | "palette" | "camera";
+// "chemistry" writes a cell of the live per-species array by reference, the
+// same contract the attraction matrix uses, so setParam does not route it.
+export type ParamStore =
+  | "sim"
+  | "render"
+  | "palette"
+  | "chemistry"
+  | "camera";
+
+// How many values one descriptor stands for. A scalar holds one for the whole
+// world; a per-species descriptor holds one per species and carries the slot
+// that locates it inside a species' stride.
+export type ParamArity = "scalar" | "perSpecies";
 
 // A labelled position on a slider worth stopping at. Nim decides which values
 // earn one and what to call them; this file never invents a notch.
@@ -21,7 +33,8 @@ export interface ParamNotch {
   label: string;
 }
 
-export interface ParamDescriptor {
+// What every tunable carries, whatever its cardinality.
+interface ParamDescriptorBase {
   id: string;
   label: string;
   group: string;
@@ -39,6 +52,22 @@ export interface ParamDescriptor {
   notches: ParamNotch[];
 }
 
+// One value for the world, read and written by id through getParam/setParam.
+export interface ScalarParam extends ParamDescriptorBase {
+  arity: "scalar";
+}
+
+// One value per species, held in the live array chemistry() returns. Read a
+// cell as species * chemistryStride() + slot; write it back through the same
+// index after clampParam. The union below is what keeps `slot` unreachable
+// until the arity has been checked.
+export interface PerSpeciesParam extends ParamDescriptorBase {
+  arity: "perSpecies";
+  slot: number;
+}
+
+export type ParamDescriptor = ScalarParam | PerSpeciesParam;
+
 // A named Gray-Scott regime: a POINT in the feed/kill plane, not a region.
 // `minDeposit` is the measured deposit floor the regime needs to appear at all
 // on the shipped path — 0 where the default already ignites it.
@@ -48,23 +77,6 @@ export interface RdRegime {
   feed: number;
   kill: number;
   minDeposit: number;
-}
-
-// One editable column of the per-species chemistry grid. Its own table rather
-// than a ParamDescriptor because there is one value per SPECIES, not one per
-// id: `slot` is the offset inside a species' stride, so the panel indexes the
-// live array as species * chemistryStride() + slot without owning either
-// number.
-export interface ChemistryField {
-  id: string;
-  label: string;
-  slot: number;
-  min: number;
-  max: number;
-  step: number;
-  precision: number;
-  defaultValue: number;
-  hint: string;
 }
 
 export interface PaletteSchemeEntry {
@@ -121,6 +133,10 @@ export interface GardenAPI {
   getParam(id: string): number;
   setParam(id: string, value: number): void;
   commitParam(id: string): void;
+  // Bound a value against its descriptor without writing it, for controls that
+  // own their own storage — the per-species grid writes cells of chemistry()
+  // by reference and clamps them through here.
+  clampParam(id: string, value: number): number;
 
   // Toggles
   getTrails(): boolean;
@@ -160,11 +176,10 @@ export interface GardenAPI {
 
   // Per-species field chemistry (live reference, same contract as matrix():
   // the frame loop copies the array into the SpeciesChemistry uniform every
-  // frame, so a write lands on the next frame with no upload call)
+  // frame, so a write lands on the next frame with no upload call). Which
+  // columns exist comes from descriptor()'s per-species entries.
   chemistry(): Float32Array;
   chemistryStride(): number;
-  chemistryFields(): ChemistryField[];
-  clampChemistry(id: string, value: number): number;
 
   // Particles
   resetParticles(): void;
