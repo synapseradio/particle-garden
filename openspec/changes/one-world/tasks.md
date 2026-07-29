@@ -2623,21 +2623,43 @@ recalibrate the range the editor serves.
 
 ## 9. Help content pipeline
 
-- [ ] 9.1 `docs/help/` (new): one file per descriptor group, plus `00-orientation.md` and
+- [x] 9.1 `docs/help/` (new): one file per descriptor group, plus `00-orientation.md` and
       `90-glossary.md`. Each file declares the group id it documents in its front matter. Stub content
       is acceptable in this group; E11 writes the prose.
-- [ ] 9.2 `src/ui/api/help_content.nim` (new): `staticRead` every file in `docs/help/` into a table
+      DONE. Sixteen files: the fourteen descriptor groups (numbered for panel order:
+      10-simulation … 60-camera) plus orientation and glossary under reserved keys. Front matter
+      is exactly ---/group: <key>/---; control references are "- `id` — …" list lines, the shape
+      the coverage relations parse. Stubs name every control with its label; E11 writes the prose.
+- [x] 9.2 `src/ui/api/help_content.nim` (new): `staticRead` every file in `docs/help/` into a table
       keyed by group id, with the front-matter parse as a pure function.
-- [ ] 9.3 `tests/test_help_content.nim` (new): the four coverage relations from design E10 — every
+      DONE. HelpFileNames is the declared list (the native suite holds it equal to the directory
+      listing, so a new file cannot be forgotten); parseHelpEntry and namedControlIds are pure;
+      HelpEntries parses at COMPILE time, so a malformed file fails the build rather than the
+      first call.
+- [x] 9.3 `tests/test_help_content.nim` (new): the four coverage relations from design E10 — every
       group has a file; every declared group id exists; every descriptor is named by its group's file;
       no file names a non-existent id. Expected: fails until 9.1's stubs name every control.
-- [ ] 9.4 `src/web_api.nim`: `gardenAPI.help()` serving the table.
-- [ ] 9.5 `web-ui/src/components/HelpPanel.tsx` (new): the panel, opened by a control and by `?`,
+      DONE. All four relations plus the directory sweep and key uniqueness. DEVIATION from the
+      expected red: the stubs were authored complete from a descriptor-table dump, so the
+      coverage relations never showed red on missing names; sensitivity is carried by the
+      negative-control suite instead (a bogus control line is seen; malformed front matter fails
+      the parse). One observed red on the way: an unused-import styleCheck error.
+- [x] 9.4 `src/web_api.nim`: `gardenAPI.help()` serving the table.
+      DONE. help() serves [{key, body}] in file order, built once at module eval.
+- [x] 9.5 `web-ui/src/components/HelpPanel.tsx` (new): the panel, opened by a control and by `?`,
       closed by `Escape`, rendering the restricted markdown subset from design E10.
-- [ ] 9.6 `web-ui/src/lib/markdown.ts` (new) and its `bun test`: headings, paragraphs, lists,
+      DONE. A "?" button beside the collapse control and a document-level "?" key (suppressed
+      while typing in an input) open it; Escape closes; internal links jump between sections by
+      key. The in-app look joins the user verification queue.
+- [x] 9.6 `web-ui/src/lib/markdown.ts` (new) and its `bun test`: headings, paragraphs, lists,
       emphasis, code spans, internal links. Markup outside the subset renders as literal text.
-- [ ] 9.7 Register `test_help_content` in `tests/test_all.nim` and `tests/README.md`.
-- [ ] 9.8 `just happen` and `just check` green.
+      DONE. Pure block/inline parser; the panel maps blocks to elements. Eight bun tests pin the
+      subset both ways (external links, html, images, and level-4 headings stay literal text).
+- [x] 9.7 Register `test_help_content` in `tests/test_all.nim` and `tests/README.md`.
+      DONE.
+- [x] 9.8 `just happen` and `just check` green.
+      DONE. `just happen` exits 0; `just check` green — native suite through with the help
+      relations registered, bun 66 pass / 0 fail.
 
 ## 10. The binding table and the generated gesture reference
 

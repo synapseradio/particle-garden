@@ -82,6 +82,7 @@ function fakeGarden() {
     },
     commitParam: () => {},
     dragOverlay: () => {},
+    help: () => [],
     getTrails: () => false,
     setTrails: () => {},
     getBloom: () => false,

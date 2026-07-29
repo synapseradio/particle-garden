@@ -182,6 +182,9 @@ export interface GardenAPI {
   /** Drag-active signal for the spatial overlay. Nim owns the closed set of
    * spatial ids; a non-spatial id crosses and draws nothing. */
   dragOverlay(id: string, active: boolean): void;
+  /** Help sections in display order: descriptor-group keys plus
+   * "orientation" and "glossary", bodies in the restricted markdown subset. */
+  help(): { key: string; body: string }[];
   // Bound a value against its descriptor without writing it, for controls that
   // own their own storage — the per-species grid writes cells of chemistry()
   // by reference and clamps them through here.

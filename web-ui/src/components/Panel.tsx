@@ -12,6 +12,7 @@ import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { PanelController } from "../state";
 import { groupParamIds } from "../lib/param-groups";
 import { Section } from "./Section";
+import { HelpPanel } from "./HelpPanel";
 import { ParamSlider } from "./ParamSlider";
 import { MatrixEditor } from "./MatrixEditor";
 import { RegimeSelector } from "./RegimeSelector";
@@ -40,6 +41,17 @@ export function Panel(props: { ctrl: PanelController }) {
   const ctrl = props.ctrl;
   const [collapsed, setCollapsed] = createSignal(false);
   const toggleCollapsed = () => setCollapsed(!collapsed());
+  const [helpOpen, setHelpOpen] = createSignal(false);
+
+  // "?" opens help from anywhere except a text edit in progress.
+  const onKey = (event: KeyboardEvent) => {
+    const tag = (event.target as HTMLElement | null)?.tagName;
+    if (event.key === "?" && tag !== "INPUT" && tag !== "TEXTAREA") {
+      setHelpOpen(true);
+    }
+  };
+  document.addEventListener("keydown", onKey);
+  onCleanup(() => document.removeEventListener("keydown", onKey));
 
   const groupIds = (group: string) => groupParamIds(ctrl.descriptors, group);
 
@@ -53,7 +65,15 @@ export function Panel(props: { ctrl: PanelController }) {
         <button class="collapse-btn" onClick={toggleCollapsed}>
           🦠
         </button>
+        <button
+          class="collapse-btn help-btn"
+          title="Help (?)"
+          onClick={() => setHelpOpen(true)}
+        >
+          ?
+        </button>
       </h1>
+      <HelpPanel ctrl={ctrl} open={helpOpen()} onClose={() => setHelpOpen(false)} />
 
       <div class="controls-content">
         {/* Main simulation sliders */}

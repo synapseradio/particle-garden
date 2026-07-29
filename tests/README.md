@@ -54,6 +54,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_response_probe.nim` | Probe coverage over the whole descriptor table, the three track metrics at the calibrated thresholds (every probed control passes every declared slice; the feed/kill joint group is judged by its boundary-shift entry evidence and point liveness), and the measured table `docs/control-legibility-report.md` regenerates from | Native |
 | `test_dormancy.nim` | Dormancy predicates walked against the state records (every named field exists, no control dormant under its own value, each predicate distinguishes dormant from awake), and response horizons executed through the stepped field harness where a mirror exists, review-labelled where none does | Native |
 | `test_overlay_core.nim` | The spatial drag overlay: the closed set held against the full descriptor table, and the ring/frame coverage math mirroring overlay.wgsl | Native |
+| `test_help_content.nim` | Help coverage in both directions: docs/help matches the declared file list, every descriptor group has a file, every declared key exists, every descriptor is named by its group's file, no file names a non-descriptor | Native |
 | `test_palette.nim` | HSL-to-RGB conversion, palette generation schemes, flat encoding | Native |
 | `test_palette_state.nim` | Palette editor state and scheme selection | Native |
 | `test_preset.nim` | Versioned preset schema: round-trip, version rejection, clamp/default degradation, migration hook | Native |

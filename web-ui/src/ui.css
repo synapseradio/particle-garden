@@ -363,6 +363,49 @@
   font-style: italic;
 }
 
+/* The help panel: a second scrollable card beside the controls. */
+#ui-root .help-panel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  max-width: 380px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: rgba(10, 10, 20, 0.92);
+  backdrop-filter: blur(10px);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 120;
+  color: #ccc;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+#ui-root .help-panel h1 {
+  font-size: 1.3em;
+  margin: 0 0 8px;
+}
+#ui-root .help-panel h2,
+#ui-root .help-panel h3 {
+  margin: 14px 0 6px;
+  color: #ddd;
+}
+#ui-root .help-panel p {
+  margin: 0 0 8px;
+}
+#ui-root .help-panel ul {
+  margin: 0 0 8px 18px;
+}
+#ui-root .help-panel code {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+#ui-root .help-panel a {
+  color: #4d96ff;
+}
+
 /* A dormant control dims and names its missing precondition, and stays
    fully movable — no pointer-events change, no disabled attribute. */
 #ui-root .control-group.control-dormant {

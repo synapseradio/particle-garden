@@ -59,6 +59,7 @@ when defined(js):
   import camera_core
   import climate_core
   import ui/api/dormancy
+  import ui/api/help_content
   import ui/api/param_descriptor
   import ui/api/slider_curve
   import ui/state/matrix_state
@@ -1071,6 +1072,14 @@ when defined(js):
 
     # Parameters
     result["descriptor"] = toJs(proc(): JsObject = descriptorArray)
+    # Help, in file order; the coverage relations are native-tested.
+    let helpArray = newJsArray()
+    for entry in HelpEntries:
+      let item = newJsObject()
+      item["key"] = toJs(cstring(entry.key))
+      item["body"] = toJs(cstring(entry.body))
+      helpArray.push(item)
+    result["help"] = toJs(proc(): JsObject = helpArray)
     result["getParam"] = toJs(proc(id: cstring): float = getParamImpl($id))
     result["setParam"] = toJs(proc(id: cstring; value: float) =
       setParamImpl($id, value))
