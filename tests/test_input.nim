@@ -249,14 +249,13 @@ suite "TouchHandler - Touch Move":
 
 
 suite "TouchHandler - Touch Cancel":
-  test "releases all state":
+  test "clears the press and preserves the last position":
     let initial = initInputState()
       .withMouseDown(true)
       .withMousePosition(100.0, 100.0)
     let state = handleTouchCancel(initial)
 
     check state.mouseDown == false
-    # Position is preserved
     check state.mouseX == 100.0
 
 
