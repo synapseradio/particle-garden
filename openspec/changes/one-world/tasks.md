@@ -1797,7 +1797,7 @@ are `specs/sph-scale/spec.md` (the function) and `specs/parameter-range-authorit
 representation: envelope constants untouched, a registered ceiling function, and an effect-time
 clamp at the CONFIG mirror — the stored value is never destroyed).
 
-- [ ] 3.1 `tests/test_sph_core.nim`: build the stability sweep — a small N-particle harness
+- [x] 3.1 `tests/test_sph_core.nim`: build the stability sweep — a small N-particle harness
       mirroring `forces-sph.wgsl`'s density/pressure/XSPH loop and `integrate.wgsl`'s friction and
       velocity cap, the same pattern as `test_field_core.nim`'s chemotactic-collapse harness
       (task 5.5, complete). Sweep stiffness against radius fraction and substeps at the default
@@ -1805,14 +1805,37 @@ clamp at the CONFIG mirror — the stored value is never destroyed).
       marks the boundary. Then check the Courant scaling — boundary ∝ `(h * substeps)^2` — predicts
       the measured boundary at two other (timeScale, interactionRadius) points; if it does not, the
       derived function of 3.2 takes those as inputs too, and the deviation is recorded beside it.
-- [ ] 3.2 `src/sph_core.nim`: `stableStiffnessCeiling(radiusFraction, substeps, dt)` — the Courant
+      tests/test_sph_core.nim gained the stability harness: 101 particles in a periodic box 4
+      smoothing radii across, seeded at twice rest density (the compression forces-sph.wgsl clamps
+      its Tait input at), running that shader's density/pressure/XSPH loop and integrate.wgsl's
+      friction, log soft cap and wrap, substepped the way webgpu_compute steps them. DIVERGENCE IS
+      UNREACHABLE and that is by design in the shader — the Tait input, the per-pair acceleration
+      and every speed are all clamped — so the boundary is measured as "the seeded compression stops
+      coming to rest" (residual RMS speed above 0.5 px/frame after 120 frames), with the non-finite
+      check kept as the guard it is. Bisected boundaries, at the shipped defaults and fluid strength
+      1.0: 22.02 at h=50/1 substep/timeScale 0.5, 72.20 at 3 substeps, 56.14 at h=150, 110.15 at
+      timeScale 0.1, 2.20 at timeScale 5.0, 47.41 at the default 2 substeps. Five tests ship the
+      measurement; the module costs about 2.4 s.
+- [x] 3.2 `src/sph_core.nim`: `stableStiffnessCeiling(radiusFraction, substeps, dt)` — the Courant
       form with the fitted coefficient, clamped against `SPH_STIFFNESS_MAX` as the surviving
       absolute envelope — with the measurement's conditions and margin recorded beside the
       coefficient, plus the sweep's minimum ceiling over the reachable input box. Tests:
       `the derived ceiling sits below the measured stability boundary across the box`,
       `the ceiling never exceeds the stiffness envelope`, and `the ceiling is monotone increasing
       in radius fraction and in substeps`.
-- [ ] 3.3 `src/ui/api/param_descriptor.nim`: a `bound` variant on the descriptor — `bConstant` (the
+      src/sph_core.nim gained stableStiffnessCeiling(smoothingRadius, substeps, dt, envelopeMax) =
+      min(envelopeMax, 0.0025 * h * substeps / dt), plus SPH_STABILITY_COEFFICIENT and
+      SPH_CEILING_REFERENCE_FRAME_SECONDS (1/60) with the measurement's conditions, numbers and
+      margin recorded beside them. THE COURANT SQUARE IS NOT WHAT THIS INTEGRATOR HAS: measured
+      exponents are -1.00 in dt, 1.06 in substeps and about 0.86 in h (flattening below a few px),
+      because both kernels are divided by their self-weight and integrate.wgsl advances position by
+      the velocity itself rather than by velocity times dt, so one factor of 1/h and one of dt
+      survive instead of two of each. 0.0025 sits a fifth below the smallest measured coefficient
+      over the box (0.00312 at h=150), which the sublinear h-exponent then widens to about 4x at a
+      narrow kernel. Four tests: at the ceiling the fluid settles across the box corners and the
+      default, at eight times it does not, the ceiling never exceeds the envelope, and it rises with
+      both fraction and substeps.
+- [x] 3.3 `src/ui/api/param_descriptor.nim`: a `bound` variant on the descriptor — `bConstant` (the
       default; every existing descriptor unchanged) or `bDerived(ceilingId)` citing a registered
       pure ceiling function, growing the record by table the way `notches` (`:81`) already did.
       `clampParamValue` (`:378-384`) is NOT touched — store-time clamping stays against the
@@ -1820,13 +1843,34 @@ clamp at the CONFIG mirror — the stored value is never destroyed).
       ceiling`, and `every notch of a bDerived parameter sits below the minimum ceiling over its
       input box` (if this fails, raise `SPH_RADIUS_FRACTION_MIN` or move the notch — the floor
       decides the worst-case ceiling).
-- [ ] 3.4 `src/web_api.nim`: the effect-time clamp — the CONFIG-mirror write for a `bDerived`
+      src/ui/api/param_descriptor.nim gained ParamBound (bConstant, the zero value, or
+      bDerived(ceilingId)) on the descriptor record, a ParamCeilingId enum registry with
+      evaluateCeiling / ceilingName / ceilingReason / ceilingInputs / ceilingInputBox /
+      minimumCeiling, and effectiveSimulation. The citation is an ENUM rather than a string, so an
+      unregistered ceiling is unwritable and evaluateCeiling cannot miss a case — the compiler
+      settles what a string table would need a test for; the shipped test therefore checks the
+      substantive claim, that every bDerived citation evaluates to a positive number inside its own
+      envelope over the whole input box. clampParamValue is untouched. sphStiffness is the one
+      bDerived descriptor and gained a hint naming the three controls that move its ceiling. Served
+      ceilings: 30.0 at the shipped default (envelope 40), 15.0 at 1 substep, 40.0 at 3, 3.0 at
+      fraction 0.1 or timeScale 5.0; minimum over the box 0.03.
+- [x] 3.4 `src/web_api.nim`: the effect-time clamp — the CONFIG-mirror write for a `bDerived`
       parameter lands `min(stored, ceiling(live config))`, recomputed in the same tick whenever the
       stored value or a ceiling input changes, under the synchronous-mirror invariant `web_api.nim`
       documents. The stored value is never modified. Tests: shrinking the fraction drops the
       effective stiffness; restoring it restores the stored value's full effect, with no
       hysteresis.
-- [ ] 3.5 Preset path: NO apply-step change, and record why where the effect-time clamp lives.
+      src/web_api.nim's applySimulationToConfig now mirrors effectiveSimulation(storedState) rather
+      than the stored record, so CONFIG carries what the frame runs and currentSimulation keeps what
+      the user chose. Two reads had to follow: getParam("sphStiffness") and the preset snapshot now
+      take currentSimulation, or the slider handle would slide on its own when another control moved
+      and a re-save would ratchet the stored value down by this world's ceiling every time.
+      Recomputed on every write rather than only when stiffness moves, because a ceiling INPUT moving
+      is the usual cause. Six native tests in test_param_descriptor.nim cover the pure core: the
+      fraction dropping the effective value, restoring it returning the stored one exactly with no
+      hysteresis, substeps and time scale each moving it alone, constant-bound parameters passing
+      through, and the shipped default never being clamped at any substep count.
+- [x] 3.5 Preset path: NO apply-step change, and record why where the effect-time clamp lives.
       `presetApplySteps` applies every scalar in one `pasScalars` step
       (`src/ui/presets/preset_store_core.nim:76-80`), so no ordering among scalars exists to
       reorder — and none is needed: the effective value is computed from the final live config
@@ -1834,7 +1878,16 @@ clamp at the CONFIG mirror — the stored value is never destroyed).
       bound. Test in the preset suite: a preset carrying envelope-max stiffness with a small
       fraction round-trips its stored stiffness intact while its effective stiffness is the ceiling
       its own fraction and substeps imply.
-- [ ] 3.6 `web-ui/src/`: `ParamSlider.tsx` renders the envelope with the segment above the live
+      No apply-step change, recorded where the effect-time clamp lives (web_api.applySimulationToConfig's
+      docstring): presetApplySteps writes every scalar in one pasScalars step, so no ordering among
+      scalars exists to get wrong, and none is needed since the effective value is computed from the
+      final state after the apply lands rather than during it. tests/test_preset.nim gained three
+      tests — a preset carrying envelope-max stiffness with the minimum fraction and one substep
+      round-trips 40.0 and 0.1 intact through toJsonString/parsePreset; the state that preset applies
+      to runs at its own derived ceiling while the stored value stays 40.0; and passing a state
+      through effectiveSimulation leaves the stored record untouched, which is what stops a re-save
+      baking in the ceiling.
+- [x] 3.6 `web-ui/src/`: `ParamSlider.tsx` renders the envelope with the segment above the live
       ceiling drawn dormant, carrying the reason ("above the stable ceiling at the current fluid
       radius and substeps"); the live ceiling arrives on the existing stats push
       (`gardenAPI.onStats`, `src/web_api.nim:989-990`), never a second channel;
@@ -1842,7 +1895,25 @@ clamp at the CONFIG mirror — the stored value is never destroyed).
       The dormant region this ceiling creates is handed forward rather than measured here (C0.5):
       when E's travel metrics arrive they evaluate over `[min, ceiling(default config)]`, with an
       assertion that the region above the ceiling is inert.
-- [ ] 3.7 `just happen` and `just check` green.
+      web-ui/src/lib/bounds.ts (new) computes dormantShare(ceiling, min, max) — null when the whole
+      track is live or no ceiling has been pushed, 1 when the ceiling sits at or below the minimum —
+      with five bun tests. ParamSlider.tsx draws the band above the live ceiling with a hatched
+      overlay and prints Nim's own reason beneath the label; the ceiling arrives keyed by parameter
+      id on the existing gardenAPI.onStats push (never a second channel), state.ts holds it in a
+      ceilings store applied by comparison, and garden-api.ts gained the ParamBound union and
+      StatsSample.ceilings. TypeScript restates no number and authors no reason — ceilingReason is
+      served from Nim. The forward hand-off C3.6 asks for sits in web_api's pushStats comment: E's
+      travel metrics evaluate stiffness over [min, ceiling(default config)] with the region above the
+      ceiling asserted inert. Visible consequence at the shipped default: the top quarter of the
+      stiffness slider (30 to 40) renders dormant, and it goes fully live at 3 substeps.
+- [x] 3.7 `just happen` and `just check` green.
+      just happen exits 0 with shaders rebundled (forces-sph.wgsl now takes SPH_FORCE_SCALE and
+      SPH_MAX_PRESSURE_ACCEL as placeholders), JS frontend, UI bundle and native binary all built.
+      just test reports 727 [OK] lines and 0 failures (up from 703; the suite grew from about 8 s to
+      12 s, the harness accounting for roughly 2.4 s of that), and web-ui bun test reports 50 pass /
+      0 fail (up from 41). The full just check gate is left to the integrator per this group's
+      handoff. No generated output was hand-edited and no shader binding moved, so wgsl_lint's
+      manifest is untouched.
 
 ## 4. Force weather
 

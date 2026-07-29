@@ -17,6 +17,10 @@ import ../src/preset
 import ../src/colormap_core  # the authority preset.nim mirrors fieldOpacity from
 import ../src/field_core     # and the chemistry defaults it mirrors
 import ../src/climate_core   # and the climate speed default
+# A preset is stored intent; what the fluid honours of its stiffness is the
+# derived bound's business, so the two live sources meet in this suite.
+import ../src/ui/api/param_descriptor
+import ../src/ui/state/simulation_state
 
 const PRESET_TESTS_LOADED* = true
 
@@ -663,3 +667,65 @@ suite "Preset Migration Hook Contract":
     let result = validate(node)
     check result.isOk
     check result.preset.schemaVersion == CURRENT_SCHEMA_VERSION
+
+
+# ==============================================================================
+# A PRESET IS INTENT, WHATEVER FLUID IT LANDS IN
+# ==============================================================================
+#
+# The stiffness a preset carries is stored absolutely and clamped at load
+# against the ENVELOPE, exactly as every other field is. What the fluid can
+# honour of it depends on the radius fraction and substeps that same preset
+# carries, and that bound applies where the value takes effect — after the apply
+# lands, from the final state, never during the apply.
+#
+# WHICH IS WHY THE APPLY PATH NEEDS NO CHANGE. presetApplySteps writes every
+# scalar in one pasScalars step (src/ui/presets/preset_store_core.nim), so there
+# is no ordering among scalars to get wrong, and none is needed.
+
+suite "A Preset's Stiffness Survives A Fluid That Cannot Hold It":
+  test "a preset carrying envelope-max stiffness with a narrow kernel round-trips intact":
+    var customPreset = defaultPreset()
+    customPreset.settings.sphStiffness = SPH_STIFFNESS_MAX
+    customPreset.settings.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
+    customPreset.settings.sphSubsteps = SPH_SUBSTEPS_MIN
+    let loaded = parsePreset(toJsonString(customPreset))
+    check loaded.isOk
+    # Stored, not effective: the load clamps against the envelope and nothing
+    # else, so the number the user saved is the number that comes back.
+    check loaded.preset.settings.sphStiffness == SPH_STIFFNESS_MAX
+    check loaded.preset.settings.sphRadiusFraction == SPH_RADIUS_FRACTION_MIN
+
+  test "the fluid that preset describes runs at its own ceiling":
+    # The other half of the same claim, taken through the state the apply
+    # produces rather than through the wire: the effective stiffness is what
+    # this preset's own fraction and substeps imply, and the stored one is
+    # still the envelope maximum.
+    var customPreset = defaultPreset()
+    customPreset.settings.sphStiffness = SPH_STIFFNESS_MAX
+    customPreset.settings.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
+    customPreset.settings.sphSubsteps = SPH_SUBSTEPS_MIN
+    let settings = parsePreset(toJsonString(customPreset)).preset.settings
+
+    var applied = initSimulationState()
+    applied.sphStiffness = settings.sphStiffness
+    applied.sphRadiusFraction = settings.sphRadiusFraction
+    applied.sphSubsteps = settings.sphSubsteps
+    applied.interactionRadius = settings.interactionRadius
+    applied.timeScale = settings.timeScale
+
+    let ceiling = evaluateCeiling(pcStableStiffness, ceilingInputs(applied))
+    check effectiveSimulation(applied).sphStiffness == ceiling
+    check ceiling < SPH_STIFFNESS_MAX
+    check applied.sphStiffness == SPH_STIFFNESS_MAX
+
+  test "a preset saved from a narrow-kernel world does not bake in that ceiling":
+    # What reading the mirrored value into a snapshot would cost: re-saving a
+    # world would ratchet its stiffness down every time. The snapshot takes the
+    # stored record, so a round trip through the effective state changes
+    # nothing.
+    var applied = initSimulationState()
+    applied.sphStiffness = SPH_STIFFNESS_MAX
+    applied.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
+    discard effectiveSimulation(applied)
+    check applied.sphStiffness == SPH_STIFFNESS_MAX

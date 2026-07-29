@@ -29,10 +29,14 @@ function descriptorFor(id: string): ParamDescriptor {
     reinitOnCommit: false,
     hint: "",
     notches: [],
+    bound: { kind: "constant" },
   };
 }
 
-function statsSample(params: Record<string, number>): StatsSample {
+function statsSample(
+  params: Record<string, number>,
+  ceilings: Record<string, number> = {},
+): StatsSample {
   return {
     fps: 60,
     particleCount: 1000,
@@ -44,6 +48,7 @@ function statsSample(params: Record<string, number>): StatsSample {
     gpuPresentMs: 0,
     gpuFieldMs: 0,
     params,
+    ceilings,
   };
 }
 
@@ -116,8 +121,11 @@ function fakeGarden() {
   return {
     api,
     values,
-    push: (params: Record<string, number>) => {
-      for (const listener of listeners) listener(statsSample(params));
+    push: (
+      params: Record<string, number>,
+      ceilings: Record<string, number> = {},
+    ) => {
+      for (const listener of listeners) listener(statsSample(params, ceilings));
     },
     listenerCount: () => listeners.length,
     setRegime: (next: string) => {
@@ -189,5 +197,48 @@ describe("the panel takes the climate's writes as a push", () => {
     garden.push({ windSpeed: 0.42, windAngle: 0.77 });
 
     expect(ctrl.stats()?.fps).toBe(60);
+  });
+});
+
+describe("a derived bound's ceiling rides the same push", () => {
+  test("the panel holds no ceiling until one is pushed", () => {
+    // No ceiling reported is not a ceiling of zero. A slider asked to draw
+    // itself before the first sample must show its whole track live.
+    const garden = fakeGarden();
+    const ctrl = createPanelController(garden.api);
+
+    expect(ctrl.ceilings["windSpeed"]).toBeUndefined();
+  });
+
+  test("a pushed ceiling reaches the panel by parameter id", () => {
+    const garden = fakeGarden();
+    const ctrl = createPanelController(garden.api);
+
+    garden.push({ windSpeed: 0.1, windAngle: 0.2 }, { windSpeed: 0.3 });
+
+    expect(ctrl.ceilings["windSpeed"]).toBe(0.3);
+  });
+
+  test("a ceiling moves on its own, without the panel having written anything", () => {
+    // The point of pushing it: the parameters a ceiling reads can move from
+    // anywhere — another slider, a preset, the weather — so the panel is told
+    // rather than asked to work out when to ask.
+    const garden = fakeGarden();
+    const ctrl = createPanelController(garden.api);
+
+    garden.push({ windSpeed: 0.1, windAngle: 0.2 }, { windSpeed: 0.3 });
+    garden.push({ windSpeed: 0.1, windAngle: 0.2 }, { windSpeed: 0.9 });
+
+    expect(ctrl.ceilings["windSpeed"]).toBe(0.9);
+  });
+
+  test("a sample carrying no ceilings leaves the ones already held alone", () => {
+    const garden = fakeGarden();
+    const ctrl = createPanelController(garden.api);
+
+    garden.push({ windSpeed: 0.1, windAngle: 0.2 }, { windSpeed: 0.3 });
+    garden.push({ windSpeed: 0.1, windAngle: 0.2 });
+
+    expect(ctrl.ceilings["windSpeed"]).toBe(0.3);
   });
 });

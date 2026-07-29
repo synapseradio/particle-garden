@@ -41,6 +41,23 @@ const
     ## Maximum physics substeps the executor may run per rendered frame. Higher
     ## stiffness needs a smaller effective timestep; substepping buys that
     ## without changing the render cadence.
+  SPH_FORCE_SCALE* = 3.0
+    ## Pressure acceleration gain, in px per frame squared. The primary
+    ## aesthetic knob on how hard the fluid pushes back.
+    ##
+    ## It lives here rather than in the shader because the stability ceiling
+    ## below is FITTED against it: the boundary scales with the product of this
+    ## gain and the stiffness, so a change here moves the boundary by the same
+    ## factor and invalidates the fitted coefficient. shader_config feeds it to
+    ## forces-sph.wgsl as a placeholder, the way it feeds SPH_XSPH_EPSILON, and
+    ## tests/test_shader_config.nim relates the two.
+  SPH_MAX_PRESSURE_ACCEL* = 5000.0
+    ## Per-pair clamp on the pressure acceleration, guarding the fixed-point
+    ## i32 velocity delta from overflow. Reached only far above the stiffness
+    ## envelope — at the shipped pressure-density ceiling one pair produces
+    ## about 21 times the stiffness, so a stiffness near 236 is where this first
+    ## binds — which is why it shapes the measured stability boundary only in
+    ## runs deliberately driven past the ceiling.
 
 # ==============================================================================
 # SMOOTHING KERNELS (2D)
@@ -126,6 +143,82 @@ func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
   ## corrections to form the full term.
   let weight = max(0.0, min(1.0, neighborWeight))
   epsilon * weight * (velocityNeighbor - velocitySelf)
+
+# ==============================================================================
+# THE STABLE STIFFNESS CEILING
+# ==============================================================================
+
+const
+  SPH_STABILITY_COEFFICIENT* = 0.0025
+    ## The fitted stability coefficient: the largest stiffness this integrator
+    ## holds still at is `SPH_STABILITY_COEFFICIENT * h * substeps / dt`, with h
+    ## the smoothing radius in world pixels and dt the substepped frame's
+    ## timestep in seconds.
+    ##
+    ## WHAT WAS MEASURED. tests/test_sph_core.nim's stability harness runs this
+    ## fluid alone in a periodic box a few smoothing radii across, seeded at
+    ## twice rest density — the compression forces-sph.wgsl clamps its Tait
+    ## input at, so the equation of state is answering as hard as it ever will —
+    ## and bisects for the largest stiffness whose disturbance still comes to
+    ## rest. The conditions: the shipped rest density, viscosity, friction and
+    ## velocity cap; fluid strength at its maximum, because that strength
+    ## multiplies the whole pass and the ceiling has to hold where it is
+    ## largest; 120 frames at a 1/60 s reference frame; and "at rest" meaning a
+    ## residual RMS speed at or below half a pixel per frame.
+    ##
+    ## THE NUMBERS. Written as the coefficient `k* dt / (h * substeps)`, the
+    ## boundary measured 0.00312 at the widest kernel the sliders reach (150 px,
+    ## one substep), 0.00367 at the default 50 px kernel, and 0.0111 at a 5 px
+    ## one. It falls as the kernel widens, so the SMALLEST of those is the one a
+    ## law linear in h may be anchored at; 0.0025 sits a fifth below it. The
+    ## margin that leaves runs from 1.25x at the anchor to about 4x at a narrow
+    ## kernel, and the harness holds both ends: at the ceiling the fluid settles,
+    ## at eight times the ceiling it does not.
+    ##
+    ## THE FORM IS LINEAR, NOT THE COURANT SQUARE. Design C7 predicted a
+    ## boundary growing like `(h * substeps / dt)^2` and marked it a hypothesis
+    ## pending this measurement. The measurement disagrees on two of the three
+    ## exponents: the boundary is exactly inverse in dt, linear in the substep
+    ## count, and SUBLINEAR in h (about 0.86 over the wide end, flattening to
+    ## nothing below a few pixels where the shader's 2 px minimum separation
+    ## takes over). The textbook square collects one factor of 1/h from the
+    ## pressure gradient and another from advancing position by velocity times
+    ## dt; this integrator has neither, because both kernels are divided by
+    ## their self-weight to make the pressure magnitude radius-independent
+    ## (forces-sph.wgsl) and integrate.wgsl advances position by the velocity
+    ## itself. One factor of each survives, which is this form.
+  SPH_CEILING_REFERENCE_FRAME_SECONDS* = 1.0 / 60.0
+    ## The frame the served ceiling reads its timestep against. app.nim forms
+    ## the real timestep from the frame the browser actually delivered, capped
+    ## at 50 ms, so a ceiling built from it would move every frame and shrink
+    ## threefold during a hitch. A hitch is transient and the friction recovers
+    ## from it; a slider whose dormant region breathes is not recoverable. The
+    ## measurement was taken against this frame, so it is a condition of the
+    ## coefficient above rather than a separate choice.
+
+func stableStiffnessCeiling*(smoothingRadius: float; substeps: int;
+    dt: float; envelopeMax: float): float =
+  ## The largest stiffness the fluid holds still at, given how far its kernel
+  ## reaches, how many substeps it takes, and how long a substepped frame is.
+  ## Never above `envelopeMax`, which is the absolute bound the range authority
+  ## declares and the only thing this ceiling is clamped against.
+  ##
+  ## The envelope arrives as an argument rather than being read here because
+  ## config_ranges imports this module for SPH_MAX_SUBSTEPS; the range authority
+  ## therefore hands its own constant to the function it bounds.
+  ##
+  ## THE SMOOTHING RADIUS IN PIXELS, not the fraction. The fraction alone cannot
+  ## answer: the boundary follows the radius the kernel actually spans, so the
+  ## same fraction against a 10 px interaction radius and a 150 px one describe
+  ## fluids fifteen times apart in stability. The caller multiplies the two the
+  ## way forces-sph.wgsl does.
+  ##
+  ## The stored stiffness this bounds is never rewritten — it stays absolute
+  ## pressure gain, and the bound applies where the value takes effect.
+  if dt <= 0.0 or substeps <= 0 or smoothingRadius <= 0.0:
+    return 0.0
+  min(envelopeMax,
+    SPH_STABILITY_COEFFICIENT * smoothingRadius * substeps.float / dt)
 
 # ==============================================================================
 # FIXED-POINT DENSITY ENCODING

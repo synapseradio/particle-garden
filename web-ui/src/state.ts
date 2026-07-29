@@ -42,6 +42,10 @@ export function createPanelController(api: GardenAPI) {
   const [paletteCustom, setPaletteCustomSignal] = createSignal(
     api.isPaletteCustom(),
   );
+  // The live ceiling of each derived bound, by id. Empty until the first stats
+  // sample arrives, which reads as "no ceiling reported" rather than as a
+  // ceiling of zero — a slider draws its whole track live until told otherwise.
+  const [ceilings, setCeilings] = createStore<Record<string, number>>({});
   const [matrixVersion, setMatrixVersion] = createSignal(0);
   const [chemistryVersion, setChemistryVersion] = createSignal(0);
   const [ready, setReady] = createSignal(api.isReady());
@@ -91,6 +95,13 @@ export function createPanelController(api: GardenAPI) {
           moved = true;
         }
       }
+      // A derived bound's ceiling moves when the parameters it reads move, and
+      // those need not be ones this panel wrote. Applied by comparison for the
+      // same reason as the values above: a sample that moved nothing costs no
+      // store write.
+      for (const [id, value] of Object.entries(sample.ceilings ?? {})) {
+        if (ceilings[id] !== value) setCeilings(id, value);
+      }
       // The climate walks the regime coordinates, so a drift can light or
       // unlight a button. Nim owns the comparison.
       if (moved) setRdRegimeSignal(api.getRdRegime());
@@ -105,6 +116,7 @@ export function createPanelController(api: GardenAPI) {
     descriptors,
     byId,
     params,
+    ceilings,
     trails,
     bloom,
     forceModel,

@@ -513,3 +513,164 @@ suite "Notches Mark Only Reachable Positions":
     for value in [CAMERA_ZOOM_NOTCH_WORLD, CAMERA_ZOOM_NOTCH_CREATURE]:
       check value >= CAMERA_ZOOM_MIN
       check value <= CAMERA_ZOOM_MAX
+
+
+# ==============================================================================
+# A BOUND MAY DERIVE FROM OTHER PARAMETERS
+# ==============================================================================
+#
+# Most bounds are the envelope in the descriptor and nothing else. One is not:
+# the stiffness the fluid can hold depends on how far its kernel reaches, how
+# many substeps it takes, and how long a frame is, so the descriptor cites a
+# registered ceiling function instead of pretending its declared maximum is the
+# whole story. The envelope constants do not move — store-time clamping still
+# runs against them — and the ceiling applies where the value takes effect.
+
+suite "A Derived Bound Cites A Registered Ceiling":
+  test "every descriptor carries a bound, and only the fluid's stiffness derives":
+    var derived: seq[string] = @[]
+    for descriptor in descriptors:
+      case descriptor.bound.kind
+      of bConstant: discard
+      of bDerived: derived.add descriptor.id
+    check derived == @["sphStiffness"]
+    check byId("sphStiffness").bound.ceilingId == pcStableStiffness
+
+  test "every bDerived descriptor cites a registered ceiling":
+    # A registered ceiling is one this build can evaluate. The citation is an
+    # enum rather than a name, so an unregistered one cannot be written down at
+    # all; what stays checkable is that the function behind it answers with a
+    # usable number everywhere its inputs can go.
+    for descriptor in descriptors:
+      if descriptor.bound.kind != bDerived: continue
+      for inputs in ceilingInputBox():
+        let ceiling = evaluateCeiling(descriptor.bound.ceilingId, inputs)
+        checkpoint(descriptor.id & " at radius " & $inputs.interactionRadius &
+          ", fraction " & $inputs.sphRadiusFraction &
+          ", substeps " & $inputs.sphSubsteps &
+          ", time scale " & $inputs.timeScale)
+        check ceiling > 0.0
+        check ceiling <= descriptor.maxValue
+      check ceilingReason(descriptor.bound.ceilingId).len > 0
+
+  test "the minimum ceiling is the corner it claims to be":
+    # minimumCeiling names one corner of the deriving inputs' box. This is the
+    # sweep that says the corner is the smallest point in it — without which
+    # "every notch sits below the minimum ceiling" would be a claim about an
+    # arbitrary point.
+    for id in ParamCeilingId:
+      let floorValue = minimumCeiling(id)
+      check floorValue > 0.0
+      for inputs in ceilingInputBox():
+        checkpoint($id & " at radius " & $inputs.interactionRadius &
+          ", fraction " & $inputs.sphRadiusFraction &
+          ", substeps " & $inputs.sphSubsteps &
+          ", time scale " & $inputs.timeScale)
+        check evaluateCeiling(id, inputs) >= floorValue
+
+  test "every notch of a bDerived parameter sits below the minimum ceiling over its input box":
+    # A notch is a claim that a position is worth stopping at. On a parameter
+    # whose effect is capped, a notch above the worst-case cap names a position
+    # the fluid can never honour — a label pointing into the dormant region.
+    for descriptor in descriptors:
+      if descriptor.bound.kind != bDerived: continue
+      let floorValue = minimumCeiling(descriptor.bound.ceilingId)
+      for entry in descriptor.notches:
+        checkpoint(descriptor.id & " notch " & entry.label &
+          " at " & $entry.value & " against minimum ceiling " & $floorValue)
+        check entry.value <= floorValue
+
+  test "store-time clamping still runs against the envelope alone":
+    # The three parts stay separate: the envelope owns what can be STORED, the
+    # ceiling owns what TAKES EFFECT. A clamp that knew about the ceiling would
+    # destroy the stored value, which is the failure this separation exists to
+    # prevent.
+    let stiffness = byId("sphStiffness")
+    check clampParamValue(stiffness, SPH_STIFFNESS_MAX) == SPH_STIFFNESS_MAX
+    check clampParamValue(stiffness, SPH_STIFFNESS_MAX + 10.0) ==
+      SPH_STIFFNESS_MAX
+
+suite "The Effective Value Is Bounded Without The Stored One Moving":
+  test "a fluid that cannot hold the stored stiffness runs at its ceiling":
+    var sim = initSimulationState()
+    sim.sphStiffness = SPH_STIFFNESS_MAX
+    sim.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
+    let effective = effectiveSimulation(sim)
+    checkpoint("ceiling " & $evaluateCeiling(pcStableStiffness, ceilingInputs(sim)))
+    check effective.sphStiffness < sim.sphStiffness
+    check effective.sphStiffness ==
+      evaluateCeiling(pcStableStiffness, ceilingInputs(sim))
+    # The stored record is untouched — this is a pure function of a copy.
+    check sim.sphStiffness == SPH_STIFFNESS_MAX
+
+  test "shrinking the fraction drops the effective stiffness":
+    var sim = initSimulationState()
+    sim.sphStiffness = SPH_STIFFNESS_MAX
+    var previous = Inf
+    for fraction in [SPH_RADIUS_FRACTION_MAX, 0.5, 0.25,
+        SPH_RADIUS_FRACTION_MIN]:
+      sim.sphRadiusFraction = fraction
+      let effective = effectiveSimulation(sim).sphStiffness
+      checkpoint("fraction " & $fraction & " -> " & $effective)
+      check effective <= previous
+      previous = effective
+    check previous < SPH_STIFFNESS_MAX
+
+  test "restoring the fraction restores the stored value's full effect, with no hysteresis":
+    # The whole point of clamping at effect time rather than at store time: the
+    # stored value survives the trip, so the fluid comes back exactly as it was.
+    var sim = initSimulationState()
+    sim.sphStiffness = SPH_STIFFNESS_MAX
+    sim.sphRadiusFraction = SPH_RADIUS_FRACTION_MAX
+    sim.sphSubsteps = SPH_SUBSTEPS_MAX
+    let before = effectiveSimulation(sim).sphStiffness
+    for fraction in [SPH_RADIUS_FRACTION_MIN, 0.3, 0.7,
+        SPH_RADIUS_FRACTION_MAX]:
+      sim.sphRadiusFraction = fraction
+      discard effectiveSimulation(sim)
+    check effectiveSimulation(sim).sphStiffness == before
+    check sim.sphStiffness == SPH_STIFFNESS_MAX
+
+  test "a ceiling input other than the fraction moves the effective value too":
+    # Substeps and time scale are inputs on the same footing, so each of them
+    # alone has to move the effect. Time scale runs the other way: a world run
+    # faster has a longer timestep and holds less stiffness.
+    var sim = initSimulationState()
+    sim.sphStiffness = SPH_STIFFNESS_MAX
+    sim.sphRadiusFraction = 0.5
+    sim.sphSubsteps = SPH_SUBSTEPS_MIN
+    let fewSubsteps = effectiveSimulation(sim).sphStiffness
+    sim.sphSubsteps = SPH_SUBSTEPS_MAX
+    let manySubsteps = effectiveSimulation(sim).sphStiffness
+    check manySubsteps > fewSubsteps
+
+    sim.timeScale = TIME_SCALE_MIN
+    let slowWorld = effectiveSimulation(sim).sphStiffness
+    sim.timeScale = TIME_SCALE_MAX
+    let fastWorld = effectiveSimulation(sim).sphStiffness
+    check slowWorld > fastWorld
+
+  test "every parameter with a constant bound passes through untouched":
+    # effectiveSimulation is the one place a stored value and a running value
+    # differ, and it may differ in exactly the derived ones.
+    var sim = initSimulationState()
+    sim.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
+    sim.sphStiffness = SPH_STIFFNESS_MAX
+    let effective = effectiveSimulation(sim)
+    check effective.interactionRadius == sim.interactionRadius
+    check effective.sphRadiusFraction == sim.sphRadiusFraction
+    check effective.sphSubsteps == sim.sphSubsteps
+    check effective.sphViscosity == sim.sphViscosity
+    check effective.sphRestDensity == sim.sphRestDensity
+    check effective.fluidStrength == sim.fluidStrength
+    check effective.timeScale == sim.timeScale
+
+  test "the shipped default is never clamped in its own world":
+    # A derived ceiling that bit the defaults would be shipping a fluid nobody
+    # chose. The default stiffness stays reachable at the default fraction and
+    # time scale whatever the substep slider is set to.
+    var sim = initSimulationState()
+    for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+      sim.sphSubsteps = substeps
+      checkpoint("substeps " & $substeps)
+      check effectiveSimulation(sim).sphStiffness == sim.sphStiffness

@@ -75,7 +75,32 @@ when defined(js):
   var currentSimulation* = initSimulationState()
   var currentRender* = initRenderState()
 
-  proc applySimulationToConfig(simState: SimulationState) =
+  proc applySimulationToConfig(storedState: SimulationState) =
+    ## THE EFFECT-TIME CLAMP LIVES HERE, and nowhere else on the write path.
+    ##
+    ## CONFIG is what the frame runs, so it takes the EFFECTIVE state: every
+    ## stored value, with each derived parameter bounded by its live ceiling
+    ## (param_descriptor.effectiveSimulation). `currentSimulation` keeps the
+    ## stored one untouched, and getParam and the preset snapshot both read it
+    ## from there — which is what makes shrinking a ceiling input lower the
+    ## fluid without moving the slider, and restoring it return the stored value
+    ## whole.
+    ##
+    ## Recomputed on every write rather than only when the bounded parameter
+    ## moves, because a ceiling INPUT moving is what usually changes the answer:
+    ## the fraction, the substeps and the time scale each land here through the
+    ## same path, so the effective value is correct in the same tick as whatever
+    ## moved it.
+    ##
+    ## THE PRESET PATH NEEDS NOTHING OF ITS OWN, and that is a decision rather
+    ## than an omission. `presetApplySteps` applies every scalar in one
+    ## pasScalars step (src/ui/presets/preset_store_core.nim), so no ordering
+    ## among scalars exists to get wrong — and none is needed, since the
+    ## effective value is computed from the final state after the apply lands
+    ## rather than during it. A preset carrying more stiffness than its own
+    ## fluid can hold therefore round-trips its stored stiffness intact and runs
+    ## at the ceiling that fluid implies.
+    let simState = effectiveSimulation(storedState)
     CONFIG.particleCount = simState.particleCount
     CONFIG.speciesCount = simState.speciesCount
     CONFIG.interactionRadius = simState.interactionRadius
@@ -187,6 +212,22 @@ when defined(js):
       notchObj["label"] = toJs(cstring(entry.label))
       notchArray.push(notchObj)
     result["notches"] = toJs(notchArray)
+    # What bounds the value beyond the envelope above. Constant for all but one
+    # of them; a derived bound carries the citation the live ceiling arrives
+    # under on the stats push, and the reason the panel prints beside the
+    # dormant region — the claim about the simulation belongs to the
+    # simulation, so the panel restates neither it nor the number.
+    let boundObj = newJsObject()
+    case descriptor.bound.kind
+    of bConstant:
+      boundObj["kind"] = toJs(cstring"constant")
+    of bDerived:
+      boundObj["kind"] = toJs(cstring"derived")
+      boundObj["ceilingId"] =
+        toJs(cstring(ceilingName(descriptor.bound.ceilingId)))
+      boundObj["reason"] =
+        toJs(cstring(ceilingReason(descriptor.bound.ceilingId)))
+    result["bound"] = toJs(boundObj)
     # Cardinality. The panel branches on it to draw a grid row rather than a
     # slider, and only a per-species entry carries the slot that indexes a
     # species' stride — so the two shapes stay distinguishable on the TS side
@@ -367,7 +408,11 @@ when defined(js):
     of "paletteLightness": paletteEditorState.lightness
     of "sphRestDensity": CONFIG.sphRestDensity
     of "fluidStrength": CONFIG.fluidStrength
-    of "sphStiffness": CONFIG.sphStiffness
+    # The STORED stiffness, not the mirrored one. CONFIG holds what the fluid
+    # runs, which its ceiling may have bounded; the panel asks what the user
+    # chose, and a slider whose handle slid on its own because a different
+    # control moved would be reporting the clamp as a preference.
+    of "sphStiffness": currentSimulation.sphStiffness
     of "sphRadiusFraction": CONFIG.sphRadiusFraction
     of "sphViscosity": CONFIG.sphViscosity
     of "sphSubsteps": CONFIG.sphSubsteps.float
@@ -651,6 +696,24 @@ when defined(js):
       let id = CLIMATE_PARAM_IDS[axis]
       simulationWrites[cstring(id)] = toJs(getParamImpl(id))
     stats["params"] = toJs(simulationWrites)
+    # The live ceiling of every derived bound, by parameter id. It rides this
+    # push rather than a channel of its own for the same reason the drifting
+    # parameters do: the panel keeps one subscription for everything the frame
+    # loop reports, and it can move without the panel having written anything —
+    # the fluid's radius, substeps or time scale each change this.
+    #
+    # HANDED FORWARD. The region above this ceiling is dormant by construction,
+    # and nothing here measures how much of the slider it takes. When the travel
+    # metrics arrive they evaluate stiffness over [min, ceiling(default config)]
+    # rather than over the declared envelope, with an assertion that the region
+    # above the ceiling is inert.
+    let ceilings = newJsObject()
+    let inputs = ceilingInputs(currentSimulation)
+    for descriptor in paramDescriptors:
+      if descriptor.bound.kind == bDerived:
+        ceilings[cstring(descriptor.id)] =
+          toJs(evaluateCeiling(descriptor.bound.ceilingId, inputs))
+    stats["ceilings"] = toJs(ceilings)
     stats["fps"] = toJs(fps)
     stats["particleCount"] = toJs(particleCount)
     stats["gridTimeMs"] = toJs(gridTimeMs)
@@ -708,7 +771,10 @@ when defined(js):
     # chemistry's coupling strengths, so an omission there turns chemistry off
     # across a save and load. tests/test_preset.nim pins the whole round trip.
     settings.sphRestDensity = CONFIG.sphRestDensity
-    settings.sphStiffness = CONFIG.sphStiffness
+    # The STORED stiffness. CONFIG carries what the fluid runs, and saving that
+    # would bake this world's ceiling into the preset — a preset saved in a
+    # narrow-kernel world would come back weaker every time it was re-saved.
+    settings.sphStiffness = currentSimulation.sphStiffness
     settings.sphRadiusFraction = CONFIG.sphRadiusFraction
     settings.sphViscosity = CONFIG.sphViscosity
     settings.sphSubsteps = CONFIG.sphSubsteps

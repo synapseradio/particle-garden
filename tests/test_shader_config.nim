@@ -109,10 +109,21 @@ suite "SPH Tunables Mirror sph_core's Authoritative Constants":
   test "getTunableFloat resolves XSPH epsilon to sph_core's value":
     check getTunableFloat("SPH_XSPH_EPSILON") == SPH_XSPH_EPSILON
 
+  test "getTunableFloat resolves the pressure gain and its clamp to sph_core":
+    # The stability ceiling stableStiffnessCeiling serves is FITTED against the
+    # pressure gain: the boundary moves with the product of gain and stiffness,
+    # so a gain changed on one side of the mirror alone leaves the ceiling
+    # describing a fluid the shader no longer runs. The clamp joins it because
+    # runs driven past the ceiling are where it starts binding.
+    check getTunableFloat("SPH_FORCE_SCALE") == SPH_FORCE_SCALE
+    check getTunableFloat("SPH_MAX_PRESSURE_ACCEL") == SPH_MAX_PRESSURE_ACCEL
+
   test "getPlaceholderMap emits a WGSL float literal for every SPH placeholder":
     let placeholders = getPlaceholderMap()
     for placeholderName in ["TUNABLE_SPH_XSPH_EPSILON",
-                            "TUNABLE_SPH_MAX_DENSITY_RATIO"]:
+                            "TUNABLE_SPH_MAX_DENSITY_RATIO",
+                            "TUNABLE_SPH_FORCE_SCALE",
+                            "TUNABLE_SPH_MAX_PRESSURE_ACCEL"]:
       check placeholderName in placeholders
       check "." in placeholders[placeholderName]
 

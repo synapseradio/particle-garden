@@ -29,6 +29,7 @@ import ../../config_ranges
 import ../../camera_core
 import ../../field_core
 import ../../palette
+import ../../sph_core
 import ../state/simulation_state
 import ../state/render_state
 
@@ -66,6 +67,51 @@ type
     paScalar      ## One value for the world, reached by id through getParam.
     paPerSpecies  ## One value per species, interleaved in a live array; `slot`
                   ## says where inside a species' stride it sits.
+
+  ParamCeilingId* = enum
+    ## The registered ceiling functions, one member per function. A citation is
+    ## this enum rather than a name, so a descriptor cannot cite a ceiling that
+    ## does not exist and `evaluateCeiling` cannot be missing a case — the
+    ## compiler settles both, where a string table would need a test to.
+    pcStableStiffness  ## sph_core.stableStiffnessCeiling
+
+  ParamBoundKind* = enum
+    bConstant  ## the declared range is the whole bound
+    bDerived   ## a registered ceiling bounds the value's EFFECT
+
+  ParamBound* = object
+    ## What bounds a parameter, beyond the envelope every parameter has.
+    ##
+    ## Three parts stay separate here, and the separation is the mechanism. The
+    ## ENVELOPE is the descriptor's own min and max: it owns what can be stored,
+    ## what a preset clamps against, and every build-time assertion, and a
+    ## derived bound changes none of it. The CEILING is a pure function of other
+    ## live parameters, registered under a ParamCeilingId and cited from here.
+    ## The EFFECT-TIME CLAMP applies that ceiling where the value takes effect
+    ## and never at store time, so shrinking a ceiling input lowers what the
+    ## simulation runs and restoring it brings the stored value back whole.
+    ##
+    ## Which bounds may derive at all: a bound that is an exact structural fact
+    ## folds into the parameterisation and becomes unrepresentable instead (the
+    ## SPH radius fraction is that kind, capped at 1 by its own range). A bound
+    ## that is a FITTED empirical estimate stays a named clamp and never
+    ## redefines the value it bounds — re-parameterising stiffness as a fraction
+    ## of a fitted ceiling would silently rescale every saved preset each time
+    ## the fit moved.
+    case kind*: ParamBoundKind
+    of bConstant: discard
+    of bDerived:
+      ceilingId*: ParamCeilingId
+
+  CeilingInputs* = object
+    ## The live values a registered ceiling may read. One record for every
+    ## ceiling rather than one per function: a ceiling is a pure function of the
+    ## world's current parameters, and naming them in one place is what lets the
+    ## panel and the CONFIG mirror evaluate any of them from the same snapshot.
+    interactionRadius*: int
+    sphRadiusFraction*: float
+    sphSubsteps*: int
+    timeScale*: float
 
   ParamNotch* = object
     ## A value on a slider worth stopping at, and what to call it.
@@ -107,6 +153,11 @@ type
                           ## a specific value is known to produce something,
                           ## and inventing one would be the same defect as a
                           ## hint naming an unreachable number.
+    bound*: ParamBound    ## What bounds the value beyond its envelope.
+                          ## bConstant for every parameter whose range is the
+                          ## whole story, which is all but one of them, and it
+                          ## is the zero value so a descriptor that says nothing
+                          ## about bounds says the ordinary thing.
     case arity*: ParamArity
     of paScalar: discard
     of paPerSpecies:
@@ -120,6 +171,103 @@ type
 
 func notch(value: float; label: string): ParamNotch =
   ParamNotch(value: value, label: label)
+
+func derivedBound(ceilingId: ParamCeilingId): ParamBound =
+  ParamBound(kind: bDerived, ceilingId: ceilingId)
+
+# ==============================================================================
+# THE CEILING REGISTRY
+# ==============================================================================
+
+func ceilingInputs*(sim: SimulationState): CeilingInputs =
+  ## The snapshot every registered ceiling reads. Taken from the simulation
+  ## state rather than from CONFIG so the value lands in the same tick as the
+  ## write that moved it — the synchronous-mirror invariant web_api keeps.
+  CeilingInputs(
+    interactionRadius: sim.interactionRadius,
+    sphRadiusFraction: sim.sphRadiusFraction,
+    sphSubsteps: sim.sphSubsteps,
+    timeScale: sim.timeScale)
+
+func evaluateCeiling*(id: ParamCeilingId; inputs: CeilingInputs): float =
+  ## The registered ceiling function behind a citation.
+  case id
+  of pcStableStiffness:
+    # The smoothing radius the shader forms (forces-sph.wgsl multiplies these
+    # two), and the timestep app.nim's loop hands the substepped frame, taken
+    # against sph_core's reference frame rather than the one the browser
+    # happened to deliver.
+    stableStiffnessCeiling(
+      inputs.interactionRadius.float * inputs.sphRadiusFraction,
+      inputs.sphSubsteps,
+      inputs.timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS,
+      SPH_STIFFNESS_MAX)
+
+func ceilingName*(id: ParamCeilingId): string =
+  ## The citation's name across the boundary. Written here rather than derived
+  ## from the enum's spelling, so renaming the member cannot silently rename an
+  ## interface string the panel reads.
+  case id
+  of pcStableStiffness: "stableStiffness"
+
+func ceilingReason*(id: ParamCeilingId): string =
+  ## Why the region above this ceiling is dormant, in the words the panel
+  ## shows. It lives here because it is a claim about the simulation, and the
+  ## panel restates neither the claim nor the number behind it.
+  case id
+  of pcStableStiffness:
+    "above the stable ceiling at the current fluid radius and substeps"
+
+func ceilingInputBox*(): seq[CeilingInputs] =
+  ## Every corner of the box the ceiling inputs range over, plus the shipped
+  ## default. What "over the whole reachable box" means for the sweeps that
+  ## check a ceiling: each input at each end of its own range, and the
+  ## configuration a fresh world actually runs.
+  for interactionRadius in [INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX]:
+    for fraction in [SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX]:
+      for substeps in [SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX]:
+        for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
+          result.add CeilingInputs(
+            interactionRadius: interactionRadius,
+            sphRadiusFraction: fraction,
+            sphSubsteps: substeps,
+            timeScale: timeScale)
+  result.add ceilingInputs(initSimulationState())
+
+func minimumCeiling*(id: ParamCeilingId): float =
+  ## The smallest value a ceiling takes anywhere its inputs can go — the floor
+  ## every labelled notch on the parameter it bounds must sit below, since a
+  ## notch above it names a position some reachable world can never honour.
+  ##
+  ## Read off one corner rather than swept, because every registered ceiling
+  ## rises with the interaction radius, the radius fraction and the substep
+  ## count and falls as the time scale lengthens the frame. That monotonicity is
+  ## what makes a corner the answer, and tests/test_param_descriptor.nim sweeps
+  ## the box to hold this corner to it.
+  evaluateCeiling(id, CeilingInputs(
+    interactionRadius: INTERACTION_RADIUS_MIN,
+    sphRadiusFraction: SPH_RADIUS_FRACTION_MIN,
+    sphSubsteps: SPH_SUBSTEPS_MIN,
+    timeScale: TIME_SCALE_MAX))
+
+func effectiveSimulation*(sim: SimulationState): SimulationState =
+  ## The state as the frame RUNS it: every stored value, with each derived
+  ## parameter's effect bounded by its live ceiling.
+  ##
+  ## This is the effect-time clamp, and the returned record is a copy — the
+  ## stored state is never modified, so shrinking a ceiling input lowers what
+  ## the fluid does and restoring it brings the stored value back whole, with no
+  ## hysteresis. web_api mirrors THIS into CONFIG; getParam, the preset
+  ## snapshot and the slider all keep reading the stored record, which is why
+  ## the handle never moves on its own.
+  ##
+  ## One field per derived parameter, paired by hand with the descriptor that
+  ## cites the same ceiling — Nim has no way to reach a state field from a
+  ## descriptor id, so the pairing is written twice and
+  ## tests/test_param_descriptor.nim holds the two together.
+  result = sim
+  result.sphStiffness = min(sim.sphStiffness,
+    evaluateCeiling(pcStableStiffness, ceilingInputs(sim)))
 
 type RegimeAxis* = enum
   ## Which coordinate of a named regime a slider carries. Feed and kill each
@@ -158,13 +306,15 @@ func intParam(id, label, group: string; minValue, maxValue, defaultValue: int;
 func floatParam(id, label, group: string;
     minValue, maxValue, defaultValue: float; precision: int;
     store: ParamStore; hint = "";
-    notches: seq[ParamNotch] = @[]): ParamDescriptor =
+    notches: seq[ParamNotch] = @[];
+    bound = ParamBound(kind: bConstant)): ParamDescriptor =
   ParamDescriptor(
     id: id, label: label, group: group, kind: pkFloat,
     minValue: minValue, maxValue: maxValue,
     step: paramStep(pkFloat, precision), precision: precision,
     defaultValue: defaultValue, store: store,
-    reinitOnCommit: false, hint: hint, notches: notches, arity: paScalar)
+    reinitOnCommit: false, hint: hint, notches: notches, bound: bound,
+    arity: paScalar)
 
 func perSpeciesParam(id, label, group: string; slot: int;
     minValue, maxValue, defaultValue: float; precision: int;
@@ -333,9 +483,17 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     floatParam("sphRestDensity", "Rest Density", "fluid",
       SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX, sim.sphRestDensity, 2,
       psSimulation),
+    # The one derived bound this mechanism serves. The envelope below is still
+    # the whole of what can be STORED — a preset carrying 40 loads as 40 — while
+    # how much of it the fluid can honour depends on the three controls around
+    # it, so the descriptor cites the ceiling instead of claiming its maximum is
+    # always available (design C7).
     floatParam("sphStiffness", "Stiffness", "fluid",
       SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, sim.sphStiffness, 1,
-      psSimulation),
+      psSimulation,
+      hint = "how hard the fluid resists compression; a narrower kernel, " &
+        "fewer substeps or a faster world hold less of it",
+      bound = derivedBound(pcStableStiffness)),
     floatParam("sphViscosity", "Viscosity", "fluid",
       SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX, sim.sphViscosity, 2,
       psSimulation),

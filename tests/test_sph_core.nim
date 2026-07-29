@@ -18,14 +18,20 @@
 
 import std/[unittest, math]
 import ../src/sph_core
+import ../src/shader_config
 
 from ../src/memory_layout import MAX_PARTICLES
+# The stability harness below runs the fluid at the shipped defaults, so it
+# reads them from the default authority rather than restating any of them.
+from ../src/ui/state/simulation_state import initSimulationState
 # The smoothing radius is the interaction radius times a fraction, so the
 # reachable effective radii are the product of two ranges the slider contract
 # owns. Read from there rather than restated here: raising either range
 # re-scopes the sweep below without a second edit.
 from ../src/config_ranges import SPH_RADIUS_FRACTION_MIN,
-  SPH_RADIUS_FRACTION_MAX, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX
+  SPH_RADIUS_FRACTION_MAX, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX,
+  FLUID_STRENGTH_MAX, SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, SPH_SUBSTEPS_MIN,
+  SPH_SUBSTEPS_MAX, TIME_SCALE_MIN, TIME_SCALE_MAX
 
 const SPH_CORE_TESTS_LOADED* = true
 
@@ -350,3 +356,461 @@ suite "The Full Particle Budget Encodes Without Saturating":
     # An isolated particle reads exactly 1.0. The scale is only useful if that
     # value is resolved with room to spare, or the fluid loses its rest state.
     check 1.0 / scale < 0.001
+
+# ==============================================================================
+# THE STABILITY HARNESS
+# ==============================================================================
+#
+# WHAT IT IS. A small periodic world running the fluid alone: the density,
+# pressure and XSPH loop of `web/shaders/src/forces-sph.wgsl` and the friction,
+# soft velocity cap and toroidal wrap of `web/shaders/src/integrate.wgsl`,
+# stepped substepCount times per frame the way `src/webgpu_compute.nim:753-762`
+# steps them. Same shape as test_field_core's chemotaxis harness: the shipped
+# arithmetic, run natively, so a bound on it is measured rather than asserted.
+#
+# WHAT IT MEASURES. The largest stiffness at which a compressed neighbourhood
+# still comes to rest. Past that the pressure solver overshoots every substep,
+# friction cannot remove what it injects, and the fluid churns for as long as it
+# runs. That is the boundary `stableStiffnessCeiling` is fitted under.
+#
+# WHY NOT DIVERGENCE. Nothing here can reach infinity, and that is by design in
+# the shader rather than an accident: the Tait input is clamped at
+# SPH_MAX_DENSITY_RATIO times rest, each pair's acceleration at
+# SPH_MAX_PRESSURE_ACCEL, and every speed at maxVelocity through the log soft
+# cap. An unstable fluid therefore saturates instead of exploding, so the run
+# reports the residual speed and the non-finite check below stays as the guard
+# it is — it fires only if one of those clamps is ever removed.
+#
+# THE CONFIGURATION IS DIMENSIONLESS. Each run seeds the same neighbourhood
+# measured in smoothing radii: the box is HARNESS_BOX_RADII radii across and
+# holds the particle count that puts the seeded density at
+# HARNESS_SEED_DENSITY_RATIO times rest. Only the discretisation then varies
+# with h, which is what isolates the stability question from "is there a fluid
+# here at all". A world whose number density is fixed instead would simply run
+# out of neighbours as h shrank.
+
+const
+  HARNESS_BOX_RADII = 4.0
+    ## Box side in smoothing radii. Above 2 so the minimum-image convention
+    ## below never lets a particle meet the same neighbour twice, and small
+    ## enough that the pair loop stays affordable in the suite.
+  HARNESS_SEED_DENSITY_RATIO = 2.0
+    ## Seeded compression, in multiples of rest density. Exactly the ceiling
+    ## forces-sph.wgsl clamps its Tait input at, so the seed is the most
+    ## compressed neighbourhood the equation of state answers to: past it the
+    ## per-pair pressure no longer grows.
+  HARNESS_FRAMES = 120
+    ## Frames per run. Friction alone empties a disturbance long before this
+    ## (0.95 per substep is a factor of 1e-3 in 120 frames), so residual motion
+    ## at the end is motion the scheme is still injecting.
+  HARNESS_SETTLED_TAIL = 4
+    ## The run reports the mean speed over its last 1/N frames.
+  HARNESS_AT_REST_SPEED = 0.5
+    ## Residual RMS speed, in px per frame, at or below which the fluid counts
+    ## as having come to rest. It sits between two floors that are two orders of
+    ## magnitude apart: a run at negligible stiffness drifts at about 3e-4 px
+    ## per frame, and an unstable one settles above 1. Measured either side of
+    ## it, the boundary moves by about a fifth per factor of two in this
+    ## threshold, and the fitted coefficient carries that as margin.
+  HARNESS_REFERENCE_FRAME_SECONDS = 1.0 / 60.0
+    ## Wall-clock frame the harness reads its timestep against, so a timeScale
+    ## names a dt the way app.nim's loop produces one.
+
+type
+  HarnessParticle = object
+    x, y, vx, vy: float
+    sphDensity: float   ## Lagged, exactly as the shader reads it
+  HarnessRun = object
+    ## What one run reports. `settledSpeed` is the verdict; the rest are what a
+    ## failing run needs in its checkpoint to be diagnosable.
+    finite: bool
+    peakSpeed: float
+    settledSpeed: float
+    peakDensity: float
+    frames: int
+
+func harnessParticleCount(): int =
+  ## Particles that put the seeded density at HARNESS_SEED_DENSITY_RATIO times
+  ## rest inside a HARNESS_BOX_RADII box, for ANY h.
+  ##
+  ## A uniform number density n reads as density 1 + n * integral of the
+  ## normalized poly6 over its disc, and that integral is pi h^2 / 4 (substitute
+  ## u = r^2/h^2 in 2 pi int r (1 - r^2/h^2)^3 dr). So n = 4 (D - 1) / (pi h^2)
+  ## and the count in a box of side k h is 4 (D - 1) k^2 / pi — free of h, which
+  ## is the point.
+  let restDensity = initSimulationState().sphRestDensity
+  int(4.0 * (HARNESS_SEED_DENSITY_RATIO * restDensity - 1.0) / PI *
+    HARNESS_BOX_RADII * HARNESS_BOX_RADII)
+
+func harnessSeed(count: int; boxSide: float): seq[HarnessParticle] =
+  ## Deterministic scatter, at rest. The same fixed LCG test_field_core seeds
+  ## with, and for the same reason: a lattice would place every particle at the
+  ## one arrangement whose pressure forces cancel by symmetry, which is the
+  ## arrangement that flatters a stability claim.
+  var state = 0x9E3779B9'u32
+  for _ in 0 ..< count:
+    state = state * 1664525'u32 + 1013904223'u32
+    let sampleX = (state shr 8).float / 16777216.0
+    state = state * 1664525'u32 + 1013904223'u32
+    let sampleY = (state shr 8).float / 16777216.0
+    result.add HarnessParticle(
+      x: sampleX * boxSide, y: sampleY * boxSide, sphDensity: 0.0)
+
+func harnessWrap(position, span: float): float =
+  ## Toroidal wrap by true modulo rather than integrate.wgsl's single subtract.
+  ## One span suffices in the shipped world — 3840 px across against a 50 px per
+  ## frame cap — and does not here, where the box is a few smoothing radii wide
+  ## and a saturated run crosses it several times in one frame.
+  result = position - span * floor(position / span)
+  if result >= span or result < 0.0: result = 0.0
+
+proc runFluidHarness(stiffness, smoothingRadius: float; substeps: int;
+    dt: float; frames = HARNESS_FRAMES): HarnessRun =
+  ## One run of the fluid alone, from the seeded compression.
+  let sim = initSimulationState()
+  let count = harnessParticleCount()
+  let boxSide = HARNESS_BOX_RADII * smoothingRadius
+  let substepDt = dt / substeps.float
+  let restDensity = sim.sphRestDensity
+  let maxPressureDensity =
+    restDensity * getTunableFloat("SPH_MAX_DENSITY_RATIO")
+  let minDistanceSq = getTunableFloat("MIN_DISTANCE_SQ")
+  # app.nim hands the shader 1 - friction, and the fluid's own strength
+  # multiplies the whole pass, so the ceiling is measured where it is largest.
+  let friction = 1.0 - sim.friction
+  let fluidStrength = FLUID_STRENGTH_MAX
+  let velocitySmoothing = sim.sphViscosity + SPH_XSPH_EPSILON
+  let softCapThreshold = sim.maxVelocity * 0.5
+  let selfPoly6 = poly6Weight2d(0.0, smoothingRadius)
+  let selfSpikyGradient = spikyGradientMagnitude2d(0.0, smoothingRadius)
+  let radiusSq = smoothingRadius * smoothingRadius
+
+  var particles = harnessSeed(count, boxSide)
+  var deltaVelocityX = newSeq[float](count)
+  var deltaVelocityY = newSeq[float](count)
+  var densityAccum = newSeq[float](count)
+  var pressureTerm = newSeq[float](count)
+  var laggedDensity = newSeq[float](count)
+  var speeds: seq[float] = @[]
+  result.finite = true
+
+  for frame in 0 ..< frames:
+    result.frames = frame + 1
+    for _ in 0 ..< substeps:
+      # Lagged pressure over density squared, per particle. The shader forms
+      # this once for the particle and once per pair for its neighbour; both
+      # read the same lagged field, so hoisting it changes no arithmetic and
+      # takes the 7th power out of the pair loop.
+      for index in 0 ..< count:
+        let density = clamp(
+          particles[index].sphDensity, restDensity, maxPressureDensity)
+        pressureTerm[index] =
+          taitPressure(density, restDensity, stiffness, SPH_DEFAULT_GAMMA) /
+            (density * density)
+        laggedDensity[index] = particles[index].sphDensity
+        deltaVelocityX[index] = 0.0
+        deltaVelocityY[index] = 0.0
+        densityAccum[index] = 1.0  # the normalized self-density
+
+      for i in 0 ..< count:
+        for j in i + 1 ..< count:
+          # Minimum image, which is what the shader's toroidal cell offsets do.
+          var separationX = particles[j].x - particles[i].x
+          var separationY = particles[j].y - particles[i].y
+          if separationX > boxSide * 0.5: separationX -= boxSide
+          elif separationX < -boxSide * 0.5: separationX += boxSide
+          if separationY > boxSide * 0.5: separationY -= boxSide
+          elif separationY < -boxSide * 0.5: separationY += boxSide
+          let distanceSq = separationX * separationX + separationY * separationY
+          if distanceSq <= 0.0 or distanceSq >= radiusSq: continue
+          let distance = sqrt(max(distanceSq, minDistanceSq))
+          let invDistance = 1.0 / distance
+          let directionX = separationX * invDistance
+          let directionY = separationY * invDistance
+          let densityWeight =
+            poly6Weight2d(distance, smoothingRadius) / selfPoly6
+          let gradientWeight =
+            spikyGradientMagnitude2d(distance, smoothingRadius) /
+              selfSpikyGradient
+          let pressureAccel = clamp(
+            SPH_FORCE_SCALE * (pressureTerm[i] + pressureTerm[j]) *
+              gradientWeight,
+            -SPH_MAX_PRESSURE_ACCEL, SPH_MAX_PRESSURE_ACCEL)
+          let smoothDenominator =
+            max(max(laggedDensity[i], laggedDensity[j]), 1.0)
+          let smoothCoefficient =
+            velocitySmoothing * densityWeight / smoothDenominator
+          let pairDeltaX = fluidStrength *
+            ((-pressureAccel * directionX) * substepDt +
+              smoothCoefficient * (particles[j].vx - particles[i].vx))
+          let pairDeltaY = fluidStrength *
+            ((-pressureAccel * directionY) * substepDt +
+              smoothCoefficient * (particles[j].vy - particles[i].vy))
+          deltaVelocityX[i] += pairDeltaX
+          deltaVelocityY[i] += pairDeltaY
+          # Newton's third law, the half-neighbour pair's other half.
+          deltaVelocityX[j] -= pairDeltaX
+          deltaVelocityY[j] -= pairDeltaY
+          densityAccum[i] += densityWeight
+          densityAccum[j] += densityWeight
+
+      var sumOfSquares = 0.0
+      for index in 0 ..< count:
+        particles[index].sphDensity = densityAccum[index]
+        if densityAccum[index] > result.peakDensity:
+          result.peakDensity = densityAccum[index]
+        var velocityX = (particles[index].vx + deltaVelocityX[index]) * friction
+        var velocityY = (particles[index].vy + deltaVelocityY[index]) * friction
+        let speed = sqrt(velocityX * velocityX + velocityY * velocityY)
+        if speed > softCapThreshold and speed > 0.0:
+          let compressed = softCapThreshold + ln(1.0 + (speed - softCapThreshold))
+          let scale = min(compressed, sim.maxVelocity) / speed
+          velocityX *= scale
+          velocityY *= scale
+        particles[index].vx = velocityX
+        particles[index].vy = velocityY
+        particles[index].x = harnessWrap(particles[index].x + velocityX, boxSide)
+        particles[index].y = harnessWrap(particles[index].y + velocityY, boxSide)
+        sumOfSquares += velocityX * velocityX + velocityY * velocityY
+        # NaN fails both comparisons with itself and an infinity fails neither,
+        # so both have to be named to catch a diverged velocity.
+        if velocityX != velocityX or velocityY != velocityY or
+            abs(velocityX) > 1.0e30 or abs(velocityY) > 1.0e30:
+          result.finite = false
+
+      let rootMeanSquare = sqrt(sumOfSquares / count.float)
+      speeds.add rootMeanSquare
+      if rootMeanSquare > result.peakSpeed: result.peakSpeed = rootMeanSquare
+      # A diverged run has answered the question and every later frame only
+      # propagates the infinities, which is what keeps this affordable.
+      if not result.finite: return
+
+  let tailStart = speeds.len - speeds.len div HARNESS_SETTLED_TAIL
+  var total = 0.0
+  for index in tailStart ..< speeds.len: total += speeds[index]
+  result.settledSpeed = total / float(speeds.len - tailStart)
+
+func comesToRest(run: HarnessRun): bool =
+  ## The verdict one run returns.
+  run.finite and run.settledSpeed <= HARNESS_AT_REST_SPEED
+
+proc harnessDt(timeScale: float): float =
+  timeScale * HARNESS_REFERENCE_FRAME_SECONDS
+
+proc measuredBoundary(smoothingRadius: float; substeps: int;
+    timeScale: float): float =
+  ## Bisect for the largest stiffness whose seeded compression comes to rest.
+  ## The bracket is wide enough to hold the boundary anywhere the reachable box
+  ## puts it and narrow enough that fourteen halvings resolve it to a fraction
+  ## of a percent.
+  let dt = harnessDt(timeScale)
+  var low = 0.05
+  var high = 1.0e5
+  for _ in 0 ..< 14:
+    let middle = sqrt(low * high)
+    if comesToRest(runFluidHarness(middle, smoothingRadius, substeps, dt)):
+      low = middle
+    else:
+      high = middle
+  sqrt(low * high)
+
+# The boundary at the points the claims below compare. Measured once at module
+# scope because bisecting is the expensive thing this file does and four of the
+# five tests read the same numbers.
+let
+  harnessDefaultRadius = initSimulationState().interactionRadius.float
+    ## The shipped interaction radius, at fraction 1 — today's fluid.
+  harnessDefaultTimeScale = initSimulationState().timeScale
+  boundaryReference =
+    measuredBoundary(harnessDefaultRadius, 1, harnessDefaultTimeScale)
+  boundaryMoreSubsteps = measuredBoundary(
+    harnessDefaultRadius, SPH_SUBSTEPS_MAX, harnessDefaultTimeScale)
+  boundaryWiderKernel = measuredBoundary(
+    INTERACTION_RADIUS_MAX.float, 1, harnessDefaultTimeScale)
+  boundarySlowTime = measuredBoundary(harnessDefaultRadius, 1, TIME_SCALE_MIN)
+  boundaryFastTime = measuredBoundary(harnessDefaultRadius, 1, TIME_SCALE_MAX)
+
+
+suite "The Fluid Has A Measured Stability Boundary":
+  # Design C7 says the stiffness envelope is a function of the fluid's
+  # configuration written down as a constant. These tests measure the function.
+
+  test "the harness separates a fluid that settles from one that never does":
+    # Without this the tests below are vacuous: a harness that called every run
+    # stable would place the boundary wherever the bracket's top happened to be.
+    checkpoint("boundary " & $boundaryReference)
+    let dt = harnessDt(harnessDefaultTimeScale)
+    let quiet = runFluidHarness(
+      boundaryReference * 0.25, harnessDefaultRadius, 1, dt)
+    let churning = runFluidHarness(
+      boundaryReference * 8.0, harnessDefaultRadius, 1, dt)
+    check comesToRest(quiet)
+    check not comesToRest(churning)
+    # And the difference is not marginal: the unstable run sits orders of
+    # magnitude above the threshold, in the regime where the soft velocity cap
+    # is what bounds the fluid rather than the pressure balance.
+    check churning.settledSpeed > 10.0 * HARNESS_AT_REST_SPEED
+    check quiet.settledSpeed < 0.25 * HARNESS_AT_REST_SPEED
+
+  test "substepping buys stiffness, at least in proportion":
+    # sph_core's own prose already says this ("Higher stiffness needs a smaller
+    # effective timestep; substepping buys that"). This is the arithmetic under
+    # it. Bounded above as well as below, because the derived ceiling below is
+    # linear in the substep count and would over-promise if the real return
+    # were sublinear.
+    checkpoint("1 substep " & $boundaryReference &
+      ", 3 substeps " & $boundaryMoreSubsteps)
+    let substepRatio = SPH_SUBSTEPS_MAX.float
+    check boundaryMoreSubsteps >= substepRatio * boundaryReference
+    check boundaryMoreSubsteps <= substepRatio * substepRatio * boundaryReference
+
+  test "a wider kernel raises the boundary, and by LESS than in proportion":
+    # THE DEVIATION FROM DESIGN C7, and the one the derived ceiling is built on.
+    # C7 predicted the textbook weakly-compressible result, a boundary growing
+    # like (h * substeps / dt) SQUARED, and marked it a hypothesis pending this
+    # measurement. Tripling the smoothing radius multiplies the boundary by
+    # about 2.5 — sublinear, where the square predicts nine.
+    #
+    # WHY, read off the shader rather than fitted: the textbook form collects
+    # one factor of 1/h from the pressure gradient and one from advancing
+    # position by velocity times dt. This integrator has neither. Both kernels
+    # are divided by their self-weight (`forces-sph.wgsl:258-259`), which makes
+    # the pressure magnitude radius-independent on purpose, and integrate.wgsl
+    # advances position by the velocity itself (`:144-145`), not by velocity
+    # times a timestep. One factor of 1/h survives, through the kernel's spatial
+    # derivative, and one factor of dt, through the velocity update.
+    #
+    # The upper bound is the load-bearing half: the ceiling's linear-in-h law is
+    # anchored at the widest kernel the sliders reach, so it sits below the
+    # boundary at every narrower one exactly while the growth stays sublinear.
+    checkpoint("radius 50 " & $boundaryReference &
+      ", radius " & $INTERACTION_RADIUS_MAX & " " & $boundaryWiderKernel)
+    let radiusRatio = INTERACTION_RADIUS_MAX.float / harnessDefaultRadius
+    check boundaryWiderKernel > boundaryReference
+    check boundaryWiderKernel <= radiusRatio * boundaryReference
+
+  test "the boundary is inversely proportional to the timestep":
+    # Two further points, at the ends of the time-scale slider rather than at
+    # the default it was fitted under. Stiffness times timestep is the same
+    # number at all three, which is the one exponent this integrator does share
+    # with the Courant form.
+    let products = [
+      boundaryReference * harnessDt(harnessDefaultTimeScale),
+      boundarySlowTime * harnessDt(TIME_SCALE_MIN),
+      boundaryFastTime * harnessDt(TIME_SCALE_MAX)]
+    checkpoint("stiffness * dt at three time scales: " & $products)
+    for product in products:
+      check abs(product - products[0]) <= 0.05 * products[0]
+
+  test "the boundary sits inside the stiffness envelope at the shipped default":
+    # The envelope the range authority declares is 1 to 40. At the default
+    # fluid — whole interaction radius, one substep, default time scale — the
+    # measured boundary lands inside it, which is what makes a derived ceiling
+    # worth serving: most of that slider's upper travel is already a place the
+    # fluid cannot hold still.
+    checkpoint("boundary " & $boundaryReference &
+      " against envelope " & $SPH_STIFFNESS_MIN & ".." & $SPH_STIFFNESS_MAX)
+    check boundaryReference > SPH_STIFFNESS_MIN
+    check boundaryReference < SPH_STIFFNESS_MAX
+
+
+# ==============================================================================
+# THE STIFFNESS CEILING IS DERIVED FROM THE FLUID'S CONFIGURATION
+# ==============================================================================
+#
+# The suite above measures where the fluid stops holding still. This one holds
+# `stableStiffnessCeiling` under that measurement, so re-running the suite
+# re-checks the fit rather than trusting the coefficient's comment.
+
+const CEILING_BOX_RADII = [5.0, 50.0, INTERACTION_RADIUS_MAX.float]
+  ## Smoothing radii spanning the reachable box. 5 is a tenth of the default
+  ## interaction radius — a narrow kernel that still reaches past the shader's
+  ## 2 px minimum separation — and the top is the widest kernel the sliders
+  ## offer, which is where the linear law is anchored and therefore tightest.
+const CEILING_BOX_TIME_SCALES = [TIME_SCALE_MIN, TIME_SCALE_MAX]
+
+suite "The Derived Stiffness Ceiling Holds Under The Measurement":
+  test "the derived ceiling sits below the measured stability boundary across the box":
+    # Run the fluid AT its own ceiling at each corner and require it to come to
+    # rest. Cheaper than bisecting at every corner and a more direct statement
+    # of the claim: the ceiling is a stiffness the fluid holds.
+    for smoothingRadius in CEILING_BOX_RADII:
+      for substeps in [SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX]:
+        for timeScale in CEILING_BOX_TIME_SCALES:
+          let dt = harnessDt(timeScale)
+          let ceiling = stableStiffnessCeiling(
+            smoothingRadius, substeps, dt, SPH_STIFFNESS_MAX)
+          let run = runFluidHarness(ceiling, smoothingRadius, substeps, dt)
+          checkpoint("radius " & $smoothingRadius & ", substeps " & $substeps &
+            ", time scale " & $timeScale & ", ceiling " & $ceiling &
+            ", settled " & $run.settledSpeed)
+          check comesToRest(run)
+    # And the shipped default, which is the configuration a fresh world runs.
+    let defaultDt = harnessDt(harnessDefaultTimeScale)
+    let defaultSubsteps = initSimulationState().sphSubsteps
+    let defaultCeiling = stableStiffnessCeiling(
+      harnessDefaultRadius, defaultSubsteps, defaultDt, SPH_STIFFNESS_MAX)
+    checkpoint("default ceiling " & $defaultCeiling)
+    check comesToRest(runFluidHarness(
+      defaultCeiling, harnessDefaultRadius, defaultSubsteps, defaultDt))
+
+  test "the margin over the boundary is bounded, so the ceiling is not free":
+    # The other side of the same claim. A ceiling of zero would pass the test
+    # above and serve nobody, so this pins how far below the boundary it may
+    # sit: eight times the ceiling has to be a stiffness the fluid cannot hold,
+    # at the corner where the law is anchored and at the shipped default.
+    for (smoothingRadius, substeps, timeScale) in [
+        (INTERACTION_RADIUS_MAX.float, SPH_SUBSTEPS_MIN,
+          harnessDefaultTimeScale),
+        (harnessDefaultRadius, initSimulationState().sphSubsteps,
+          harnessDefaultTimeScale)]:
+      let dt = harnessDt(timeScale)
+      let ceiling = stableStiffnessCeiling(
+        smoothingRadius, substeps, dt, SPH_STIFFNESS_MAX)
+      let run = runFluidHarness(ceiling * 8.0, smoothingRadius, substeps, dt)
+      checkpoint("radius " & $smoothingRadius & ", ceiling " & $ceiling &
+        ", settled at eight times " & $run.settledSpeed)
+      check not comesToRest(run)
+
+  test "the ceiling never exceeds the stiffness envelope":
+    # By construction rather than by luck — the envelope arrives as the
+    # function's own argument and bounds its result — so this test guards the
+    # construction rather than discovering it. The sweep is what makes "over
+    # the whole reachable box" mean something: every combination of the three
+    # deriving inputs, at the ends of each of their ranges.
+    for smoothingRadius in [SPH_RADIUS_FRACTION_MIN * INTERACTION_RADIUS_MIN.float,
+        SPH_RADIUS_FRACTION_MAX * INTERACTION_RADIUS_MAX.float]:
+      for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+        for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
+          let ceiling = stableStiffnessCeiling(smoothingRadius, substeps,
+            harnessDt(timeScale), SPH_STIFFNESS_MAX)
+          checkpoint("radius " & $smoothingRadius & ", substeps " & $substeps &
+            ", time scale " & $timeScale)
+          check ceiling <= SPH_STIFFNESS_MAX
+          check ceiling > 0.0
+
+  test "the ceiling is monotone increasing in radius fraction and in substeps":
+    # The two claims the panel makes when it greys part of the slider out: a
+    # narrower kernel takes less stiffness, and more substeps buy more of it.
+    # Compared strictly below the envelope, since the clamp makes the function
+    # flat once it binds — flat is not a counterexample to increasing, but a
+    # test that could not tell them apart would pass on a constant.
+    let dt = harnessDt(TIME_SCALE_MAX)  # the corner where the clamp never binds
+    for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+      var previous = 0.0
+      for fraction in radiusFractionSweep(8):
+        let ceiling = stableStiffnessCeiling(
+          fraction * INTERACTION_RADIUS_MAX.float, substeps, dt,
+          SPH_STIFFNESS_MAX)
+        checkpoint("fraction " & $fraction & ", substeps " & $substeps)
+        check ceiling > previous
+        previous = ceiling
+    for fraction in radiusFractionSweep(4):
+      var previous = 0.0
+      for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+        let ceiling = stableStiffnessCeiling(
+          fraction * INTERACTION_RADIUS_MAX.float, substeps, dt,
+          SPH_STIFFNESS_MAX)
+        checkpoint("fraction " & $fraction & ", substeps " & $substeps)
+        check ceiling > previous
+        previous = ceiling

@@ -33,6 +33,18 @@ export interface ParamNotch {
   label: string;
 }
 
+// What bounds a value beyond the min/max envelope below.
+//
+// Constant for all but one tunable: the declared range is the whole story, and
+// a slider's whole track is live. A derived bound means a pure function on the
+// Nim side caps how much of the stored value takes effect, from other live
+// parameters — so the track above the current ceiling is dormant, and that
+// ceiling moves when those other parameters do. It arrives on the stats push,
+// keyed by this descriptor's id; `reason` is Nim's own words for why.
+export type ParamBound =
+  | { kind: "constant" }
+  | { kind: "derived"; ceilingId: string; reason: string };
+
 // What every tunable carries, whatever its cardinality.
 interface ParamDescriptorBase {
   id: string;
@@ -50,6 +62,8 @@ interface ParamDescriptorBase {
   hint: string;
   // Labelled tick positions. Empty for most parameters.
   notches: ParamNotch[];
+  // What bounds the value beyond the envelope above.
+  bound: ParamBound;
 }
 
 // One value for the world, read and written by id through getParam/setParam.
@@ -106,6 +120,11 @@ export interface StatsSample {
   // anything is currently moving them, so the panel reports what the
   // simulation holds without tracking which feature wrote it.
   params: Record<string, number>;
+  // The live ceiling of every derived bound, by parameter id. A ceiling moves
+  // when the parameters it reads move, which the panel may not have caused, so
+  // it arrives on this sample rather than being asked for — the same channel
+  // and the same reason as `params` above.
+  ceilings: Record<string, number>;
 }
 
 export interface PresetKeys {

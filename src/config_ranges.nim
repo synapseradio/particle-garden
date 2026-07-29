@@ -102,11 +102,27 @@ const
     ##
     ## The VALUE 0.1 is a working bound, not a measured one: it is the smallest
     ## kernel the slider offers, chosen to leave room below the default while
-    ## staying clear of the singularity. One-world task C3 may RAISE it, because
-    ## the stable stiffness ceiling falls quadratically with this fraction
-    ## (design C7) and every labelled stiffness notch has to sit below the
-    ## minimum ceiling over the reachable box — the floor is what decides that
-    ## worst case. [?]
+    ## staying clear of the singularity.
+    ##
+    ## TWO MEASUREMENTS BEAR ON RAISING IT, both from the stability sweep in
+    ## tests/test_sph_core.nim, and neither forces a change yet.
+    ##
+    ## The stable stiffness ceiling falls LINEARLY with this fraction, not
+    ## quadratically as design C7 predicted before the sweep existed
+    ## (src/sph_core.nim's SPH_STABILITY_COEFFICIENT records why). So the floor
+    ## still decides the worst-case ceiling, at 0.0025 * fraction *
+    ## interactionRadius * substeps / dt. Every labelled stiffness notch has to
+    ## sit below that worst case, and stiffness carries no notches today — the
+    ## sweep in tests/test_param_descriptor.nim goes red on the first one that
+    ## strands.
+    ##
+    ## Below a smoothing radius of about 2.5 px the fluid computes NOTHING: the
+    ## shader floors every pair distance at MIN_DISTANCE_SQ (2 px), and both
+    ## kernels return zero at and beyond their own radius, so a kernel narrower
+    ## than that floor sees no neighbour at any separation. This fraction against
+    ## the smallest interaction radius reaches 1 px, which is inside that inert
+    ## region. Raising the floor to make it unreachable is a live option and a
+    ## decision for whoever calibrates the fraction's default (C2.6). [?]
   SPH_RADIUS_FRACTION_MAX* = 1.0
     ## Exactly one, and the assertion below holds it there. One is the whole
     ## interaction radius, which is the kernel every fluid world ran before this

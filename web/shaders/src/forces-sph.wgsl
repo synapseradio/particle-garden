@@ -86,8 +86,13 @@ const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};   // 300^2 - mouse influ
 // stiffness, viscosity, gamma — arrive through SimParams; XSPH epsilon through
 // the bundler placeholder below).
 const SPH_XSPH_EPSILON: f32 = {{TUNABLE_SPH_XSPH_EPSILON}};  // Velocity-smoothing blend weight
-const SPH_FORCE_SCALE: f32 = 3.0;          // Pressure acceleration gain (px/frame^2). Primary aesthetic knob.
-const SPH_MAX_PRESSURE_ACCEL: f32 = 5000.0;  // Clamp guarding the fixed-point i32 delta from overflow.
+// Pressure acceleration gain (px/frame^2), the primary aesthetic knob, and the
+// per-pair clamp guarding the fixed-point i32 delta from overflow. Both arrive
+// from src/sph_core.nim: the stable stiffness ceiling served to the panel is
+// fitted against this gain, so a number changed here alone would leave that
+// ceiling describing a fluid this shader no longer runs.
+const SPH_FORCE_SCALE: f32 = {{TUNABLE_SPH_FORCE_SCALE}};
+const SPH_MAX_PRESSURE_ACCEL: f32 = {{TUNABLE_SPH_MAX_PRESSURE_ACCEL}};
 // Ceiling on the density fed to Tait, in multiples of rest density. Tait raises
 // (density/rest) to the gamma power — 7 by default — so an unbounded input lets
 // a compressed cluster feed its own pressure spike: the spike flings particles
