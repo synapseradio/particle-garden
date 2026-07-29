@@ -961,7 +961,7 @@ same descriptor without conflicting.
       STILL OUTSTANDING AND NOT THIS GROUP'S TO WRITE: `getParamImpl`/`setParamImpl` have no
       `cameraZoom` case, so the descriptor exists and the slider renders, but reads and writes do not
       reach the live camera yet. That routing needs camera state in `webgpu_render.nim`.
-- [ ] 8.11 Let the climate own its output surface. Which parameters the weather writes is
+- [x] 8.11 Let the climate own its output surface. Which parameters the weather writes is
       restated in three languages: `app.nim`'s frame loop (string literals), `state.ts`'s
       drift sync, and `state.ts`'s regime re-read — a third drifting axis would move the
       simulation while the panel silently stopped reporting part of it, and no test can see
@@ -972,6 +972,27 @@ same descriptor without conflicting.
       routed the TS ids through the descriptor `group` field and collapsed the frame loop's
       two per-frame `setParam` round-trips into one combined write — check the code, then
       remove whatever restatement remains.
+      DONE, delegate-built, lead-integrated. Ground truth first, as instructed: the earlier
+      cleanup had collapsed the frame loop's round-trips into `setClimateFromSimulation`, but
+      the ids had moved into `web_api.nim` as literals and state.ts's two restatements had
+      merged into one `REGIME_COORDINATE_IDS` constant deriving from nothing; the group-field
+      route the task floated cannot work (group `rd` holds five ids — group says where the
+      panel puts a control, not what the weather writes). Single home now:
+      `climate_core.CLIMATE_PARAM_IDS: array[ClimateAxis, string]` — indexed by the axis enum
+      so a third axis with no id fails the build. web_api loops the enum, takes the tour
+      point whole, serves `climateParamIds()`, and pushes the values on the existing stats
+      channel; state.ts derives the ids and applies pushes inside `onStats`;
+      `syncDriftingParams` and the 250 ms timer are deleted. Guards went red first: the
+      panel-agreement suite printed the restated ids, and the TS fixture deliberately uses
+      non-shipped ids so a controller holding its own copy cannot pass. CADENCE: readout
+      moves 250 ms → 500 ms, inherited from the stats tick — flagged for the user. RAISED,
+      not decided: `applyRegimeImpl` still writes `rdFeed`/`rdKill` literals — that names
+      what a regime button sets, coinciding with the climate's writes only via
+      `rdClimateTour`'s projection; fix/defer/leave is the user's call. Task 4.5's force
+      weather extends this mechanism with no TypeScript edit. INTEGRATION SEAM, lead-fixed:
+      the delegate's state.test.ts fixture predated 5.9's discriminated union and lacked the
+      required `arity` — one-line fixture fix, then the full gate ran green over the merged
+      result.
 
 ## 9. One world (S2)
 

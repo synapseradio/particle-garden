@@ -18,6 +18,7 @@ function descriptorFor(id: string): ParamDescriptor {
     id,
     label: id,
     group: "rd",
+    arity: "scalar",
     kind: "float",
     min: 0,
     max: 1,
