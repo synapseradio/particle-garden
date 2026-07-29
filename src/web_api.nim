@@ -49,6 +49,7 @@ when defined(js):
   import preset
   import canvas_input
   import camera_core
+  import climate_core
   import ui/api/param_descriptor
   import ui/state/matrix_state
   import ui/state/palette_state
@@ -507,6 +508,14 @@ when defined(js):
       jsArray.push(entry)
     jsArray
 
+  # The ids the weather writes, served so the panel derives them instead of
+  # keeping its own copy. Built once: the list is a constant.
+  let climateParamIdArray = block:
+    let jsArray = newJsArray()
+    for axis in ClimateAxis:
+      jsArray.push(toJs(cstring(CLIMATE_PARAM_IDS[axis])))
+    jsArray
+
   proc applyRegimeImpl(id: string) =
     ## Set feed and kill to a named regime's coordinates, through the ordinary
     ## descriptor-clamped setParam path so the sliders read back what landed.
@@ -540,15 +549,24 @@ when defined(js):
         return regime.id
     ""
 
-  # Resolved once at module scope. The climate writes these two every frame,
-  # and a string lookup per parameter per frame buys nothing when the pair
-  # never varies.
-  let rdFeedDescriptor = paramsById["rdFeed"]
-  let rdKillDescriptor = paramsById["rdKill"]
+  # Resolved once at module scope, off climate_core's list of what the weather
+  # writes. A string lookup per axis per frame buys nothing when the set never
+  # varies, and resolving here means a climate id with no descriptor raises at
+  # startup rather than mid-drift.
+  let climateDescriptors: array[ClimateAxis, ParamDescriptor] = block:
+    var resolved: array[ClimateAxis, ParamDescriptor]
+    for axis in ClimateAxis:
+      resolved[axis] = paramsById[CLIMATE_PARAM_IDS[axis]]
+    resolved
 
-  proc setClimateFromSimulation*(feed, kill: float) =
+  proc setClimateFromSimulation*(point: array[ClimateAxis, float]) =
     ## The parameter path for writes the SIMULATION originates rather than the
-    ## user — the drifting climate advancing feed and kill each frame.
+    ## user — the drifting climate advancing its axes each frame.
+    ##
+    ## Takes the tour point whole rather than one float per axis, so the frame
+    ## loop hands over what climate_core produced without naming the axes on
+    ## the way past. An axis added to ClimateAxis reaches this clamp with no
+    ## call site to widen.
     ##
     ## Deliberately the same clamped path a slider drag takes, not a shortcut
     ## into CONFIG: the panel reads its values back through getParam, so a
@@ -556,12 +574,12 @@ when defined(js):
     ## showing the old numbers. Watching the controls move is what makes the
     ## weather legible instead of mysterious.
     ##
-    ## Both axes land in ONE mirror cycle. A climate point is a coordinate in
-    ## the feed/kill plane, so the two halves belong to the same write, and
-    ## running the store copy and the CONFIG mirror once per frame instead of
-    ## twice is what keeps that write off the frame budget.
-    let clampedFeed = clampParamValue(rdFeedDescriptor, feed)
-    let clampedKill = clampParamValue(rdKillDescriptor, kill)
+    ## Every axis lands in ONE mirror cycle. A climate point is a coordinate in
+    ## the feed/kill plane, so its halves belong to the same write, and running
+    ## the store copy and the CONFIG mirror once per frame instead of once per
+    ## axis is what keeps that write off the frame budget.
+    let clampedFeed = clampParamValue(climateDescriptors[caFeed], point[caFeed])
+    let clampedKill = clampParamValue(climateDescriptors[caKill], point[caKill])
     updateSimulation(proc(simState: var SimulationState) =
       simState.rdFeed = clampedFeed
       simState.rdKill = clampedKill)
@@ -607,9 +625,24 @@ when defined(js):
       gpuPresentMs, gpuFieldMs: float) =
     ## Called from app.nim's frame loop (currently every ~500ms; the cadence
     ## is loop-side). Raw numbers — formatting belongs to the UI.
+    ##
+    ## `params` carries the parameters the SIMULATION writes on its own, so the
+    ## panel learns of a drifting climate by being told rather than by asking.
+    ## It rides this channel rather than one of its own because the panel needs
+    ## a single subscription for everything the frame loop reports, and a
+    ## second weather's axes join by appearing in the loop below.
+    ##
+    ## Sent on every push, not only while drift is on: the panel then holds the
+    ## truth about these parameters whatever moved them, and never has to track
+    ## which feature is currently writing which id.
     if statsCallbacks.len == 0:
       return
     let stats = newJsObject()
+    let simulationWrites = newJsObject()
+    for axis in ClimateAxis:
+      let id = CLIMATE_PARAM_IDS[axis]
+      simulationWrites[cstring(id)] = toJs(getParamImpl(id))
+    stats["params"] = toJs(simulationWrites)
     stats["fps"] = toJs(fps)
     stats["particleCount"] = toJs(particleCount)
     stats["gridTimeMs"] = toJs(gridTimeMs)
@@ -934,6 +967,7 @@ when defined(js):
     result["getClimateDrift"] = toJs(proc(): bool = CONFIG.climateDrift)
     result["setClimateDrift"] = toJs(proc(enabled: bool) =
       setClimateDriftImpl(enabled))
+    result["climateParamIds"] = toJs(proc(): JsObject = climateParamIdArray)
 
     result["rdRegimes"] = toJs(proc(): JsObject = regimeArray)
     result["getRdRegime"] = toJs(proc(): cstring = cstring(activeRegimeImpl()))

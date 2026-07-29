@@ -268,16 +268,18 @@ proc loop(now: float): Future[void] {.async.} =
   # a minute" should mean a minute, not a minute divided by how fast the
   # simulation happens to be running.
   #
-  # It writes through web_api's ordinary setParam path, so the feed and kill
-  # sliders visibly move and the panel keeps telling the truth about the state.
-  # Writing CONFIG directly here would be a frame cheaper and would leave the
-  # UI lying — the climate-drift spec requires the visible path for that
-  # reason.
+  # It writes through web_api's ordinary setParam path, so the toured sliders
+  # visibly move and the panel keeps telling the truth about the state. Writing
+  # CONFIG directly here would be a frame cheaper and would leave the UI lying
+  # — the climate-drift spec requires the visible path for that reason.
+  #
+  # The tour point travels whole. Which parameters it lands on is climate_core's
+  # to say (CLIMATE_PARAM_IDS), so this loop never names an axis and an added
+  # one needs nothing here.
   if config.CONFIG.climateDrift:
     climatePhase = tourAdvance(
       climatePhase, config.CONFIG.climateSpeed, cappedDt)
-    let climate = tourAt(RD_CLIMATE_TOUR, climatePhase)
-    web_api.setClimateFromSimulation(climate[caFeed], climate[caKill])
+    web_api.setClimateFromSimulation(tourAt(RD_CLIMATE_TOUR, climatePhase))
 
   await physics(dt)
 

@@ -23,6 +23,7 @@
 import std/unittest
 import ../src/climate_core
 import ../src/config_ranges
+import ../src/ui/api/param_descriptor
 
 const CLIMATE_CORE_TESTS_LOADED* = true
 
@@ -239,3 +240,39 @@ suite "Climate Drift Tours The Named Regimes":
     for step in 0 .. 20:
       let phase = step.float / 20.0
       check tourAdvance(phase, CLIMATE_SPEED_MAX, 0.0) == wrapPhase(phase)
+
+suite "The Climate Owns Its Output Surface":
+  # THE DEFECT THIS FAMILY PINS. The weather moves parameters from the frame
+  # loop, so every consumer — the clamp that writes them, the panel that reads
+  # them back — has to know which ones. Held as a separate list per consumer,
+  # a third axis moves the simulation while a panel silently stops reporting
+  # part of it, and nothing goes red. CLIMATE_PARAM_IDS is the one list; these
+  # tests check the agreements a compiler cannot.
+
+  test "every parameter the climate writes has a descriptor":
+    # An id here that names no descriptor cannot be clamped, cannot be read
+    # back through getParam, and cannot appear on a slider — the weather would
+    # move a parameter the panel has no way to show.
+    var known: seq[string]
+    for descriptor in buildParamDescriptors():
+      known.add(descriptor.id)
+    for axis in ClimateAxis:
+      check CLIMATE_PARAM_IDS[axis] in known
+
+  test "the descriptor sweep can fail":
+    # THE NON-VACUOUS CHECK. The sweep above is a membership test over a list
+    # built at runtime; if that list ever came back holding everything, the
+    # sweep would pass for the wrong reason.
+    var known: seq[string]
+    for descriptor in buildParamDescriptors():
+      known.add(descriptor.id)
+    check known.len > 0
+    check "noSuchParameter" notin known
+
+  test "the climate writes the coordinates its tour travels in":
+    # CLIMATE_PARAM_IDS and the tour table are two statements about the same
+    # axes. The array types tie their arity together at compile time; this
+    # states the pairing an editor would otherwise have to remember.
+    check CLIMATE_PARAM_IDS.len == RD_CLIMATE_TOUR[0].len
+    for axis in ClimateAxis:
+      check CLIMATE_PARAM_IDS[axis].len > 0

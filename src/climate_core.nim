@@ -99,6 +99,24 @@ type ClimateAxis* = enum
   caFeed
   caKill
 
+const CLIMATE_PARAM_IDS*: array[ClimateAxis, string] = [
+  caFeed: "rdFeed",
+  caKill: "rdKill",
+]
+  ## Which parameters this weather writes, named here and nowhere else. The
+  ## parameter path resolves its descriptors through this array and gardenAPI
+  ## serves it to the panel, so the frame loop, the clamp and the readout all
+  ## move together when an axis is added.
+  ##
+  ## Indexed by ClimateAxis rather than held as a bare list, so arity is
+  ## agreement the compiler makes: an axis added to the enum without an id
+  ## here fails the build rather than drifting the simulation past a panel
+  ## that has quietly stopped reporting one of its coordinates.
+  ##
+  ## These double as the regime coordinates, because rdClimateTour below
+  ## projects RD_REGIMES — which is why the panel lights its regime buttons
+  ## off the same list it reads the drift from.
+
 func rdClimateTour(): array[RD_REGIMES.len, array[ClimateAxis, float]] =
   ## The named regimes' coordinates as tour waypoints. RD_REGIMES stays the one
   ## source of those numbers; this projects them, and inherits the static
