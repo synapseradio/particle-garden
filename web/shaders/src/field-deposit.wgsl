@@ -9,23 +9,19 @@
 // ignites the pattern, tracking wherever the particles happen to be.
 //
 // FIXED-POINT ATOMICS:
-// Many particles can land in the same field cell in one frame, so the deposit is
-// accumulated with integer atomics (GPUs have no atomic<f32>). Each particle adds
-// depositAmount * FIXED_POINT_SCALE (i32); field-resolve.wgsl decodes the sum back
-// to f32 and folds it into the field texture, then zeroes this buffer.
+// Many particles can land in the same field cell in one frame, so the deposit
+// accumulates as depositAmount * FIXED_POINT_SCALE in atomic i32 (rationale:
+// fixed_point.wgsl); field-resolve.wgsl decodes the sum back to f32, folds it
+// into the field texture, then zeroes this buffer.
 //
 // CHANNEL LAYOUT: one i32 per cell, the inhibitor deposit, so a cell index is
 // the buffer index directly — here and in field-resolve.wgsl alike.
 //
-// One channel, because a second, never-written activator slot existed here
-// before and cost 1 MB of VRAM plus 1 MB per frame of read/write traffic to
-// reserve for nothing. Signed secretion into the inhibitor channel already gives
-// both roles the ecology needs — positive builds structure, negative erodes it —
-// so the slot is not merely unused, it is unnecessary. A second channel would
-// mean striding every index by the channel count here and in field-resolve.wgsl,
-// doubling the allocation in webgpu_init.createFieldResources and byteLengthFor
-// in webgpu_compute, and loading/storing/resetting each slot in
-// field-resolve.wgsl. Do that when a coupling actually needs the channel.
+// One channel: the inhibitor deposit. Signed secretion into it already gives
+// both roles the ecology needs — positive builds structure, negative erodes it.
+// A second (activator) deposit channel would double this buffer and require
+// synchronized changes to webgpu_init.createFieldResources,
+// webgpu_compute.byteLengthFor, and field-resolve.wgsl.
 //
 // INDEXING: reads particles[] in ORIGINAL index space (globalId.x), the same space
 // integrate.wgsl and field-force.wgsl use. A splat needs no neighbours, so this
@@ -38,17 +34,6 @@
 // negative erodes it, zero leaves the field unmarked. The scale multiplies the
 // AMPLITUDE only — the splat kernel's normalization is untouched, so a
 // particle's total contribution stays conserved whatever its species.
-//
-// BINDING MANIFEST:
-// +-------+---------------------------+-------------------+--------+
-// | Bind  | Shader Type               | JS Buffer         | Access |
-// +-------+---------------------------+-------------------+--------+
-// |   0   | uniform GridParams        | gridParams        | read   |
-// |   1   | storage array<Particle>   | particlesA        | read   |
-// |   2   | storage atomic<i32>       | fieldDeposit      | r/w    |
-// |   3   | uniform FieldParams       | fieldParams       | read   |
-// |   4   | uniform SpeciesChemistry  | speciesChemistry  | read   |
-// +-------+---------------------------+-------------------+--------+
 // =============================================================================
 
 //! import particle
@@ -99,8 +84,6 @@ fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
     chemistry.secretion[particle.species / 4u][particle.species % 4u];
   let speciesDeposit = params.depositAmount * secretion;
 
-  // Map the particle's world position to a field cell. The field spans the
-  // full world rect.
   let cell = fieldCellFor(particle.pos,
     vec2<f32>(grid.canvasWidth, grid.canvasHeight));
   // Splat the deposit across the kernel. The field wraps, so cell offsets wrap

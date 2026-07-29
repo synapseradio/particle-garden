@@ -16,6 +16,8 @@
 // field-force.wgsl, the renderer, and the next frame's resolve all read. That is why
 // src/field_core.nim statically asserts RD_STEPS_PER_FRAME is odd.
 //
+// Gray-Scott model: Pearson 1993, https://www.science.org/doi/10.1126/science.261.5118.189
+//
 // THE MATH MIRRORS field_core.grayScottStep EXACTLY (the natively-tested authority):
 //   reaction = A * B^2
 //   A' = A + dt*(Da*lapA - reaction + feed*(1 - A))
@@ -36,16 +38,6 @@
 // CHANNELS: .r = activator (A), .g = inhibitor (B). The .b and .a channels are
 // RESERVED STATE CHANNELS for a multi-channel reaction and are carried through
 // untouched — see field-resolve.wgsl for why they cost nothing.
-//
-// BINDING MANIFEST:
-// +-------+-------------------------------------+----------------+--------+
-// | Bind  | Shader Type                         | Resource       | Access |
-// +-------+-------------------------------------+----------------+--------+
-// |   0   | texture_2d<f32>                     | src view       | sample |
-// |   1   | texture_storage_2d<rgba16float,write> | dst view     | write  |
-// |   2   | uniform FieldParams                 | fieldParams    | read   |
-// |   3   | uniform ReactionParams              | reactionParams | read   |
-// +-------+-------------------------------------+----------------+--------+
 // =============================================================================
 
 //! import field_params
@@ -53,8 +45,7 @@
 //! import field_grid
 
 @group(0) @binding(0) var srcField: texture_2d<f32>;
-// rgba16float (see field-resolve.wgsl): rg16float is not a storage-capable
-// format in WebGPU. Only .rg is meaningful (.r = activator, .g = inhibitor).
+// rgba16float format rationale: field_grid.wgsl.
 @group(0) @binding(1) var dstField: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var<uniform> params: FieldParams;
 @group(0) @binding(3) var<uniform> reaction: ReactionParams;

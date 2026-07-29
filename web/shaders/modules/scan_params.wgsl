@@ -3,7 +3,7 @@
 // =============================================================================
 // ScanParams uniform struct for prefix sum passes.
 //
-// Used by: prefix-sum, prefix-sum-local, prefix-sum-blocks, prefix-sum-final
+// Used by: prefix-sum-local, prefix-sum-blocks, prefix-sum-final
 //
 // ALIGNMENT: 16 bytes
 // =============================================================================

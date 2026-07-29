@@ -22,7 +22,7 @@
 // 0.7 temporal smoothing of the density field — is what damps the pressure
 // feedback loop into stability at gamma = 7.
 //
-// STABILITY CHOICES (see the report for the rationale and the tuning knobs):
+// STABILITY CHOICES:
 //   - Density used for pressure is floored at rest density, so pressure is
 //     purely repulsive (P >= 0). This dodges the tensile instability of
 //     negative pressure and the init blowup when the lagged density is still 0.
@@ -40,19 +40,6 @@
 //     magnitude is radius-independent and SPH_FORCE_SCALE reads in px/frame^2.
 //   - The stored density is the physical one Tait consumes. It is private to
 //     this pass, so nothing outside needs it in another range.
-//
-// BINDING MANIFEST (identical to forces.wgsl — a clone of its 7-entry layout):
-// +-------+---------------------------+------------------------+--------+
-// | Bind  | Shader Type               | JS Buffer              | Access |
-// +-------+---------------------------+------------------------+--------+
-// |   0   | uniform SimParams         | simParams              | read   |
-// |   1   | storage array<Particle>   | particlesSorted        | read   |
-// |   2   | storage array<u32>        | sortedToOriginal       | read   |
-// |   3   | storage array<u32>        | cellStartOffsets       | read   |
-// |   4   | storage array<u32>        | cellParticleCounts     | read   |
-// |   5   | storage atomic<i32>       | velocityDeltaFixed     | r/w    |
-// |   6   | storage atomic<i32>       | sphDensityDeltaFixed   | r/w    |
-// +-------+---------------------------+------------------------+--------+
 //
 // THREAD MAPPING: One particle per thread (sorted index space)
 //
@@ -102,13 +89,9 @@ const SPH_MAX_PRESSURE_ACCEL: f32 = {{TUNABLE_SPH_MAX_PRESSURE_ACCEL}};
 // compression near 1.5, so this leaves normal behaviour untouched.
 const SPH_MAX_DENSITY_RATIO: f32 = {{TUNABLE_SPH_MAX_DENSITY_RATIO}};
 
-// KERNEL DENSITY ENCODES AT ITS OWN SCALE, not FIXED_POINT_SCALE. Each weight
-// below is divided by the self-weight, so a neighbour adds at most 1.0 and the
-// accumulated total counts neighbours — a quantity that reaches MAX_PARTICLES,
-// which the velocity scale's span cannot hold. SPH_DENSITY_FIXED_POINT_SCALE
-// (fixed_point.wgsl, derived in src/sph_core.nim) is coarse enough that the
-// whole particle budget encodes rather than wrapping. integrate.wgsl decodes
-// with the matching inverse; the pair must move together.
+// Kernel density encodes at SPH_DENSITY_FIXED_POINT_SCALE, not
+// FIXED_POINT_SCALE; the two-scale rationale and the one-encoder-one-decoder
+// invariant live in fixed_point.wgsl.
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -129,7 +112,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // sweep below visits only the cell block around a particle and the cells are
   // sized to the interaction radius (src/grid.nim), so a larger smoothing
   // radius would silently drop the neighbours that fall outside the block. The
-  // constraint is unrepresentable rather than clamped (design C5). Everything
+  // constraint is unrepresentable rather than clamped. Everything
   // downstream already takes the radius as a value: both kernels recompute
   // their normalization from it (src/sph_core.nim).
   let smoothingRadius = params.interactionRadius * params.sphRadiusFraction;
@@ -184,11 +167,11 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     var offsetX: i32;
     var offsetY: i32;
 
-    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }         // Same cell
-    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }    // Right
-    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }   // Bottom-left
-    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }    // Bottom
-    else { offsetX = 1; offsetY = 1; }                          // Bottom-right
+    if (neighborIdx == 0) { offsetX = 0; offsetY = 0; }
+    else if (neighborIdx == 1) { offsetX = 1; offsetY = 0; }
+    else if (neighborIdx == 2) { offsetX = -1; offsetY = 1; }
+    else if (neighborIdx == 3) { offsetX = 0; offsetY = 1; }
+    else { offsetX = 1; offsetY = 1; }
 
     var neighborCellX = cellX + offsetX;
     var neighborCellY = cellY + offsetY;
@@ -247,7 +230,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
       let otherParticle = particlesSorted[otherSortedIdx];
       let otherOriginalIdx = sortedToOriginal[otherSortedIdx];
 
-      // Separation vector (accounting for toroidal wrapping), from this to other.
       let separationX = (otherParticle.pos.x + toroidalOffsetX) - thisParticle.pos.x;
       let separationY = (otherParticle.pos.y + toroidalOffsetY) - thisParticle.pos.y;
       let distanceSq = separationX * separationX + separationY * separationY;
@@ -275,7 +257,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         var pressureAccel = SPH_FORCE_SCALE * pairPressure * gradientWeight;
         pressureAccel = clamp(pressureAccel, -SPH_MAX_PRESSURE_ACCEL, SPH_MAX_PRESSURE_ACCEL);
 
-        // Symmetric velocity diffusion: physical viscosity + XSPH smoothing.
+        // Symmetric velocity diffusion: physical viscosity + XSPH smoothing
+        // (Monaghan 1989: https://www.sciencedirect.com/science/article/pii/0021999189900326).
         // Density-normalized (by the denser of the pair, symmetric in i/j) so a
         // single pair can never move the velocity by more than (viscosity +
         // epsilon) times the velocity gap — the XSPH stability bound.
@@ -316,7 +299,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     }
   }
 
-  // Commit THIS particle's accumulated velocity and its fresh kernel density.
   let thisDeltaVxFixed = i32(deltaVelocityThisX * FIXED_POINT_SCALE);
   let thisDeltaVyFixed = i32(deltaVelocityThisY * FIXED_POINT_SCALE);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], thisDeltaVxFixed);

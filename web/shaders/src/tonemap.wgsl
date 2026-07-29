@@ -10,7 +10,7 @@
 // The pass draws with alpha blending over the flat background clear already in
 // the swap chain. The field is sampled HERE (binding 4) and folded into the HDR
 // light BEFORE exposure and the ACES tonemap, so the field is graded with
-// everything else rather than shown as a raw LDR backdrop (S10).
+// everything else rather than shown as a raw LDR backdrop.
 // params.fieldOpacity gates and scales that contribution, and it is the user's
 // slider: at its zero the pass costs nothing.
 // The output alpha is a coverage term (how lit the pixel is); where the field
