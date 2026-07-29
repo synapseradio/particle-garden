@@ -8,7 +8,7 @@
 // tests/test_panel_reachability.nim reads this file and fails on any
 // descriptor it places neither by id nor by group.
 
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { PanelController } from "../state";
 import { groupParamIds } from "../lib/param-groups";
 import { Section } from "./Section";
@@ -40,17 +40,6 @@ export function Panel(props: { ctrl: PanelController }) {
   const ctrl = props.ctrl;
   const [collapsed, setCollapsed] = createSignal(false);
   const toggleCollapsed = () => setCollapsed(!collapsed());
-
-  // The drifting climate moves feed and kill from the frame loop, which has no
-  // way to push at the panel. Poll while it is on, and only while it is on —
-  // an always-running timer would re-read every frame's worth of state for a
-  // feature that is off by default. Four reads a second is enough for a slider
-  // to look like it is moving without the panel doing work between them.
-  createEffect(() => {
-    if (!ctrl.climateDrift()) return;
-    const timer = setInterval(() => ctrl.syncDriftingParams(), 250);
-    onCleanup(() => clearInterval(timer));
-  });
 
   const groupIds = (group: string) => groupParamIds(ctrl.descriptors, group);
 

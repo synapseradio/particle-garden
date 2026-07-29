@@ -9,12 +9,6 @@ import { createStore } from "solid-js/store";
 import type { GardenAPI, StatsSample } from "./garden-api";
 import { scalarParamIds } from "./lib/param-groups";
 
-// The two coordinates a Gray-Scott regime is. A drag on either lands the pair
-// on a regime or off it, and the drifting climate walks the pair from the frame
-// loop, so both paths re-read the same two ids. Nim decides which regime a pair
-// sits in (getRdRegime) and how the climate moves it (climate_core).
-const REGIME_COORDINATE_IDS: readonly string[] = ["rdFeed", "rdKill"];
-
 export function createPanelController(api: GardenAPI) {
   const descriptors = api.descriptor();
   const byId = new Map(descriptors.map((entry) => [entry.id, entry]));
@@ -22,6 +16,13 @@ export function createPanelController(api: GardenAPI) {
   // is. The per-species columns hold one value per species in the live array
   // chemistry() returns, and ChemistryEditor reads that array directly.
   const scalarIds = scalarParamIds(descriptors);
+
+  // The parameters the weather walks, asked for rather than listed. They are
+  // also the coordinates a Gray-Scott regime is, because the climate tours the
+  // named regimes — so a drag onto them lights a button for the same reason a
+  // drift off them unlights one. Nim owns both facts: which ids the climate
+  // writes (climate_core) and which regime a point sits in (getRdRegime).
+  const climateParamIds = api.climateParamIds();
 
   const initialParams: Record<string, number> = {};
   for (const id of scalarIds) initialParams[id] = api.getParam(id);
@@ -77,7 +78,23 @@ export function createPanelController(api: GardenAPI) {
 
   api.onReady(() => {
     setReady(true);
-    api.onStats(setStats);
+    api.onStats((sample) => {
+      setStats(sample);
+      // Parameters the simulation moved on its own arrive with the sample; the
+      // panel is told rather than polling for them. Applied by comparison so a
+      // sample that moved nothing — the usual case, since drift is off by
+      // default — costs no store write and no regime lookup.
+      let moved = false;
+      for (const [id, value] of Object.entries(sample.params)) {
+        if (params[id] !== value) {
+          setParams(id, value);
+          moved = true;
+        }
+      }
+      // The climate walks the regime coordinates, so a drift can light or
+      // unlight a button. Nim owns the comparison.
+      if (moved) setRdRegimeSignal(api.getRdRegime());
+    });
     // Pick up whatever init applied after module eval: the URL overrides and
     // the randomized matrix.
     syncAll();
@@ -108,9 +125,9 @@ export function createPanelController(api: GardenAPI) {
     setParam(id: string, raw: number) {
       api.setParam(id, raw);
       syncParam(id);
-      // Feed and kill decide which regime is lit; a drag off a regime's
-      // coordinates unlights it, and onto them lights it.
-      if (REGIME_COORDINATE_IDS.includes(id)) {
+      // These coordinates decide which regime is lit; a drag off a regime's
+      // point unlights it, and onto it lights it.
+      if (climateParamIds.includes(id)) {
         setRdRegimeSignal(api.getRdRegime());
       }
       if (byId.get(id)?.store === "palette") {
@@ -149,13 +166,6 @@ export function createPanelController(api: GardenAPI) {
     setClimateDrift(enabled: boolean) {
       api.setClimateDrift(enabled);
       setClimateDriftSignal(api.getClimateDrift());
-    },
-    // The drifting climate moves feed and kill from the frame loop, so the
-    // panel has to re-read them; nothing pushes at it. Called on a timer only
-    // while drift is on.
-    syncDriftingParams() {
-      for (const id of REGIME_COORDINATE_IDS) syncParam(id);
-      setRdRegimeSignal(api.getRdRegime());
     },
     setColormap(index: number) {
       api.setColormap(index);

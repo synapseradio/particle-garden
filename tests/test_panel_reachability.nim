@@ -1,20 +1,26 @@
 # ==============================================================================
-# PARTICLE GARDEN - PANEL REACHABILITY GUARD TESTS
+# PARTICLE GARDEN - PANEL AGREEMENT GUARD TESTS
 # ==============================================================================
 #
-# A descriptor is a promise that a control exists. Nim builds the descriptor
-# table and the panel lays it out, and nothing on either side checks that the
-# layout covers the table — a descriptor the panel never places is a parameter
-# with a range, a default, a hint and no way to reach it.
+# Nim owns every parameter fact and the panel restates none of them, but the
+# two sides cannot type-check each other. These suites read the panel's own
+# source and fail on the disagreements a compiler cannot see. Two so far.
 #
-# This suite reads the panel source and asks, for every descriptor, whether the
-# panel places it. A control reaches the screen two ways: the panel names its
-# id directly, or it names the group the id belongs to and loops the group's
-# members. Either counts.
+# REACHABILITY. A descriptor is a promise that a control exists. Nim builds the
+# descriptor table and the panel lays it out, and a descriptor the panel never
+# places is a parameter with a range, a default, a hint and no way to reach it.
+# A control reaches the screen two ways: the panel names its id directly, or it
+# names the group the id belongs to and loops the group's members.
+#
+# DERIVATION. The panel must reach a Nim-owned list by asking for it. A list
+# the panel keeps its own copy of drifts silently, because nothing on the TS
+# side derives from anything: the copy stays syntactically fine while the
+# simulation moves on without it. The climate's written parameters are one
+# such list, so the panel is checked for quoting them.
 #
 # Precedent: tests/test_no_modes.nim reads real source from disk and asserts
 # the file it read was actually found, so a sweep over a missing or wrong-cwd
-# tree cannot pass by finding nothing. This suite follows that shape.
+# tree cannot pass by finding nothing. These suites follow that shape.
 #
 # Run with: just test
 #
@@ -22,10 +28,12 @@
 
 import std/[unittest, os, strutils]
 import ../src/ui/api/param_descriptor
+import ../src/climate_core
 
 const PANEL_REACHABILITY_TESTS_LOADED* = true
 
 const PANEL_FILE = "web-ui" / "src" / "components" / "Panel.tsx"
+const STATE_FILE = "web-ui" / "src" / "state.ts"
 
 func namesId(panel, id: string): bool =
   ## The panel places a control by id when it passes the id as a quoted
@@ -70,3 +78,41 @@ suite "Every Descriptor Reaches The Panel":
     let panel = readFile(PANEL_FILE)
     check not namesId(panel, "noSuchParameter")
     check not namesGroup(panel, "no-such-group")
+
+suite "The Panel Derives The Climate's Written Parameters":
+  test "the controller source is where this suite says it is":
+    # Same vacuity guard the sweep above carries: a check that reads nothing
+    # passes for the wrong reason.
+    check fileExists(STATE_FILE)
+    check readFile(STATE_FILE).len > 0
+
+  test "the controller quotes no parameter the climate writes":
+    # THE DEFECT THIS PINS. The weather walks these ids from the frame loop and
+    # the controller re-reads them; held as a second copy in TypeScript, an
+    # added axis leaves the simulation drifting on a coordinate the panel never
+    # reads back, and every file still compiles. The controller must ask
+    # gardenAPI which ids the climate writes rather than spelling them out.
+    let state = readFile(STATE_FILE)
+    require state.len > 0
+    var restated: seq[string]
+    for axis in ClimateAxis:
+      if namesId(state, CLIMATE_PARAM_IDS[axis]):
+        restated.add(CLIMATE_PARAM_IDS[axis])
+    check restated.len == 0
+    if restated.len > 0:
+      echo "  Climate ids the controller restates: ", restated.join(", ")
+
+  test "the controller asks gardenAPI for them":
+    # The other half of the same claim. Quoting none of the ids is what a file
+    # that had dropped the feature entirely would also do, so name the call
+    # that supplies them. Reduced to a bool before the check so a failure
+    # reports the verdict rather than echoing the whole file.
+    let asksNim = "climateParamIds" in readFile(STATE_FILE)
+    check asksNim
+
+  test "the quoting guard can find a quoted id":
+    # THE NON-VACUOUS CHECK, both directions. The predicate must find a literal
+    # in source that has one, and must not find one that is absent — otherwise
+    # the sweep above is satisfied by a search that never matches anything.
+    check namesId("""const ids = ["rdFeed", "rdKill"];""", "rdFeed")
+    check not namesId(readFile(STATE_FILE), "noSuchParameter")

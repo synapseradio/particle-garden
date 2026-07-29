@@ -101,6 +101,11 @@ export interface StatsSample {
   // The reaction-diffusion field pass. Zero while the field couplings sit at
   // zero strength and the frame leaves their passes out.
   gpuFieldMs: number;
+  // Parameters the simulation writes on its own, by id — the drifting climate
+  // walks its axes from the frame loop. Present on every sample whether or not
+  // anything is currently moving them, so the panel reports what the
+  // simulation holds without tracking which feature wrote it.
+  params: Record<string, number>;
 }
 
 export interface PresetKeys {
@@ -161,6 +166,10 @@ export interface GardenAPI {
   // Drifting climate ("weather")
   getClimateDrift(): boolean;
   setClimateDrift(enabled: boolean): void;
+  // The parameter ids the climate writes as it drifts. Nim names them once
+  // (climate_core.CLIMATE_PARAM_IDS); this UI asks rather than listing them,
+  // so an axis added there reaches the panel without a TypeScript edit.
+  climateParamIds(): string[];
 
   colormaps(): ColormapEntry[];
   getColormap(): number;

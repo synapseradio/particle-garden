@@ -61,10 +61,10 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_colormap_core.nim` | Reaction-diffusion field colormap ramps, and the coverage the field claims as light | Native |
 | `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, the shared apparent-scale factor | Native |
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
-| `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, and tours every named regime | Native |
+| `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, tours every named regime, and that every parameter it declares it writes has a descriptor to write through | Native |
 | `test_no_modes.nim` | Guard test: no forbidden mode identifier or mode-id string literal survives anywhere in `src/` or `web-ui/src/`, except the one narrow, self-checking exemption for `preset.nim`'s versioned-schema legacy migration table | Native |
 
-Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, mode gating, and notch geometry and snapping; `just check` runs both.
+Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, descriptor group arithmetic, notch geometry and snapping, and the panel controller's handling of what the simulation pushes at it; `just check` runs both.
 
 Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, and `test_camera_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Their subject modules have no importer in `src/` by design; see the reference-oracle table in the root `CLAUDE.md`.
 
@@ -99,7 +99,9 @@ test_all.nim (runner)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
     ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
     ├── test_no_modes.nim       → src/, web-ui/src/ (guards against a mode concept in source)
-    └── test_panel_reachability.nim → Panel.tsx (guards that every descriptor reaches a control)
+    └── test_panel_reachability.nim → Panel.tsx, state.ts (guards that every descriptor
+                                      reaches a control, and that the panel derives the
+                                      climate's written parameters rather than listing them)
 ```
 
 ## Running Tests
