@@ -2694,18 +2694,36 @@ recalibrate the range the editor serves.
 
 The prose. Everything before this made a place for it that cannot go stale.
 
-- [ ] 11.1 `docs/help/00-orientation.md`: what is on screen, what a pointer does, and one thing worth
+- [x] 11.1 `docs/help/00-orientation.md`: what is on screen, what a pointer does, and one thing worth
       trying — before any control is named, and with no formula (design E10's requirement about
       readers with no background).
-- [ ] 11.2 One file per group: what the group governs, what each control in it changes, and what to
+      DONE. What the world holds, the pointer gestures, and one first thing to try (a regime
+      button); no control named, no formula, with internal links to the generated reference and
+      the glossary.
+- [x] 11.2 One file per group: what the group governs, what each control in it changes, and what to
       watch for when it changes. Every descriptor in the group must be named, or E9.3 goes red.
       Where a control can be dormant, its file says what wakes it, in the same words the panel uses.
-- [ ] 11.3 `docs/help/90-glossary.md`: the named regimes, reactions, and force models, each with its
+      DONE. All fourteen group files carry real prose; the dormancy sentences reuse the panel's
+      registry lines verbatim ("Bloom is off", "the world has no fluid", "nothing has ignited
+      yet", …), and the settling-horizon groups say what to watch for and over what timescale.
+      The coverage suite held every control named throughout the rewrite.
+- [x] 11.3 `docs/help/90-glossary.md`: the named regimes, reactions, and force models, each with its
       cited source. Cite rather than assert — a coordinate from the literature is not the app's own
       claim.
-- [ ] 11.4 Read the whole set as someone who has never seen the app. Anything requiring prior
+      DONE. Gray-Scott and the phase map cite Pearson (1993), Science 261; the six regime
+      coordinates cite the practitioner summary docs/research/pearson-map.md records as its
+      source [5] (mysimulator.uk), with Pearson's lack of numeric boundaries stated; the force
+      models cite the particle-life family; the fluid cites SPH with Tait pressure at Monaghan's
+      water exponent. Citations are text — the markdown subset deliberately renders external
+      links as literal text.
+- [x] 11.4 Read the whole set as someone who has never seen the app. Anything requiring prior
       knowledge to parse gets rewritten, not annotated.
-- [ ] 11.5 `just happen` and `just check` green.
+      DONE. One rewrite fell out of the pass: "kernel" in the fluid file became "how far the
+      fluid feels its neighbors". Technique names survive only in the glossary, where their
+      citations define them.
+- [x] 11.5 `just happen` and `just check` green.
+      DONE. Both green — the compile-time parse and the coverage relations gate the prose
+      itself; bun 66 pass / 0 fail.
 
 ## 12. A floor on what can be seen
 

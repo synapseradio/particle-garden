@@ -4,12 +4,21 @@ group: orientation
 
 # Particle Garden
 
-One world where species forces, fluid pressure, and a chemical field run
-together. Every coupling sits behind a continuous strength whose range
-includes zero — nothing switches worlds, you only turn parts of this one up
-or down.
+The screen holds one world: thousands of particles of a few species, pushed
+and pulled by rules of attraction, sometimes carried by a fluid, and living
+on top of a chemical field that they feed and that glows where it grows.
+Everything runs together. Turning any influence down to zero quiets it
+without switching anything off, so every slider in the panel acts on the
+same world you are watching.
 
-Every slider acknowledges a move instantly; the world answers on its own
-horizon, and a control whose consumer cannot act right now dims and names
-what is missing. Terms used across sections live in the
-[glossary](#glossary).
+Hold the left button to gather particles toward the cursor, hold the right
+to scatter them, and double-click to set off a blast. The wheel moves the
+view, and a pinch (or Ctrl-scroll) zooms at the cursor.
+
+Worth trying first: press one of the named pattern buttons in the
+Reaction-Diffusion section and watch the field ignite around the colonies.
+Then drag any slider — the control lights up as you drag, and the world
+answers at its own pace.
+
+The [gestures and keys reference](#reference) lists every binding, and the
+[glossary](#glossary) explains the recurring words.
