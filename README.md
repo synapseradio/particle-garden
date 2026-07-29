@@ -46,7 +46,7 @@ Particles form swarms, chase each other, or settle into stable orbits — all fr
 
 Lonely particles grow bigger. Toggle trails to see where things have been.
 
-Scroll to zoom at the cursor; arrow keys pan; `0` resets the view. Zoom in to follow a single creature; the world itself wraps like Pac-Man, so nothing ever hits a wall.
+Scroll or middle-drag to pan; pinch — or Ctrl/Cmd + scroll — to zoom at the cursor; arrow keys pan too, and `0` resets the view. Zoom in to follow a single creature; the world itself wraps like Pac-Man, so nothing ever hits a wall.
 
 ---
 
