@@ -23,7 +23,7 @@
 #
 # Used by:
 #   - tests/test_trail_core.nim (native tests)
-#   - src/webgpu_render.nim (writes the FadeParams uniform)
+#   - src/webgpu_render.nim (writes the fade and render uniforms)
 #
 # ==============================================================================
 
@@ -38,6 +38,10 @@ const
     ## What is left of a trail at the end of the frames its length names. Five
     ## percent is faint enough to read as the end of the trail and bright
     ## enough that the decay does not visibly stop early.
+  TRAIL_ELONGATION_PER_DIAMETER* = 0.02
+    ## Motion-blur elongation render.wgsl applies per diameter of trail
+    ## length: dots stretch along their velocity by trailLength * this, so
+    ## 100 diameters doubles the stretch (pinned by tests/test_trail_core.nim).
 
 func fadeAmountFor*(trailLength: float): float =
   ## The per-frame multiplier the fade pass keeps of the previous frame, for a
@@ -52,6 +56,12 @@ func fadeAmountFor*(trailLength: float): float =
   else:
     let visibleFrames = trailLength * TRAIL_FRAMES_PER_DIAMETER
     pow(TRAIL_RESIDUAL_FRACTION, 1.0 / visibleFrames)
+
+func trailElongationScale*(trailLength: float): float =
+  ## The velocity-elongation multiplier the renderer writes for a trail of
+  ## `trailLength` diameters. Linear, so the stretch reads as the same effect
+  ## the fade lengthens.
+  trailLength * TRAIL_ELONGATION_PER_DIAMETER
 
 func fadedAlpha*(previousAlpha, fadeAmount: float): float =
   ## One frame of decay on the trail texture's alpha (fade.wgsl).

@@ -118,3 +118,18 @@ suite "The Trail Slider Buys Frames":
       let fade = fadeAmountFor(sweptLength(step))
       check fade >= 0.0
       check fade < 1.0
+
+
+suite "The Trail Elongates With Length":
+  test "the elongation scale pins the shipped motion-blur mapping":
+    # render.wgsl stretches dots along their velocity by this multiplier.
+    # Pinned so a change to the slope is a decision, not a drift: zero length
+    # elongates nothing, and 100 diameters doubles the stretch.
+    check trailElongationScale(0.0) == 0.0
+    check abs(trailElongationScale(100.0) - 2.0) < 1e-12
+
+  test "the elongation scale is linear in trail length":
+    for step in 0 .. SWEEP_STEPS:
+      let length = sweptLength(step)
+      check abs(trailElongationScale(length) -
+        length * TRAIL_ELONGATION_PER_DIAMETER) < 1e-12

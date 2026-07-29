@@ -1739,10 +1739,9 @@ proc render*(particleCount: int) =
   renderParamsData[RENDER_GLOW_INTENSITY] = float32(config.CONFIG.glowIntensity)
   renderParamsData[RENDER_VELOCITY_GLOW_SCALE] = float32(config.CONFIG.velocityGlowScale)
   renderParamsData[RENDER_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
-  # Trail length scale: convert 0-100 slider to shader-friendly multiplier
-  # At trailLength=0: no elongation. At trailLength=100: significant elongation
-  let trailLengthScale = config.CONFIG.trailLength * 0.02  # Scale factor for motion blur
-  renderParamsData[RENDER_TRAIL_LENGTH_SCALE] = float32(trailLengthScale)
+  # Motion-blur elongation; trail_core owns the mapping.
+  renderParamsData[RENDER_TRAIL_LENGTH_SCALE] =
+    float32(trailElongationScale(config.CONFIG.trailLength))
   renderParamsData[RENDER_GLOW_RADIUS_SCALE] = float32(config.CONFIG.glowRadiusScale)
   renderParamsData[RENDER_GLOW_FALLOFF] = float32(config.CONFIG.glowFalloff)
   renderParamsData[RENDER_GLOW_WARMTH] = float32(config.CONFIG.glowWarmth)

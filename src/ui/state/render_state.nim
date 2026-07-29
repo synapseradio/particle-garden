@@ -21,7 +21,8 @@ type
     ## Pure immutable data - updates go through a copied var and re-set.
     particleSize*: int
     trails*: bool
-    trailLength*: float       ## 0-100 particle diameters (0 = no trails)
+    trailLength*: float       ## Trail length in particle diameters (0 = no
+                              ## trails); range in config_ranges.
     glowIntensity*: float
     velocityGlowScale*: float
     glowRadiusScale*: float   ## Glow halo radius = (particleSize+1) * this
