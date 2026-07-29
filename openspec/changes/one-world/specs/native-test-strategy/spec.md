@@ -48,8 +48,8 @@ stepped-probe budget is lowered before any parameter or slice is dropped from co
 Where a joint group's guarantee is already proven by an existing suite, the group SHALL adopt that
 suite as its acceptance test rather than duplicating it: named-point reachability by the notch
 lattice assertions, attractor fidelity by the regime-preservation suite
-(tests/test_field_core.nim:1125), and continuity of travel between named points by the climate
-tour's continuity and easing tests (tests/test_climate_core.nim:60-86).
+(tests/test_field_core.nim:1191), and continuity of travel between named points by the climate
+tour's continuity and easing tests (tests/test_climate_core.nim:188-203).
 
 A guarantee proven twice is two tests free to drift apart; adoption keeps one proof with one owner.
 

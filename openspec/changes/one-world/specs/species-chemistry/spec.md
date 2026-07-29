@@ -34,12 +34,20 @@ Tropism SHALL be bounded asymmetrically, granting less authority to up-gradient 
 down-gradient motion, because agents that climb their own deposited gradient form a positive feedback
 loop that admits chemotactic collapse while agents that descend one do not.
 
-A test SHALL measure the collapse point and assert the shipped bound sits below it.
+Native tests SHALL warrant the bound by bracketing where collapse lives
+(`tests/test_field_core.nim:1054-1145`): inside the deposit range the sliders offer, no tropism
+collapses the field — a thousandfold the bound stays finite and bounded — while divergence needs a
+deposit bracketed at (10x, 15x] of `RD_DEPOSIT_MAX`, and a frozen-population control at that same
+deposit proves the divergence chemotactic rather than the deposit's own flooding. The deposit
+ceiling therefore carries more of the protection than the tropism bound does, and the tests state
+that scope.
 
 #### Scenario: Maximum tropism stays stable
 - **WHEN** every species sits at the positive tropism bound with the maximum deposit
 - **THEN** the field does not diverge and no unbounded concentration forms
 
-#### Scenario: The bound tracks the measurement
-- **WHEN** the measured collapse point moves
-- **THEN** the bound is lowered to stay beneath it, and the measured value is recorded beside it
+#### Scenario: Collapse stays outside the reachable world
+- **WHEN** the deposit ceiling or the tropism bound changes
+- **THEN** the bracketing tests still pass: every reachable deposit-tropism combination stays
+  finite and bounded, and the frozen-population control still separates chemotaxis from the
+  deposit's own flooding

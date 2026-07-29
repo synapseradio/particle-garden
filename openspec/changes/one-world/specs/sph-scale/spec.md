@@ -34,12 +34,17 @@ fraction range through the same functions the shader mirrors.
 
 ### Requirement: The stiffness ceiling derives from the fluid's configuration
 
-The stiffness the fluid honours SHALL be bounded by a pure function in `src/sph_core.nim` of the
-smoothing radius fraction, the substep count, and the effective timestep — the Courant form, under
-which the stable ceiling grows like `(h * substeps / dt)^2` — clamped against `SPH_STIFFNESS_MAX`,
-which survives only as the absolute envelope. The ceiling bounds the value's effect; it never
+The stiffness the fluid honours SHALL be bounded by a pure function in `src/sph_core.nim`
+(`stableStiffnessCeiling`, `:199-221`) of the smoothing radius in pixels — the fraction times the
+interaction radius, multiplied by the caller the way `forces-sph.wgsl` does — the substep count,
+and the effective timestep. The measured law is `SPH_STABILITY_COEFFICIENT * h * substeps / dt`,
+linear in each factor rather than the Courant square; `src/sph_core.nim:178-189` records why this
+integrator sheds both of the textbook's `1/h` factors. The ceiling is clamped against
+`SPH_STIFFNESS_MAX`, which survives only as the absolute envelope and reaches the function as an
+argument, because the range authority imports this module and hands its own constant to the
+function it bounds (`src/sph_core.nim:206-208`). The ceiling bounds the value's effect; it never
 redefines the stored value, which stays absolute stiffness — the pressure gain
-(`src/sph_core.nim:90-96`). `src/sph_core.nim:39-42` already records the stiffness-timestep
+(`src/sph_core.nim:108-113`). `src/sph_core.nim:39-42` already records the stiffness-timestep
 coupling in prose; this requirement makes it arithmetic.
 
 The stability coefficient in that function SHALL be fitted from a measured stability sweep of this
@@ -66,8 +71,10 @@ the `parameter-range-authority` delta); this capability owns the function and it
 
 - **WHEN** the deriving inputs take any reachable combination
 - **THEN** the derived ceiling is at most `SPH_STIFFNESS_MAX`, asserted by a native sweep over the
-  whole input box, and the sweep's minimum ceiling is recorded beside the coefficient — it is the
-  floor every labelled stiffness notch must sit below
+  whole input box, and the worst-case ceiling is recorded beside the radius-fraction floor that
+  decides it (`src/config_ranges.nim`) — the floor every labelled stiffness notch must sit below,
+  held by the notch sweep in `tests/test_param_descriptor.nim`, which goes red on the first notch
+  that strands
 
 ### Requirement: The fraction default is calibrated with crowding off
 

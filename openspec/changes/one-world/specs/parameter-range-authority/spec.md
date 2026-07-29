@@ -4,8 +4,10 @@
 
 config_ranges.nim SHALL define `CAMERA_ZOOM_MIN = 1.0` (the view never spans more than one world —
 design D15, reversing the earlier 0.25 and its tiling) and `CAMERA_ZOOM_MAX = 8.0` (creature
-scale), with the standard static non-emptiness assertion, consumed by the descriptor table and
-preset clamping like every other range.
+scale), with the standard static non-emptiness assertion, consumed by the descriptor table like
+every other range — and deliberately NOT by the preset schema: the camera is view state, absent
+from presets by construction, and `tests/test_param_descriptor.nim` pins `cameraZoom` as the only
+descriptor routed through the camera store so a second one cannot widen that hole silently.
 
 #### Scenario: Zoom clamps at the authority's bounds
 - **WHEN** input drives zoom beyond either bound
@@ -25,7 +27,9 @@ descending one is stabilizing.
 
 #### Scenario: The bound is measurement-backed
 - **WHEN** the tropism bound changes
-- **THEN** the stability test asserting the bound sits below the measured collapse point still passes
+- **THEN** the chemotactic-collapse suite still passes: every reachable deposit-tropism combination
+  stays finite and bounded, and collapse still needs a deposit far outside the slider range
+  (`tests/test_field_core.nim:1054-1145`)
 
 ### Requirement: The feed range reaches every labelled regime
 
@@ -137,8 +141,8 @@ Every range bound or precision changed in response to a legibility metric SHALL 
 constant, the metric that failed and the measured values before and after.
 
 The range authority already documents several bounds this way — the deposit ceiling records the flood
-point it was derived from and the corner it was measured at (src/config_ranges.nim:96-103), and the
-field-force ceiling records the gradient magnitude it is scaled against (:104-112). This extends that
+point it was derived from and the corner it was measured at (src/config_ranges.nim:178-185), and the
+field-force ceiling records the gradient magnitude it is scaled against (:186-202). This extends that
 practice from the bounds that happened to get it to all of them.
 
 #### Scenario: A bound moves with its evidence
@@ -151,11 +155,15 @@ practice from the bounds that happened to get it to all of them.
 
 ### Requirement: A curve exponent is a range-authority constant
 
-Where a descriptor declares a non-linear travel curve, the exponent SHALL live in the range authority
-under the same static assertions as every other tunable constant, not inline in the descriptor table.
+Where a descriptor declares a non-linear travel curve, the exponent SHALL live in the range
+authority as a named constant, not inline in the descriptor table; no shipped descriptor declares
+one today, so the rule stands ahead of its first instance.
 
-The exponent decides how much of the track a region of the value space occupies. That is the same kind
-of claim a bound makes, and it belongs where a bound belongs.
+The exponent decides how much of the track a region of the value space occupies. That is the same
+kind of claim a bound makes, and it belongs where a bound belongs. The static assertions on the
+curve pairing live beside the descriptors instead (`src/ui/api/param_descriptor.nim:714-729`), with
+the reason recorded there: the pairing is per-descriptor, and the range authority cannot see which
+of its constants carries which curve.
 
 #### Scenario: A curve exponent is asserted at compile time
 - **WHEN** a curve exponent is declared
@@ -205,9 +213,12 @@ minimizes it.
 
 ### Requirement: A logarithmic curve pairs only with a positive floor
 
-The range authority's static assertions SHALL reject the pairing of a logarithmic travel curve with
-a range whose minimum is zero or negative, so giving a parameter logarithmic travel and giving it a
-strictly positive floor are one recorded decision rather than two constants free to disagree.
+The descriptor table's static block SHALL reject the pairing of a logarithmic travel curve with a
+range whose minimum is zero or negative (`src/ui/api/param_descriptor.nim:714-725`), so giving a
+parameter logarithmic travel and giving it a strictly positive floor are one recorded decision
+rather than two constants free to disagree. The gate sits beside the descriptors rather than in the
+range authority because the pairing is per-descriptor: the range authority cannot see which of its
+constants carries which curve.
 
 #### Scenario: A log curve over a zero-floored range fails the build
 - **WHEN** a descriptor declares a logarithmic curve while its range minimum is zero
@@ -218,8 +229,8 @@ strictly positive floor are one recorded decision rather than two constants free
 Any value a descriptor names — a notch coordinate or a numeral inside a hint — SHALL remain reachable
 on its slider's lattice after any range, precision, or curve change, asserted natively.
 
-The descriptor suite already enforces this for hint numerals (tests/test_param_descriptor.nim:94)
-and for notches (src/ui/api/param_descriptor.nim:56). A re-range performed to fix dead travel is
+The descriptor suite already enforces this for hint numerals (tests/test_param_descriptor.nim:134)
+and for notches (src/ui/api/param_descriptor.nim:133-143). A re-range performed to fix dead travel is
 exactly the change most likely to strand a coordinate outside the range it was chosen for.
 
 #### Scenario: A re-range that strands a coordinate goes red

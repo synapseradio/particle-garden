@@ -9,14 +9,16 @@ one cites reasoning rather than a benchmark (`src/sph_core.nim:35-38`) and the f
 number under another name, so the collapse removes a false precision rather than a real bound.
 
 Applying a preset SHALL enforce that budget, closing the gap where the preset path validates the
-count against the slider bounds alone. Every path that lowers the count SHALL lower it in place,
-keeping the surviving particles' positions, velocities, and species — no re-randomization. Raising
-the budget does not restore a previous count. The particleCount slider's own commit path keeps its
-re-initialization behavior.
+count against the slider bounds alone. The two count paths differ deliberately
+(`src/web_api.nim:701-714`, `:895-908`): the particleCount slider RESIZES in place — dragging it
+does not destroy the world it is adjusting, so the surviving particles keep their positions,
+velocities, and species — while applying a preset re-initializes, because a preset is a different
+world and there is no population the user expects to survive adopting it. Raising the budget does
+not restore a previous count.
 
-#### Scenario: Preset click preserves a living world
-- **WHEN** a preset lowers the particle count below the live count
-- **THEN** the count clamps and the surviving particles continue uninterrupted
+#### Scenario: Preset click adopts a different world
+- **WHEN** a preset is applied over a living world
+- **THEN** the count clamps to the budget and the population re-initializes as the preset's own
 
 #### Scenario: A preset cannot exceed the budget
 - **WHEN** a preset carries a count above the budget
@@ -26,9 +28,11 @@ re-initialization behavior.
 - **WHEN** any coupling strength changes
 - **THEN** the particle budget is unchanged
 
-#### Scenario: Slider behavior unchanged
+#### Scenario: The slider resizes without destroying the world
 - **WHEN** the user commits a new particleCount on the slider
-- **THEN** particles re-initialize as before
+- **THEN** the population resizes in place, keeping the survivors — while a speciesCount commit
+  still re-initializes, because changing how many species exist changes what every particle's
+  species index means
 
 ## ADDED Requirements
 
@@ -69,9 +73,12 @@ routes to fails the build.
 
 This closes the silent-failure class the hand-written case admits through its trailing
 `else: discard` (src/web_api.nim:508): a control that clamps its value, writes nowhere, and reports
-success. Two routes keep explicit arms because neither is a field assignment — the palette pair
-writes editor state and triggers a colour regeneration, and the camera route writes the live camera,
-which is view state deliberately absent from CONFIG.
+success. Three routes keep explicit arms because none is a field assignment — the palette pair
+writes editor state and triggers a colour regeneration; the camera route writes the live camera,
+which is view state deliberately absent from CONFIG; and the species-chemistry route refuses with a
+console warning naming `chemistry()` as the write path, because per-species values are written by
+reference through the chemistry surface and silence would read as a dead control
+(`src/web_api.nim:603-608`).
 
 #### Scenario: A misnamed descriptor fails the build
 - **WHEN** a descriptor id does not match any field of its routed store
@@ -81,11 +88,12 @@ which is view state deliberately absent from CONFIG.
 - **WHEN** any shipped parameter is written after the dispatch is generated
 - **THEN** the same field of the same store receives the same clamped value as before
 
-### Requirement: The descriptor payload carries probe, curve, horizon, and dormancy
+### Requirement: The descriptor payload carries curve, horizon, and dormancy
 
-`descriptor()` SHALL serve the probe id or exemption, the travel curve and its exponent, the response
-horizon, and the dormancy predicate's name alongside the existing fields, so the panel restates none
-of them.
+`descriptor()` SHALL serve the travel curve and its exponent, the response horizon, and the
+dormancy predicate's name with its resolved line alongside the existing fields, so the panel
+restates none of them. Probe ids and exemptions stay native machinery: the legibility suite
+consumes them in Nim, and the panel has no use for them (design E1).
 
 The payload is built once at module-eval time and cached, so its growth costs one array rather than
 per-frame work.

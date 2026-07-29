@@ -79,8 +79,9 @@ compatibility layer.
 
 Presets written before this change SHALL be translated once, in the legacy branch of the versioned
 schema decode, where `mode` is consulted to zero the strengths that mode excluded. Subtraction cannot
-do this job: the schema serializes every scalar unconditionally (`src/preset.nim:490`, `:506-515`)
-with nonzero defaults (`:199-212`), so nothing is ever absent to subtract, and a legacy particle-life
+do this job: the schema serializes every scalar unconditionally with nonzero defaults (the
+reasoning recorded beside `LEGACY_MODE_COUPLINGS`, `src/preset.nim:501-517`; `defaultSettings`,
+`:198-268`), so nothing is ever absent to subtract, and a legacy particle-life
 preset carries a live `rdDeposit` and `rdFieldForce`.
 
 Consulting `mode` there is versioned-schema history about files written by old builds, reachable only

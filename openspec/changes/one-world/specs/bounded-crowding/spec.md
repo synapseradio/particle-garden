@@ -3,13 +3,15 @@
 ### Requirement: Local density attenuates attraction
 
 Every attractive force contribution SHALL be scaled by `1 / (1 + strength * log(1 + density))`,
-where `density` is the receiving particle's smoothed local density — the signal the world already
-computes (`web/shaders/src/forces.wgsl:333-339` accumulates it, `web/shaders/src/integrate.wgsl:85-93`
-smooths it onto the particle) — and `strength` is the crowding strength parameter. No second density
-accumulator SHALL exist; the term consumes the density the particle struct already carries.
+where `density` is the receiving particle's smoothed, species-blind crowd density — a dedicated
+channel that counts every neighbour, accumulated beside the same-species colony density
+(`web/shaders/src/forces.wgsl:388-392`, `:466-467`) and smoothed onto the particle exactly as the
+colony channel is (`web/shaders/src/integrate.wgsl:101-107`) — and `strength` is the crowding
+strength parameter. The colony channel stays same-species and feeds the renderer; the two signals
+are not interchangeable (`src/physics_core.nim:123-128`).
 
 The term applies to attractive contributions only, in both force models — the polynomial attraction
-envelope (`src/physics_core.nim:54-58`) and the exponential attraction term
+envelope (`src/physics_core.nim:422-445`) and the exponential attraction term
 (`web/shaders/src/forces.wgsl:93-96`). Repulsive contributions are untouched at every density: the
 short-range zone, and attraction-zone contributions whose matrix entry is negative. Attenuating a
 repulsive term would partly cancel the cap it exists to serve.
@@ -61,7 +63,7 @@ cluster cannot tighten further. A native test in `tests/test_physics.nim` SHALL 
 ceiling is finite for every reachable combination of matrix value, force strength, and non-zero
 crowding strength, and that it decreases monotonically in crowding strength. The sweep reads its
 bounds from the range-authority and preset constants (`FORCE_STRENGTH_MIN/MAX`,
-`MATRIX_VALUE_MIN/MAX` at `src/preset.nim:147-148`, and the crowding range) rather than restating
+`MATRIX_MIN_VALUE/MAX_VALUE` at `src/config_ranges.nim:63-64`, and the crowding range) rather than restating
 them, so a later range recalibration re-scopes the sweep with no second edit. D13 puts
 force strength zero inside that swept range; at that endpoint the cap is vacuous rather than wrong
 (design C0 — there is no attraction to attenuate), and the sweep SHALL include the point and
@@ -71,16 +73,16 @@ The scope of the claim MUST be stated where the ceiling is defined, so it cannot
 
 - The ceiling is an equilibrium property. Momentum can overshoot it transiently; it is not a
   per-frame invariant.
-- The density signal is same-species (`web/shaders/src/forces.wgsl:333`,
-  `src/physics_core.nim:123-126`), so the per-cell occupancy bound it implies carries a
-  `MAX_SPECIES` factor, and a mixed-species blob attenuates later than a single-species blob of the
-  same total density.
+- The density signal is species-blind (`web/shaders/src/forces.wgsl:372-378`,
+  `src/physics_core.nim:123-128`): the crowd channel counts every neighbour, so the per-cell
+  occupancy bound carries no species factor, and a mixed-species blob attenuates exactly as a
+  single-species blob of the same total density does.
 - The ceiling bounds what species attraction can concentrate. Forces the term does not scale — the
   mouse attract, the blast, positive field tropism — can concentrate beyond it; the tropism side is
   separately bounded by the measured deposit-tropism product (`tests/test_field_core.nim`,
   "Chemotactic Collapse Bound").
 
-Within that scope, a finite ceiling bounds per-cell occupancy up to those constant factors, because
+Within that scope, a finite ceiling bounds per-cell occupancy up to geometric constants, because
 grid cells are sized to the interaction radius (`src/grid.nim:61`) and the density weight spans that
 same radius — which is what puts a ceiling on the per-particle neighbour sweep cost rather than
 merely lowering its average.

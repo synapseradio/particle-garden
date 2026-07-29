@@ -118,8 +118,11 @@ stabilizing (docs/research/chemotaxis-stability.md). This independently confirms
 at src/config_ranges.nim:104-108, which forbids a negative field-force scale for exactly this reason.
 
 Tropism ships bounded to **[-1.0, +0.5]**: full authority to the safe sign, half to the dangerous one.
-Task 5.5 measures the collapse point and asserts the bound sits below it; if the assertion fails,
-halve the positive bound and record the measured value beside the constant.
+Task 5.5's measurement brackets where collapse lives (tests/test_field_core.nim:1054-1145): inside
+the reachable deposit range no tropism collapses the field — 1024x the bound stays finite and
+bounded — while divergence needs a deposit at (10x, 15x] of RD_DEPOSIT_MAX, and a frozen-population
+control at that same deposit proves the divergence chemotactic rather than the deposit's own
+flooding. The deposit ceiling therefore carries more of the protection than this bound does.
 
 *Rejected:* a symmetric [-1, +1]. Symmetry would be aesthetically tidier and physically wrong.
 
@@ -134,38 +137,43 @@ So the two are treated differently.
 
 **Reserved because it is already allocated and free.** The field ping-pong textures are `rgba16float`
 solely because WebGPU does not permit `rg16float` as a write-only storage texture
-(field-resolve.wgsl:45-46, webgpu_init.nim:112-120). Gray-Scott uses `.r` and `.g`; `.b` and `.a` are
-written as constants `(0.0, 1.0)` at field-resolve.wgsl:77 and field-seed.wgsl:101. **Two half-float
-state channels per cell already exist and cost nothing**, which is precisely what a multi-channel
-continuous automaton needs. They are documented as reserved state channels, and every shader that
-writes the field preserves them rather than clobbering them with literals.
+(field-resolve.wgsl:51-54, webgpu_init.nim:126-130). Gray-Scott uses `.r` and `.g`; `.b` and `.a`
+ride along as reserved state channels. **Two half-float state channels per cell already exist and
+cost nothing**, which is precisely what a multi-channel continuous automaton needs. Every pass that
+advances the field (field-resolve, rd-step) carries them through untouched; field-seed — the
+deliberate scatter-spores reset, whose target is write-only with no source to carry anything from —
+ESTABLISHES them instead, writing the named RESERVED_CHANNEL_B/A_INITIAL constants so a reaction
+adding state has one place to set its initial condition (field-seed.wgsl:107-118).
 
 *Readiness verdict:* the channels are **allocated and addressable** — proven, by the texture format
 already in use. They are **not exercised**: nothing reads or writes them meaningfully, no test covers
 them, and no reaction consumes them. This reserves a slot; it does not deliver a capability.
 
 **Reserved because it is structural and we are already there.** A `ReactionParamsLayout` uniform is
-added and bound to rd-step now, carrying `reactionKind` plus the parameters a kernel-and-growth
-reaction needs (`kernelRadius`, `growthMu`, `growthSigma`, `growthDt`) and padding to 32 bytes.
-Gray-Scott ignores all but `reactionKind`. Adding this uniform later would mean revisiting rd-step's
-bind group, its layout, its entry-count constant, and the manifest — while adding it now costs one
-layout table and one buffer write, at a moment when those files are open anyway.
+added and bound to rd-step now, carrying `reactionKind` and three pad words in 16 bytes
+(gpu_types.nim:333-342). The structural slot is the whole reservation: a reaction's parameters grow
+this struct in the same change that reads them, never as reserved members ahead of a consumer.
+Adding the uniform later would mean revisiting rd-step's bind group, its layout, its entry-count
+constant, and the manifest — while adding it now costs one layout table and one buffer write, at a
+moment when those files are open anyway.
 
-This also promotes the existing `reactionKind` pipeline-override constant (rd-step.wgsl:57) from a
-bare `u32` default into a named enum with Gray-Scott as 0, so a second reaction is a new case rather
-than a new plumbing exercise. **FieldParamsLayout stays at 32 bytes** — gpu_types.nim:209-211
-documents it as full, and a ninth field breaks its static assertions.
+`reactionKind` is read from the uniform against the named `REACTION_GRAY_SCOTT` constant
+(rd-step.wgsl:108), so a second reaction is a new case rather than a new plumbing exercise.
+**FieldParamsLayout stays at 32 bytes** — gpu_types.nim:324-327 documents it as full, and a ninth
+field breaks its static assertions.
 
-**Refused: the activator deposit channel.** field-deposit.wgsl:17-23 records that this slot already
+**Refused: the activator deposit channel.** field-deposit.wgsl:20-28 records that this slot already
 existed once, was never written, and cost 1 MB of VRAM plus 1 MB per frame of read/write traffic to
 reserve. It also is not needed: signed secretion into the inhibitor channel gives both roles the
-ecology requires — positive secretion builds structure, negative erodes it. The deposit buffer's
-channel count becomes a named constant (`DEPOSIT_CHANNELS = 1`) so raising it later is a
-one-constant change rather than an index audit, which captures the structural benefit without paying
-the allocation.
+ecology requires — positive secretion builds structure, negative erodes it. The deposit buffer
+stays one i32 per cell — a cell index is the buffer index directly on both sides, shared through
+field_grid — and the header records everything a second channel would touch (striding both
+shaders' indices, doubling the allocation, loading, storing and resetting each slot), so a restore
+is an enumerated edit made when a coupling needs the channel, never before.
 
-*Rejected:* restoring the channel "for headroom". That is exactly what left it unused the first time,
-and the file already documents the restore as contained at roughly twenty lines.
+*Rejected:* restoring the channel "for headroom" — that is exactly what left it unused the first
+time — and a `DEPOSIT_CHANNELS` count constant, which would dress a one-channel buffer as
+parameterized while every recorded cost above still lands on whoever raises it.
 
 ### D7. There is one world. Couplings are strengths, not booleans
 
@@ -466,8 +474,9 @@ place no ceiling below capability.
   the measured minimum; if group 9 shows it dominating, shrink the kernel or lower the field substep
   count before touching particle count.
 - **Positive tropism feedback** — bounded by D5 and measured by task 5.5.
-- **A living world lost on a preset click** — the ceiling clamp lowers count in place, keeping
-  survivors; no Fisher-Yates re-randomization.
+- **A living world lost on a count change** — the particleCount slider resizes in place, keeping
+  survivors (src/web_api.nim:701-714); a preset click re-initializes deliberately, because a preset
+  is a different world and no population is expected to survive adopting it (:895-908).
 - **Bloom passes carry no profiler timestamps** (src/webgpu_render.nim `beginBloomPass`) — a known
   measurement gap in group 9. Noted, not fixed here.
 - **Legacy-frame equivalence** — the three settings that used to be modes must dispatch what they
@@ -632,16 +641,16 @@ and that it decreases monotonically in crowding strength. That is the claim the 
 rests on, and it is checkable without a GPU.
 
 **What this does NOT claim, measured against the source rather than assumed.** The core claim
-survives — bounded same-species weighted density does bound cell occupancy up to geometric constants,
+survives — bounded proximity-weighted density does bound cell occupancy up to geometric constants,
 since cells are `max(interactionRadius, 16)` (`src/grid.nim:61`) and the grid dimension cap never
-binds at the current world extent. Four qualifications scope it, and the first was missed when this
-decision was first written:
+binds at the current world extent. Four qualifications scope it:
 
-- **The density signal is SAME-SPECIES ONLY.** `web/shaders/src/forces.wgsl:333` gates the
-  accumulation on `otherParticle.species == thisParticle.species`, and `src/physics_core.nim:123-126`
-  mirrors that exactly. So the per-cell bound carries a factor of the species count, and a mixed
-  blob attenuates later than a single-species one of equal total density. Any worst-case cost claim
-  must carry that factor rather than quietly assume density counts every neighbour.
+- **The density signal is SPECIES-BLIND (the crowd channel).** `web/shaders/src/forces.wgsl:388-392`
+  accumulates every neighbour into the crowd channel the attenuation reads, and
+  `src/physics_core.nim:123-128` states the scope beside the ceiling. The per-cell bound therefore
+  carries no species factor: a mixed blob and a single-species blob of equal total density
+  attenuate identically. The COLONY channel beside it stays same-species and feeds the renderer;
+  the two are not interchangeable.
 - **The ceiling is an equilibrium property, not a per-frame invariant.** It is where attenuated
   attraction stops exceeding repulsion at the equilibrium separation. Momentum carries particles past
   it transiently; what the ceiling forbids is *settling* tighter, not *arriving* tighter.
@@ -1334,11 +1343,15 @@ promise about a composition takes a **floor on the composition**.
 **Decision.** The visible-radius chain becomes a pure function in `camera_core.nim` beside the
 transform math it extends, and the floor — in pixels, at the end of the chain — becomes a
 range-authority constant asserted natively at the worst reachable corner: minimum size, minimum
-zoom, the density multiplier at its 0.7 floor. The renderers clamp at the same point in the same
-chain, both shaders and the mirror changing together as for every oracle. `particleSize`'s probe
-measures this composed observable on slices at the zoom corners (E2), so the sweep, not review,
-holds the floor. `CAMERA_SIZE_FLOOR` is already retired — deleted with the D15 camera revision —
-so the result floor is built fresh rather than beside a halfway constant.
+zoom, the density multiplier at its 0.7 floor. `particleSize`'s probe measures this composed
+observable on slices at the zoom corners (E2), so the sweep, not review, holds the floor.
+`CAMERA_SIZE_FLOOR` is already retired — deleted with the D15 camera revision — so the result
+floor is built fresh rather than beside a halfway constant. MEASUREMENT, superseding the clamp
+this decision originally prescribed: with D15's zoom floor of 1.0 the worst reachable corner
+composes to 0.7 px of radius, above the half-pixel floor, so a shader clamp could never fire —
+a gate that cannot fail. The shipped guarantee is the native worst-corner assertion plus a test
+proving it CAN fail (the retired 0.25 corner falls under the floor); a re-range that dips the
+corner goes red there, and shipping the end-of-chain clamp is that red's remedy.
 
 The same error shape appears twice more in this change's material: glow's raw alpha integral keeps
 rising where the display has clamped (E1, E3), and a stiffness ceiling written as a constant where

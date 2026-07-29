@@ -5,7 +5,9 @@
 Feature documentation SHALL be authored once as markdown under `docs/help/`, one file per descriptor
 group plus an orientation file and a glossary, each declaring the group id it documents. Those files
 SHALL be `staticRead` into the frontend at Nim-compile time and served through the boundary; no second
-copy of the same prose exists anywhere.
+copy of the same prose exists anywhere. The gesture and key reference is the one section not
+authored as a file: it is generated from the binding table and slots into the section order just
+before the glossary (`src/ui/api/help_content.nim`).
 
 `staticRead` is the mechanism the render shaders and the UI bundle already use. It costs a few
 kilobytes in the frontend bundle and removes a way to fail at runtime: help that fails to load is
@@ -22,8 +24,10 @@ worse than help that is slightly larger.
 ### Requirement: Help coverage is enforced in both directions
 
 Native tests SHALL assert four relations between the help files and the descriptor table: every
-descriptor group has a help file; every help file's declared group id exists; every descriptor in a
-group is named by that group's help file; and no help file names an id that is not a descriptor.
+descriptor group has a help file; every help file's declared group id exists as a descriptor group
+or is one of the reserved keys (`ReservedHelpKeys` — `orientation`, `reference`, and `glossary`
+name no descriptor group by design); every descriptor in a group is named by that group's help
+file; and no help file names an id that is not a descriptor.
 
 These four are what keep the documentation true. A control renamed without its documentation following
 turns the suite red at the moment of the rename rather than at the moment somebody reads it.
@@ -43,8 +47,10 @@ turns the suite red at the moment of the rename rather than at the moment somebo
 ### Requirement: The gesture and key reference is generated from the binding table
 
 Every mouse gesture, touch gesture, and key binding SHALL be declared once in a pure binding table
-consumed both by the input handlers and by the help panel's reference section, so a binding cannot
-exist without appearing in help.
+(`src/ui/input/binding_table.nim`) whose every row the help panel's reference section renders, so a
+binding cannot exist without appearing in help. The key handler derives its dispatch from the key
+rows; the mouse, wheel, and touch rows describe the listeners canvas_input wires, and review holds
+the two in agreement, since a DOM listener is not data.
 
 This is the single-declaration relation the descriptor table already establishes for parameters —
 one table, consumed by everything that needs the fact — applied to input.

@@ -2,10 +2,15 @@
 
 ### Requirement: SpeciesChemistry uniform layout
 
-Per-species chemistry SHALL live in a new SpeciesChemistryLayout — MAX_SPECIES × (secretion, tropism)
-f32 pairs, padded to 64 bytes — in gpu_types.nim with the same compile-time offset validation and
-generated WGSL struct module as every layout. FieldParamsLayout SHALL remain 32 bytes; its static
-assertions continue to reject a ninth field.
+Per-species chemistry SHALL live in a new SpeciesChemistryLayout — two parallel
+`array<vec4<f32>, 2>` channels, secretion then tropism, in exactly 64 bytes — in gpu_types.nim with
+the same compile-time offset validation and generated WGSL struct module as every layout. Parallel
+vec4 arrays rather than MAX_SPECIES interleaved pairs, because WGSL's uniform address space rounds
+an array's element stride up to 16 bytes: interleaved vec2 pairs would occupy 96 bytes and blow the
+budget, while four species per vec4 gives eight slots per channel in 32 bytes each; shaders index a
+species as `secretion[i / 4u][i % 4u]`, the way forces.wgsl indexes the attraction matrix
+(`src/gpu_types.nim:355-368`). FieldParamsLayout SHALL remain 32 bytes; its static assertions
+continue to reject a ninth field.
 
 #### Scenario: Chemistry layout validates like the others
 - **WHEN** the SpeciesChemistryLayout table changes
@@ -17,9 +22,12 @@ assertions continue to reject a ninth field.
 
 ### Requirement: Camera uniform layout
 
-The camera SHALL be a CameraLayout uniform — centerX, centerY, zoom, pad — declared in gpu_types.nim
-under the standard compile-time validation, written every frame, and consumed by the render, glow,
-fade, tonemap, and field-composite shaders.
+The camera SHALL be a CameraLayout uniform — centerX, centerY, zoom, worldWidth, worldHeight plus
+three pad words, 32 bytes (`src/gpu_types.nim:266-279`) — declared in gpu_types.nim under the
+standard compile-time validation, written every frame, and consumed by the render, glow, fade,
+tonemap, and field-composite shaders. The world extent rides the camera so every consumer reads one
+number for how big the world is; fade binds a second record of the same layout for the previous
+frame's view rather than spelling those fields out anywhere else.
 
 #### Scenario: Camera layout validates like the others
 - **WHEN** the CameraLayout table changes
@@ -27,38 +35,52 @@ fade, tonemap, and field-composite shaders.
 
 ### Requirement: Reaction parameters have their own uniform
 
-Reaction selection and the parameters a kernel-and-growth reaction needs SHALL live in a
-ReactionParamsLayout — reactionKind, kernelRadius, growthMu, growthSigma, growthDt, padded to 32
-bytes — bound to the reaction pass, rather than extending FieldParamsLayout.
+Reaction selection SHALL live in a ReactionParamsLayout — `{ reactionKind, pad0, pad1, pad2 }`, 16
+bytes (`src/gpu_types.nim:333-342`) — bound to the reaction pass, rather than extending
+FieldParamsLayout.
 
 This uniform exists so that adding a second reaction is a new case in one shader rather than a
-revision of bind-group layouts, entry counts, and the shader manifest. It reserves a structural slot;
-the parameters beyond reactionKind are unexercised until a reaction reads them.
+revision of bind-group layouts, entry counts, and the shader manifest. It reserves the structural
+slot and nothing more: a reaction's parameters grow this struct in the same change that reads them,
+never as reserved members ahead of a consumer.
 
-#### Scenario: Gray-Scott ignores the reserved parameters
+#### Scenario: Gray-Scott reads only the kind
 - **WHEN** reactionKind holds its Gray-Scott value
-- **THEN** the field evolves identically regardless of the other members' values
+- **THEN** the field evolves identically whatever the pad words hold, because no reaction parameter
+  lives in this struct until a reaction reads it
 
 ### Requirement: Reserved field-texture channels are preserved
 
-Every pass that writes the field SHALL carry through the two channels beyond activator and inhibitor
-rather than overwriting them with literals, so a multi-channel reaction can occupy them without a
-format change. Those channels are already allocated at no additional cost: the ping-pong textures are
-`rgba16float` because WebGPU does not permit `rg16float` as a write-only storage texture.
+Every pass that advances the field SHALL carry through the two channels beyond activator and
+inhibitor rather than overwriting them with literals, so a multi-channel reaction can occupy them
+without a format change. field-seed is the one deliberate exception: it is the scatter-spores
+reset, binds its target write-only with no source to carry anything from, and ESTABLISHES the
+channels instead, writing the named `RESERVED_CHANNEL_B_INITIAL` / `RESERVED_CHANNEL_A_INITIAL`
+constants so a reaction adding state has one place to set its initial condition
+(`web/shaders/src/field-seed.wgsl:107-118`). Those channels are already allocated at no additional
+cost: the ping-pong textures are `rgba16float` because WebGPU does not permit `rg16float` as a
+write-only storage texture.
 
 #### Scenario: Channels survive a full frame
 - **WHEN** the field advances through resolve and every reaction substep
 - **THEN** the reserved channels arrive at the renderer holding what was written into them
 
-### Requirement: Deposit channel count is named
+### Requirement: The deposit buffer's single channel is a recorded decision
 
-The deposit buffer's per-cell channel count SHALL be a named constant that every index derives from,
-so that adding a channel is one constant change rather than an audit of every index expression. The
-constant's value reflects what is actually written; unused channels are not allocated.
+The deposit buffer SHALL carry one i32 per cell — the inhibitor deposit — so a cell index is the
+buffer index directly, on the writing and the resolving side alike, with the addressing shared
+through `field_grid` so the two sides cannot disagree. The shader header records the decision and
+its price (`web/shaders/src/field-deposit.wgsl`, cross-referenced from `field-resolve.wgsl`): a
+second, never-written activator slot existed here once and cost 1 MB of VRAM plus 1 MB per frame of
+traffic to reserve for nothing, and signed secretion into the inhibitor channel already gives both
+roles the ecology needs. The same record names everything a second channel would touch — striding
+both shaders' indices, doubling the allocation, and loading, storing and resetting each slot — so
+the change is made when a coupling needs the channel, never before.
 
 #### Scenario: Adding a deposit channel
-- **WHEN** the channel-count constant increases
-- **THEN** allocation, indexing, and reset all follow from it without separate edits
+- **WHEN** a coupling comes to need a second deposit channel
+- **THEN** the header's record enumerates every site the change touches, so the edit follows a
+  recorded list rather than an index audit
 
 
 ### Requirement: The kernel-density accumulator holds the whole particle budget
@@ -118,4 +140,5 @@ already bind.
 #### Scenario: A shader reads a member the table does not declare
 
 - **WHEN** a shader references a SimParams member absent from the table
-- **THEN** the shader fails to compile against the generated struct at bundle time
+- **THEN** shader-module creation fails on the device against the generated struct — the bundler
+  lints constructors and binding sets but compiles no WGSL

@@ -81,16 +81,21 @@ does not prove it.
 ### Requirement: Thresholds are calibrated against named controls
 
 The four thresholds — response epsilon, span minimum, live-fraction minimum, and cliff maximum — SHALL
-be set from a measured sweep of the whole descriptor table, positioned inside the gap between a named
-must-pass set and a named must-fail set, with the measured distribution recorded beside the constants.
+be positioned from a measured sweep of the whole descriptor table, inside the gap between a named
+must-pass set and a named must-fail set, with the measured distribution recorded beside the
+constants (`src/ui/api/response_probe.nim:41-67`). Three of the four sit calibrated inside that
+gap; `RESPONSE_EPSILON` stands at its provisional value because neither anchor set separates on it,
+so no measurement yet gives it an edge to sit against.
 
 The must-pass set is `friction`, `fieldOpacity`, `exposure`, `contrast`, and `sphViscosity`. The
-must-fail set pins three different failure shapes: `rdFeed` and `rdKill` must fail on the default
-slice and pass on their joint group's slices, pinning both that their deadness is two-dimensional
-geometry and that the joint remedy repairs it; `trailLength`, whose persistence decays
-geometrically, must fail as a purely one-dimensional case repaired by a curve; and `glowIntensity`
-must fail at the top of its track, where its display-clamped observable has saturated, and be
-repaired by a re-range, a curve, or both, concentrating travel where the display still answers.
+must-fail anchor is `rdFeed` and `rdKill`, which must fail on the default slice and pass on their
+joint group's slices, pinning both that their deadness is two-dimensional geometry and that the
+joint remedy repairs it. `trailLength` and `glowIntensity` belong to neither set: the E3.4 sweep
+measured both live end to end — trail persistence is linear in the slider by construction of the
+shipped mapping (`trail_core.persistenceFrames` records the collapse to a straight line), and
+glow's display clamp compresses the top of its track by only 15% at the declared bright coordinate
+while still growing every step — so their predicted remedies never fired, and the anchor set holds
+two-dimensional deadness without them (design E3.4 carries the measured account).
 
 Where no gap separates the sets, the probe is defective and is fixed. The thresholds are never
 loosened to turn the table green.
