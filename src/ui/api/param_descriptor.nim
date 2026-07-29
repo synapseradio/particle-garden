@@ -75,6 +75,14 @@ type
     ## compiler settles both, where a string table would need a test to.
     pcStableStiffness  ## sph_core.stableStiffnessCeiling
 
+  SliderCurve* = enum
+    ## The travel curve (design E5). Position, in [0, 1], is what the user's
+    ## hand moves; the curve decides what a distance of travel buys where.
+    cLinear
+    cLog    ## equal travel multiplies the value equally; demands a floor
+            ## above zero, and the static gate below holds the pair together
+    cPower  ## equal travel buys more near the floor, by the exponent
+
   ParamBoundKind* = enum
     bConstant  ## the declared range is the whole bound
     bDerived   ## a registered ceiling bounds the value's EFFECT
@@ -153,6 +161,15 @@ type
                           ## a specific value is known to produce something,
                           ## and inventing one would be the same defect as a
                           ## hint naming an unreachable number.
+    curve*: SliderCurve   ## How handle travel maps to value (design E5):
+                          ## cLinear until a measured remedy assigns
+                          ## otherwise. The curve changes nothing but the
+                          ## handle's position — stored values, presets,
+                          ## clamps, notches and the readout all keep the
+                          ## value, never the position.
+    curveExponent*: float ## The exponent cPower warps travel by; meaningful
+                          ## only there, and the gate below rejects one that
+                          ## would invert or flatten the mapping.
     probe*: string        ## Id of this parameter's response probe in
                           ## response_probe.nim's registry — the declared
                           ## observable the parameter promises to move.
@@ -318,14 +335,16 @@ func floatParam(id, label, group: string;
     minValue, maxValue, defaultValue: float; precision: int;
     store: ParamStore; hint = "";
     notches: seq[ParamNotch] = @[];
-    bound = ParamBound(kind: bConstant); probe = ""): ParamDescriptor =
+    bound = ParamBound(kind: bConstant); probe = "";
+    curve = cLinear; curveExponent = 0.0): ParamDescriptor =
   ParamDescriptor(
     id: id, label: label, group: group, kind: pkFloat,
     minValue: minValue, maxValue: maxValue,
     step: paramStep(pkFloat, precision), precision: precision,
     defaultValue: defaultValue, store: store,
     reinitOnCommit: false, hint: hint, notches: notches, bound: bound,
-    arity: paScalar, probe: probe)
+    arity: paScalar, probe: probe, curve: curve,
+    curveExponent: curveExponent)
 
 func perSpeciesParam(id, label, group: string; slot: int;
     minValue, maxValue, defaultValue: float; precision: int;
@@ -623,3 +642,21 @@ func clampParamValue*(descriptor: ParamDescriptor; value: float): float =
   case descriptor.kind
   of pkInt: float(int(clamped))
   of pkFloat: clamped
+
+static:
+  # THE CURVE-FLOOR GATE (design E5). A logarithm has no zero, so giving a
+  # parameter logarithmic travel and giving it a positive floor are one
+  # decision — and a flat or inverted power warp is no curve at all. Checked
+  # here beside the descriptors rather than in config_ranges because the
+  # pairing is per-descriptor: the range authority cannot see which of its
+  # constants carries which curve.
+  for descriptor in buildParamDescriptors():
+    if descriptor.curve == cLog:
+      doAssert descriptor.minValue > 0.0,
+        "descriptor " & descriptor.id & " pairs cLog with a range minimum " &
+        "at or below zero; the curve and the floor are one decision " &
+        "(design E5)"
+    if descriptor.curve == cPower:
+      doAssert descriptor.curveExponent > 0.0,
+        "descriptor " & descriptor.id & " carries a cPower exponent that " &
+        "would invert or flatten the mapping"

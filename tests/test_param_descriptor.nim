@@ -14,6 +14,7 @@
 
 import std/[unittest, sets, math, strutils, sequtils]
 import ../src/ui/api/param_descriptor
+import ../src/ui/api/slider_curve
 import ../src/config_ranges
 import ../src/field_core  # SPECIES_CHEMISTRY_STRIDE and the chemistry defaults
 import ../src/ui/state/simulation_state
@@ -148,6 +149,22 @@ suite "Hints Name Only Reachable Slider Positions":
           named, ffDecimal, descriptor.precision))) < 1e-9
     # Guards against the loop above silently checking nothing.
     check checkedNumerals > 0
+
+  test "every hint numeral and notch coordinate stays reachable under its parameter's curve":
+    # The curve warps the handle's travel, never the value set — so every
+    # position a hint or a notch names must survive the round trip through
+    # the curve pair exactly (design E5). Under cLinear this repeats the
+    # lattice checks above; the moment a remedy assigns a curve, it starts
+    # earning its keep.
+    for descriptor in descriptors:
+      if descriptor.arity == paPerSpecies:
+        continue # a grid cell has no track to curve
+      for entry in descriptor.notches:
+        check abs(valueAt(descriptor, positionOf(descriptor, entry.value)) -
+          entry.value) < 1e-9
+      for named in numeralsIn(descriptor.hint):
+        check abs(valueAt(descriptor, positionOf(descriptor, named)) -
+          named) < 1e-9
 
   test "the regime coordinates are no longer carried as hint numerals":
     # The regime coordinates live in the notches, checked by "Notches Mark Only

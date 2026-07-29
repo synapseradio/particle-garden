@@ -10,7 +10,7 @@
 import { For, Show } from "solid-js";
 import type { PanelController } from "../state";
 import { formatParamValue } from "../lib/format";
-import { applySnap, notchPosition } from "../lib/notches";
+import { applySnap } from "../lib/notches";
 import { dormantShare } from "../lib/bounds";
 
 export function ParamSlider(props: { ctrl: PanelController; id: string }) {
@@ -35,14 +35,16 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
 
   // Only notches that land inside the track get a tick. Nim already asserts
   // every notch is in range, so this filter is a guard against an older
-  // app.js, not an expected case.
+  // app.js, not an expected case. Tick positions come through the boundary's
+  // curve conversion, so a curved track keeps its ticks under the handle
+  // positions that reach them.
   const ticks = () =>
     descriptor.notches
       .map((notch) => ({
         notch,
-        position: notchPosition(notch.value, descriptor.min, descriptor.max),
+        position: props.ctrl.paramPositionOf(props.id, notch.value),
       }))
-      .filter((tick) => tick.position !== null);
+      .filter((tick) => tick.position >= 0 && tick.position <= 1);
 
   const write = (raw: number) => {
     props.ctrl.setParam(
@@ -77,11 +79,18 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
         </Show>
         <input
           type="range"
-          min={descriptor.min}
-          max={descriptor.max}
-          step={descriptor.step}
-          value={value()}
-          onInput={(event) => write(parseFloat(event.currentTarget.value))}
+          min={0}
+          max={1}
+          step={descriptor.positionStep}
+          value={props.ctrl.paramPositionOf(props.id, value())}
+          onInput={(event) =>
+            write(
+              props.ctrl.paramValueAt(
+                props.id,
+                parseFloat(event.currentTarget.value),
+              ),
+            )
+          }
           onChange={() => props.ctrl.commitParam(props.id)}
         />
         <Show when={ticks().length > 0}>

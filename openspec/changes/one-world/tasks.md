@@ -2216,28 +2216,66 @@ calibration signal, not a defect in the test.
 
 Built before the remedies that use them.
 
-- [ ] 4.1 `tests/test_slider_curve.nim` (new): `position and value round-trip at the descriptor's
+- [x] 4.1 `tests/test_slider_curve.nim` (new): `position and value round-trip at the descriptor's
       precision`; `a linear curve reproduces the current position mapping exactly`; `position 0 and 1
       map to the range endpoints under every curve`; `a curve preserves monotonicity`.
-- [ ] 4.2 `src/ui/api/slider_curve.nim` (new, pure): `valueAt(descriptor, position)` and
+      DONE. The four named tests plus a clamping one (positions clamp to the track, values to the
+      served bounds), watched red on `cannot open file: ../src/ui/api/slider_curve` before the
+      module existed. The round trip walks each curve's own step lattice; the linear pin includes
+      the same line against a served bound narrower than the envelope, since that is the interval
+      a derived bound hands in.
+- [x] 4.2 `src/ui/api/slider_curve.nim` (new, pure): `valueAt(descriptor, position)` and
       `positionOf(descriptor, value)` for `cLinear`, `cLog`, and `cPower`. Both read the bounds the
       descriptor currently serves, so a bound that is derived from other live parameters (C7) needs
       nothing special: the curve warps whatever interval is live right now.
-- [ ] 4.3 `src/ui/api/param_descriptor.nim`: add `curve` and its exponent to `ParamDescriptor`,
+      DONE. Served bounds arrive as optional arguments defaulting to the envelope, so a derived
+      bound passes its live ceiling and the curve stays ignorant of why. valueAt lands every
+      result on the descriptor's step lattice anchored at the envelope minimum; positionOf stays
+      continuous — rounding lives in one direction only, or the pair stops being inverses.
+- [x] 4.3 `src/ui/api/param_descriptor.nim`: add `curve` and its exponent to `ParamDescriptor`,
       defaulting every parameter to `cLinear`. `src/config_ranges.nim`: the exponents as constants
       under static assertions rejecting a value that would invert or flatten the mapping, and
       rejecting `cLog` paired with a range minimum at or below zero — a logarithm has no zero, so
       the curve and the floor are one decision (design E5).
-- [ ] 4.4 `src/web_api.nim`: serve `curve` and the exponent in `descriptorToJs`; expose `valueAt` and
+      DONE, with one recorded deviation from the letter. `curve` and `curveExponent` sit on the
+      descriptor, every parameter cLinear. The static gate — cLog with a floor at or below zero
+      rejected, a cPower exponent that would invert or flatten rejected — lives at the bottom of
+      param_descriptor BESIDE the descriptors rather than in config_ranges, because the pairing is
+      per-descriptor and the range authority cannot see which of its constants carries which
+      curve. The exponent constants themselves land in config_ranges together with the first
+      remedy that assigns a curve (E5): a constant for a curve nobody carries would be a copy of
+      nothing.
+- [x] 4.4 `src/web_api.nim`: serve `curve` and the exponent in `descriptorToJs`; expose `valueAt` and
       `positionOf` through the boundary so the panel computes no mapping.
-- [ ] 4.5 `web-ui/src/components/ParamSlider.tsx`: drive the range input by track position, converting
+      DONE. descriptorToJs serves `curve`, `curveExponent`, and `positionStep` (the position
+      increment that walks the value lattice); `gardenAPI.paramValueAt` and
+      `gardenAPI.paramPositionOf` convert through slider_curve, and an unknown id answers with
+      the track's floor rather than throwing across the boundary.
+- [x] 4.5 `web-ui/src/components/ParamSlider.tsx`: drive the range input by track position, converting
       through the boundary in both directions. The readout keeps showing the value, never the
       position.
-- [ ] 4.6 `tests/test_param_descriptor.nim`: `every hint numeral and notch coordinate stays reachable
+      DONE. The input runs 0 to 1 at positionStep granularity; both conversions go through
+      PanelController pass-throughs to gardenAPI, and the notch ticks come through the same
+      positionOf so a curved track keeps its ticks under the handle positions that reach them.
+      The readout formats the value as before. HANDED FORWARD: dormantShare (C3.6,
+      web-ui/src/lib/bounds.ts) still computes its width as a linear fraction in TypeScript —
+      exact for every shipped descriptor, all cLinear — so the remedy that first assigns a curve
+      to a derived-bound parameter must route that width through the boundary too.
+- [x] 4.6 `tests/test_param_descriptor.nim`: `every hint numeral and notch coordinate stays reachable
       under its parameter's curve` — extending the existing reachability test
       (tests/test_param_descriptor.nim:94).
-- [ ] 4.7 `just happen` and `just check` green; a `cLinear` parameter must behave identically to
+      DONE. The named test sits beside the lattice reachability checks it extends: every notch
+      coordinate and every hint numeral survives the round trip through the curve pair exactly,
+      per-species grid cells excepted because a cell has no track to curve. Under cLinear it
+      repeats the lattice checks; the first assigned curve is when it starts earning its keep.
+- [x] 4.7 `just happen` and `just check` green; a `cLinear` parameter must behave identically to
       before this group.
+      DONE. `just happen` exits 0; `just check` runs green — 780 native [OK] with 0 failures, bun
+      50 pass / 0 fail. One red on the way: the UI typecheck rejected test/state.test.ts's mock
+      descriptor for lacking the three new fields, exactly the kind of drift the typed boundary
+      exists to catch; the mock gained them and the gate reran clean. Identical cLinear behaviour
+      is held by the linear pin in test_slider_curve (the exact line the panel ran before) plus
+      the curve round-trip over every notch and hint numeral.
 
 ## 5. Calibration and the remedy ladder
 

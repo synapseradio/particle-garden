@@ -58,6 +58,7 @@ when defined(js):
   import camera_core
   import climate_core
   import ui/api/param_descriptor
+  import ui/api/slider_curve
   import ui/state/matrix_state
   import ui/state/palette_state
   import ui/state/sim_config
@@ -206,6 +207,23 @@ when defined(js):
     result["max"] = toJs(descriptor.maxValue)
     result["step"] = toJs(descriptor.step)
     result["precision"] = toJs(descriptor.precision)
+    # The travel curve (design E5). The panel converts between position and
+    # value through paramValueAt/paramPositionOf and computes no mapping;
+    # positionStep is the uniform position increment that walks the
+    # descriptor's own value lattice under cLinear, and under a warp it is
+    # simply a fine-enough handle granularity — the value direction snaps to
+    # the lattice either way.
+    result["curve"] = toJs(
+      case descriptor.curve
+      of cLinear: cstring"linear"
+      of cLog: cstring"log"
+      of cPower: cstring"power")
+    result["curveExponent"] = toJs(descriptor.curveExponent)
+    result["positionStep"] = toJs(
+      if descriptor.step > 0.0 and descriptor.maxValue > descriptor.minValue:
+        descriptor.step / (descriptor.maxValue - descriptor.minValue)
+      else:
+        0.01)
     result["defaultValue"] = toJs(descriptor.defaultValue)
     result["store"] = toJs(storeName(descriptor.store))
     result["reinitOnCommit"] = toJs(descriptor.reinitOnCommit)
@@ -1041,6 +1059,19 @@ when defined(js):
     # clamp a slider does.
     result["clampParam"] = toJs(proc(id: cstring; value: float): float =
       clampParamImpl($id, value))
+    # The travel-curve pair (design E5): the slider hands over its handle
+    # position and receives the lattice value, and the reverse when it needs
+    # to place the handle. Both live in Nim so setParam's clamp and the
+    # handle can never disagree; an unknown id answers with the track's
+    # floor rather than throwing across the boundary.
+    result["paramValueAt"] = toJs(proc(id: cstring; position: float): float =
+      let key = $id
+      if key notin paramsById: return 0.0
+      valueAt(paramsById[key], position))
+    result["paramPositionOf"] = toJs(proc(id: cstring; value: float): float =
+      let key = $id
+      if key notin paramsById: return 0.0
+      positionOf(paramsById[key], value))
 
     # Toggles
     result["getTrails"] = toJs(proc(): bool = CONFIG.trails)

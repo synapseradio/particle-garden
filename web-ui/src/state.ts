@@ -150,6 +150,15 @@ export function createPanelController(api: GardenAPI) {
         bumpChemistry();
       }
     },
+    // The travel-curve pair, passed through untouched: the slider hands Nim
+    // a handle position and receives the value, and the reverse to place the
+    // handle. No mapping happens on this side of the boundary (design E5).
+    paramValueAt(id: string, position: number) {
+      return api.paramValueAt(id, position);
+    },
+    paramPositionOf(id: string, value: number) {
+      return api.paramPositionOf(id, value);
+    },
     commitParam(id: string) {
       api.commitParam(id);
       // Count commits cascade (species resize randomizes matrix cells,

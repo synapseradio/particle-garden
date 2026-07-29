@@ -55,6 +55,12 @@ interface ParamDescriptorBase {
   max: number;
   step: number;
   precision: number;
+  // The travel curve (design E5). The panel never applies it — conversion
+  // goes through paramValueAt/paramPositionOf — but it rides here so the
+  // slider knows its position granularity.
+  curve: "linear" | "log" | "power";
+  curveExponent: number;
+  positionStep: number;
   defaultValue: number;
   store: ParamStore;
   reinitOnCommit: boolean;
@@ -161,6 +167,10 @@ export interface GardenAPI {
   // own their own storage — the per-species grid writes cells of chemistry()
   // by reference and clamps them through here.
   clampParam(id: string, value: number): number;
+  // The travel-curve pair (design E5): position in [0, 1] to lattice value
+  // and back. Nim owns both directions; the panel computes no mapping.
+  paramValueAt(id: string, position: number): number;
+  paramPositionOf(id: string, value: number): number;
 
   // Toggles
   getTrails(): boolean;
