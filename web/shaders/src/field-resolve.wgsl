@@ -40,6 +40,7 @@
 // =============================================================================
 
 //! import fixed_point
+//! import field_grid
 
 @group(0) @binding(0) var srcField: texture_2d<f32>;
 // rgba16float, not rg16float: WebGPU does not permit rg16float as a write-only
@@ -49,8 +50,6 @@
 @group(0) @binding(1) var dstField: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var<storage, read_write> fieldDeposit: array<atomic<i32>>;
 
-const FIELD_W: u32 = {{FIELD_W}}u;
-const FIELD_H: u32 = {{FIELD_H}}u;
 const RD_DEPOSIT_CELL_MAX: f32 = {{RD_DEPOSIT_CELL_MAX}};
 const RD_DEPOSIT_FRAME_SCALE: f32 = {{RD_DEPOSIT_FRAME_SCALE}};
 
@@ -58,7 +57,7 @@ const RD_DEPOSIT_FRAME_SCALE: f32 = {{RD_DEPOSIT_FRAME_SCALE}};
 fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let cellX = globalId.x;
   let cellY = globalId.y;
-  if (cellX >= FIELD_W || cellY >= FIELD_H) {
+  if (cellX >= FIELD_DIMS_U.x || cellY >= FIELD_DIMS_U.y) {
     return;
   }
 
@@ -66,10 +65,10 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // .x = activator, .y = inhibitor, .zw = reserved state channels.
   let current = textureLoad(srcField, coord, 0);
 
-  // One i32 per cell, so the cell index IS the buffer index — the same
-  // addressing field-deposit.wgsl writes with. See that file for what a second
-  // channel would cost and what it would change on both sides.
-  let cellIndex = cellY * FIELD_W + cellX;
+  // One i32 per cell: fieldCellIndex is the same addressing field-deposit.wgsl
+  // writes with, shared through field_grid so the two sides cannot disagree.
+  // See that file for what a second channel would cost on both sides.
+  let cellIndex = fieldCellIndex(coord);
   // Mirrors field_core.resolveCellDeposit in the same order: cap, scale,
   // fold, floor. RD_DEPOSIT_MAX bounds one particle; nothing bounds how many
   // share a cell, so an input that gathers a crowd into one place drives this

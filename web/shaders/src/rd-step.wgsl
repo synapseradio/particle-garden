@@ -50,6 +50,7 @@
 
 //! import field_params
 //! import reaction_params
+//! import field_grid
 
 @group(0) @binding(0) var srcField: texture_2d<f32>;
 // rgba16float (see field-resolve.wgsl): rg16float is not a storage-capable
@@ -63,12 +64,9 @@
 // branch in rdStep, without touching a binding, a layout, or the manifest.
 const REACTION_GRAY_SCOTT: u32 = 0u;
 
-const FIELD_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
-
 fn loadCellFull(coord: vec2<i32>) -> vec4<f32> {
   // Toroidal wrap so the field is seamless, matching the wrapping world.
-  let wrapped = (coord + FIELD_DIMS) % FIELD_DIMS;
-  return textureLoad(srcField, wrapped, 0);
+  return textureLoad(srcField, fieldWrap(coord), 0);
 }
 
 fn loadCell(coord: vec2<i32>) -> vec2<f32> {

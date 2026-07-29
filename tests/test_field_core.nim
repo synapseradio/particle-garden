@@ -578,6 +578,26 @@ suite "Gray-Scott Fixed-Point Structure":
     check anyReachable
 
 
+suite "Field Grid Wrap":
+  test "the wrap lands every cell in range at any span":
+    # CONTRACT: the field is a torus, so every integer cell coordinate — however
+    # far outside the grid — names exactly one in-range cell. The single-mod
+    # spelling `(cell + dims) mod dims` survives only one span of negativity;
+    # this oracle is the floor-mod every shader's fieldWrap mirrors (6.7).
+    # Dims of 8 keep each expectation checkable on sight.
+    check fieldWrap(3, 8) == 3
+    check fieldWrap(0, 8) == 0
+    check fieldWrap(7, 8) == 7
+    check fieldWrap(8, 8) == 0
+    check fieldWrap(-1, 8) == 7
+    check fieldWrap(-8, 8) == 0
+    # Beyond one span of negativity: single-mod yields -1 here.
+    check fieldWrap(-9, 8) == 7
+    check fieldWrap(-17, 8) == 7
+    check fieldWrap(-16, 8) == 0
+    check fieldWrap(17, 8) == 1
+
+
 suite "9-Point Laplacian Stencil":
   test "the laplacian is zero on a constant field":
     # CONTRACT: a cell surrounded by eight neighbors at its own value has no
@@ -1615,9 +1635,6 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
   proc heldMouseWorst(bounded: bool, frames: int): float =
     const gridW = 32
     const gridH = 32
-    proc wrapCell(v, n: int): int =
-      result = v mod n
-      if result < 0: result += n
     var activator: array[gridH, array[gridW, float]]
     var inhibitor: array[gridH, array[gridW, float]]
     for y in 0 ..< gridH:
@@ -1627,8 +1644,8 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
     for frame in 0 ..< frames:
       for dy in -3 .. 3:
         for dx in -3 .. 3:
-          let yy = wrapCell(gridH div 2 + dy, gridH)
-          let xx = wrapCell(gridW div 2 + dx, gridW)
+          let yy = fieldWrap(gridH div 2 + dy, gridH)
+          let xx = fieldWrap(gridW div 2 + dx, gridW)
           inhibitor[yy][xx] =
             if bounded: resolveCellDeposit(inhibitor[yy][xx], UNBOUNDED_DEPOSIT)
             else: inhibitor[yy][xx] + UNBOUNDED_DEPOSIT
@@ -1637,10 +1654,10 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
         var nextB = inhibitor
         for y in 0 ..< gridH:
           for x in 0 ..< gridW:
-            let n = wrapCell(y - 1, gridH)
-            let s = wrapCell(y + 1, gridH)
-            let e = wrapCell(x + 1, gridW)
-            let w = wrapCell(x - 1, gridW)
+            let n = fieldWrap(y - 1, gridH)
+            let s = fieldWrap(y + 1, gridH)
+            let e = fieldWrap(x + 1, gridW)
+            let w = fieldWrap(x - 1, gridW)
             let lapA = laplacian9(activator[y][x],
               activator[n][x], activator[s][x], activator[y][e], activator[y][w],
               activator[n][e], activator[n][w], activator[s][e], activator[s][w])

@@ -38,12 +38,10 @@
 // =============================================================================
 
 //! import field_params
+//! import field_grid
 
 @group(0) @binding(0) var dstField: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> params: FieldParams;
-
-const FIELD_W: u32 = {{FIELD_W}}u;
-const FIELD_H: u32 = {{FIELD_H}}u;
 
 const SEED_BLOB_COUNT: u32 = {{RD_SEED_BLOB_COUNT}}u;
 const SEED_BLOB_RADIUS: f32 = {{RD_SEED_BLOB_RADIUS}};
@@ -72,21 +70,21 @@ fn seedHash(value: u32) -> u32 {
 fn seedBlobCenter(blobIndex: u32, nonce: u32) -> vec2<u32> {
   let stream = seedHash(blobIndex * 2u + 1u) ^ seedHash(nonce);
   return vec2<u32>(
-    seedHash(stream) % FIELD_W,
-    seedHash(stream ^ 0x9e3779b9u) % FIELD_H);
+    seedHash(stream) % FIELD_DIMS_U.x,
+    seedHash(stream ^ 0x9e3779b9u) % FIELD_DIMS_U.y);
 }
 
 @compute @workgroup_size({{WORKGROUP_SIZE_FIELD_X}}, {{WORKGROUP_SIZE_FIELD_Y}}, 1)
 fn seedField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let cellX = globalId.x;
   let cellY = globalId.y;
-  if (cellX >= FIELD_W || cellY >= FIELD_H) {
+  if (cellX >= FIELD_DIMS_U.x || cellY >= FIELD_DIMS_U.y) {
     return;
   }
 
   let nonce = u32(params.seedNonce);
-  let width = f32(FIELD_W);
-  let height = f32(FIELD_H);
+  let width = f32(FIELD_DIMS.x);
+  let height = f32(FIELD_DIMS.y);
 
   // MAX over blobs, never a sum: overlapping blobs must saturate at the core
   // values rather than stack past them into the flooded regime.

@@ -17,20 +17,13 @@
 
 //! import fade_params
 //! import camera_transform
+//! import field_grid
 
 @group(0) @binding(0) var prevFrame: texture_2d<f32>;
 @group(0) @binding(1) var prevSampler: sampler;
 @group(0) @binding(2) var<uniform> params: FadeParams;
 @group(0) @binding(3) var fieldTexture: texture_2d<f32>;
 @group(0) @binding(4) var<uniform> cam: Camera;
-
-const FADE_FIELD_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
-
-fn fadeFieldInhibitor(cell: vec2<i32>) -> f32 {
-  // The field wraps, so the gradient is continuous across the seam.
-  let wrapped = (cell + FADE_FIELD_DIMS) % FADE_FIELD_DIMS;
-  return textureLoad(fieldTexture, wrapped, 0).y;
-}
 
 // Fullscreen triangle (3 vertices cover entire screen)
 const POSITIONS = array<vec2f, 3>(
@@ -86,17 +79,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   // The field cell comes from the WORLD position, not from the screen UV: the
   // field lives in the world, so a camera that has panned or zoomed must read
   // the same field cell for the same world point.
+  // Floor rather than fieldCellFor's clamp: worldHere is a reprojection, so
+  // near a seam it legitimately sits outside the world rect, and the gradient
+  // taps wrap it back onto the torus.
   var fieldGradient = vec2f(0.0);
   if (params.fieldDriftScale != 0.0) {
     let fieldUv = worldHere / worldSize;
-    let fieldCell = vec2<i32>(
-      i32(floor(fieldUv.x * f32(FADE_FIELD_DIMS.x))),
-      i32(floor(fieldUv.y * f32(FADE_FIELD_DIMS.y))));
-    let east = fadeFieldInhibitor(fieldCell + vec2<i32>(1, 0));
-    let west = fadeFieldInhibitor(fieldCell - vec2<i32>(1, 0));
-    let south = fadeFieldInhibitor(fieldCell + vec2<i32>(0, 1));
-    let north = fadeFieldInhibitor(fieldCell - vec2<i32>(0, 1));
-    fieldGradient = vec2f((east - west) * 0.5, (south - north) * 0.5);
+    let fieldCell = vec2<i32>(floor(fieldUv * vec2<f32>(FIELD_DIMS)));
+    fieldGradient = fieldInhibitorGradient(fieldTexture, fieldCell);
   }
   let driftUv = reprojectedUv + fieldGradient * params.fieldDriftScale;
 

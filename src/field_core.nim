@@ -493,6 +493,19 @@ func rdSeedCell*(x, y: int, nonce: uint32, width, height, blobCount: int,
    inhibitor: RD_SEED_CORE_INHIBITOR * coverage)
 
 # ==============================================================================
+# FIELD GRID TOPOLOGY
+# ==============================================================================
+
+func fieldWrap*(cell, dims: int): int =
+  ## The field's toroidal wrap: every integer cell coordinate, however far
+  ## outside the grid, names exactly one in-range cell. Floor-mod, because the
+  ## single-mod spelling `(cell + dims) mod dims` survives only one span of
+  ## negativity. web/shaders/modules/field_grid.wgsl mirrors this per axis.
+  result = cell mod dims
+  if result < 0:
+    result += dims
+
+# ==============================================================================
 # 9-POINT LAPLACIAN STENCIL
 # ==============================================================================
 

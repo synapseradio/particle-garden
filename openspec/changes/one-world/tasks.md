@@ -401,7 +401,7 @@ Done here because the bind groups are already open. Implements no second reactio
       one part of this group that cannot be settled from the native side: three of this group's
       numbers (`FIELD_LIGHT_STRENGTH` 0.55, `FIELD_DRIFT_SCALE` 0.02, `FIELD_OPACITY_DEFAULT` 1.0)
       are blind picks that only a display can judge.
-- [ ] 6.7 Fix the fade drift's field wrap, then make the field's edge behaviour single-source.
+- [x] 6.7 Fix the fade drift's field wrap, then make the field's edge behaviour single-source.
       `fade.wgsl`'s `fadeFieldInhibitor` wraps with `(cell + FADE_FIELD_DIMS) % FADE_FIELD_DIMS`,
       which under WGSL's truncating `%` survives only one span of negativity — and below zoom 0.5
       the screen legitimately reaches world positions past −1 span, where the gradient taps call
@@ -420,6 +420,17 @@ Done here because the bind groups are already open. Implements no second reactio
       a valid cell, so the out-of-range `textureLoad` this task opens with is no longer reachable
       and the double-mod fix lands as hardening. The five-shader spelling divergence and the
       `field_grid.wgsl` hoist remain the task's substance.
+      DONE. Failing-first oracle `field_core.fieldWrap` (floor-mod) with suite "Field Grid Wrap"
+      pinning spans beyond −dims, where single-mod yields −1; the harness's test-local `wrapCell`
+      duplicate collapsed into it. `web/shaders/modules/field_grid.wgsl` now carries `FIELD_DIMS`
+      (+ a u32 spelling), `fieldWrap`, `fieldCellFor`, `fieldCellIndex`, `fieldInhibitorAt`, and
+      `fieldInhibitorGradient`. COUNT CORRECTION: seven importers, not five — `field-resolve` and
+      `field-seed` also spelled the dims as u32 scalars and now import the module. The
+      deposit↔resolve addressing agreement is structural (both call `fieldCellIndex`) instead of
+      a cross-file comment, and the fade/field-force gradient stencils collapsed into one
+      function. fade's floor-not-clamp cell mapping stays local by design: reprojection
+      legitimately leaves the world rect and must wrap, not clamp. Build green, 675 native tests
+      green; web-ui untouched, so its suite was not in this change's scope.
 
 ## 7. Camera, zoom, navigation (S6)
 

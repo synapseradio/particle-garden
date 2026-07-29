@@ -51,6 +51,7 @@
 //! import grid_params
 //! import field_params
 //! import species_chemistry
+//! import field_grid
 
 @group(0) @binding(0) var<uniform> grid: GridParams;
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
@@ -58,16 +59,6 @@
 @group(0) @binding(3) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(4) var<uniform> params: FieldParams;
 @group(0) @binding(5) var<uniform> chemistry: SpeciesChemistry;
-
-const FIELD_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
-
-fn wrap(coord: vec2<i32>) -> vec2<i32> {
-  return (coord + FIELD_DIMS) % FIELD_DIMS;
-}
-
-fn inhibitorAt(coord: vec2<i32>) -> f32 {
-  return textureLoad(field, wrap(coord), 0).y;
-}
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -79,19 +70,11 @@ fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   let particle = particles[particleIdx];
 
-  // Particle world position -> field cell (field spans the full world rect).
-  let cellFx = particle.pos.x / grid.canvasWidth * f32(FIELD_DIMS.x);
-  let cellFy = particle.pos.y / grid.canvasHeight * f32(FIELD_DIMS.y);
-  let cellX = clamp(i32(cellFx), 0, FIELD_DIMS.x - 1);
-  let cellY = clamp(i32(cellFy), 0, FIELD_DIMS.y - 1);
-
-  // Central-difference gradient of the inhibitor channel.
-  let east = inhibitorAt(vec2<i32>(cellX + 1, cellY));
-  let west = inhibitorAt(vec2<i32>(cellX - 1, cellY));
-  let north = inhibitorAt(vec2<i32>(cellX, cellY - 1));
-  let south = inhibitorAt(vec2<i32>(cellX, cellY + 1));
-  let gradX = (east - west) * 0.5;
-  let gradY = (south - north) * 0.5;
+  // Particle world position -> field cell (field spans the full world rect),
+  // then the central-difference gradient of the inhibitor channel there.
+  let cell = fieldCellFor(particle.pos,
+    vec2<f32>(grid.canvasWidth, grid.canvasHeight));
+  let gradient = fieldInhibitorGradient(field, cell);
 
   // This species' signed tropism. Packed four species per vec4, the same
   // arithmetic forces.wgsl uses to reach an attraction-matrix entry.
@@ -99,14 +82,13 @@ fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
     chemistry.tropism[particle.species / 4u][particle.species % 4u];
 
   // Direction lives in the tropism sign; magnitude in fieldForceScale.
-  let forceX = gradX * params.fieldForceScale * tropism;
-  let forceY = gradY * params.fieldForceScale * tropism;
+  let force = gradient * params.fieldForceScale * tropism;
 
   // ACCUMULATE, never overwrite. forces.wgsl and forces-sph.wgsl write the same
   // buffer, and integrate must see the sum of all three. The frame clears
   // velocityDelta once at the top, before any contributor runs.
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u],
-    i32(forceX * FIXED_POINT_SCALE));
+    i32(force.x * FIXED_POINT_SCALE));
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u + 1u],
-    i32(forceY * FIXED_POINT_SCALE));
+    i32(force.y * FIXED_POINT_SCALE));
 }

@@ -39,6 +39,7 @@
 //! import render_params
 //! import colormap
 //! import camera_transform
+//! import field_grid
 
 // Quad corner offsets (2 triangles = 6 vertices)
 // Unit quad: corners at distance sqrt(2) from center
@@ -77,7 +78,6 @@ const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full bright
 @group(0) @binding(3) var fieldTexture: texture_2d<f32>;     // RD field (activator, inhibitor)
 @group(0) @binding(4) var<uniform> cam: Camera;              // View over the toroidal world
 
-const FIELD_LIGHT_DIMS: vec2<i32> = vec2<i32>({{FIELD_W}}, {{FIELD_H}});
 const FIELD_LIGHT_STRENGTH: f32 = {{FIELD_LIGHT_STRENGTH}};
 
 struct VertexOutput {
@@ -215,11 +215,8 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // field's local intensity, and the field clears to Gray-Scott's trivial fixed
   // point where the inhibitor is 0. A particle standing where no pattern is
   // therefore gets a pull of 0 and mix returns its species colour untouched.
-  let fieldCellX = clamp(i32(p.pos.x / params.worldSize.x * f32(FIELD_LIGHT_DIMS.x)),
-    0, FIELD_LIGHT_DIMS.x - 1);
-  let fieldCellY = clamp(i32(p.pos.y / params.worldSize.y * f32(FIELD_LIGHT_DIMS.y)),
-    0, FIELD_LIGHT_DIMS.y - 1);
-  let fieldHere = textureLoad(fieldTexture, vec2<i32>(fieldCellX, fieldCellY), 0).xy;
+  let fieldCell = fieldCellFor(p.pos, params.worldSize);
+  let fieldHere = textureLoad(fieldTexture, fieldCell, 0).xy;
   let colormapIndex = u32(params.colormapIndex + 0.5);
   let fieldPull = colormapFieldIntensity(colormapIndex, fieldHere.x, fieldHere.y) *
     FIELD_LIGHT_STRENGTH;

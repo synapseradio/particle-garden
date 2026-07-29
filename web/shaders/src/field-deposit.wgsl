@@ -56,6 +56,7 @@
 //! import grid_params
 //! import field_params
 //! import species_chemistry
+//! import field_grid
 
 @group(0) @binding(0) var<uniform> grid: GridParams;
 @group(0) @binding(1) var<storage, read> particles: array<Particle>;
@@ -80,9 +81,6 @@ const SPLAT_EXTENT: i32 = {{RD_DEPOSIT_SPLAT_EXTENT}};
 const SPLAT_SIGMA: f32 = {{RD_DEPOSIT_SPLAT_SIGMA}};
 const SPLAT_NORMALIZATION: f32 = {{RD_DEPOSIT_SPLAT_NORMALIZATION}};
 
-const FIELD_W: i32 = {{FIELD_W}};
-const FIELD_H: i32 = {{FIELD_H}};
-
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let particleIdx = globalId.x;
@@ -101,12 +99,10 @@ fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
     chemistry.secretion[particle.species / 4u][particle.species % 4u];
   let speciesDeposit = params.depositAmount * secretion;
 
-  // Map the particle's world position to a field cell. The field spans the full
-  // world rect, so this is a straight normalize-and-scale.
-  let cellFx = particle.pos.x / grid.canvasWidth * f32(FIELD_W);
-  let cellFy = particle.pos.y / grid.canvasHeight * f32(FIELD_H);
-  let cellX = clamp(i32(cellFx), 0, FIELD_W - 1);
-  let cellY = clamp(i32(cellFy), 0, FIELD_H - 1);
+  // Map the particle's world position to a field cell. The field spans the
+  // full world rect.
+  let cell = fieldCellFor(particle.pos,
+    vec2<f32>(grid.canvasWidth, grid.canvasHeight));
   // Splat the deposit across the kernel. The field wraps, so cell offsets wrap
   // with it — a colony sitting on the world edge deposits across the seam
   // exactly as it would anywhere else.
@@ -123,11 +119,9 @@ fn depositField(@builtin(global_invocation_id) globalId: vec3<u32>) {
       }
       let weight = exp(-distSq /
         (2.0 * SPLAT_SIGMA * SPLAT_SIGMA)) / SPLAT_NORMALIZATION;
-      let splatX = (cellX + offsetX + FIELD_W) % FIELD_W;
-      let splatY = (cellY + offsetY + FIELD_H) % FIELD_H;
-      let splatIndex = splatY * FIELD_W + splatX;
+      let splat = fieldWrap(cell + vec2<i32>(offsetX, offsetY));
       let depositFixed = i32(speciesDeposit * weight * FIXED_POINT_SCALE);
-      atomicAdd(&fieldDeposit[splatIndex], depositFixed);
+      atomicAdd(&fieldDeposit[fieldCellIndex(splat)], depositFixed);
     }
   }
 }
