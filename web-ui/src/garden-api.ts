@@ -45,7 +45,6 @@ export type ParamBound =
   | { kind: "constant" }
   | { kind: "derived"; ceilingId: string; reason: string };
 
-// What every tunable carries, whatever its cardinality.
 interface ParamDescriptorBase {
   id: string;
   label: string;
@@ -55,9 +54,9 @@ interface ParamDescriptorBase {
   max: number;
   step: number;
   precision: number;
-  // The travel curve (design E5). The panel never applies it — conversion
-  // goes through paramValueAt/paramPositionOf — but it rides here so the
-  // slider knows its position granularity.
+  // The travel curve. The panel never applies it — conversion goes through
+  // paramValueAt/paramPositionOf — but it rides here so the slider knows its
+  // position granularity.
   curve: "linear" | "log" | "power";
   curveExponent: number;
   positionStep: number;
@@ -78,9 +77,7 @@ interface ParamDescriptorBase {
   reinitOnCommit: boolean;
   // Guidance shown beside the label; empty for parameters that need none.
   hint: string;
-  // Labelled tick positions. Empty for most parameters.
   notches: ParamNotch[];
-  // What bounds the value beyond the envelope above.
   bound: ParamBound;
 }
 
@@ -170,11 +167,9 @@ export interface ApplyPresetResult {
 }
 
 export interface GardenAPI {
-  // Lifecycle
   isReady(): boolean;
   onReady(callback: () => void): void;
 
-  // Parameters
   descriptor(): ParamDescriptor[];
   getParam(id: string): number;
   setParam(id: string, value: number): void;
@@ -189,27 +184,23 @@ export interface GardenAPI {
   // own their own storage — the per-species grid writes cells of chemistry()
   // by reference and clamps them through here.
   clampParam(id: string, value: number): number;
-  // The travel-curve pair (design E5): position in [0, 1] to lattice value
-  // and back. Nim owns both directions; the panel computes no mapping.
+  // The travel-curve pair: position in [0, 1] to lattice value and back.
+  // Nim owns both directions; the panel computes no mapping.
   paramValueAt(id: string, position: number): number;
   paramPositionOf(id: string, value: number): number;
 
-  // Toggles
   getTrails(): boolean;
   setTrails(enabled: boolean): void;
   getBloom(): boolean;
   setBloom(enabled: boolean): void;
 
-  // Force model
   getForceModel(): number;
   setForceModel(model: number): void;
 
-  // Palette / colormap
   paletteSchemes(): PaletteSchemeEntry[];
   getPaletteScheme(): string;
   isPaletteCustom(): boolean;
   setPaletteScheme(id: string): void;
-  // Named reaction-diffusion regimes
   rdRegimes(): RdRegime[];
   getRdRegime(): string;
   applyRdRegime(id: string): void;
@@ -244,13 +235,10 @@ export interface GardenAPI {
   chemistry(): Float32Array;
   chemistryStride(): number;
 
-  // Particles
   resetParticles(): void;
 
-  // Reaction-diffusion field
   reseedField(): void;
 
-  // Stats
   onStats(callback: (stats: StatsSample) => void): void;
   /** Dormancy: id -> whether the control's consumer can act. Evaluated
    * Nim-side; called on the panel's own writes and on each stats push. */

@@ -60,7 +60,7 @@ describe("snapTarget", () => {
   });
 
   test("a drag beyond the pull is left alone", () => {
-    // THE POINT OF A SOFT MAGNET: the track stays continuous, so a value
+    // The point of a soft magnet: the track stays continuous, so a value
     // between two named regimes is still reachable.
     const far = 0.035 + pull * 3;
     expect(snapTarget(far, FEED_NOTCHES, FEED_MIN, FEED_MAX)).toBeNull();
@@ -101,12 +101,11 @@ describe("snapTarget", () => {
   });
 
   test("some value between every adjacent pair of notches stays reachable", () => {
-    // THE PROPERTY THAT MAKES THIS A MAGNET AND NOT A HARD STOP, checked
-    // structurally rather than by trusting SNAP_FRACTION. It caught a real
-    // defect: a flat pull of 1.5% of the feed axis is 0.001125, WIDER than the
-    // 0.001 gap between Mitosis and Labyrinth, so the whole span between them
-    // snapped away. Each notch's pull is now capped against its nearest
-    // neighbour, which makes this hold at any SNAP_FRACTION.
+    // The property that makes this a magnet and not a hard stop, checked
+    // structurally rather than by trusting SNAP_FRACTION: a flat pull of 1.5%
+    // of the feed axis is 0.001125, wider than the 0.001 gap between Mitosis
+    // and Labyrinth. Each notch's pull is capped against its nearest
+    // neighbour, which holds at any SNAP_FRACTION.
     const sorted = [...FEED_NOTCHES].sort((a, b) => a.value - b.value);
     for (let index = 1; index < sorted.length; index += 1) {
       const midpoint = (sorted[index].value + sorted[index - 1].value) / 2;

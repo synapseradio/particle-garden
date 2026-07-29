@@ -69,7 +69,7 @@ describe("scalarParamIds", () => {
   });
 
   test("drops the per-species columns, which getParam cannot serve", () => {
-    // THE DEFECT THIS PINS. A per-species column holds one value per species in
+    // The defect this pins. A per-species column holds one value per species in
     // a live array, so there is no single number for getParam to return. Asking
     // for one warns on the Nim side and would seed the panel with a zero that
     // looks like a real setting.

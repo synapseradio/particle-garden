@@ -1,6 +1,5 @@
-/* Solid control panel styles — a 1:1 port of the old panel CSS from
-   web/index.html, scoped under #ui-root so the shell page stays in charge
-   of body/canvas/overlay styling. Bundled into web/ui-bundle.css. */
+/* Solid control panel styles, scoped under #ui-root so the shell page stays
+   in charge of body/canvas/overlay styling. Bundled into web/ui-bundle.css. */
 
 #ui-root .controls {
   position: fixed;
@@ -327,8 +326,8 @@
   white-space: nowrap;
   letter-spacing: 0.02em;
 }
-/* Six regimes wrap rather than compress: an unreadable label is worse than a
-   second row. */
+/* The regime row wraps rather than compresses: an unreadable label is worse
+   than a second row. */
 #ui-root .regime-row {
   flex-wrap: wrap;
 }

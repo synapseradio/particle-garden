@@ -1,4 +1,3 @@
-# Package
 version       = "2.0.0"
 author        = "Particle Garden"
 description   = "Particle life simulation with WebGPU compute shaders"
@@ -7,24 +6,19 @@ srcDir        = "src"
 bin           = @["main"]
 binDir        = "."
 
-# Dependencies
 requires "nim >= 2.0.0 & < 3.0.0"
 # Pin to webui 2.4.2 tag (commit hash for reproducibility)
 # Tag 2.4.2 = commit 552a3e3 (upstream version string says 2.4.0.0)
 requires "webui#552a3e3"
 
-# Compiler flags for style and warning enforcement
 const styleFlags = "--styleCheck:error --styleCheck:usages"
 # Single line required - multiline strings with backslash break on Windows CI
 const warningFlags = "--warningAsError:Deprecated --warningAsError:BareExcept --warningAsError:CStringConv --warningAsError:EnumConv --warningAsError:HoleEnumConv --warningAsError:SmallLshouldNotBeUsed --warningAsError:ProveInit --warningAsError:UnusedImport --warningAsError:Effect --hint:XDeclaredButNotUsed:on"
 
-# Combined quality flags for all builds
 const qualityFlags = styleFlags & " " & warningFlags
 
-# JS backend flags (for nim js builds)
 const jsFlags = "-d:release " & qualityFlags
 
-# Native backend flags (for nim c builds)
 const nativeFlags = "-d:release --opt:speed " & qualityFlags
 
 # Release flags - optimized builds with runtime checks preserved
@@ -60,7 +54,6 @@ task release, "Build optimized release":
   echo "Building app..."
   exec "nim js " & jsReleaseFlags & " --out:web/app.js src/app.nim"
   echo "Building native app..."
-  # Add static linking on Windows to avoid VCRUNTIME140.dll dependency
   when defined(windows):
     exec "nim c " & nativeReleaseFlags & " " & windowsStaticFlags & " --out:main src/main.nim"
   else:

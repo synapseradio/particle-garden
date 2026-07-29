@@ -14,19 +14,10 @@ import type { ParamNotch } from "../garden-api";
 export const SNAP_FRACTION = 0.015;
 
 // A notch never pulls further than this fraction of the distance to its
-// nearest neighbour, whatever SNAP_FRACTION says.
-//
-// WHY THIS EXISTS. On the feed axis, Mitosis (.028) and Labyrinth (.029) sit
-// one slider step apart, which is NARROWER than 1.5% of that slider's travel.
-// A flat pull would therefore cover the entire span between them and make
-// every value in it unreachable — a hard stop wearing a magnet's clothes, and
-// the exact failure the soft magnet exists to avoid. Capping each notch's pull
-// against its own neighbourhood makes "there is always reachable space between
-// two notches" true by construction rather than by choosing SNAP_FRACTION
-// carefully, so a future regime coordinate cannot quietly break it.
-//
-// Below 0.5 so the two pulls never meet: at 0.4 a fifth of every gap stays
-// free.
+// nearest neighbour, whatever SNAP_FRACTION says: capped below 0.5 so two
+// pulls never meet. Uncapped, a flat pull can exceed the gap between two
+// close-set coordinates and make the span between them unreachable —
+// enforced by the reachability property test in notches.test.ts.
 const NEIGHBOUR_PULL_FRACTION = 0.4;
 
 // Where a notch sits along the track, as a 0..1 fraction from min to max.

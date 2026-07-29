@@ -1,11 +1,11 @@
-// The named-regime row: six buttons that set feed and kill together, because
+// The named-regime row: buttons that set feed and kill together, because
 // a regime is a POINT in that plane and a notch on either axis alone does not
 // locate one.
 //
 // Everything here comes from Nim: the names, the coordinates, and the deposit
-// floor two of them need. The button only sends an id.
+// floor some of them need. The button only sends an id.
 //
-// A row of plain buttons rather than a dropdown or a 2D pad — six entries is
+// A row of plain buttons rather than a dropdown or a 2D pad — the named set is
 // few enough that all of them fit in view, and seeing the whole set at once is
 // most of the point. A user who does not know the literature should be able to
 // read the available worlds off the panel rather than discover them one at a
