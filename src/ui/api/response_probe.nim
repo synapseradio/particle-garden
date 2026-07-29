@@ -1,5 +1,5 @@
 # ==============================================================================
-# PARTICLE GARDEN - RESPONSE PROBES (design E1-E3)
+# PARTICLE GARDEN - RESPONSE PROBES
 # ==============================================================================
 #
 # Every slider promises that moving it moves something the user can see. This
@@ -13,7 +13,7 @@
 # makes the whole apparatus runnable without a browser. The descriptor table
 # carries only the probe's NAME, so the panel ships no measurement code.
 #
-# Context and coordinates (design E2): every probe measures on a slice — all
+# Context and coordinates: every probe measures on a slice — all
 # other parameters fixed. The default slice is the shipped defaults, read from
 # the owning state records, never restated here. Reference coordinates the
 # probes fix (a separation, a density, a velocity gap) are named constants
@@ -39,17 +39,32 @@ import ../state/matrix_state
 import param_descriptor
 
 # ------------------------------------------------------------------------------
-# The thresholds (design E3). Provisional starting hypotheses, written down so
-# the first sweep has something to move; E5 replaces them with values set
-# inside the measured gap between the must-pass and must-fail control sets.
+# The thresholds. Calibrated inside the measured gap between the must-pass
+# and must-fail anchor sets; the distribution each constant sits against is
+# recorded beside it.
 # ------------------------------------------------------------------------------
 
 const
   RESPONSE_EPSILON* = 1e-4
     ## Movement below this fraction of the reference magnitude counts as none.
-  SPAN_MIN* = 0.05
-  LIVE_FRACTION_MIN* = 0.60
+    ## Unmoved by calibration: neither anchor set separates on it, so the
+    ## provisional hypothesis stands until a measurement gives it an edge to
+    ## sit against.
+  SPAN_MIN* = 0.15
+    ## CALIBRATED inside the measured gap. Must-fail edge: rdFeed's
+    ## span 0.131 on its old default slice; must-pass edge: sphViscosity's
+    ## 0.667 (the smallest of the five). Placed near the fail edge so the
+    ## modest-but-live resolved-deposit response (0.211) stays outside the
+    ## remedy net; every must-pass control clears it by at least 4x.
+  LIVE_FRACTION_MIN* = 0.70
+    ## CALIBRATED. Must-fail edge: rdKill's 0.514; must-pass edge:
+    ## 1.000 (all five). 0.70 sits between, above the fail edge by a third,
+    ## and leaves expAttractionBeta's measured 0.875 — a live control with a
+    ## short flat tail — clear of the bar.
   CLIFF_MAX* = 0.25
+    ## KEPT at the provisional value, which the measurement showed already
+    ## inside the gap: must-pass cliffs reach 0.020, the must-fail edge
+    ## (rdFeed) measured 1.364.
 
 const
   ProbeBudgetClosedForm* = 256
@@ -86,8 +101,8 @@ func defaultProbeContext*(): ProbeContext =
   ## The default slice: shipped defaults with the camera at its zoom floor.
   ## No strength lift is needed today — every strength multiplying a probed
   ## observable defaults non-zero except crowdingStrength, whose gated term
-  ## appears only inside its own probe (design E2's lift clause, discharged
-  ## by inspection of the registry below).
+  ## appears only inside its own probe (discharged by inspection of the
+  ## registry below).
   ProbeContext(
     sim: initSimulationState(),
     render: initRenderState(),
@@ -115,16 +130,18 @@ const
     ## Velocity difference across an SPH pair, px/frame.
   RefNeighborWeight = 0.5
     ## A mid-strength normalized neighbour weight.
-  RefPairDistancePx = 6.0
-    ## SPH pair separation in pixels: above the shader's 2 px minimum
-    ## separation floor, inside every reachable kernel at the default radius.
   RefCompression = 1.2
     ## Density over rest density where pressure probes read the equation of
     ## state — the working compression, well under the 2.0 Tait clamp.
   RefFrameSpeed = 30.0
     ## Reference speed in px/frame for the travel and friction probes.
-  RefCapProbeSpeed = 500.0
+  RefCapProbeSpeed = MAX_VELOCITY_MAX * 3.0
     ## A speed far above every reachable cap, so the soft cap always acts.
+    ## Derived from the range it must outrun: the remedy pass found the
+    ## old fixed 500 sat below the cap's active region over the top half of
+    ## the track once friction damped it, contradicting this comment's own
+    ## claim — the dead half the first sweep measured was the probe's, never
+    ## the control's.
   RefGradient = 0.2
     ## Field gradient magnitude for the tropism probes.
   RefInhibitor = 0.3
@@ -148,7 +165,7 @@ const
     ## World-space length whose apparent on-screen size the zoom probe reads.
   RefDensitySizeFloor = 0.7
     ## The density size multiplier's floor (render.wgsl:65-66); the composed
-    ## visible-radius probe holds it at the worst corner (design E14).
+    ## visible-radius probe holds it at the worst corner.
   RefPaletteCount = 8
     ## Species count for the palette-distance probes.
   RefRuleSamples = 16
@@ -193,9 +210,11 @@ proc frictionProbe(value: float; ctx: ProbeContext): float =
 
 proc maxVelocityProbe(value: float; ctx: ProbeContext): float =
   ## maxVelocity: the post-step speed of a mover far above every cap, so the
-  ## observable follows the cap itself.
-  postStepSpeed(RefCapProbeSpeed.float32, ctx.sim.friction.float32,
-    value.float32).float
+  ## observable follows the cap itself. DECLARED LIFT: damping held at
+  ## identity, because the shipped friction default (0.05) sets the cap's
+  ## INPUT to a crawl and the first sweep measured that crawl as a dead top
+  ## half — the observable here is the cap alone.
+  postStepSpeed(RefCapProbeSpeed.float32, 1.0'f32, value.float32).float
 
 proc timeScaleProbe(value: float; ctx: ProbeContext): float =
   ## timeScale: how far a reference speed travels in one rendered frame.
@@ -233,10 +252,26 @@ proc repulsionEndProbe(value: float; ctx: ProbeContext): float =
     value.float32, peak.float32, 1.0'f32).float
 
 proc attractionPeakProbe(value: float; ctx: ProbeContext): float =
-  ## attractionPeak: the bump sampled at a fixed attraction-zone separation
-  ## while the peak position travels.
-  polynomialForce(RefAttractionDist.float32, RefAttraction.float32,
-    ctx.sim.repulsionEnd.float32, value.float32, 1.0'f32).float
+  ## attractionPeak: where the pull is strongest — the argmax separation of
+  ## the shipped bump over the attraction zone, which is the spacing a
+  ## bound pair settles toward. A location observable rather than a height
+  ## one: any FIXED sample separation sits inside or near some peak's
+  ## travel, and the height read there spikes as the peak crosses or
+  ## approaches it (measured cliff 0.57 sampling mid-travel, 0.31 sampling
+  ## 0.025 past the highest peak): the probe's coordinate both times,
+  ## never the control.
+  const gridSamples = 512
+  let zoneLow = ctx.sim.repulsionEnd
+  var bestDist = zoneLow
+  var bestPull = -1.0
+  for i in 0 ..< gridSamples:
+    let dist = zoneLow + (1.0 - zoneLow) * (i.float + 0.5) / gridSamples.float
+    let pull = abs(polynomialForce(dist.float32, RefAttraction.float32,
+      ctx.sim.repulsionEnd.float32, value.float32, 1.0'f32).float)
+    if pull > bestPull:
+      bestPull = pull
+      bestDist = dist
+  bestDist
 
 proc expRepulsionProbe(value: float; ctx: ProbeContext): float =
   ## expRepulsionAlpha: the exponential model's repulsion decay in isolation
@@ -262,12 +297,32 @@ proc fluidStrengthProbe(value: float; ctx: ProbeContext): float =
     SPH_CEILING_REFERENCE_FRAME_SECONDS
 
 proc sphRestDensityProbe(value: float; ctx: ProbeContext): float =
-  ## sphRestDensity: pressure at a FIXED absolute density while rest density
-  ## travels — the compression ratio, and with it the equation of state's
-  ## answer, moves with the parameter.
-  let fixedDensity = RefCompression * initSimulationState().sphRestDensity
-  flooredTaitPressure(fixedDensity, value, ctx.sim.sphStiffness,
-    SPH_DEFAULT_GAMMA)
+  ## sphRestDensity: the pressure available across the neighbourhood
+  ## densities a world can reach at this rest setting, integrated from the
+  ## rest floor up to the smaller of the Tait input ceiling
+  ## (SPH_MAX_DENSITY_RATIO multiples of rest, shader_config) and the
+  ## densest neighbourhood any configured rest can drive at that ceiling.
+  ## The first sweep read pressure at ONE fixed density and measured 90% of
+  ## the track dead — truly it had measured that any single density lies
+  ## inside at most one clamp-octave of rest settings. The parameter's own
+  ## promise is where the pressure regime SITS, and the band integral is
+  ## that promise as one scalar. The band floors at the isolated particle's
+  ## normalized self-density 1.0 (forces-sph.wgsl's normalization), below
+  ## which no world density exists.
+  let ratioCeiling = getTunableFloat("SPH_MAX_DENSITY_RATIO")
+  let packedDensity = ratioCeiling * SPH_REST_DENSITY_MAX
+  let bandLow = max(value, 1.0)
+  let bandHigh = min(value * ratioCeiling, packedDensity)
+  if bandHigh <= bandLow:
+    return 0.0
+  const bandSamples = 32
+  var total = 0.0
+  for i in 0 ..< bandSamples:
+    let density = bandLow +
+      (bandHigh - bandLow) * (i.float + 0.5) / bandSamples.float
+    total += flooredTaitPressure(density, value, ctx.sim.sphStiffness,
+      SPH_DEFAULT_GAMMA)
+  total * (bandHigh - bandLow) / bandSamples.float
 
 proc sphStiffnessProbe(value: float; ctx: ProbeContext): float =
   ## sphStiffness: pressure at the reference compression. Linear in the gain
@@ -282,20 +337,20 @@ proc sphViscosityProbe(value: float; ctx: ProbeContext): float =
   xsphVelocityCorrection(0.0, RefVelocityGap, RefNeighborWeight,
     value + SPH_XSPH_EPSILON)
 
-proc sphSubstepsProbe(value: float; ctx: ProbeContext): float =
-  ## sphSubsteps: the stable stiffness ceiling the substep count buys at the
-  ## default kernel — the shipped consequence of substepping (C3).
+proc sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
+  ## sphRadiusFraction: the stable stiffness ceiling the fraction buys — the
+  ## measured linear stability law (sph_core.stableStiffnessCeiling), the
+  ## fraction's shipped consequence. The first sweep read a poly6 weight at
+  ## one fixed pair separation and measured the kernel-support edge and the
+  ## normalization spike of coordinates no world holds still (span 0.13,
+  ## cliff 1.25); the kernel math itself stays pinned by test_sph_core. The
+  ## calibration note on the inert region below ~2.5 px stands in
+  ## config_ranges, untouched by this observable.
   stableStiffnessCeiling(
-    ctx.sim.sphRadiusFraction * ctx.sim.interactionRadius.float,
-    max(1, int(value)),
+    value * ctx.sim.interactionRadius.float,
+    ctx.sim.sphSubsteps,
     ctx.sim.timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS,
     SPH_STIFFNESS_MAX)
-
-proc sphKernelReachProbe(value: float; ctx: ProbeContext): float =
-  ## sphRadiusFraction: the poly6 weight a fixed-separation pair carries as
-  ## the smoothing radius scales under the fraction.
-  poly6Weight2d(RefPairDistancePx,
-    value * ctx.sim.interactionRadius.float)
 
 # --- the stepped field probes --------------------------------------------------
 
@@ -366,8 +421,9 @@ proc fieldAliveFraction(feed, kill, deposit: float): float =
 
 proc rdFeedProbe(value: float; ctx: ProbeContext): float =
   ## rdFeed: the alive fraction after the horizon, feed under measurement.
-  ## Expected to fail the metrics on the default slice: most of the feed-kill
-  ## rectangle admits no nontrivial fixed point on any single slice (D2).
+  ## Most of the feed-kill rectangle admits no nontrivial fixed point on any
+  ## single slice, which is why the pair is judged through its joint group's
+  ## regime-point slices rather than whole-track metrics.
   fieldAliveFraction(value, ctx.sim.rdKill, ctx.sim.rdDeposit)
 
 proc rdKillProbe(value: float; ctx: ProbeContext): float =
@@ -404,7 +460,7 @@ proc glowUniformsFor(ctx: ProbeContext): GlowUniforms =
 proc glowIntensityProbe(value: float; ctx: ProbeContext): float =
   ## glowIntensity: the display-clamped halo alpha integral — the observable
   ## that saturates where the screen stops answering, which is exactly the
-  ## deadness the metric must see (design E1). DECLARED COORDINATE: full
+  ## deadness the metric must see. DECLARED COORDINATE: full
   ## speed with the velocity coupling at its ceiling and density past the
   ## factor's clamp — the brightest halo the shipped sliders reach — because
   ## at the shipped velocityGlowScale of 1.0 nothing clamps anywhere on the
@@ -441,9 +497,10 @@ proc glowWarmthProbe(value: float; ctx: ProbeContext): float =
   haloWarmth(glowTuning(), uniforms, RefGlowDensity)
 
 proc trailPersistenceProbe(value: float; ctx: ProbeContext): float =
-  ## trailLength: the 1/e persistence horizon in frames. Geometric in the
-  ## slider — steep at one end, flat elsewhere — the one-dimensional
-  ## calibration anchor expected to fail (design E3).
+  ## trailLength: the 1/e persistence horizon in frames. Linear in the
+  ## slider: the shipped mapping decays to a fixed residual over a frame
+  ## count proportional to the length (trail_core.persistenceFrames), so
+  ## the horizon measures live end to end.
   persistenceFrames(value)
 
 proc bloomIntensityProbe(value: float; ctx: ProbeContext): float =
@@ -515,7 +572,21 @@ proc paletteSaturationProbe(value: float; ctx: ProbeContext): float =
   paletteDistance(value, DEFAULT_LIGHTNESS)
 
 proc paletteLightnessProbe(value: float; ctx: ProbeContext): float =
-  paletteDistance(DEFAULT_SATURATION, value)
+  ## paletteLightness: the palette's mean luminance. Its promise is that the
+  ## colours LIGHTEN together, and the first sweep measured why pairwise
+  ## distance cannot see that: both lightness endpoints collapse every
+  ## colour (to black, to white), so the endpoint span read exactly zero
+  ## over a control that visibly moves everything — a mid-track-peaked
+  ## observable is the wrong shape for the endpoint span, not a dead
+  ## control.
+  let colors = generatePalette(RefPaletteCount, psGolden,
+    DEFAULT_SATURATION, value)
+  if colors.len == 0:
+    return 0.0
+  var total = 0.0
+  for color in colors:
+    total += tonemapLuminance(color.red, color.green, color.blue)
+  total / colors.len.float
 
 proc cameraApparentScale(zoom: float): float =
   ## The on-screen span of a fixed world segment at a zoom, through the
@@ -532,7 +603,7 @@ proc cameraZoomProbe(value: float; ctx: ProbeContext): float =
   cameraApparentScale(value)
 
 proc visibleRadiusProbe(value: float; ctx: ProbeContext): float =
-  ## particleSize: the COMPOSED on-screen radius (design E14) — the size
+  ## particleSize: the COMPOSED on-screen radius — the size
   ## parameter through the density multiplier's floor and the camera's
   ## apparent scale on this slice. The zoom-corner slices are what make the
   ## sweep, not review, hold the visibility floor.
@@ -564,7 +635,7 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
       budget: pbClosedForm),
     "force.polyAtMidzone": ProbeSpec(fn: repulsionEndProbe,
       budget: pbClosedForm),
-    "force.polyPeakSample": ProbeSpec(fn: attractionPeakProbe,
+    "force.polyPeakLocation": ProbeSpec(fn: attractionPeakProbe,
       budget: pbClosedForm),
     "force.expRepulsion": ProbeSpec(fn: expRepulsionProbe,
       budget: pbClosedForm),
@@ -579,15 +650,13 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
       budget: pbClosedForm),
     "sph.pairShare": ProbeSpec(fn: fluidStrengthProbe,
       budget: pbClosedForm),
-    "sph.pressureAtFixedDensity": ProbeSpec(fn: sphRestDensityProbe,
+    "sph.reachablePressureBand": ProbeSpec(fn: sphRestDensityProbe,
       budget: pbClosedForm),
     "sph.pressureGain": ProbeSpec(fn: sphStiffnessProbe,
       budget: pbClosedForm),
     "sph.velocityBlend": ProbeSpec(fn: sphViscosityProbe,
       budget: pbClosedForm),
-    "sph.substepCeiling": ProbeSpec(fn: sphSubstepsProbe,
-      budget: pbClosedForm),
-    "sph.kernelReach": ProbeSpec(fn: sphKernelReachProbe,
+    "sph.fractionCeiling": ProbeSpec(fn: sphFractionCeilingProbe,
       budget: pbClosedForm),
     "field.aliveFraction.feed": ProbeSpec(fn: rdFeedProbe,
       budget: pbStepped),
@@ -630,14 +699,14 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
       budget: pbClosedForm),
     "palette.pairwiseDistance.saturation": ProbeSpec(
       fn: paletteSaturationProbe, budget: pbClosedForm),
-    "palette.pairwiseDistance.lightness": ProbeSpec(
+    "palette.meanLuminance": ProbeSpec(
       fn: paletteLightnessProbe, budget: pbClosedForm),
     "camera.apparentScale": ProbeSpec(fn: cameraZoomProbe,
       budget: pbClosedForm),
   }.toTable
 
 # ------------------------------------------------------------------------------
-# Slices (design E2)
+# Slices
 # ------------------------------------------------------------------------------
 
 type
@@ -645,14 +714,48 @@ type
     name*: string
     ctx*: ProbeContext
 
+const
+  JointMembers* = ["rdFeed", "rdKill"]
+    ## THE FEED/KILL JOINT GROUP. Its named points
+    ## are the regime table (config_ranges.RD_REGIMES — the same points the
+    ## notches draw from), and each member is measured on slices with its
+    ## partner fixed at every point's coordinate, deposit floored at the
+    ## regime's measured minimum. ENTRY EVIDENCE: the members' live
+    ## boundaries move with the partner across the point slices by more
+    ## than JointPointNeighbourhood (measured: rdKill's live top end
+    ## travels 0.35 of the track between the waves and worms slices,
+    ## rdFeed's live bottom 0.24) — asserted by
+    ## tests/test_response_probe.nim and recorded per slice in
+    ## docs/control-legibility-report.md — so no partner-independent
+    ## placement of the live region serves them and the pair enters the
+    ## group. Hull non-overlap is NOT the instrument: hulls can overlap
+    ## while the live region inside them shifts with the partner, so
+    ## overlap fails to place one live position on every slice.
+    ## Members are judged by
+    ## the group's guarantees (live within JointPointNeighbourhood of every
+    ## named point, on that point's slice), never by whole-track metrics no
+    ## jointly-shaped control can satisfy.
+  JointPointNeighbourhood* = 0.10
+    ## Track fraction around a named point within which the member must
+    ## measure live on that point's slice.
+
 proc slicesFor*(descriptor: ParamDescriptor): seq[SliceSpec] =
   ## The declared context slices for a descriptor: the default slice always;
-  ## the composed visible-radius observable adds the zoom corners (E14); the
-  ## derived stiffness bound adds the corners of its deriving box (E2). No
-  ## joint-group slices exist yet — E5's entry rule decides whether any joint
-  ## group is declared, and it declares the slices with it.
+  ## the composed visible-radius observable adds the zoom corners; the
+  ## derived stiffness bound adds the corners of its deriving box; a
+  ## joint-group member takes the slices through its group's named points in
+  ## place of the default, because its live region is jointly shaped and the
+  ## default slice is a single line through it.
   result = @[SliceSpec(name: "default", ctx: defaultProbeContext())]
   case descriptor.id
+  of "rdFeed", "rdKill":
+    result = @[]
+    for regime in RD_REGIMES:
+      var pointCtx = defaultProbeContext()
+      pointCtx.sim.rdFeed = regime.feed
+      pointCtx.sim.rdKill = regime.kill
+      pointCtx.sim.rdDeposit = max(pointCtx.sim.rdDeposit, regime.minDeposit)
+      result.add SliceSpec(name: regime.id, ctx: pointCtx)
   of "particleSize":
     var low = defaultProbeContext()
     low.cameraZoom = CAMERA_ZOOM_MIN
@@ -675,7 +778,7 @@ proc slicesFor*(descriptor: ParamDescriptor): seq[SliceSpec] =
 proc servedMax*(descriptor: ParamDescriptor; ctx: ProbeContext): float =
   ## The top of the track ON THIS SLICE. For a ceiling-bound descriptor the
   ## track spans the interval the descriptor currently serves, so position
-  ## keeps meaning "fraction of what I can reach" (design E2).
+  ## keeps meaning "fraction of what I can reach".
   if descriptor.bound.kind == bDerived:
     evaluateCeiling(descriptor.bound.ceilingId, CeilingInputs(
       interactionRadius: ctx.sim.interactionRadius,
@@ -686,7 +789,7 @@ proc servedMax*(descriptor: ParamDescriptor; ctx: ProbeContext): float =
     descriptor.maxValue
 
 # ------------------------------------------------------------------------------
-# The metrics (design E2)
+# The metrics
 # ------------------------------------------------------------------------------
 
 type
@@ -699,6 +802,11 @@ type
     deadEnd*: float
       ## The longest run of dead track, as positions in [0, 1]. Equal when no
       ## pair is dead.
+    liveStart*: float
+    liveEnd*: float
+      ## The outermost live pairs' positions — the live interval the joint
+      ## group's entry evidence compares across slices. Both zero when no
+      ## pair is live.
 
 proc measureSlice*(descriptor: ParamDescriptor; spec: ProbeSpec;
     slice: SliceSpec): SliceMeasurement =
@@ -742,10 +850,15 @@ proc measureSlice*(descriptor: ParamDescriptor; spec: ProbeSpec;
   var bestStart = 0
   var bestLen = 0
   var runLen = 0
+  var firstLive = -1
+  var lastLive = -1
   for i in 1 ..< sampleCount:
     let delta = abs(responses[i] - responses[i - 1])
     if delta / spanAbs > RESPONSE_EPSILON:
       inc livePairs
+      if firstLive < 0:
+        firstLive = i - 1
+      lastLive = i
       runLen = 0
       runStart = i
     else:
@@ -759,6 +872,9 @@ proc measureSlice*(descriptor: ParamDescriptor; spec: ProbeSpec;
   if bestLen > 0:
     result.deadStart = bestStart.float / (sampleCount - 1).float
     result.deadEnd = (bestStart + bestLen).float / (sampleCount - 1).float
+  if firstLive >= 0:
+    result.liveStart = firstLive.float / (sampleCount - 1).float
+    result.liveEnd = lastLive.float / (sampleCount - 1).float
 
 proc passes*(measurement: SliceMeasurement): bool =
   measurement.span >= SPAN_MIN and
@@ -766,34 +882,57 @@ proc passes*(measurement: SliceMeasurement): bool =
     measurement.cliff <= CLIFF_MAX
 
 # ------------------------------------------------------------------------------
-# The measured table (E3.5's deliverable)
+# The measured table
 # ------------------------------------------------------------------------------
 
-proc legibilityReportMarkdown*(): string =
-  ## The full measured table, every probed descriptor's metrics per slice —
-  ## the artifact E5 calibrates from. The caller owns where it lands on disk.
+proc allSliceMeasurements*(): OrderedTable[string, seq[SliceMeasurement]] =
+  ## Every probed descriptor's metrics on every declared slice, measured
+  ## once. The sweep's assertions and the emitted table both read this
+  ## shared result, so the stepped field probes run a single pass however
+  ## many claims are checked against them.
   let registry = probeRegistry()
-  result = "# Control legibility: the measured table\n\n"
-  result.add "Span, live fraction, and cliff per declared slice (design " &
-    "E2), at the provisional thresholds SPAN_MIN=" & $SPAN_MIN &
-    ", LIVE_FRACTION_MIN=" & $LIVE_FRACTION_MIN & ", CLIFF_MAX=" &
-    $CLIFF_MAX & ", RESPONSE_EPSILON=" & $RESPONSE_EPSILON &
-    " (src/ui/api/response_probe.nim). Regenerated by " &
-    "tests/test_response_probe.nim; edits here are overwritten.\n\n"
-  result.add "| parameter | slice | span | live | cliff | dead run | " &
-    "verdict |\n"
-  result.add "|---|---|---|---|---|---|---|\n"
+  result = initOrderedTable[string, seq[SliceMeasurement]]()
   for descriptor in buildParamDescriptors():
     if descriptor.probe.len == 0:
       continue
-    let spec = registry[descriptor.probe]
+    var rows: seq[SliceMeasurement]
     for slice in slicesFor(descriptor):
-      let m = measureSlice(descriptor, spec, slice)
+      rows.add measureSlice(descriptor, registry[descriptor.probe], slice)
+    result[descriptor.id] = rows
+
+proc legibilityReportMarkdown*(
+    measured: OrderedTable[string, seq[SliceMeasurement]]): string =
+  ## The measured table, every probed descriptor's metrics per slice — the
+  ## artifact the calibration reads. The caller owns where it lands on disk.
+  ## Joint-group members print their measurements with a `joint` verdict:
+  ## their bar is the group's own guarantees, never whole-track metrics.
+  result = "# Control legibility: the measured table\n\n"
+  result.add "Span, live fraction, and cliff per declared slice, " &
+    "at the calibrated thresholds SPAN_MIN=" & $SPAN_MIN &
+    ", LIVE_FRACTION_MIN=" & $LIVE_FRACTION_MIN & ", CLIFF_MAX=" &
+    $CLIFF_MAX & ", RESPONSE_EPSILON=" & $RESPONSE_EPSILON &
+    " (src/ui/api/response_probe.nim records the calibration beside each " &
+    "constant). Regenerated by tests/test_response_probe.nim; edits here " &
+    "are overwritten.\n\n"
+  result.add "| parameter | slice | span | live | cliff | dead run | " &
+    "live interval | verdict |\n"
+  result.add "|---|---|---|---|---|---|---|---|\n"
+  for id, rows in measured:
+    for m in rows:
       let dead =
         if m.deadEnd > m.deadStart:
           &"{m.deadStart:.2f}-{m.deadEnd:.2f}"
         else:
           "none"
-      let verdict = if m.passes: "pass" else: "FAIL"
-      result.add &"| {descriptor.id} | {m.sliceName} | {m.span:.4f} | " &
-        &"{m.liveFraction:.3f} | {m.cliff:.3f} | {dead} | {verdict} |\n"
+      let live =
+        if m.liveEnd > m.liveStart:
+          &"{m.liveStart:.2f}-{m.liveEnd:.2f}"
+        else:
+          "none"
+      let verdict =
+        if id in JointMembers: "joint"
+        elif m.passes: "pass"
+        else: "FAIL"
+      result.add &"| {id} | {m.sliceName} | {m.span:.4f} | " &
+        &"{m.liveFraction:.3f} | {m.cliff:.3f} | {dead} | {live} | " &
+        &"{verdict} |\n"

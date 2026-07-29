@@ -1,5 +1,5 @@
 # ==============================================================================
-# PARTICLE GARDEN - SLIDER CURVE (design E5)
+# PARTICLE GARDEN - SLIDER CURVE
 # ==============================================================================
 #
 # The travel curve maps a handle position in [0, 1] to a parameter value and
@@ -10,7 +10,7 @@
 #
 # Both directions read the bounds the CALLER says are currently served —
 # `boundMin`/`boundMax` default to the descriptor's envelope, and a derived
-# bound (design C7) passes its live ceiling — so position keeps meaning
+# bound passes its live ceiling — so position keeps meaning
 # "fraction of the reachable track" at every ceiling, and the curve needs no
 # knowledge of why the interval is what it is.
 #

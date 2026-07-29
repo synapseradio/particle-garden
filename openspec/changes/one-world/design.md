@@ -1004,8 +1004,9 @@ the same number of controls whatever the truth is, which makes the bar unfalsifi
 2. **Curve.** If the dead region is interior, or the live region is a small interval that is
    genuinely wanted, warp the track (E5).
 3. **Re-step.** If cliff fails, raise precision so the step shrinks.
-4. **Join.** If slice measurements prove the live region is jointly shaped — the member's live
-   intervals on partner slices do not overlap, so no partner-independent curve can serve them all —
+4. **Join.** If slice measurements prove the live region is jointly shaped — a member's live
+   boundary moves across the partner's named-point slices by more than the group's declared
+   neighbourhood, so no partner-independent curve can place the live region once for every slice —
    declare a joint group (E12). Entry is proven by that measurement, never chosen for convenience.
 5. **Exempt, with a reason.** Only when the parameter genuinely has no scalar observable.
 
@@ -1227,8 +1228,15 @@ naming feed and kill means a future coupled pair joins by measurement, not by am
 document.
 
 **Entry is proven, not chosen.** Measure the member's live interval on slices with its partner fixed
-at each named point's coordinate (E2). If the live intervals on two slices do not overlap, no
-partner-independent curve can serve both — that measurement is the entry evidence, recorded beside
+at each named point's coordinate (E2). The entry evidence is the measured boundary shift: a member's
+live boundary moves across the slices by more than the group's declared neighbourhood, so no
+partner-independent curve can place the live region once and serve every slice. (The stricter
+instrument this section first named — live intervals on two slices sharing no position at all —
+measured FALSE on the shipped pair: the hulls overlap while the live region inside them shifts.
+rdKill's live top end travels 0.35 of the track between the waves and worms slices, rdFeed's live
+bottom 0.24, both past the 0.10 neighbourhood. Hull overlap places no single live position on every
+slice, so it proves nothing either way; the boundary shift is the joint shaping made measurable.)
+That measurement is recorded beside
 the group declaration, and an implementer reaching for this rung without it is caught by the same
 review that catches an unjustified exemption. Slices through regimes that carry a deposit floor fix
 deposit at `max(default, minDeposit)` (src/config_ranges.nim:117-124) — a slice through Worms at the
@@ -1243,8 +1251,11 @@ of the four adopt tests that already exist rather than duplicating them:
 - **Slice liveness** — each member is individually live within a declared neighbourhood of *every*
   named point, measured on the slice through it. This is the promise that moving one slider near a
   regime visibly moves the world. New; this change builds it.
-- **Cliff, unchanged** — a per-slider whole-track property about one step jumping the world. It
-  survives one-dimensional and stays global.
+- **Cliff, replaced by the named points.** The prediction that a whole-track cliff bar survives for
+  the members measured FALSE: the sweep read cliffs from 0.29 to 3.9 across the regime slices, every
+  one the alive fraction flipping at a Gray-Scott phase boundary — the physics' own jumps, not a
+  step-size defect. The notches exist because free travel across the plane crosses those boundaries;
+  the liveness bar around each named point is the guarantee that survives in cliff's place.
 - **Attractor fidelity** — each named point settles into its own attractor, distinct from every
   other's. Adopted: `The Regime Deposit Floor Preserves The Regime` (tests/test_field_core.nim:1125)
   already proves exactly this, with a separation check, a negative control, and an aliveness floor.

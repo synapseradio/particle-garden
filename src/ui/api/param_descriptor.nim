@@ -76,7 +76,7 @@ type
     pcStableStiffness  ## sph_core.stableStiffnessCeiling
 
   SliderCurve* = enum
-    ## The travel curve (design E5). Position, in [0, 1], is what the user's
+    ## The travel curve. Position, in [0, 1], is what the user's
     ## hand moves; the curve decides what a distance of travel buys where.
     cLinear
     cLog    ## equal travel multiplies the value equally; demands a floor
@@ -161,7 +161,7 @@ type
                           ## a specific value is known to produce something,
                           ## and inventing one would be the same defect as a
                           ## hint naming an unreachable number.
-    curve*: SliderCurve   ## How handle travel maps to value (design E5):
+    curve*: SliderCurve   ## How handle travel maps to value:
                           ## cLinear until a measured remedy assigns
                           ## otherwise. The curve changes nothing but the
                           ## handle's position — stored values, presets,
@@ -174,8 +174,7 @@ type
                           ## response_probe.nim's registry — the declared
                           ## observable the parameter promises to move.
                           ## Empty only where `exemption` says why; the
-                          ## native suite asserts the union covers the table
-                          ## (design E1).
+                          ## native suite asserts the union covers the table.
     exemption*: string    ## The written reason this parameter carries no
                           ## probe. Empty wherever `probe` is set — a claim
                           ## reviewers can argue with, never a hole.
@@ -390,12 +389,12 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psSimulation, reinitOnCommit = true,
       exemption = "the observable is the count of things drawn — " &
         "structural and self-evident, and probing it would measure the " &
-        "probe (design E1)").withDefaultNotch(0),
+        "probe").withDefaultNotch(0),
     intParam("speciesCount", "Species", "simulation",
       SPECIES_COUNT_MIN, SPECIES_COUNT_MAX, sim.speciesCount,
       psSimulation, reinitOnCommit = true,
       exemption = "the observable is how many kinds are drawn — the same " &
-        "structural count particleCount is exempt for (design E1)"),
+        "structural count particleCount is exempt for"),
     # "grid" rather than "simulation": interactionRadius is the neighbor search
     # radius forces.wgsl uses and the smoothing radius forces-sph.wgsl uses.
     # The group says where the control sits, never whether it appears.
@@ -484,7 +483,7 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psSimulation, probe = "force.polyAtMidzone"),
     floatParam("attractionPeak", "Attraction Peak", "force-polynomial",
       ATTRACTION_PEAK_MIN, ATTRACTION_PEAK_MAX, sim.attractionPeak, 2,
-      psSimulation, probe = "force.polyPeakSample"),
+      psSimulation, probe = "force.polyPeakLocation"),
     floatParam("expRepulsionAlpha", "Repulsion α", "force-exponential",
       EXP_REPULSION_ALPHA_MIN, EXP_REPULSION_ALPHA_MAX,
       sim.expRepulsionAlpha, 2, psSimulation, probe = "force.expRepulsion"),
@@ -499,7 +498,7 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psPalette, probe = "palette.pairwiseDistance.saturation"),
     floatParam("paletteLightness", "Lightness", "palette",
       PALETTE_LIGHTNESS_MIN, PALETTE_LIGHTNESS_MAX, DEFAULT_LIGHTNESS, 2,
-      psPalette, probe = "palette.pairwiseDistance.lightness"),
+      psPalette, probe = "palette.meanLuminance"),
 
     # SPH Fluid section. fluidStrength leads it because it is the coupling
     # strength and the four below it are the fluid's character: they say what
@@ -526,10 +525,10 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       hint = "how far the fluid's kernel reaches, as a fraction of the interaction radius",
       notches = @[
         notch(SPH_RADIUS_FRACTION_MAX, "whole radius"),
-      ], probe = "sph.kernelReach"),
+      ], probe = "sph.fractionCeiling"),
     floatParam("sphRestDensity", "Rest Density", "fluid",
       SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX, sim.sphRestDensity, 2,
-      psSimulation, probe = "sph.pressureAtFixedDensity"),
+      psSimulation, probe = "sph.reachablePressureBand"),
     # The one derived bound this mechanism serves. The envelope below is still
     # the whole of what can be STORED — a preset carrying 40 loads as 40 — while
     # how much of it the fluid can honour depends on the three controls around
@@ -546,7 +545,16 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       psSimulation, probe = "sph.velocityBlend"),
     intParam("sphSubsteps", "Substeps", "fluid",
       SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX, sim.sphSubsteps, psSimulation,
-      probe = "sph.substepCeiling"),
+      exemption = "a three-position integer count of whole physics passes: " &
+        "every step legitimately moves the stable ceiling by its share, so " &
+        "the cliff bar — written for divisible travel — cannot hold " &
+        "(measured cliff 0.60 for a uniform-as-possible three-point " &
+        "response). The remedy ladder ran dry: no dead end to re-range, no " &
+        "curve moves a count, re-stepping a whole pass is meaningless, and " &
+        "no partner shapes it. Its ceiling consequence stays measured " &
+        "through sphStiffness's deriving-box corner slices, and the count " &
+        "itself is pinned by the measured stability fit " &
+        "(sph_core.stableStiffnessCeiling)"),
 
     # Reaction-Diffusion section. Feed and kill carry the six named regimes as
     # notches, so the living parts of the plane are positions the user can
@@ -644,7 +652,7 @@ func clampParamValue*(descriptor: ParamDescriptor; value: float): float =
   of pkFloat: clamped
 
 static:
-  # THE CURVE-FLOOR GATE (design E5). A logarithm has no zero, so giving a
+  # THE CURVE-FLOOR GATE. A logarithm has no zero, so giving a
   # parameter logarithmic travel and giving it a positive floor are one
   # decision — and a flat or inverted power warp is no curve at all. Checked
   # here beside the descriptors rather than in config_ranges because the
@@ -654,8 +662,7 @@ static:
     if descriptor.curve == cLog:
       doAssert descriptor.minValue > 0.0,
         "descriptor " & descriptor.id & " pairs cLog with a range minimum " &
-        "at or below zero; the curve and the floor are one decision " &
-        "(design E5)"
+        "at or below zero; the curve and the floor are one decision"
     if descriptor.curve == cPower:
       doAssert descriptor.curveExponent > 0.0,
         "descriptor " & descriptor.id & " carries a cPower exponent that " &

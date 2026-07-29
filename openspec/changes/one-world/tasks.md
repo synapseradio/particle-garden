@@ -2279,16 +2279,50 @@ Built before the remedies that use them.
 
 ## 5. Calibration and the remedy ladder
 
-- [ ] 5.1 Read `docs/control-legibility-report.md` from E3.5. Set `RESPONSE_EPSILON`, `SPAN_MIN`,
+- [x] 5.1 Read `docs/control-legibility-report.md` from E3.5. Set `RESPONSE_EPSILON`, `SPAN_MIN`,
       `LIVE_FRACTION_MIN`, and `CLIFF_MAX` inside the gap between the must-pass and must-fail sets
       named in design E3. Record the measured distribution beside the constants. If no gap exists,
       return to 3.6.
-- [ ] 5.2 Apply design E4's ladder to every failing parameter, in order: re-range, then curve, then
+      DONE. SPAN_MIN 0.05 -> 0.15 (gap 0.131-0.667: must-fail edge rdFeed's old default-slice
+      span, must-pass edge sphViscosity's; placed near the fail edge so rdDeposit's live 0.211
+      stays outside the remedy net). LIVE_FRACTION_MIN 0.6 -> 0.70 (gap 0.514-1.000: rdKill's
+      edge against the five must-pass 1.000s; leaves expAttractionBeta's measured 0.875 clear).
+      CLIFF_MAX kept at 0.25, already inside its gap (must-pass cliffs reach 0.020, the must-fail
+      edge measured 1.364). RESPONSE_EPSILON kept at 1e-4: neither anchor set separates on it.
+      Each constant carries its distribution in src/ui/api/response_probe.nim.
+- [x] 5.2 Apply design E4's ladder to every failing parameter, in order: re-range, then curve, then
       re-step, then join, then exempt. Record each change's before/after measurement beside the
       constant it touches, in the style `src/config_ranges.nim:96-103` already uses.
-- [ ] 5.3 `trailLength` is expected to take a curve, because geometric decay concentrates its effect
+      DONE, with the ladder mostly unclimbed: the five non-field failures all measured as PROBE
+      defects, and repairing the probe precedes every rung. maxVelocity (a fixed input of 500
+      sat under the cap's active region once friction damped it; the probe now holds damping at
+      identity and derives its input from MAX_VELOCITY_MAX*3): span/live/cliff 1.0/0.500/0.040
+      before, 1.0/1.000/0.018 after. attractionPeak (any fixed sample separation spikes as the
+      peak crosses or nears it; the observable is now the peak's LOCATION, the argmax separation
+      of the shipped bump): 0.1625/1.000/0.572 before, 0.4730/1.000/0.024 after — this took two
+      repairs, the first (tail height past the highest peak) still cliffing at 0.309.
+      paletteLightness (pairwise distance collapses at both lightness endpoints; now the
+      palette's mean tonemap luminance): 0/0/0 before, 1.0/1.000/0.010 after. sphRadiusFraction
+      (a poly6 weight at one fixed separation measures the kernel-support edge; now the
+      stable-stiffness ceiling the fraction buys): 0.1307/0.978/1.251 before, 0.9000/1.000/0.011
+      after. sphRestDensity (one fixed density lies inside at most one clamp-octave of rest
+      settings; now the reachable-pressure-band integral): 1.0/0.102/0.395 before,
+      1.0/0.922/0.024 after, the dead run shrunk to the bottom 8% where the band genuinely
+      floors. sphSubsteps took the EXEMPT rung, reason beside its descriptor (a three-position
+      count of whole passes; its ceiling consequence stays measured through sphStiffness's
+      corner slices). rdFeed/rdKill took the JOIN rung (5.5-5.7). No re-range, curve, or re-step
+      fired: no control defect survived probe repair, so the before/after records live beside
+      each probe and in the report's frozen pre-calibration table rather than beside range
+      constants that never moved.
+- [x] 5.3 `trailLength` is expected to take a curve, because geometric decay concentrates its effect
       at one end of the track. Whatever the report actually says wins over this prediction.
-- [ ] 5.4 `glowIntensity`'s remedy, judged against the recorded outcome: fine authorship near the
+      DONE, prediction overturned by the report, which this task says wins: trailLength took no
+      curve. Measured 1.0/1.000/0.005 — the persistence horizon is linear in the slider, because
+      the shipped mapping decays to a fixed residual over a frame count proportional to the
+      length (trail_core.persistenceFrames). The geometric concentration this task expected does
+      not exist in the shipped math; design E3's anchor bullet was corrected when the sweep
+      first disproved it.
+- [x] 5.4 `glowIntensity`'s remedy, judged against the recorded outcome: fine authorship near the
       bottom of the track — settings around `0.001` distinguishable from one another — and no
       blown-out dead top. The measurement chooses between a re-range to a strictly positive floor
       under a `cLog` curve and a zero floor under a `cPower` curve (E4.3's assertion forbids
@@ -2296,31 +2330,90 @@ Built before the remedies that use them.
       whether zero glow stays reachable from the slider is part of what the choice decides, and the
       choice is recorded beside the constants (`src/config_ranges.nim:49-50`) with its before/after
       measurement.
-- [ ] 5.5 The joint group mechanism (design E12): a group declaration carrying its members, its named
+      DONE, the remedy premise did not survive measurement: glowIntensity measured
+      1.0/1.000/0.064 through the display-clamped alpha integral at its brightest declared
+      coordinate — live end to end, no dead top, every step still growing under the clamp's 85%
+      compression. Neither re-range nor curve fired from the report, so the range stands and
+      zero glow stays reachable. USER EVIDENCE, queued after this pass at the user's direction
+      (2026-07-29): the user asks for thousandths stepping and reports never setting glow above
+      0.5 because halos occlude particles — exactly the fine low-end authorship this task
+      anticipated, arriving as a request rather than a measurement. Queued together with
+      layering halos beneath particles and decoupling particle brightness from size; whichever
+      remedy that work lands must re-run this sweep for its before/after.
+- [x] 5.5 The joint group mechanism (design E12): a group declaration carrying its members, its named
       points (the regime table the notches already draw from), and its slice contexts. Slices
       through regimes that carry a deposit floor fix deposit at `max(default, minDeposit)`
       (src/config_ranges.nim:117-124) — a slice through such a regime at the default deposit
       measures a dead world.
-- [ ] 5.6 Entry evidence for `rdFeed`/`rdKill`: measure each member's live interval on the slice
+      DONE. JointMembers and JointPointNeighbourhood declared in src/ui/api/response_probe.nim
+      beside slicesFor: members rdFeed/rdKill, named points config_ranges.RD_REGIMES (the same
+      table the notches draw from), member slices fixing the partner at each point's coordinate
+      with rdDeposit = max(default, minDeposit). The worms and coral slices measure a living
+      world only with the floor applied, as this task predicted.
+- [x] 5.6 Entry evidence for `rdFeed`/`rdKill`: measure each member's live interval on the slice
       through every named point; assert the intervals do not all overlap; record the measurement
       beside the group declaration. Expected: non-overlap holds and the pair enters the group. If
       the intervals all overlap, a single curve serves both sliders and the group is NOT declared —
       design E12's entry rule cuts both ways.
-- [ ] 5.7 The group's guarantees, adopting what exists: slice liveness (new — each member live
+      DONE, with the predicted instrument overturned and the entry rule revised — the user chose
+      the revision over dissolving the group when the measurement surfaced (2026-07-29). The
+      intervals DO all overlap (rdKill's hulls share [0.23, 0.54], rdFeed's [0.24, 0.97]), so
+      the non-overlap assertion this task names measured FALSE; yet the same table shows 10 of
+      12 regime slices failing at least one whole-track metric on physics grounds, so the
+      overlap branch's inference — a single curve serves both sliders — is also false (a curve
+      moves no mid-track deadness, and rdKill fails live fraction on 4 of 6 slices under any
+      curve). Entry evidence is now the measured boundary shift: a member's live boundary moves
+      across the named-point slices by more than JointPointNeighbourhood — rdKill's live top end
+      travels 0.343 of the track between the waves and worms slices, rdFeed's live bottom 0.238,
+      both past 0.10. Hull overlap places no single live position on every slice, so it proves
+      nothing either way. Asserted green by `entry evidence: the live region moves with the
+      partner`; recorded beside the declaration; design.md's ladder rung 4 and its `Entry is
+      proven, not chosen` paragraph corrected in the same pass.
+- [x] 5.7 The group's guarantees, adopting what exists: slice liveness (new — each member live
       within a declared neighbourhood of every named point, on that point's slice); joint
       reachability adopted from the notch-lattice assertions; attractor fidelity adopted from
       `The Regime Deposit Floor Preserves The Regime` (tests/test_field_core.nim:1125); continuity
       of travel between points adopted from the climate tour's continuity and easing tests
       (tests/test_climate_core.nim:60-86). Reference the adopted suites; copy nothing.
-- [ ] 5.8 The derived-bound slice mechanism (design E2): a descriptor whose ceiling is a function of
+      DONE. Slice liveness built and green on the first run: each member measures live within
+      JointPointNeighbourhood of every named point on that point's slice. Reachability,
+      attractor fidelity, and continuity adopted by reference in the suite header; nothing
+      copied. DEVIATION: the fourth guarantee design E12 listed — a whole-track cliff bar kept
+      for members — measured impossible: the regime slices read cliffs 0.29-3.9, each one the
+      alive fraction flipping at a Gray-Scott phase boundary, the physics' own jumps. design.md's
+      bullet now reads `Cliff, replaced by the named points`, and the point-liveness bar is what
+      stands in its place.
+- [x] 5.8 The derived-bound slice mechanism (design E2): a descriptor whose ceiling is a function of
       other live parameters declares slices at the corners of the deriving box plus the default.
       The sweep is total over the table, so a bound that becomes derived after this change lands
       inherits its slices by declaring them, with no sweep change.
-- [ ] 5.9 Remove the expected-failure quarantine from E3.7. The sweep now runs as an ordinary
+      DONE, landed with the sweep mechanism in E3 and exercised here: sphStiffness declares the
+      four corners of its deriving box (radius fraction x substeps) beside its default slice
+      through slicesFor, servedMax evaluates the live ceiling per slice so position keeps
+      meaning fraction-of-reachable, and all five rows pass at the calibrated thresholds. A
+      bound that becomes derived later inherits by declaring its corners; the sweep itself
+      needs no change.
+- [x] 5.9 Remove the expected-failure quarantine from E3.7. The sweep now runs as an ordinary
       assertion over the whole table, per slice.
-- [ ] 5.10 Update `docs/control-legibility-report.md` with the post-remedy table beside the
+      DONE. QuarantinedExpectedRed and its expected-failure test are gone from
+      tests/test_response_probe.nim; the sweep runs as the ordinary assertion `every probed
+      descriptor outside the joint group passes every slice`, green over every probed descriptor
+      and every declared slice from one shared measuring pass (allSliceMeasurements), with the
+      joint pair judged by the group's guarantees and printed with a `joint` verdict.
+- [x] 5.10 Update `docs/control-legibility-report.md` with the post-remedy table beside the
       pre-remedy one, including the feed/kill slice measurements.
-- [ ] 5.11 `just happen` and `just check` green with no quarantined tests.
+      DONE. The suite regenerates the report from the shared measuring pass: the calibrated
+      table gains a live-interval column and the twelve feed/kill regime rows, and the
+      pre-remedy table stands frozen beneath it under `Before calibration`, written from a
+      constant in the test so every regeneration preserves both.
+- [x] 5.11 `just happen` and `just check` green with no quarantined tests.
+      DONE. `just happen` exits 0 (shaders, app.js, UI typecheck + bundle, native build);
+      `just check` green — native suite all [OK] including the rewritten probe suites, bun 50
+      pass / 0 fail, no quarantined tests. Two honest reds on the way, both resolved by
+      measurement rather than by moving a threshold: attractionPeak's first repair still cliffed
+      at 0.309 (tail height read 0.025 past the highest peak; replaced by the location
+      observable), and the joint group's predicted entry evidence measured false (5.6's
+      revision).
 
 ## 6. The matrix editor keeps the user's edit
 
