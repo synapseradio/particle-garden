@@ -50,6 +50,11 @@ type
     name*: string
     fields*: seq[GpuField]
     totalSize*: int   ## Total size including padding
+    notes*: string    ## WGSL comment lines (each pre-prefixed "// ") carrying
+                       ## domain knowledge toWgslStruct cannot recover from the
+                       ## field list; emitted into the generated module by
+                       ## tools/wgsl_bundle.nim's structModuleHeader. Empty for
+                       ## a struct whose fields need no such commentary.
 
 # =============================================================================
 # TYPE SIZE HELPERS
@@ -75,7 +80,7 @@ func gpuTypeAlignment*(t: GpuType): int =
 # =============================================================================
 
 const
-  # Particle struct (32 bytes, matches web/shaders/modules/particle.wgsl)
+  # Particle struct (32 bytes, generated into web/shaders/modules/particle.wgsl)
   ParticleLayout* = GpuStruct(
     name: "Particle",
     fields: @[
@@ -86,10 +91,28 @@ const
       GpuField(name: "sphDensity", kind: gtF32,  offset: 24, size: 4,  count: 1),
       GpuField(name: "crowdDensity", kind: gtF32, offset: 28, size: 4, count: 1),
     ],
-    totalSize: 32
+    totalSize: 32,
+    notes: "// CACHE BEHAVIOR:\n" &
+      "// - Two particles fit in one 64-byte CPU cache line\n" &
+      "// - Four particles fit in one 128-byte GPU cache line\n" &
+      "// - 32-byte alignment avoids straddling cache line boundaries\n" &
+      "//\n" &
+      "// THREE DENSITIES, NONE INTERCHANGEABLE. Each answers a different question, and\n" &
+      "// a field carrying two of them makes one consumer track the other's parameter.\n" &
+      "//\n" &
+      "//   density      - same-species neighbours, proximity-weighted. What a COLONY\n" &
+      "//                  looks like; dot size, brightness and glow read it.\n" &
+      "//   sphDensity   - kernel-weighted and species-blind, unsmoothed, in the units\n" &
+      "//                  the Tait equation of state wants. Nothing outside\n" &
+      "//                  forces-sph.wgsl reads it.\n" &
+      "//   crowdDensity - every neighbour, proximity-weighted, species-blind, smoothed\n" &
+      "//                  the same way `density` is. What the crowding cap reads: the\n" &
+      "//                  spatial hash a mixed blob fills costs exactly what a\n" &
+      "//                  single-species one costs, so the signal bounding that cost\n" &
+      "//                  counts neighbours the way the hash does.\n"
   )
 
-  # GridParams struct (32 bytes, matches web/shaders/modules/grid_params.wgsl)
+  # GridParams struct (32 bytes, generated into web/shaders/modules/grid_params.wgsl)
   GridParamsLayout* = GpuStruct(
     name: "GridParams",
     fields: @[
@@ -102,10 +125,14 @@ const
       GpuField(name: "padding1",     kind: gtU32, offset: 24, size: 4, count: 1),
       GpuField(name: "padding2",     kind: gtU32, offset: 28, size: 4, count: 1),
     ],
-    totalSize: 32
+    totalSize: 32,
+    notes: "// Used by: bin-count, bin-scatter, field-deposit, field-force\n" &
+      "//\n" &
+      "// The three padding fields carry the struct to a 16-byte uniform-buffer\n" &
+      "// boundary; nothing reads them.\n"
   )
 
-  # ScanParams struct (16 bytes, matches web/shaders/modules/scan_params.wgsl)
+  # ScanParams struct (16 bytes, generated into web/shaders/modules/scan_params.wgsl)
   ScanParamsLayout* = GpuStruct(
     name: "ScanParams",
     fields: @[
@@ -114,7 +141,11 @@ const
       GpuField(name: "padding1",  kind: gtU32, offset: 8,  size: 4, count: 1),
       GpuField(name: "padding2",  kind: gtU32, offset: 12, size: 4, count: 1),
     ],
-    totalSize: 16
+    totalSize: 16,
+    notes: "// Used by: prefix-sum-local, prefix-sum-blocks, prefix-sum-final\n" &
+      "//\n" &
+      "// numCells is the total grid cell count (gridW * gridH).\n" &
+      "// numBlocks is the workgroup count (ceil(numCells / BLOCK_SIZE)).\n"
   )
 
   # SimParams struct (256 bytes written, 256 allocated; matches forces.wgsl /

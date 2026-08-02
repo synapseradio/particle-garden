@@ -2,6 +2,7 @@
 
 import std/unittest
 import ../src/memory_layout
+import ../src/ui/state/matrix_state
 
 const MEMORY_LAYOUT_TESTS_LOADED* = true
 
@@ -90,3 +91,10 @@ suite "Memory Layout Constants":
     check GRID_OFFSETS_OFFSET == OFFSETS.gridOffsets
     check MATRIX_OFFSET == OFFSETS.matrix
     check SYNC_OFFSET == OFFSETS.sync
+
+  test "MAX_SPECIES agrees with matrix_state.MATRIX_SIZE":
+    # The two are independent copies of the same species ceiling: this one
+    # sizes SpeciesChemistryLayout's arrays (gpu_types.nim), matrix_state's
+    # sizes the attraction matrix served across the API boundary as
+    # matrixStride. Nothing forces them to move together.
+    check MAX_SPECIES == MATRIX_SIZE

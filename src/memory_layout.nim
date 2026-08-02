@@ -232,10 +232,11 @@ static:
   # Verify total size fits
   assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated memory"
 
-  # MAX_SPECIES is a cross-language contract: the WGSL side defines it once in
-  # web/shaders/modules/particle.wgsl (`const MAX_SPECIES: u32 = 6u`), imported
-  # by every compute and render shader, and must match this value; the SimParams
-  # attraction matrix is sized MAX_SPECIES * MAX_SPECIES floats. Changing it here
-  # without updating that module silently corrupts force lookups. This lives at
-  # compile time beside the constant so it cannot drift out of a forgotten import.
-  assert MAX_SPECIES == 6, "web/shaders/modules/particle.wgsl hardcodes MAX_SPECIES = 6u; both sides must agree"
+  # MAX_SPECIES's WGSL twin is generated from this value (src/gpu_types.nim's
+  # ParticleLayout, emitted into web/shaders/modules/particle.wgsl by
+  # tools/wgsl_bundle.nim), so it cannot drift there. A live copy remains at
+  # src/ui/state/matrix_state.MATRIX_SIZE, the species count served across the
+  # API boundary as matrixStride; tests/test_memory_layout.nim asserts the two
+  # agree. The assertion lives in the test rather than here because matrix_state
+  # reaches this module already (matrix_state -> config_ranges -> memory_layout),
+  # so importing matrix_state from here would cycle.
