@@ -87,6 +87,57 @@ when defined(js):
   var currentSimulation* = initSimulationState()
   var currentRender* = initRenderState()
 
+  proc mirrorInto[S, T](source: S; target: var T) =
+    ## Write every field of `source` into the field of `target` carrying the
+    ## same name and type.
+    ##
+    ## `fieldPairs` unrolls at compile time, so this compiles to the flat list
+    ## of assignments it replaces. What it removes is the list: a field added to
+    ## a state record mirrors itself, and one that finds no counterpart fails
+    ## the build at the gate below rather than reaching the GPU as a zero.
+    for sourceName, sourceValue in source.fieldPairs:
+      for targetName, targetField in target.fieldPairs:
+        # `when`, never `if`: both names are compile-time literals, so a runtime
+        # comparison would emit every non-matching pair as dead code. Measured
+        # at 145 KB of `if (false)` blocks in web/app.js, which main.nim then
+        # embeds by staticRead.
+        when targetField is typeof(sourceValue) and targetName == sourceName:
+          targetField = sourceValue
+
+  static:
+    # THE MIRROR GATE. Every field of both state records must land in a
+    # ConfigObject field of the same name and type, because CONFIG is what the
+    # frame reads and mirrorInto above writes only where a counterpart exists.
+    #
+    # WHAT THE FAILURE LOOKS LIKE. Drilled by renaming ConfigObject's
+    # `fluidStrength` to `fluidScale`: the build-app step of `just happen`
+    # (`nim js`) stops with exit code 1 and prints
+    #
+    #   Error: [gardenAPI] SimulationState.fluidStrength has no ConfigObject
+    #   field of that name and type, so it would never reach the frame
+    #
+    # The trace points here rather than at either record, so the field name
+    # inside the message is what to search for in config.nim.
+    var configProbe = default(typeof(CONFIG[]))
+    for sourceName, sourceValue in default(SimulationState).fieldPairs:
+      var landed = false
+      for targetName, targetField in configProbe.fieldPairs:
+        when targetField is typeof(sourceValue):
+          if targetName == sourceName: landed = true
+      if not landed:
+        error("[gardenAPI] SimulationState." & sourceName &
+          " has no ConfigObject field of that name and type, so it would " &
+          "never reach the frame")
+    for sourceName, sourceValue in default(RenderState).fieldPairs:
+      var landed = false
+      for targetName, targetField in configProbe.fieldPairs:
+        when targetField is typeof(sourceValue):
+          if targetName == sourceName: landed = true
+      if not landed:
+        error("[gardenAPI] RenderState." & sourceName &
+          " has no ConfigObject field of that name and type, so it would " &
+          "never reach the frame")
+
   proc applySimulationToConfig(storedState: SimulationState) =
     ## THE EFFECT-TIME CLAMP LIVES HERE, and nowhere else on the write path.
     ##
@@ -112,52 +163,10 @@ when defined(js):
     ## rather than during it. A preset carrying more stiffness than its own
     ## fluid can hold therefore round-trips its stored stiffness intact and runs
     ## at the ceiling that fluid implies.
-    let simState = effectiveSimulation(storedState)
-    CONFIG.particleCount = simState.particleCount
-    CONFIG.speciesCount = simState.speciesCount
-    CONFIG.interactionRadius = simState.interactionRadius
-    CONFIG.forceStrength = simState.forceStrength
-    CONFIG.crowdingStrength = simState.crowdingStrength
-    CONFIG.friction = simState.friction
-    CONFIG.ruleTemperature = simState.ruleTemperature
-    CONFIG.timeScale = simState.timeScale
-    CONFIG.maxVelocity = simState.maxVelocity
-    CONFIG.repulsionEnd = simState.repulsionEnd
-    CONFIG.attractionPeak = simState.attractionPeak
-    CONFIG.forceModel = simState.forceModel
-    CONFIG.expRepulsionAlpha = simState.expRepulsionAlpha
-    CONFIG.expAttractionBeta = simState.expAttractionBeta
-    CONFIG.sphRestDensity = simState.sphRestDensity
-    CONFIG.sphStiffness = simState.sphStiffness
-    CONFIG.sphRadiusFraction = simState.sphRadiusFraction
-    CONFIG.sphViscosity = simState.sphViscosity
-    CONFIG.sphSubsteps = simState.sphSubsteps
-    CONFIG.rdFeed = simState.rdFeed
-    CONFIG.rdKill = simState.rdKill
-    CONFIG.rdDeposit = simState.rdDeposit
-    CONFIG.rdFieldForce = simState.rdFieldForce
-    CONFIG.climateDrift = simState.climateDrift
-    CONFIG.climateSpeed = simState.climateSpeed
-    CONFIG.forceWeather = simState.forceWeather
-    CONFIG.forceWeatherSpeed = simState.forceWeatherSpeed
+    mirrorInto(effectiveSimulation(storedState), CONFIG[])
 
   proc applyRenderToConfig(renderState: RenderState) =
-    CONFIG.particleSize = renderState.particleSize
-    CONFIG.trails = renderState.trails
-    CONFIG.trailLength = renderState.trailLength
-    CONFIG.glowIntensity = renderState.glowIntensity
-    CONFIG.velocityGlowScale = renderState.velocityGlowScale
-    CONFIG.glowRadiusScale = renderState.glowRadiusScale
-    CONFIG.glowFalloff = renderState.glowFalloff
-    CONFIG.glowWarmth = renderState.glowWarmth
-    CONFIG.bloomEnabled = renderState.bloomEnabled
-    CONFIG.bloomIntensity = renderState.bloomIntensity
-    CONFIG.exposure = renderState.exposure
-    CONFIG.saturation = renderState.saturation
-    CONFIG.contrast = renderState.contrast
-    CONFIG.temperature = renderState.temperature
-    CONFIG.colormapIndex = renderState.colormapIndex
-    CONFIG.fieldOpacity = renderState.fieldOpacity
+    mirrorInto(renderState, CONFIG[])
 
   proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
     ## Mutate a copy of the simulation state, store it, and mirror it into
