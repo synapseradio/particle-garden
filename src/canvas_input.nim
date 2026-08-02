@@ -15,7 +15,8 @@
 #
 # ==============================================================================
 
-from std/dom import Event, MouseEvent, TouchEvent, KeyboardEvent, preventDefault
+from std/dom import Event, MouseEvent, TouchEvent, KeyboardEvent, Node, Element,
+  preventDefault
 
 from std/jsffi import JsObject
 
@@ -243,10 +244,23 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
   # only receives key events when focused, and this one is never clicked into
   # deliberately, so canvas-scoped bindings would appear dead until the user
   # happened to click the world first.
+  #
+  # Listening that wide is why keyContextOf exists: every keystroke in the panel
+  # arrives here too, including the ones a text field is entitled to.
+  proc keyContextOf(event: KeyboardEvent): KeyContext =
+    let target = cast[Event](event).target
+    var typing = false
+    if not target.isNil:
+      typing = $target.nodeName in ["INPUT", "TEXTAREA", "SELECT"] or
+        cast[Element](target).isContentEditable
+    KeyContext(
+      modified: event.ctrlKey or event.metaKey or event.altKey,
+      intoTextEntry: typing)
+
   domWindow.addEventListener("keydown", proc(event: KeyboardEvent) =
     if not cameraHooksReady():
       return
-    let action = cameraKeyFor($event.key)
+    let action = cameraKeyFor($event.key, keyContextOf(event))
     if action == ckNone:
       return
     # Only swallow the event once it is known to be a camera binding, so

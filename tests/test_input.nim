@@ -327,11 +327,18 @@ suite "The Binding Table Is The Single Declaration":
         claimed.incl key
 
   test "every camera-key row dispatches through cameraKeyFor":
+    const OnCanvas = KeyContext(modified: false, intoTextEntry: false)
+    var dispatched = 0
     for binding in InputBindings:
       if binding.action != ckNone:
         check binding.keys.len > 0
         for key in binding.keys:
-          check cameraKeyFor(key) == binding.action
+          check cameraKeyFor(key, OnCanvas) == binding.action
+          inc dispatched
+    # NON-VACUITY: the table must actually carry camera rows for this to mean
+    # anything. Emptying InputBindings would otherwise leave it green.
+    check dispatched > 0
 
   test "a key outside the table maps to no action":
-    check cameraKeyFor("F13") == ckNone
+    const OnCanvas = KeyContext(modified: false, intoTextEntry: false)
+    check cameraKeyFor("F13", OnCanvas) == ckNone

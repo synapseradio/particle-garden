@@ -285,24 +285,56 @@ suite "Middle-Button Drag Pans The World Under The Pointer":
 
 
 suite "Keys Map To Camera Actions":
+  const
+    OnCanvas = KeyContext(modified: false, intoTextEntry: false)
+      ## Nothing focused, no modifier: the context every camera binding claims.
+    Chorded = KeyContext(modified: true, intoTextEntry: false)
+    WhileTyping = KeyContext(modified: false, intoTextEntry: true)
+
+  # Every key the table binds, so the two suppression tests below sweep the
+  # whole surface rather than a sample of it.
+  const BoundKeys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+    "+", "=", "-", "_", "0"]
+
   test "the arrow keys, zoom keys and reset are recognised":
-    check cameraKeyFor("ArrowLeft") == ckPanLeft
-    check cameraKeyFor("ArrowRight") == ckPanRight
-    check cameraKeyFor("ArrowUp") == ckPanUp
-    check cameraKeyFor("ArrowDown") == ckPanDown
-    check cameraKeyFor("+") == ckZoomIn
-    check cameraKeyFor("-") == ckZoomOut
-    check cameraKeyFor("0") == ckReset
+    check cameraKeyFor("ArrowLeft", OnCanvas) == ckPanLeft
+    check cameraKeyFor("ArrowRight", OnCanvas) == ckPanRight
+    check cameraKeyFor("ArrowUp", OnCanvas) == ckPanUp
+    check cameraKeyFor("ArrowDown", OnCanvas) == ckPanDown
+    check cameraKeyFor("+", OnCanvas) == ckZoomIn
+    check cameraKeyFor("-", OnCanvas) == ckZoomOut
+    check cameraKeyFor("0", OnCanvas) == ckReset
 
   test "the unshifted zoom keys mean the same as the shifted ones":
     # On most layouts "+" is shift-"=", and a user pressing the unshifted key
     # means to zoom in.
-    check cameraKeyFor("=") == ckZoomIn
-    check cameraKeyFor("_") == ckZoomOut
+    check cameraKeyFor("=", OnCanvas) == ckZoomIn
+    check cameraKeyFor("_", OnCanvas) == ckZoomOut
 
   test "any other key is not a camera action":
     for key in ["a", "Enter", "Shift", "1", "ArrowLeftExtra", ""]:
-      check cameraKeyFor(key) == ckNone
+      check cameraKeyFor(key, OnCanvas) == ckNone
+
+  test "a bound key held with a modifier is not a camera action":
+    # Ctrl/Cmd with "-", "+" or "0" is the browser's own zoom and reset. No
+    # binding declares a chord, so every one of them must decline.
+    for key in BoundKeys:
+      checkpoint("modified \"" & key & "\" should leave the camera alone")
+      check cameraKeyFor(key, Chorded) == ckNone
+
+  test "a bound key typed into a text field is not a camera action":
+    # "-", "0" and the arrows are what typing "-0.5" into a matrix cell or
+    # stepping a focused slider needs, so the field gets them.
+    for key in BoundKeys:
+      checkpoint("\"" & key & "\" typed into a field should reach the field")
+      check cameraKeyFor(key, WhileTyping) == ckNone
+
+  test "every bound key still acts when nothing is focused and no modifier is held":
+    # NON-VACUITY for the two suppression tests above: they would both pass if
+    # cameraKeyFor answered ckNone to everything.
+    for key in BoundKeys:
+      checkpoint("\"" & key & "\" should act on the canvas")
+      check cameraKeyFor(key, OnCanvas) != ckNone
 
   test "a key that is not a camera action leaves the camera untouched":
     let before = testCamera()

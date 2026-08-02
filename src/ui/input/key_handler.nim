@@ -21,10 +21,33 @@ export CameraKey
 # SECTION 1: KEY EVENT DATA (extracted from DOM events)
 # ==============================================================================
 
-func cameraKeyFor*(key: string): CameraKey =
+type
+  KeyContext* = object
+    ## What a keypress carries beyond which key it was. The listener extracts
+    ## both from the DOM event so the decision below stays pure.
+    modified*: bool
+      ## Ctrl, Cmd or Alt held.
+    intoTextEntry*: bool
+      ## Focus sits somewhere that takes typed characters.
+
+func cameraKeyFor*(key: string; context: KeyContext): CameraKey =
   ## Map a DOM `KeyboardEvent.key` value to a camera action, from the binding
   ## table — the single declaration. Both "+" and "=" zoom in ("+" is
   ## shift-"=" on most layouts), and "_" pairs with "-" the same way.
+  ##
+  ## Two contexts claim no binding, and the caller swallows the event only for
+  ## what this returns, so both leave the keypress to whoever else wants it.
+  ##
+  ## A modifier means the browser's chord, never a camera one: no binding in
+  ## the table declares Ctrl, Cmd or Alt, so Ctrl/Cmd with `-`, `+` or `0` is
+  ## page zoom and page reset. Checked as one rule rather than per binding,
+  ## because a per-binding modifier field would have no varying consumer.
+  ##
+  ## Text entry means the field gets the character: the bindings include `0`,
+  ## `-`, `_`, `+`, `=` and the four arrows, which are exactly what typing
+  ## `-0.5` into a matrix cell or stepping a focused slider needs.
+  if context.modified or context.intoTextEntry:
+    return ckNone
   for binding in InputBindings:
     if binding.action != ckNone and key in binding.keys:
       return binding.action
