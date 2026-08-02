@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  applySnap,
-  notchPosition,
-  snapTarget,
-  SNAP_FRACTION,
-} from "../src/lib/notches";
+import { applySnap, snapTarget, SNAP_FRACTION } from "../src/lib/notches";
 import type { ParamNotch } from "../src/garden-api";
 
 // The feed axis as Nim serves it: six regime coordinates over [0.010, 0.085].
@@ -21,27 +16,6 @@ const FEED_NOTCHES: ParamNotch[] = [
   { value: 0.078, label: "Worms" },
   { value: 0.082, label: "Coral" },
 ];
-
-describe("notchPosition", () => {
-  test("maps the range ends to the track ends", () => {
-    expect(notchPosition(FEED_MIN, FEED_MIN, FEED_MAX)).toBe(0);
-    expect(notchPosition(FEED_MAX, FEED_MIN, FEED_MAX)).toBe(1);
-  });
-
-  test("places a midpoint halfway along the track", () => {
-    expect(notchPosition(0.5, 0, 1)).toBeCloseTo(0.5, 10);
-  });
-
-  test("rejects a value outside the range rather than placing it off-track", () => {
-    expect(notchPosition(0.09, FEED_MIN, FEED_MAX)).toBeNull();
-    expect(notchPosition(0.005, FEED_MIN, FEED_MAX)).toBeNull();
-  });
-
-  test("rejects a degenerate range rather than dividing by zero", () => {
-    expect(notchPosition(1, 1, 1)).toBeNull();
-    expect(notchPosition(1, 2, 1)).toBeNull();
-  });
-});
 
 describe("snapTarget", () => {
   const pull = (FEED_MAX - FEED_MIN) * SNAP_FRACTION;

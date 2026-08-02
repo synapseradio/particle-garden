@@ -20,20 +20,6 @@ export const SNAP_FRACTION = 0.015;
 // enforced by the reachability property test in notches.test.ts.
 const NEIGHBOUR_PULL_FRACTION = 0.4;
 
-// Where a notch sits along the track, as a 0..1 fraction from min to max.
-// Returns null for a degenerate range rather than dividing by zero.
-export function notchPosition(
-  value: number,
-  min: number,
-  max: number,
-): number | null {
-  const span = max - min;
-  if (!(span > 0)) return null;
-  const position = (value - min) / span;
-  if (position < 0 || position > 1) return null;
-  return position;
-}
-
 // The notch a raw drag value should snap to, or null to leave it alone.
 //
 // Ties go to the nearer notch and, at exactly equal distance, to the earlier
