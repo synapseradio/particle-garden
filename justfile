@@ -46,7 +46,10 @@ test:
 test-ui:
     cd web-ui && bun test
 
-check: test test-ui
+# Shaders first: the bundled web/shaders/*.wgsl are gitignored output, and the
+# binding-set test in tests/test_wgsl_lint.nim reads them. Without this a clone
+# that has never built runs that test against an empty directory.
+check: shaders test test-ui
 
 be:
     git pull

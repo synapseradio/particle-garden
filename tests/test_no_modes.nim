@@ -132,30 +132,35 @@ suite "The Legacy Mode Table Stays Honest":
 suite "No Mode Concept In Source":
   test "no forbidden mode identifier appears in src/ or web-ui/src/":
     var offenders: seq[string]
+    var swept = 0
     for path in sweptFiles():
+      inc swept
       let content = readFile(path)
       for id in FORBIDDEN_IDENTIFIERS:
         for offset in wholeWordOffsets(content, id):
           offenders.add(path & ":" & $lineAt(content, offset) & " " & id)
-    check offenders.len == 0
     if offenders.len > 0:
-      echo "  Mode identifiers found: ", offenders.join(", ")
+      checkpoint("mode identifiers found: " & offenders.join(", "))
+    check offenders.len == 0
+    # The harvest, asserted beside the sweep rather than as a neighbouring
+    # dirExists test: sweptFiles skips a missing root silently, so a wrong
+    # working directory or a renamed root leaves this examining nothing, and
+    # "no offender was found" then reads identically to "nothing was read".
+    check swept > 0
 
   test "no mode-id string literal appears in src/ or web-ui/src/ outside the legacy table":
     var offenders: seq[string]
+    var swept = 0
     for path in sweptFiles():
+      inc swept
       var content = readFile(path)
       if path == PRESET_FILE:
         content = maskLegacyTable(content)
       for lit in FORBIDDEN_MODE_STRINGS:
         for offset in literalOffsets(content, lit):
           offenders.add(path & ":" & $lineAt(content, offset) & " " & lit)
-    check offenders.len == 0
     if offenders.len > 0:
-      echo "  Mode-id strings found: ", offenders.join(", ")
-
-  test "the swept source directories were actually found":
-    # Without this the two sweeps above pass vacuously when run from the
-    # wrong working directory, which would make them silently worthless.
-    check dirExists("src")
+      checkpoint("mode-id strings found: " & offenders.join(", "))
+    check offenders.len == 0
+    check swept > 0
     check dirExists(SWEEP_ROOTS[1])

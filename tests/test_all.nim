@@ -34,6 +34,7 @@ import test_climate_core
 import test_camera_input
 import test_wgsl_lint
 import test_no_modes
+import test_meta_vacuity
 import test_panel_reachability
 
 # Reference exported symbols to satisfy UnusedImport warning
@@ -73,4 +74,5 @@ static:
   discard test_camera_input.CAMERA_INPUT_TESTS_LOADED
   discard test_wgsl_lint.WGSL_LINT_TESTS_LOADED
   discard test_no_modes.NO_MODES_TESTS_LOADED
+  discard test_meta_vacuity.META_VACUITY_TESTS_LOADED
   discard test_panel_reachability.PANEL_REACHABILITY_TESTS_LOADED

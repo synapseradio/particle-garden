@@ -7,7 +7,7 @@
 # that actually protects the app; the ones above it are what keep the checker
 # honest about what it flags and what it leaves alone.
 
-import std/[unittest, os, strutils, tables]
+import std/[unittest, os, strutils, tables, sets, sequtils]
 import ../src/wgsl_lint
 
 const WGSL_LINT_TESTS_LOADED* = true
@@ -82,20 +82,20 @@ suite "The Shipped Shaders Parse As WGSL":
     # honest; this one is why it exists. It reads the real sources, so a newly
     # added shader is covered without anyone remembering to add a case.
     var offenders: seq[string]
+    var scanned = 0
     for dir in ["web/shaders/src", "web/shaders/modules"]:
-      if not dirExists(dir):
-        continue
       for path in walkFiles(dir / "*.wgsl"):
+        inc scanned
         for lineNumber in namedFieldConstructorLines(readFile(path)):
           offenders.add(path & ":" & $lineNumber)
-    check offenders.len == 0
     if offenders.len > 0:
-      echo "  WGSL named-field constructors: ", offenders.join(", ")
-
-  test "the shader source directory was actually found":
-    # Without this the suite above passes vacuously when run from the wrong
-    # working directory, which would make the real check silently worthless.
-    check dirExists("web/shaders/src")
+      checkpoint("WGSL named-field constructors: " & offenders.join(", "))
+    check offenders.len == 0
+    # The harvest, asserted beside the sweep rather than as a neighbouring
+    # dirExists test: a wrong working directory or a renamed source directory
+    # leaves this examining nothing, and "no offender was found" then reads
+    # identically to "nothing was read".
+    check scanned > 0
 
 
 suite "Declared Bindings Are Parsed":
@@ -134,31 +134,50 @@ suite "Declared Bindings Are Parsed":
 
 
 suite "The Bundled Shaders Declare Their Registered Bindings":
-  test "every bundled shader's declared bindings match ExpectedShaderBindings":
+  test "the bundled shaders and ExpectedShaderBindings name the same set":
     # The assertion that protects the shared render/glow layout: render.wgsl
     # and glow.wgsl share one hand-built bind-group layout in
     # webgpu_render.nim; nothing else notices a swapped or added @binding
     # number, which compiles, bundles, and builds green while the GPU rejects
     # the pipeline only at runtime — a blank canvas behind a green build.
+    #
+    # A SET EQUALITY, not a sweep for offenders. web/shaders/*.wgsl is
+    # gitignored bundler output and `just check` does not run the bundler, so
+    # on a clone that has never built, this directory holds no .wgsl at all.
+    # Phrased as "every file found matches its entry" the test would examine
+    # nothing and pass; phrased as an equality it fails naming every registered
+    # shader that has no file, which is the true condition.
+    var bundled = initHashSet[string]()
     var mismatches: seq[string]
-    var unregistered: seq[string]
     for path in walkFiles("web/shaders" / "*.wgsl"):
       let shaderName = path.extractFilename.replace(".wgsl", "")
-      let declared = bindingsDeclared(readFile(path))
-      if shaderName notin ExpectedShaderBindings:
-        unregistered.add(shaderName)
-        continue
-      let expected = ExpectedShaderBindings[shaderName]
-      if declared != expected:
-        mismatches.add(shaderName & ": expected " & $expected & ", got " & $declared)
-    check unregistered.len == 0
-    check mismatches.len == 0
-    if unregistered.len > 0:
-      echo "  Shaders missing from ExpectedShaderBindings: ", unregistered.join(", ")
-    if mismatches.len > 0:
-      echo "  Binding mismatches: ", mismatches.join("; ")
+      bundled.incl shaderName
+      if shaderName in ExpectedShaderBindings:
+        let expected = ExpectedShaderBindings[shaderName]
+        let declared = bindingsDeclared(readFile(path))
+        if declared != expected:
+          mismatches.add(shaderName & ": expected " & $expected &
+            ", got " & $declared)
 
-  test "the bundled shader directory was actually found":
-    # Without this the sweep above passes vacuously when run from the wrong
-    # working directory, which would make it silently worthless.
-    check dirExists("web/shaders")
+    var registered = initHashSet[string]()
+    for shaderName in ExpectedShaderBindings.keys:
+      registered.incl shaderName
+
+    let unbundled = registered - bundled
+    if unbundled.len > 0:
+      checkpoint("registered but not bundled (run `just shaders`): " &
+        toSeq(unbundled.items).join(", "))
+    let unregistered = bundled - registered
+    if unregistered.len > 0:
+      checkpoint("bundled but absent from ExpectedShaderBindings: " &
+        toSeq(unregistered.items).join(", "))
+    check bundled == registered
+
+    if mismatches.len > 0:
+      checkpoint("binding mismatches: " & mismatches.join("; "))
+    check mismatches.len == 0
+    # Redundant against the equality above, which already fails on an empty
+    # harvest, and kept because it is what the vacuity gate in
+    # test_meta_vacuity.nim can read: a machine cannot see that a set equality
+    # is non-vacuous, and this line says so in the form the gate checks.
+    check bundled.len > 0
