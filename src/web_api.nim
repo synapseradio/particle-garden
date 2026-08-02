@@ -38,6 +38,7 @@
 when defined(js):
   import std/tables
   from std/json import pretty
+  from std/math import round
   # The parameter dispatch's build gate names the offending descriptor in its
   # message, so it needs a compile-time error over a computed string; the
   # `{.error.}` pragma accepts only a literal.
@@ -137,6 +138,8 @@ when defined(js):
     CONFIG.rdFieldForce = simState.rdFieldForce
     CONFIG.climateDrift = simState.climateDrift
     CONFIG.climateSpeed = simState.climateSpeed
+    CONFIG.forceWeather = simState.forceWeather
+    CONFIG.forceWeatherSpeed = simState.forceWeatherSpeed
 
   proc applyRenderToConfig(renderState: RenderState) =
     CONFIG.particleSize = renderState.particleSize
@@ -394,6 +397,10 @@ when defined(js):
     updateSimulation(proc(simState: var SimulationState) =
       simState.climateDrift = enabled)
 
+  proc setForceWeatherImpl(enabled: bool) =
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.forceWeather = enabled)
+
   proc setColormapImpl(index: int) =
     updateRender(proc(renderState: var RenderState) =
       renderState.colormapIndex =
@@ -463,6 +470,7 @@ when defined(js):
     of "rdDeposit": CONFIG.rdDeposit
     of "rdFieldForce": CONFIG.rdFieldForce
     of "climateSpeed": CONFIG.climateSpeed
+    of "forceWeatherSpeed": CONFIG.forceWeatherSpeed
     of "fieldOpacity": CONFIG.fieldOpacity
     # Read back from the live camera, not from CONFIG — it is not there. The
     # panel needs this so the slider tracks a zoom the WHEEL performed.
@@ -630,6 +638,12 @@ when defined(js):
       jsArray.push(toJs(cstring(CLIMATE_PARAM_IDS[axis])))
     jsArray
 
+  let forceWeatherParamIdArray = block:
+    let jsArray = newJsArray()
+    for axis in ForceAxis:
+      jsArray.push(toJs(cstring(FORCE_WEATHER_PARAM_IDS[axis])))
+    jsArray
+
   proc applyRegimeImpl(id: string) =
     ## Set feed and kill to a named regime's coordinates, through the ordinary
     ## descriptor-clamped setParam path so the sliders read back what landed.
@@ -698,6 +712,35 @@ when defined(js):
       simState.rdFeed = clampedFeed
       simState.rdKill = clampedKill)
 
+  let forceWeatherDescriptors: array[ForceAxis, ParamDescriptor] = block:
+    var resolved: array[ForceAxis, ParamDescriptor]
+    for axis in ForceAxis:
+      resolved[axis] = paramsById[FORCE_WEATHER_PARAM_IDS[axis]]
+    resolved
+
+  proc setForceWeatherFromSimulation*(point: array[ForceAxis, float]) =
+    ## The force weather's frame write, on the same terms setClimateFromSimulation
+    ## states: the clamped descriptor path rather than a shortcut into CONFIG, so
+    ## the toured sliders move and the panel keeps telling the truth, and the
+    ## whole point in one mirror cycle rather than one per axis.
+    ##
+    ## THE RADIUS ROUNDS. `interactionRadius` is a count of world units and the
+    ## tour interpolates in floats, so this is where the two meet. Rounding here
+    ## rather than in the tour keeps climate_core's guarantees stated about the
+    ## continuous path they are actually proven of; what a viewer sees is a
+    ## radius slider stepping by one unit of a hundred and forty, which is the
+    ## same thing a drag on that slider shows.
+    let clampedStrength = clampParamValue(
+      forceWeatherDescriptors[fxStrength], point[fxStrength])
+    let clampedRadius = clampParamValue(
+      forceWeatherDescriptors[fxRadius], point[fxRadius])
+    let clampedFriction = clampParamValue(
+      forceWeatherDescriptors[fxFriction], point[fxFriction])
+    updateSimulation(proc(simState: var SimulationState) =
+      simState.forceStrength = clampedStrength
+      simState.interactionRadius = int(round(clampedRadius))
+      simState.friction = clampedFriction)
+
   proc commitParamImpl(id: string) =
     ## The slider-release side effect (the DOM "change" event): only the two
     ## count parameters carry one — everything else applies fully on set.
@@ -759,6 +802,9 @@ when defined(js):
     let simulationWrites = newJsObject()
     for axis in ClimateAxis:
       let id = CLIMATE_PARAM_IDS[axis]
+      simulationWrites[cstring(id)] = toJs(getParamImpl(id))
+    for axis in ForceAxis:
+      let id = FORCE_WEATHER_PARAM_IDS[axis]
       simulationWrites[cstring(id)] = toJs(getParamImpl(id))
     stats["params"] = toJs(simulationWrites)
     # The live ceiling of every derived bound, by parameter id. It rides this
@@ -852,6 +898,8 @@ when defined(js):
     settings.fluidStrength = CONFIG.fluidStrength
     settings.climateDrift = CONFIG.climateDrift
     settings.climateSpeed = CONFIG.climateSpeed
+    settings.forceWeather = CONFIG.forceWeather
+    settings.forceWeatherSpeed = CONFIG.forceWeatherSpeed
 
     var matrixSnapshot: Matrix
     for matrixIdx in 0 ..< preset.MATRIX_LEN:
@@ -952,6 +1000,8 @@ when defined(js):
           simState.fluidStrength = settings.fluidStrength
           simState.climateDrift = settings.climateDrift
           simState.climateSpeed = settings.climateSpeed
+          simState.forceWeather = settings.forceWeather
+          simState.forceWeatherSpeed = settings.forceWeatherSpeed
         )
         updateRender(proc(renderState: var RenderState) =
           renderState.particleSize = settings.particleSize
@@ -1134,6 +1184,11 @@ when defined(js):
     result["setClimateDrift"] = toJs(proc(enabled: bool) =
       setClimateDriftImpl(enabled))
     result["climateParamIds"] = toJs(proc(): JsObject = climateParamIdArray)
+    result["getForceWeather"] = toJs(proc(): bool = CONFIG.forceWeather)
+    result["setForceWeather"] = toJs(proc(enabled: bool) =
+      setForceWeatherImpl(enabled))
+    result["forceWeatherParamIds"] = toJs(proc(): JsObject =
+      forceWeatherParamIdArray)
 
     result["rdRegimes"] = toJs(proc(): JsObject = regimeArray)
     result["getRdRegime"] = toJs(proc(): cstring = cstring(activeRegimeImpl()))

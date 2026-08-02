@@ -72,6 +72,43 @@ const
     ## Sigma for the matrix rule sampler, as a FRACTION of MATRIX_MAX_VALUE
     ## (matrix_state.sampleRuleValue applies the scale), so this range keeps
     ## its meaning across any matrix re-range.
+  FORCE_WEATHER_WAYPOINTS* = [
+    (strength: 0.8, radius: 45.0, friction: 0.04),
+    (strength: 1.6, radius: 60.0, friction: 0.08),
+    (strength: 2.4, radius: 35.0, friction: 0.16),
+    (strength: 1.2, radius: 80.0, friction: 0.06),
+    (strength: 0.5, radius: 55.0, friction: 0.02),
+  ]
+    ## The closed tour the force weather walks, beside the three ranges its
+    ## coordinates have to satisfy. The static assertions at the bottom of this
+    ## file reject a coordinate outside its own slider, for the same reason they
+    ## reject an unreachable regime notch.
+    ##
+    ## PROVISIONAL, chosen by construction rather than by watching, and one-world
+    ## task C4.1 replaces them. Read them as a spread over the force parameters
+    ## that keeps the tour inside every range with room to spare, not as settled
+    ## configurations: nothing here has been watched settle. [?]
+    ##
+    ## The construction, so C4.1 knows what it is replacing. Five points, each
+    ## moving at least two axes away from its neighbours so no segment reads as
+    ## a single slider drifting: loose and drifty, tighter colonies, a
+    ## short-range damped state, long-range slow structures, and a near-free
+    ## wander. Every coordinate sits well inside its range, so narrowing a range
+    ## for an unrelated reason does not immediately strand a waypoint.
+    ##
+    ## WHY THESE THREE AXES, of the four C4.1 lists as candidates.
+    ## `ruleTemperature` is excluded and that exclusion is a measurement, not a
+    ## preference: it feeds `sampleRuleValue` alone (`src/web_api.nim`), which
+    ## runs when the rules are re-sampled, so touring it moves a slider and
+    ## changes nothing a viewer can see until something else randomises the
+    ## matrix. `interactionRadius` is included despite being the expensive one —
+    ## it sets the spatial hash's cell size (`src/grid.nim`) — because
+    ## `computeGridDimensions` already recomputes that every physics frame, so
+    ## the tour walks exactly the path a user dragging that slider walks.
+    ##
+    ## `radius` is a float here and `interactionRadius` is an int. The tour
+    ## interpolates in floats and the write path rounds, so the guarantees below
+    ## are stated of the float path; the int lands within one unit of 140.
   TIME_SCALE_MIN* = 0.1
   TIME_SCALE_MAX* = 5.0
   PARTICLE_SIZE_MIN* = 1
@@ -268,6 +305,14 @@ const
     ## Fastest weather: two tours a minute. Bounded by CLIMATE_MAX_STEP rather
     ## than by taste — tests/test_climate_core.nim sweeps the loop at this speed
     ## and fails if any single frame moves a slider further than that ceiling.
+  FORCE_WEATHER_SPEED_MIN* = CLIMATE_SPEED_MIN
+  FORCE_WEATHER_SPEED_MAX* = CLIMATE_SPEED_MAX
+    ## Tours per minute, the same unit and the same offerable band the climate
+    ## speed carries, so these name that one fact rather than restating it. They
+    ## carry their own names because the two weathers run independently, so a
+    ## measured reason to widen one and not the other lands in one edit.
+    ## The default speed lives in climate_core beside the climate's, where every
+    ## tour default lives.
   # Camera. The bounds camera_core.clampZoom is called with — they live
   # here rather than beside the camera maths because this file is the single
   # source of truth for every user-facing range, and camera_core takes them as
@@ -446,6 +491,23 @@ static:
       "regime " & regime.id & " needs a deposit outside the deposit range"
   doAssert RD_REGIME_HIGH_FEED_DEPOSIT >= RD_DEPOSIT_MIN and
     RD_REGIME_HIGH_FEED_DEPOSIT <= RD_DEPOSIT_MAX
+  # The force weather's waypoints answer to the same reachability rule, and for
+  # a sharper reason than the regime notches: the tour INTERPOLATES between
+  # them, so a waypoint outside its range would drag the running simulation
+  # somewhere its own sliders cannot express. Convexity is what lets the frame
+  # loop write the tour with no clamp, and convexity only helps while every
+  # waypoint is already inside the box. Narrowing FORCE_STRENGTH_MAX below 2.4,
+  # INTERACTION_RADIUS_MAX below 80, or FRICTION_MAX below 0.16 fails here.
+  for waypoint in FORCE_WEATHER_WAYPOINTS:
+    doAssert waypoint.strength >= FORCE_STRENGTH_MIN and
+      waypoint.strength <= FORCE_STRENGTH_MAX,
+      "a force weather waypoint has a strength outside the strength slider"
+    doAssert waypoint.radius >= INTERACTION_RADIUS_MIN.float and
+      waypoint.radius <= INTERACTION_RADIUS_MAX.float,
+      "a force weather waypoint has a radius outside the radius slider"
+    doAssert waypoint.friction >= FRICTION_MIN and
+      waypoint.friction <= FRICTION_MAX,
+      "a force weather waypoint has a friction outside the friction slider"
   # The camera zoom notches are positions on the camera slider, so the same
   # reachability rule covers them.
   for zoomNotch in [CAMERA_ZOOM_NOTCH_WORLD, CAMERA_ZOOM_NOTCH_CREATURE]:

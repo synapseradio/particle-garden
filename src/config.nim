@@ -68,6 +68,8 @@ type
     rdFieldForce* {.exportc.}: float
     climateDrift* {.exportc.}: bool
     climateSpeed* {.exportc.}: float
+    forceWeather* {.exportc.}: bool
+    forceWeatherSpeed* {.exportc.}: float
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -179,6 +181,8 @@ proc createConfig(): ConfigObject =
   result.rdFieldForce = sim.rdFieldForce
   result.climateDrift = sim.climateDrift
   result.climateSpeed = sim.climateSpeed
+  result.forceWeather = sim.forceWeather
+  result.forceWeatherSpeed = sim.forceWeatherSpeed
   result.particleSize = visual.particleSize
   result.trails = visual.trails
   result.trailLength = visual.trailLength

@@ -72,10 +72,25 @@ const PROBE_BOX: array[ProbeAxis, tuple[lo, hi: float]] = [
   pxWide: (lo: 10.0, hi: 60.0),
 ]
 
-const PROBE_MAX_STEP = 0.2
-  ## What the probe table's widest segment (45 units, pxWide) can carry at
-  ## CLIMATE_SPEED_MAX: smoothstep peaks at 1.5x the average slope, so the
-  ## fastest frame moves 1.5 * 45 * 4 * 2 / 3600 ≈ 0.15 units.
+const PROBE_MAX_STEPS: array[ProbeAxis, float] = [
+  pxNarrow: 0.01,
+  pxUnit: 0.005,
+  pxWide: 0.2,
+]
+  ## What each probe axis's widest segment can carry at CLIMATE_SPEED_MAX.
+  ## Smoothstep peaks at 1.5x the average slope, so the fastest frame moves
+  ## 1.5 * segment * waypoints * speed / 3600 — for pxWide's 45 units, about
+  ## 0.15. Stated per axis because pxWide spans fifty times what pxUnit spans,
+  ## and one number over both would assert nothing about the narrow one.
+
+const FORCE_WEATHER_BOX: array[ForceAxis, tuple[lo, hi: float]] = [
+  fxStrength: (lo: FORCE_STRENGTH_MIN, hi: FORCE_STRENGTH_MAX),
+  fxRadius: (lo: INTERACTION_RADIUS_MIN.float, hi: INTERACTION_RADIUS_MAX.float),
+  fxFriction: (lo: FRICTION_MIN, hi: FRICTION_MAX),
+]
+  ## The box the force weather tours inside, from the range authority. Pairing a
+  ## table with its box is all a second weather has to do to be swept here, and
+  ## this is the weather that proves that claim rather than asserting it.
 
 # ------------------------------------------------------------------------------
 # The guarantees, written once and run over every table
@@ -94,15 +109,20 @@ template checkStaysInsideBox(waypoints, box: untyped) =
       check point[axis] >= box[axis].lo
       check point[axis] <= box[axis].hi
 
-template checkNoStepExceeds(waypoints, maxStep, speed: untyped) =
+template checkNoStepExceeds(waypoints, maxSteps, speed: untyped) =
   ## CONTINUOUS at the fastest weather offered, across the whole loop including
   ## every waypoint handover.
+  ##
+  ## The ceiling arrives per axis. A table whose axes span different scales
+  ## cannot state a meaningful one otherwise: the widest axis sets a number the
+  ## narrow ones clear no matter what they do, and the sweep stops asserting
+  ## anything about them.
   for step in 0 ..< SWEEP_STEPS:
     let phase = step.float / SWEEP_STEPS.float
     let here = tourAt(waypoints, phase)
     let next = tourAt(waypoints, tourAdvance(phase, speed, FRAME_SECONDS))
     for axis in here.low .. here.high:
-      check abs(next[axis] - here[axis]) <= maxStep
+      check abs(next[axis] - here[axis]) <= maxSteps[axis]
 
 template checkNoJumpAtHandover(waypoints: untyped) =
   ## Segment boundaries are where a piecewise path breaks if it breaks at all.
@@ -145,13 +165,14 @@ suite "One Tour Serves Any Table":
   # ever narrowed to the climate's two axes.
   test "the tour carries its guarantees onto a table of another arity":
     checkStaysInsideBox(PROBE_TOUR, PROBE_BOX)
-    checkNoStepExceeds(PROBE_TOUR, PROBE_MAX_STEP, CLIMATE_SPEED_MAX)
+    checkNoStepExceeds(PROBE_TOUR, PROBE_MAX_STEPS, CLIMATE_SPEED_MAX)
     checkNoJumpAtHandover(PROBE_TOUR)
     checkEasesAtHandover(PROBE_TOUR)
 
   test "the tour lands on every waypoint of any table it walks":
     checkLandsOnEveryWaypoint(PROBE_TOUR)
     checkLandsOnEveryWaypoint(RD_CLIMATE_TOUR)
+    checkLandsOnEveryWaypoint(FORCE_WEATHER_TOUR)
 
 
 suite "Climate Drift Stays Inside The Rectangle":
@@ -184,7 +205,7 @@ suite "Climate Drift Is Continuous":
     # Observed: the largest single-frame move is well under CLIMATE_MAX_STEP;
     # if a future speed ceiling or regime coordinate pushes past it, this goes
     # red rather than the weather visibly jumping.
-    checkNoStepExceeds(RD_CLIMATE_TOUR, CLIMATE_MAX_STEP, CLIMATE_SPEED_MAX)
+    checkNoStepExceeds(RD_CLIMATE_TOUR, CLIMATE_MAX_STEPS, CLIMATE_SPEED_MAX)
 
   test "the path has no positional jump at a waypoint handover":
     checkNoJumpAtHandover(RD_CLIMATE_TOUR)
@@ -261,6 +282,55 @@ suite "The Climate Owns Its Output Surface":
     check known.len > 0
     check "noSuchParameter" notin known
 
+suite "The Force Weather Rides The Same Tour":
+  # The spec's claim is structural: the force weather supplies a waypoint table
+  # and nothing else, and inherits every guarantee from the one advance
+  # implementation. These call the SAME templates the climate calls, which is
+  # what that claim reduces to — a second loop would have to be tested here
+  # separately, and there is nothing separate to test.
+
+  test "the force weather stays inside the box its ranges bound":
+    # Convexity again, and it matters more here than for the climate: the frame
+    # loop writes these straight through with no clamp, and three of the four
+    # force parameters reach the physics on the very next frame.
+    checkStaysInsideBox(FORCE_WEATHER_TOUR, FORCE_WEATHER_BOX)
+
+  test "no force axis steps further than its own ceiling at the top speed":
+    checkNoStepExceeds(FORCE_WEATHER_TOUR, FORCE_WEATHER_MAX_STEPS,
+      FORCE_WEATHER_SPEED_MAX)
+
+  test "the force path has no positional jump at a waypoint handover":
+    checkNoJumpAtHandover(FORCE_WEATHER_TOUR)
+
+  test "the force path eases rather than corners at each waypoint":
+    checkEasesAtHandover(FORCE_WEATHER_TOUR)
+
+  test "every parameter the force weather writes has a descriptor":
+    # Same agreement CLIMATE_PARAM_IDS carries: an id naming no descriptor
+    # cannot be clamped, read back, or shown on a slider.
+    var known: seq[string]
+    for descriptor in buildParamDescriptors():
+      known.add(descriptor.id)
+    for axis in ForceAxis:
+      check FORCE_WEATHER_PARAM_IDS[axis] in known
+
+  test "the force weather writes the coordinates its tour travels in":
+    check FORCE_WEATHER_PARAM_IDS.len == FORCE_WEATHER_TOUR[0].len
+    for axis in ForceAxis:
+      check FORCE_WEATHER_PARAM_IDS[axis].len > 0
+
+  test "the two weathers tour different arities on one implementation":
+    # The load-bearing difference. If the tour were ever specialised back to
+    # the climate's two axes, this is the statement that stops making sense.
+    check FORCE_WEATHER_TOUR[0].len != RD_CLIMATE_TOUR[0].len
+
+  test "the force default speed is inside the range and under the ceiling":
+    check FORCE_WEATHER_DEFAULT_SPEED >= FORCE_WEATHER_SPEED_MIN
+    check FORCE_WEATHER_DEFAULT_SPEED <= FORCE_WEATHER_SPEED_MAX
+    check FORCE_WEATHER_DEFAULT_SPEED < FORCE_WEATHER_SPEED_MAX
+
+
+suite "The Climate Owns Its Output Surface Continued":
   test "the climate writes the coordinates its tour travels in":
     # CLIMATE_PARAM_IDS and the tour table are two statements about the same
     # axes. The array types tie their arity together at compile time; this

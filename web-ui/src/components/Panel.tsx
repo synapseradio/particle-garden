@@ -91,6 +91,29 @@ export function Panel(props: { ctrl: PanelController }) {
           {(id) => <ParamSlider ctrl={ctrl} id={id} />}
         </For>
 
+        {/* The force weather sits under the sliders it moves, so someone
+            watching strength, radius and friction wander can see what is
+            moving them without hunting for it. */}
+        <div class="control-group">
+          <label class="toggle-label">
+            <input
+              type="checkbox"
+              checked={ctrl.forceWeather()}
+              onChange={(event) =>
+                ctrl.setForceWeather(event.currentTarget.checked)
+              }
+            />
+            Force Weather
+            <span class="param-hint">
+              {" "}
+              — the forces tour their waypoints on their own
+            </span>
+          </label>
+        </div>
+        <Show when={ctrl.forceWeather()}>
+          <ParamSlider ctrl={ctrl} id="forceWeatherSpeed" />
+        </Show>
+
         <div class="button-row">
           <button onClick={() => ctrl.randomizeMatrix()}>🎲 New Rules</button>
           <button onClick={() => ctrl.resetParticles()}>↺ Reset</button>

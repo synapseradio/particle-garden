@@ -74,8 +74,9 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       "sphRadiusFraction",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
       "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
-      # climateSpeed drives the drifting climate.
-      "climateSpeed",
+      # climateSpeed drives the drifting climate; forceWeatherSpeed drives the
+      # force weather, the second waypoint table on the same tour.
+      "climateSpeed", "forceWeatherSpeed",
       # cameraZoom is view state, routed through psCamera to the live camera
       # rather than to CONFIG, which is also why it never reaches the preset
       # schema.

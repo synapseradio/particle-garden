@@ -36,6 +36,9 @@ export function createPanelController(api: GardenAPI) {
   const [climateDrift, setClimateDriftSignal] = createSignal(
     api.getClimateDrift(),
   );
+  const [forceWeather, setForceWeatherSignal] = createSignal(
+    api.getForceWeather(),
+  );
   const [paletteScheme, setPaletteSchemeSignal] = createSignal(
     api.getPaletteScheme(),
   );
@@ -85,6 +88,7 @@ export function createPanelController(api: GardenAPI) {
     setColormapSignal(api.getColormap());
     setRdRegimeSignal(api.getRdRegime());
     setClimateDriftSignal(api.getClimateDrift());
+    setForceWeatherSignal(api.getForceWeather());
     setPaletteSchemeSignal(api.getPaletteScheme());
     setPaletteCustomSignal(api.isPaletteCustom());
     bumpMatrix();
@@ -139,6 +143,7 @@ export function createPanelController(api: GardenAPI) {
     colormap,
     rdRegime,
     climateDrift,
+    forceWeather,
     paletteScheme,
     paletteCustom,
     matrixVersion,
@@ -211,6 +216,10 @@ export function createPanelController(api: GardenAPI) {
     setClimateDrift(enabled: boolean) {
       api.setClimateDrift(enabled);
       setClimateDriftSignal(api.getClimateDrift());
+    },
+    setForceWeather(enabled: boolean) {
+      api.setForceWeather(enabled);
+      setForceWeatherSignal(api.getForceWeather());
     },
     setColormap(index: number) {
       api.setColormap(index);

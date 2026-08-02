@@ -76,6 +76,14 @@ type
                               ## unasked.
     climateSpeed*: float      ## Tours of the named regimes per minute, when
                               ## drift is on. See climate_core.
+    forceWeather*: bool       ## Whether the force parameters wander on their
+                              ## own. Off by default, on the same terms the
+                              ## climate is: a weather moves a user's sliders
+                              ## only once they ask for it.
+    forceWeatherSpeed*: float ## Tours of the force waypoints per minute, when
+                              ## the force weather is on. Independent of
+                              ## climateSpeed — the two weathers run separately
+                              ## and neither paces the other.
 
 func initSimulationState*(): SimulationState =
   ## The authoritative physics defaults (copied into CONFIG by createConfig).
@@ -117,5 +125,7 @@ func initSimulationState*(): SimulationState =
     rdDeposit: RD_DEFAULT_DEPOSIT,
     rdFieldForce: RD_DEFAULT_FIELD_FORCE,
     climateDrift: false,
-    climateSpeed: CLIMATE_DEFAULT_SPEED
+    climateSpeed: CLIMATE_DEFAULT_SPEED,
+    forceWeather: false,
+    forceWeatherSpeed: FORCE_WEATHER_DEFAULT_SPEED
   )

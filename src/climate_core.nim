@@ -133,3 +133,65 @@ const
     ## tests/test_climate_core.nim sweeps the whole loop and fails if any step
     ## exceeds it, so raising CLIMATE_SPEED_MAX past what the loop can carry
     ## goes red here rather than making the weather jump.
+  CLIMATE_MAX_STEPS*: array[ClimateAxis, float] = [
+    caFeed: CLIMATE_MAX_STEP,
+    caKill: CLIMATE_MAX_STEP,
+  ]
+    ## The ceiling the sweep reads, per axis. Feed and kill share a scale so
+    ## they share a number; a weather whose axes do not share a scale states one
+    ## ceiling each rather than borrowing its widest axis's.
+
+# ------------------------------------------------------------------------------
+# The force weather: a second table on the same tour
+# ------------------------------------------------------------------------------
+
+type ForceAxis* = enum
+  ## The force weather's axes. Three, where the climate has two, which is the
+  ## arity the tour reads off the table rather than off either weather.
+  fxStrength
+  fxRadius
+  fxFriction
+
+const FORCE_WEATHER_PARAM_IDS*: array[ForceAxis, string] = [
+  fxStrength: "forceStrength",
+  fxRadius: "interactionRadius",
+  fxFriction: "friction",
+]
+  ## Which parameters this weather writes, named here and nowhere else, on the
+  ## same terms as CLIMATE_PARAM_IDS: an axis added to the enum without an id
+  ## here fails the build rather than moving the simulation past a panel that
+  ## has quietly stopped reporting one coordinate.
+
+func forceWeatherTour(): array[FORCE_WEATHER_WAYPOINTS.len,
+                               array[ForceAxis, float]] =
+  ## The waypoint table as tour points. config_ranges stays the one home of
+  ## those numbers; this projects them and inherits the static in-range
+  ## assertion made over them there.
+  for index, waypoint in FORCE_WEATHER_WAYPOINTS:
+    result[index] = [fxStrength: waypoint.strength,
+                     fxRadius: waypoint.radius,
+                     fxFriction: waypoint.friction]
+
+const
+  FORCE_WEATHER_TOUR* = forceWeatherTour()
+    ## The waypoint table the force weather walks.
+  FORCE_WEATHER_DEFAULT_SPEED* = 0.5
+    ## One tour of the force waypoints every two minutes, twice the climate's
+    ## rate. The climate is slow because a Gray-Scott morphology needs time to
+    ## develop after it ignites; a force parameter reaches the particles on the
+    ## next frame, so this weather can move sooner without arriving somewhere
+    ## before the last place became visible. [?]
+  FORCE_WEATHER_MAX_STEPS*: array[ForceAxis, float] = [
+    fxStrength: 0.01,
+    fxRadius: 0.30,
+    fxFriction: 0.001,
+  ]
+    ## The largest a single advance may move each force axis, in that axis's own
+    ## slider units, at FORCE_WEATHER_SPEED_MAX and a 1/60 s frame.
+    ##
+    ## Per axis rather than one number, because these three axes span three
+    ## scales: a ceiling loose enough for the radius (0 to 150) would let
+    ## friction (0 to 0.5) jump its whole range in a frame and assert nothing.
+    ## Each is set near a fiftieth of its axis's range, which the sweep in
+    ## tests/test_climate_core.nim measures the loop against; a waypoint edit
+    ## that widens a segment past what its speed can carry goes red there.

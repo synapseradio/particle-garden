@@ -11,6 +11,10 @@ import type {
 // would satisfy a test written against those while ignoring what Nim served,
 // which is the drift these tests exist to catch.
 const CLIMATE_IDS = ["windSpeed", "windAngle"];
+// The force weather's written parameters, invented here for the same reason
+// the climate's are: a controller that hardcoded the shipped ids would pass a
+// test written against them while ignoring what Nim served.
+const FORCE_WEATHER_IDS = ["tideDepth", "tidePull", "tideDrag"];
 const OTHER_ID = "friction";
 
 function descriptorFor(id: string): ParamDescriptor {
@@ -102,6 +106,9 @@ function fakeGarden() {
     getClimateDrift: () => true,
     setClimateDrift: () => {},
     climateParamIds: () => CLIMATE_IDS,
+    getForceWeather: () => false,
+    setForceWeather: () => {},
+    forceWeatherParamIds: () => FORCE_WEATHER_IDS,
     colormaps: () => [],
     getColormap: () => 0,
     setColormap: () => {},

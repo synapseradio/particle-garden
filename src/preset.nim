@@ -131,6 +131,8 @@ type
     rdFieldForce*: float
     climateDrift*: bool
     climateSpeed*: float
+    forceWeather*: bool
+    forceWeatherSpeed*: float
     bloomEnabled*: bool
     bloomIntensity*: float
     exposure*: float
@@ -249,6 +251,8 @@ func defaultSettings*(): PresetSettings =
     # preset missing these restores a world that moves only when asked.
     climateDrift: false,
     climateSpeed: 0.25,
+    forceWeather: false,
+    forceWeatherSpeed: 0.5,
     # Mirrors bloom_core.BLOOM_DEFAULT_* as literals rather than an import,
     # for the same dependency-restriction reason as the sph/rd defaults above.
     bloomEnabled: false,
@@ -420,6 +424,17 @@ proc validateSettings(node: JsonNode): PresetSettings =
   result.climateSpeed = clampFloat(
     field(node, "climateSpeed").getFloat(defaults.climateSpeed),
     CLIMATE_SPEED_MIN, CLIMATE_SPEED_MAX)
+  # NO LEGACY PINNING FOR THESE TWO, and that is the rule rather than an
+  # oversight. The versioned decode pins a field only where its shipped default
+  # differs from the value that preserves a saved world (crowdingStrength and
+  # the fluid fraction are the two that do). Force weather ships off, and off is
+  # also what every world saved before it existed was running, so the default
+  # already preserves them and a v1 case here would assert nothing.
+  result.forceWeather =
+    field(node, "forceWeather").getBool(defaults.forceWeather)
+  result.forceWeatherSpeed = clampFloat(
+    field(node, "forceWeatherSpeed").getFloat(defaults.forceWeatherSpeed),
+    FORCE_WEATHER_SPEED_MIN, FORCE_WEATHER_SPEED_MAX)
   result.bloomEnabled = field(node, "bloomEnabled").getBool(defaults.bloomEnabled)
   result.bloomIntensity = clampFloat(
     field(node, "bloomIntensity").getFloat(defaults.bloomIntensity), BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX)
@@ -681,6 +696,8 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["rdFieldForce"] = %settings.rdFieldForce
   result["climateDrift"] = %settings.climateDrift
   result["climateSpeed"] = %settings.climateSpeed
+  result["forceWeather"] = %settings.forceWeather
+  result["forceWeatherSpeed"] = %settings.forceWeatherSpeed
   result["bloomEnabled"] = %settings.bloomEnabled
   result["bloomIntensity"] = %settings.bloomIntensity
   result["exposure"] = %settings.exposure

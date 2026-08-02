@@ -1929,29 +1929,79 @@ are two waypoint tables for one loop. This group adds a TABLE, never a loop.
       a floor under the weather, not part of it), pick four to six worth watching, and record the
       selection criteria beside the table. If C1's default is not yet calibrated, choose
       waypoints at crowding strength 0 and note that beside the table.
-- [ ] 4.2 `src/config_ranges.nim`: `FORCE_WEATHER_WAYPOINTS` beside the ranges its coordinates must
+      STILL OPEN, and it is the only thing standing between this group and done. 4.2-4.5 shipped
+      against PROVISIONAL coordinates so the machinery could land and be measured; this task
+      replaces the five coordinate triples in `FORCE_WEATHER_WAYPOINTS` and nothing else. The
+      construction they were chosen by is recorded beside the table for exactly that handover.
+      ONE AXIS DECISION IS ALREADY CLOSED and needs no watching to confirm: `ruleTemperature` is
+      excluded because it feeds `sampleRuleValue` alone, so touring it moves a slider and changes
+      nothing visible until something re-randomises the matrix. Three axes ship.
+- [x] 4.2 `src/config_ranges.nim`: `FORCE_WEATHER_WAYPOINTS` beside the ranges its coordinates must
       satisfy, with a static in-range assertion over every axis — the same construction as
       `RD_REGIMES` (`:131`), for the same reason: a waypoint outside a range fails the build.
-- [ ] 4.3 `tests/test_climate_core.nim`: register the force table with the generalised tour's sweep
+      DONE. Five waypoints over `forceStrength`, `interactionRadius` and `friction`, beside those
+      three ranges, with a `doAssert` loop per axis carrying the reason the check is sharper here
+      than for a regime notch: the tour INTERPOLATES between waypoints, so convexity is what lets
+      the frame loop write with no clamp, and convexity only helps while every waypoint already
+      sits inside the box. `climate_core.forceWeatherTour()` projects the table the way
+      `rdClimateTour()` projects RD_REGIMES, so config_ranges stays the one home of the numbers.
+      COORDINATES ARE PROVISIONAL pending 4.1 and say so in their own docstring. [?]
+- [x] 4.3 `tests/test_climate_core.nim`: register the force table with the generalised tour's sweep
       tests, so `in-range by convexity`, `continuity at every handover`, and `no step exceeds the
       configured maximum delta at the maximum offerable speed` all run per-table over the same
       advance implementation. Expected: green if 9.4a generalised correctly; a failure here is a
       finding about 9.4a, not about the table.
-- [ ] 4.4 `forceWeather` toggle and `forceWeatherSpeed` (tours per minute, wall-clock, off by
+      DONE, and 9.4a HAD ONE DEFECT, found exactly where this task predicted one could be.
+      `checkNoStepExceeds` took a SCALAR ceiling and applied it to every axis. That is expressible
+      for the climate, whose two axes share a scale, and vacuous for any table whose axes do not:
+      the force table spans 0-5, 10-150 and 0-0.5, so a ceiling loose enough for the radius lets
+      friction cross its entire range in one frame and assert nothing. The ceiling is now per axis
+      — `CLIMATE_MAX_STEPS`, `PROBE_MAX_STEPS`, `FORCE_WEATHER_MAX_STEPS` — which changed the
+      template and all three call sites while leaving one advance implementation, and preserved the
+      climate's meaning exactly (both its axes carry the same `CLIMATE_MAX_STEP` they always did).
+      The other three guarantees registered unchanged, which is the generalisation working.
+      `the two weathers tour different arities on one implementation` states the arity difference
+      the tour is built to carry.
+- [x] 4.4 `forceWeather` toggle and `forceWeatherSpeed` (tours per minute, wall-clock, off by
       default) in `src/ui/state/` sim config, `src/config_ranges.nim`, the descriptor table, and the
       preset schema with clamping and a round-trip test — the same four sites the climate's pair
       already occupies. These two need NO legacy-decode pinning — off is both the shipped default
       and the value that preserves a saved world — and a comment beside the decode branch says so,
       so nobody adds a pointless case; only fields whose default differs from the preserving value
       (1.8, 2.5) are pinned there.
-- [ ] 4.5 `src/app.nim` frame loop and `web-ui/src/`: advance the force tour beside the climate tour
+      DONE across all four, plus `config.nim`'s CONFIG mirror and `web_api`'s snapshot, apply and
+      getParam paths, which the climate's pair also occupies. The speed bounds are
+      `FORCE_WEATHER_SPEED_MIN/MAX`, defined AS `CLIMATE_SPEED_MIN/MAX`: same unit, same offerable
+      band, one number, two names so a measured reason to widen one lands in one edit.
+      `FORCE_WEATHER_DEFAULT_SPEED` (0.5, twice the climate's rate) sits in `climate_core` beside
+      `CLIMATE_DEFAULT_SPEED`, where tour defaults live, rather than in config_ranges, which holds
+      ranges. Its reasoning — a force parameter reaches the particles next frame where a Gray-Scott
+      morphology needs time to develop — is argued rather than measured. [?]
+      The no-pinning comment is in `preset.nim` beside the decode, and
+      `a preset saved before the force weather existed loads it switched off` states the same thing
+      as a test. Descriptor group is `simulation`, where the toured force sliders document, and
+      `docs/help/10-simulation.md` carries the feature's help text with the control.
+- [x] 4.5 `src/app.nim` frame loop and `web-ui/src/`: advance the force tour beside the climate tour
       through `setParamFromSimulation`, and surface both through whatever climate-output mechanism
       exists after task 8.11 (push channel or 4 Hz poll) — extend it, do not add a parallel one.
+      DONE. `forceWeatherPhase` sits beside `climatePhase` as loop bookkeeping, separate so
+      switching one weather on never drags the other to where it had wandered. The write path is
+      `web_api.setForceWeatherFromSimulation`, built on `setClimateFromSimulation`'s terms: clamped
+      descriptor path so the sliders move, whole point in one mirror cycle rather than one per
+      axis. The existing `pushStats` `params` channel was EXTENDED rather than duplicated — the
+      force ids join the climate's in the same loop. The panel gets the toggle under the sliders it
+      moves, with the speed slider revealed only while it is on.
+      THE RADIUS ROUNDS, and that is a real seam this task created: `interactionRadius` is an int
+      and the tour interpolates in floats, so `setForceWeatherFromSimulation` rounds. The tour's
+      continuity guarantees stay stated of the float path they are proven of; what reaches the eye
+      is a radius slider stepping by one unit in a hundred and forty, which is what a drag on that
+      slider already shows.
 - [ ] 4.6 Run `./main`: the weather visibly wanders without popping; then turn the RD climate and the
       force weather on together and watch a forces+field world — their combined effect is unmeasured
       (design Risks) [?]; record what is seen beside the waypoint table, and if the combination
       misbehaves, report it rather than tuning either loop to compensate.
-- [ ] 4.7 `just happen` and `just check` green.
+- [x] 4.7 `just happen` and `just check` green.
+      Both exit 0: 842 native [OK] lines with no failures (up from 831), bun 66 pass / 0 fail.
 
 ## 5. Verification and record
 

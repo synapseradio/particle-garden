@@ -213,6 +213,14 @@ export interface GardenAPI {
   // so an axis added there reaches the panel without a TypeScript edit.
   climateParamIds(): string[];
 
+  // Drifting force parameters ("force weather"). A second waypoint table on the
+  // same tour, with its own switch and its own speed, so the two weathers run
+  // independently.
+  getForceWeather(): boolean;
+  setForceWeather(enabled: boolean): void;
+  // Asked for rather than listed, on the same terms climateParamIds is.
+  forceWeatherParamIds(): string[];
+
   colormaps(): ColormapEntry[];
   getColormap(): number;
   setColormap(index: number): void;

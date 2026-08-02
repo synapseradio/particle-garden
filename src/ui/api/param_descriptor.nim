@@ -654,6 +654,17 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       hint = "tours of the named regimes per minute, while Weather is on",
       probe = "climate.phaseStep",
       horizon = rhSettling, horizonReview = true),
+    # "simulation", where friction and the other toured force parameters
+    # document, rather than "rd" beside the climate speed it shares a tour
+    # implementation with: someone asking what moved their force sliders looks
+    # where those sliders are. It reads the same probe because the observable is
+    # the same one — phase advanced per second, whatever table lies underneath.
+    floatParam("forceWeatherSpeed", "Force Drift", "simulation",
+      FORCE_WEATHER_SPEED_MIN, FORCE_WEATHER_SPEED_MAX, sim.forceWeatherSpeed,
+      2, psSimulation,
+      hint = "tours of the force waypoints per minute, while Force Weather is on",
+      probe = "climate.phaseStep",
+      horizon = rhSettling, horizonReview = true),
     # "rd-field" rather than "rd": this is the field's appearance, not its
     # physics, and the panel puts the colormap selector between the two groups.
     floatParam("fieldOpacity", "Field Opacity", "rd-field",

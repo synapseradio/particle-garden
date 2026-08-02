@@ -54,6 +54,7 @@ Span, live fraction, and cliff per declared slice, at the calibrated thresholds 
 | rdDeposit | default | 0.2105 | 1.000 | 0.013 | none | 0.00-1.00 | pass |
 | rdFieldForce | default | 1.0000 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
 | climateSpeed | default | 0.9750 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
+| forceWeatherSpeed | default | 0.9750 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | fieldOpacity | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | secretion | default | 2.0000 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | tropism | default | 1.5000 | 1.000 | 0.007 | none | 0.00-1.00 | pass |

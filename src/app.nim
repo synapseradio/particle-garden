@@ -93,6 +93,11 @@ var climatePhase {.exportc.}: float = 0
   ## rather than in the typed state because it is loop bookkeeping like
   ## lastTime: nothing reads it but the loop, no preset saves it, and it wraps
   ## rather than accumulating.
+var forceWeatherPhase {.exportc.}: float = 0
+  ## Position on the closed force tour, on the same terms. Separate from
+  ## climatePhase so each weather holds its own place: sharing one would drag
+  ## the forces to wherever the climate had wandered the moment someone switched
+  ## the force weather on.
 
 # Per-frame timing staging; folded into runtimeState via withTiming each frame
 var currentTiming* = initTimingState()
@@ -259,6 +264,15 @@ proc loop(now: float): Future[void] {.async.} =
     climatePhase = tourAdvance(
       climatePhase, config.CONFIG.climateSpeed, cappedDt)
     web_api.setClimateFromSimulation(tourAt(RD_CLIMATE_TOUR, climatePhase))
+
+  # The force weather, on the same terms and the same wall clock. Its own phase,
+  # so switching one weather on does not move the other's position, and its own
+  # speed, so the two can run at rates that suit what each of them changes.
+  if config.CONFIG.forceWeather:
+    forceWeatherPhase = tourAdvance(
+      forceWeatherPhase, config.CONFIG.forceWeatherSpeed, cappedDt)
+    web_api.setForceWeatherFromSimulation(
+      tourAt(FORCE_WEATHER_TOUR, forceWeatherPhase))
 
   await physics(dt)
 

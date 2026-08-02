@@ -39,6 +39,7 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check defaults.rdDeposit == RD_DEFAULT_DEPOSIT
     check defaults.rdFieldForce == RD_DEFAULT_FIELD_FORCE
     check defaults.climateSpeed == CLIMATE_DEFAULT_SPEED
+    check defaults.forceWeatherSpeed == FORCE_WEATHER_DEFAULT_SPEED
 
   test "the default chemistry equals the per-species defaults it mirrors":
     let chemistry = defaultChemistry()
@@ -188,6 +189,39 @@ suite "Preset Round-Trip Contract":
     ## selection among worlds. A `mode` key on the wire is a world type under a
     ## label, and every reader then has to decide what it means.
     check not toJson(defaultPreset()).hasKey("mode")
+
+suite "The Force Weather Survives A Preset":
+  test "a saved force weather round-trips its switch and its speed":
+    var saved = defaultPreset()
+    saved.settings.forceWeather = true
+    saved.settings.forceWeatherSpeed = 1.25
+    let loaded = parsePreset(toJsonString(saved))
+    check loaded.isOk
+    check loaded.preset.settings.forceWeather
+    check loaded.preset.settings.forceWeatherSpeed == 1.25
+
+  test "a force weather speed outside the range clamps on the way in":
+    let tooFast = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {"forceWeatherSpeed": FORCE_WEATHER_SPEED_MAX + 10.0}})
+    check tooFast.preset.settings.forceWeatherSpeed == FORCE_WEATHER_SPEED_MAX
+    let tooSlow = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {"forceWeatherSpeed": FORCE_WEATHER_SPEED_MIN - 10.0}})
+    check tooSlow.preset.settings.forceWeatherSpeed == FORCE_WEATHER_SPEED_MIN
+
+  test "a preset saved before the force weather existed loads it switched off":
+    # NOT A PINNED LEGACY BRANCH, and the distinction is the point. Off is both
+    # the shipped default and the state every older world was running, so the
+    # default alone preserves them — unlike crowdingStrength, whose non-zero
+    # default would otherwise reach back and change a saved world. A v1 case for
+    # these two would assert nothing.
+    let older = validate(%*{
+      "schemaVersion": 1, "mode": "particle-life",
+      "settings": {"forceStrength": 1.5}})
+    check not older.preset.settings.forceWeather
+    check older.preset.settings.forceWeatherSpeed == FORCE_WEATHER_DEFAULT_SPEED
+
 
 suite "Preset Schema Version Contract":
   test "a preset claiming a newer schemaVersion is rejected":
