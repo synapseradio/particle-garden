@@ -435,60 +435,98 @@ when defined(js):
   # SECTION 6: PARAMETER GET / SET / COMMIT
   # ============================================================================
 
+  const ReadElsewhere = ["paletteSaturation", "paletteLightness",
+    "sphStiffness", "cameraZoom"]
+    ## The ids whose answer does not live in a CONFIG field of the same name.
+    ## getParamImpl serves each with its own arm and the gate below exempts
+    ## exactly these, so an id drops out of the generated read only by being
+    ## named here, in one place, beside the arm that then owes a reason.
+
+  proc readParamField[T](record: T; id: string; value: var float): bool =
+    ## Read the field of `record` whose NAME is `id` into `value`, and report
+    ## whether such a field exists.
+    ##
+    ## The read counterpart of assignParamField below, walking by fieldPairs for
+    ## the same reason: a descriptor id and a CONFIG field of the same name need
+    ## no third place declaring that they belong together. Integer fields widen,
+    ## which is what the panel's one numeric channel carries.
+    for name, field in record.fieldPairs:
+      when field is int:
+        if name == id:
+          value = field.float
+          return true
+      elif field is float:
+        if name == id:
+          value = field
+          return true
+    false
+
   proc getParamImpl(id: string): float =
     case id
-    of "particleCount": CONFIG.particleCount.float
-    of "speciesCount": CONFIG.speciesCount.float
-    of "interactionRadius": CONFIG.interactionRadius.float
-    of "forceStrength": CONFIG.forceStrength
-    of "crowdingStrength": CONFIG.crowdingStrength
-    of "friction": CONFIG.friction
-    of "timeScale": CONFIG.timeScale
-    of "ruleTemperature": CONFIG.ruleTemperature
-    of "maxVelocity": CONFIG.maxVelocity
-    of "particleSize": CONFIG.particleSize.float
-    of "trailLength": CONFIG.trailLength
-    of "glowIntensity": CONFIG.glowIntensity
-    of "velocityGlowScale": CONFIG.velocityGlowScale
-    of "glowRadiusScale": CONFIG.glowRadiusScale
-    of "glowFalloff": CONFIG.glowFalloff
-    of "glowWarmth": CONFIG.glowWarmth
-    of "bloomIntensity": CONFIG.bloomIntensity
-    of "exposure": CONFIG.exposure
-    of "saturation": CONFIG.saturation
-    of "contrast": CONFIG.contrast
-    of "temperature": CONFIG.temperature
-    of "repulsionEnd": CONFIG.repulsionEnd
-    of "attractionPeak": CONFIG.attractionPeak
-    of "expRepulsionAlpha": CONFIG.expRepulsionAlpha
-    of "expAttractionBeta": CONFIG.expAttractionBeta
-    of "paletteSaturation": paletteEditorState.saturation
-    of "paletteLightness": paletteEditorState.lightness
-    of "sphRestDensity": CONFIG.sphRestDensity
-    of "fluidStrength": CONFIG.fluidStrength
-    # The STORED stiffness, not the mirrored one. CONFIG holds what the fluid
-    # runs, which its ceiling may have bounded; the panel asks what the user
-    # chose, and a slider whose handle slid on its own because a different
-    # control moved would be reporting the clamp as a preference.
-    of "sphStiffness": currentSimulation.sphStiffness
-    of "sphRadiusFraction": CONFIG.sphRadiusFraction
-    of "sphViscosity": CONFIG.sphViscosity
-    of "sphSubsteps": CONFIG.sphSubsteps.float
-    of "rdFeed": CONFIG.rdFeed
-    of "rdKill": CONFIG.rdKill
-    of "rdDeposit": CONFIG.rdDeposit
-    of "rdFieldForce": CONFIG.rdFieldForce
-    of "climateSpeed": CONFIG.climateSpeed
-    of "forceWeatherSpeed": CONFIG.forceWeatherSpeed
-    of "fieldOpacity": CONFIG.fieldOpacity
-    # Read back from the live camera, not from CONFIG — it is not there. The
-    # panel needs this so the slider tracks a zoom the WHEEL performed.
+    of "paletteSaturation": return paletteEditorState.saturation
+    of "paletteLightness": return paletteEditorState.lightness
+    of "sphStiffness":
+      # The STORED stiffness, not the mirrored one. CONFIG holds what the fluid
+      # runs, which its ceiling may have bounded; the panel asks what the user
+      # chose, and a slider whose handle slid on its own because a different
+      # control moved would be reporting the clamp as a preference.
+      return currentSimulation.sphStiffness
     of "cameraZoom":
-      if canvas_input.cameraGetter.isNil: CAMERA_DEFAULT_ZOOM.float
-      else: canvas_input.cameraGetter().zoom.float
-    else:
-      consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
-      0.0
+      # Read back from the live camera, not from CONFIG — it is not there. The
+      # panel needs this so the slider tracks a zoom the WHEEL performed.
+      if canvas_input.cameraGetter.isNil: return CAMERA_DEFAULT_ZOOM.float
+      return canvas_input.cameraGetter().zoom.float
+    else: discard
+
+    var value = 0.0
+    if readParamField(CONFIG[], id, value):
+      return value
+    consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
+    0.0
+
+  static:
+    # THE READ GATE, the counterpart of the write gate below. Every descriptor
+    # the scalar path serves must be answerable: either its id names a CONFIG
+    # field, or ReadElsewhere names it and getParamImpl carries its arm.
+    #
+    # WHAT IT PREVENTS. A descriptor whose id is a real state field but which
+    # nobody added a read arm for used to build green and write correctly while
+    # getParam answered 0.0 forever, so the slider showed zero and snapped back
+    # to it. Nothing else notices: the write path's gate passes, because the
+    # write path was never the broken half.
+    #
+    # WHAT THE FAILURE LOOKS LIKE. Same shape as the write gate's: `nim js`
+    # stops with exit code 1 at the `error` line below, naming the id inside
+    # quotes, and web/app.js on disk stays the last good one.
+    #
+    # Per-species chemistry is excluded rather than exempted: those descriptors
+    # carry one value per species in a live array, so getParam has no single
+    # number to answer with and the panel reads the cells directly.
+    var configProbe = default(typeof(CONFIG[]))
+    for descriptor in buildParamDescriptors():
+      if descriptor.store == psSpeciesChemistry:
+        continue
+      if descriptor.id in ReadElsewhere:
+        continue
+      var probeValue = 0.0
+      if not readParamField(configProbe, descriptor.id, probeValue):
+        error("[gardenAPI] descriptor \"" & descriptor.id &
+          "\" names no numeric ConfigObject field, so getParam would answer " &
+          "0.0 for it; give it a CONFIG field or an arm in getParamImpl and " &
+          "name it in ReadElsewhere")
+
+    # ReadElsewhere earns its exemptions or loses them. Without this an id that
+    # left the descriptor set would keep an arm nobody reaches, and the next
+    # descriptor to reuse that id would inherit a silent exemption from the
+    # walk above.
+    for exempt in ReadElsewhere:
+      var named = false
+      for descriptor in buildParamDescriptors():
+        if descriptor.id == exempt:
+          named = true
+      if not named:
+        error("[gardenAPI] ReadElsewhere names \"" & exempt &
+          "\", which no descriptor declares; drop it and its getParamImpl arm")
 
   proc assignParamField[T](record: var T; id: string; value: float): bool =
     ## Write `value` into the field of `record` whose NAME is `id`, and report
