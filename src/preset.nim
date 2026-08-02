@@ -212,10 +212,10 @@ func defaultSettings*(): PresetSettings =
     ruleTemperature: 0.3,
     timeScale: 0.5,
     particleSize: 3,
-    trails: true,
-    trailLength: 50.0,
-    glowIntensity: 0.03,
-    velocityGlowScale: 0.0,
+    trails: false,
+    trailLength: 0.0,
+    glowIntensity: 0.8,
+    velocityGlowScale: 1.0,
     maxVelocity: 50.0,
     repulsionEnd: 0.5,
     attractionPeak: 0.75,
@@ -227,7 +227,7 @@ func defaultSettings*(): PresetSettings =
     glowWarmth: 0.4,
     # Mirrors simulation_state.initSimulationState's fluidStrength: the shipped
     # world runs no fluid, so a preset that never mentions one restores none.
-    fluidStrength: 1.0,
+    fluidStrength: 0.0,
     sphRestDensity: 3.0,
     sphStiffness: 8.0,
     # Mirrors simulation_state.initSimulationState's sphRadiusFraction: the

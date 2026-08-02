@@ -11,6 +11,7 @@ import ../src/field_core     # and the chemistry defaults it mirrors
 import ../src/climate_core   # and the climate speed default
 import ../src/ui/api/param_descriptor
 import ../src/ui/state/simulation_state
+import ../src/ui/state/render_state
 
 const PRESET_TESTS_LOADED* = true
 
@@ -55,11 +56,54 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check defaults.glowFalloff == clamp(defaults.glowFalloff, GLOW_FALLOFF_MIN, GLOW_FALLOFF_MAX)
     check defaults.glowWarmth == clamp(defaults.glowWarmth, GLOW_WARMTH_MIN, GLOW_WARMTH_MAX)
 
-  test "glow knob defaults mirror config.nim's createConfig":
+  test "every preset default equals the state field that owns it":
+    # THE TOTAL RELATION, and the reason the per-key test that used to sit here
+    # went away: that one pinned three glow defaults to their own literals, so
+    # it stayed green when render_state moved and could only ever cover the keys
+    # somebody remembered to add. This walks PresetSettings, SimulationState and
+    # RenderState by fieldPairs, so a field added to any of the three is covered
+    # without editing this test.
+    #
+    # preset.nim carries these as literals because its imports are restricted to
+    # config_ranges and palette (see its header). Here both sides are
+    # importable, so here is where the agreement is held.
     let defaults = defaultSettings()
-    check defaults.glowRadiusScale == 3.0
-    check defaults.glowFalloff == 6.0
-    check defaults.glowWarmth == 0.4
+    let sim = initSimulationState()
+    let render = initRenderState()
+    var total = 0
+    var owned = 0
+    for presetName, presetValue in defaults.fieldPairs:
+      inc total
+      var found = false
+      for simName, simValue in sim.fieldPairs:
+        when typeof(presetValue) is typeof(simValue):
+          if presetName == simName:
+            # Checkpointed only on disagreement: unittest prints every
+            # checkpoint the test accumulated, so an unconditional one here
+            # would bury the offending field under all forty-three others.
+            if presetValue != simValue:
+              checkpoint("preset default \"" & presetName & "\" is " &
+                $presetValue & ", SimulationState owns " & $simValue)
+            check presetValue == simValue
+            found = true
+      for renderName, renderValue in render.fieldPairs:
+        when typeof(presetValue) is typeof(renderValue):
+          if presetName == renderName:
+            if presetValue != renderValue:
+              checkpoint("preset default \"" & presetName & "\" is " &
+                $presetValue & ", RenderState owns " & $renderValue)
+            check presetValue == renderValue
+            found = true
+      if not found:
+        checkpoint("preset key \"" & presetName &
+          "\" names no field of either state record")
+      check found
+      if found: inc owned
+
+    # NON-VACUITY. Both lines exist so this cannot pass by comparing nothing:
+    # the walk must have run, and every key it saw must have found an owner.
+    check total > 0
+    check owned == total
 
   test "an out-of-range crowding strength clamps instead of rejecting":
     # Same treatment every slider-backed field gets, against the same authority
