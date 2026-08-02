@@ -72,14 +72,18 @@ const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full bright
 
 const FIELD_LIGHT_STRENGTH: f32 = {{FIELD_LIGHT_STRENGTH}};
 
+// Tail length in particle radii at which the motion-blur taper reaches full
+// depth. Substituted from trail_core.TRAIL_TAPER_FULL_ELONGATION, which
+// tests/test_trail_core.nim measures; the two cannot drift.
+const TAPER_FULL_ELONGATION: f32 = {{TRAIL_TAPER_FULL_ELONGATION}};
+
 struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) color: vec4f,       // RGBA color with pre-multiplied alpha
   @location(1) offset: vec2f,      // Local offset from particle center (for circle calc)
   @location(2) density: f32,       // Local particle density for glow effect
-  @location(3) trailPos: f32,      // Position along trail: -1 (tail) to 1 (head)
-  @location(4) alongN: f32,        // Along-velocity position in radius units (capsule spine coord)
-  @location(5) elongN: f32,        // Tail length in radius units (per-particle constant)
+  @location(3) alongN: f32,        // Along-velocity position in radius units (capsule spine coord)
+  @location(4) elongN: f32,        // Tail length in radius units (per-particle constant)
 };
 
 @vertex
@@ -113,27 +117,13 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Transform corner offset from axis-aligned to velocity-aligned
   // cornerOffset.x: along velocity axis (positive = head, negative = tail)
   // cornerOffset.y: perpendicular to velocity
-  var alongVel: f32;
-  var trailPosVal: f32;
-
-  if (cornerOffset.x < 0.0) {
-    // Tail vertices: extend backward by elongation
-    alongVel = cornerOffset.x * halfSize - elongation;
-    if (elongation > 0.0) {
-      // Motion blur active: mark this vertex as trail body so the fragment draws
-      // the elongated capsule and tapers alpha toward the tail.
-      let totalLength = halfSize + elongation;
-      trailPosVal = alongVel / totalLength;  // Negative = further back in trail
-    } else {
-      // No elongation: the whole quad is the particle head, so the fragment takes
-      // the circular path (length(offset)) at full alpha — a clean disc.
-      trailPosVal = 1.0;
-    }
-  } else {
-    // Head vertices: stay at normal position
-    alongVel = cornerOffset.x * halfSize;
-    trailPosVal = 1.0;  // Head of trail
-  }
+  //
+  // Tail vertices extend backward by the elongation; head vertices stay put.
+  // The fragment reads the taper off the spine coordinates below, so nothing
+  // here branches on whether the particle is moving.
+  let alongVel = select(cornerOffset.x * halfSize,
+                        cornerOffset.x * halfSize - elongation,
+                        cornerOffset.x < 0.0);
   let acrossVel = cornerOffset.y * halfSize;
 
   // Compute world offset using velocity-aligned axes. Particle size and trail
@@ -166,9 +156,6 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   // When elongated, we need to adjust offset to maintain circular ends
   output.offset = cornerOffset;
-
-  // Pass trail position for tapered alpha (-1 = tail, 1 = head)
-  output.trailPos = trailPosVal;
 
   // Capsule spine coordinates in radius-normalized units (halfSize > 0 always).
   // alongN interpolates across the quad; elongN is a per-particle constant.
@@ -229,11 +216,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     discard;
   }
 
-  // Trail taper: fade from head (1.0) to tail (0.0)
-  // trailPos: 1 = head, negative = further back in tail
-  // Map to 0-1 range and apply soft falloff
-  let t = clamp((input.trailPos + 1.0) * 0.5, 0.0, 1.0);
-  let tailFade = sqrt(t);  // Soft falloff curve: sqrt gives gentle fade
+  // Trail taper: the tail fades from head to tip, and its DEPTH grows with the
+  // tail rather than switching on with it. Mirrors trail_core.trailTaperAlpha,
+  // which tests/test_trail_core.nim measures; the pair is hand-maintained.
+  //
+  // Depth has to vanish with elongN. Speeds in a settled lattice oscillate
+  // across zero, so a taper applied at full depth to any non-zero tail flashes
+  // every particle between a flat disc and a half-faded one, frame by frame,
+  // while the tail itself stays far too short to see.
+  let spineU = clamp((1.0 - input.alongN) / (2.0 + input.elongN), 0.0, 1.0);
+  let taperDepth = min(input.elongN / TAPER_FULL_ELONGATION, 1.0);
+  let tailFade = 1.0 - taperDepth * (1.0 - sqrt(1.0 - spineU));
 
   let alpha = shapeAlpha * tailFade;
 

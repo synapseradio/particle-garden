@@ -42,6 +42,11 @@ const
     ## Motion-blur elongation render.wgsl applies per diameter of trail
     ## length: dots stretch along their velocity by trailLength * this, so
     ## 100 diameters doubles the stretch (pinned by tests/test_trail_core.nim).
+  TRAIL_TAPER_FULL_ELONGATION* = 1.0
+    ## Tail length, in particle radii, at which the head-to-tip fade reaches
+    ## its full depth. Shorter tails fade proportionally less, so the taper
+    ## grows in step with the tail it decorates rather than switching on with
+    ## it.
 
 func fadeAmountFor*(trailLength: float): float =
   ## The per-frame multiplier the fade pass keeps of the previous frame, for a
@@ -62,6 +67,24 @@ func trailElongationScale*(trailLength: float): float =
   ## `trailLength` diameters. Linear, so the stretch reads as the same effect
   ## the fade lengthens.
   trailLength * TRAIL_ELONGATION_PER_DIAMETER
+
+func trailTaperAlpha*(alongN, elongN: float): float =
+  ## The alpha multiplier render.wgsl's fragment applies along a particle's
+  ## motion-blur spine, so the tail fades toward its tip.
+  ##
+  ## `alongN` is the fragment's position along the velocity axis in radius
+  ## units: +1 at the head edge, -(1 + elongN) at the tail edge. `elongN` is
+  ## the tail's length in the same units, `elongation / halfSize`.
+  ##
+  ## Taper DEPTH scales with elongN, which is what keeps a particle leaving
+  ## rest from flashing. Applying the full curve to any tail longer than zero
+  ## drops a barely-moving particle to a half-faded disc while its tail is
+  ## still too short to see, and speeds in a settled lattice cross zero every
+  ## frame.
+  let e = max(elongN, 0.0)
+  let u = clamp((1.0 - alongN) / (2.0 + e), 0.0, 1.0)
+  let depth = min(e / TRAIL_TAPER_FULL_ELONGATION, 1.0)
+  1.0 - depth * (1.0 - sqrt(1.0 - u))
 
 func fadedAlpha*(previousAlpha, fadeAmount: float): float =
   ## One frame of decay on the trail texture's alpha (fade.wgsl).

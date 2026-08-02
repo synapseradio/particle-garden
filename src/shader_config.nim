@@ -201,6 +201,9 @@ import overlay_core
 # camera_core owns the density size multiplier's floor, which the visibility
 # math and render.wgsl both read.
 from camera_core import DENSITY_SIZE_FLOOR
+# trail_core owns the motion-blur taper, which render.wgsl runs per fragment
+# and tests/test_trail_core.nim measures.
+from trail_core import TRAIL_TAPER_FULL_ELONGATION
 # glow_core is pure; it mirrors glow.wgsl, and takes the same curve constants
 # this module substitutes into that shader. Importing its type is what lets the
 # mirror read them from here instead of carrying a second copy.
@@ -280,6 +283,8 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["OVERLAY_ALPHA"] = fmt"{OVERLAY_ALPHA:.2f}"
 
   result["DENSITY_SIZE_FLOOR"] = fmt"{DENSITY_SIZE_FLOOR:.2f}"
+  result["TRAIL_TAPER_FULL_ELONGATION"] =
+    fmt"{TRAIL_TAPER_FULL_ELONGATION:.2f}"
 
   result["RD_DEPOSIT_SPLAT_RADIUS"] = fmt"{RD_DEPOSIT_SPLAT_RADIUS:.1f}"
   result["RD_DEPOSIT_SPLAT_EXTENT"] = $int(RD_DEPOSIT_SPLAT_RADIUS)

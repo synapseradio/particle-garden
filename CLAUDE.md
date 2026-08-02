@@ -58,7 +58,7 @@ the same diff, or the pair silently drifts.
 | `colormap_core.nim` | `colormap.wgsl`, and `fade.wgsl`'s field drift scale |
 | `camera_core.nim` | `camera_transform.wgsl`, mirrored by `render`, `glow` and `fade` |
 | `glow_core.nim` | `glow.wgsl` (halo radius, falloff, warmth, alpha integral) |
-| `trail_core.nim` | `fade.wgsl` (per-frame decay), plus the trail-length mapping the renderer writes |
+| `trail_core.nim` | `fade.wgsl` (per-frame decay), `render.wgsl`'s motion-blur taper, plus the trail-length mapping the renderer writes |
 
 ## Landmines
 - Render bind groups: counts and shader declarations are build-checked, but which resource lands at each binding is not — verify in a running app.

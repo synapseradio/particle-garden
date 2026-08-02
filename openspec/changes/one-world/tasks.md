@@ -2795,10 +2795,31 @@ needs only the probe machinery from E3.
       floor VALUE is held by test_camera_core's worst-corner assertion, which evaluates the same
       product the zoomFloor slice's low end feeds the probe — one claim, asserted where the
       constant lives, exercised again through the probe path the panel reports from.
+- [x] 12.4a **The floor guards the radius; alpha was throwing the visibility away behind it.** The
+      radius chain 12.1-12.4 secured is only half of what reaches the eye — a particle also carries
+      an alpha, and render.wgsl's motion-blur taper was applying its full head-to-tip fade to any
+      tail longer than zero. `trailPosVal` jumped from +1.0 to -1.0 the instant `elongation` left
+      zero (`cornerOffset.x < 0.0` branch), so a particle one frame out of rest went from a flat
+      disc to one fading to zero alpha across its back half, while its tail still measured a
+      millionth of a radius. Speeds in a settled lattice cross zero every frame, so the whole field
+      flashed at once. It also cost a small particle roughly a third of its mean alpha the moment it
+      moved, on top of the sub-pixel dimming 12.5 goes looking for.
+      DONE. The taper moved to `trail_core.trailTaperAlpha` (mirroring render.wgsl per the reference-
+      oracle contract) with its depth scaled by `TRAIL_TAPER_FULL_ELONGATION`, substituted into the
+      shader by `shader_config` so the pair cannot drift. Deviation from flat alpha is now bounded by
+      the tail length, which is the relation `tests/test_trail_core.nim` measures over a sweep down
+      to elongN = 1e-8; watched red at a deviation of 1.0 where the bound allowed 1e-8. The dead
+      `trailPos` varying went with it. A tail at or past one radius fades exactly as before.
 - [ ] 12.5 Verify in `./main`: minimum particle size, zoomed fully out — every particle remains
-      visible.
+      visible. NOTE: the alpha half of this is what 12.4a fixed, and the coverage antialiasing at
+      `render.wgsl`'s `fwidth(capsuleDist)` is what remains under it — at the worst reachable corner
+      (0.7 px radius) it holds the disc CENTRE at about 0.78 alpha and falls off from there, which
+      `MIN_BRIGHTNESS = 0.44` then multiplies for a lonely particle. Whether that composes to
+      "visible" is what this task has to look at; no MSAA runs, so that smoothstep is the only
+      antialiasing there is and capping it trades edge quality for brightness.
 - [x] 12.6 `just happen` and `just check` green.
       Both exit 0: build clean, 826 native [OK] lines with no failures, bun 66 pass / 0 fail.
+      Re-run after 12.4a: 831 native [OK] (the five new taper tests), bun 66 pass / 0 fail.
 
 ## 13. Documentation and close
 

@@ -133,3 +133,65 @@ suite "The Trail Elongates With Length":
       let length = sweptLength(step)
       check abs(trailElongationScale(length) -
         length * TRAIL_ELONGATION_PER_DIAMETER) < 1e-12
+
+
+suite "The Trail Opens From Rest Without A Step":
+  # A particle at rest and the same particle one frame into motion are one
+  # particle. Its brightness has to say so. Speeds in a settled lattice
+  # oscillate around zero, so any step in this curve at elongN = 0 fires on
+  # every frame that crossing happens — across the whole field at once, which
+  # is what a viewer reports as flicker rather than as motion.
+  const
+    SPINE_SAMPLES = 32
+    OPENING_STEPS = 24
+    TAPER_TOLERANCE = 1e-6
+
+  func sampledAlongN(sample: int, elongN: float): float =
+    ## A point on the spine, from the tail edge to the head edge.
+    let tailEdge = -(1.0 + elongN)
+    tailEdge + (1.0 - tailEdge) * sample.float / SPINE_SAMPLES.float
+
+  test "a motionless particle carries one flat alpha across its whole disc":
+    # elongN = 0 is a plain disc: no spine, nothing to taper along.
+    for sample in 0 .. SPINE_SAMPLES:
+      check abs(trailTaperAlpha(sampledAlongN(sample, 0.0), 0.0) - 1.0) <
+        TAPER_TOLERANCE
+
+  test "the taper never fades deeper than the tail that earns it":
+    # THE MEASUREMENT THAT MATTERS, and it is a relation rather than a
+    # threshold: however far the alpha sits from flat, the tail is at least
+    # that long. Sweeping elongN toward zero therefore squeezes the whole
+    # spine back onto the flat disc above, with no step to cross.
+    #
+    # Applying the full head-to-tip curve to every non-zero tail fails this
+    # at the tail edge for every elongN, by the whole depth of the curve.
+    for step in 1 .. OPENING_STEPS:
+      let elongN = pow(10.0, -step.float / 3.0)
+      for sample in 0 .. SPINE_SAMPLES:
+        let alpha = trailTaperAlpha(sampledAlongN(sample, elongN), elongN)
+        checkpoint("elongN " & $elongN & " alpha " & $alpha)
+        check 1.0 - alpha <= min(elongN, 1.0) + TAPER_TOLERANCE
+
+  test "a tail too short to see leaves the disc flat":
+    # One frame out of rest. The tail measures a millionth of a radius, so
+    # nothing about the particle's brightness may have moved yet.
+    let elongN = 1e-6
+    for sample in 0 .. SPINE_SAMPLES:
+      let alpha = trailTaperAlpha(sampledAlongN(sample, elongN), elongN)
+      check abs(alpha - 1.0) < 1e-5
+
+  test "a tail that is open fades from head to tip":
+    # The taper still has to do its job once the tail is genuinely long.
+    let head = trailTaperAlpha(1.0, 2.0)
+    let tip = trailTaperAlpha(-3.0, 2.0)
+    check head > tip
+    check abs(head - 1.0) < TAPER_TOLERANCE
+    check tip < 0.05
+
+  test "alpha never leaves the range a blend can use":
+    for step in 0 .. OPENING_STEPS:
+      let elongN = step.float * 0.25
+      for sample in 0 .. SPINE_SAMPLES:
+        let alpha = trailTaperAlpha(sampledAlongN(sample, elongN), elongN)
+        check alpha >= 0.0
+        check alpha <= 1.0
