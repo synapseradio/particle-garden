@@ -46,13 +46,28 @@ test:
 test-ui:
     cd web-ui && bun test
 
+# Shell suite for enter / leave / tools/garden.sh
+test-shell:
+    bats tests/shell
+
+# shellcheck over the onboarding scripts (-x follows enter/leave into scripts/lib)
+lint-shell:
+    shellcheck -s bash -S style -x enter leave tools/garden.sh scripts/lib/*.sh
+
 # Shaders first: the bundled web/shaders/*.wgsl are gitignored output, and the
 # binding-set test in tests/test_wgsl_lint.nim reads them. Without this a clone
 # that has never built runs that test against an empty directory.
-check: shaders test test-ui
+check: shaders test test-ui test-shell lint-shell
 
+# Sync project dependencies (idempotent; seconds when already satisfied).
+# Runs inside `be` so a nimble.lock bump can't strand the build.
+deps:
+    nimble install -d -y
+    nimble setup
+
+# Sync deps, build everything, run
 be:
-    git pull
+    just deps
     just happen
     ./main
 

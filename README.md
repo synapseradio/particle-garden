@@ -4,6 +4,19 @@
 
 Thousands of particles attract and repel each other based on simple rules. Different species interact differently, creating emergent behaviors — swarms, orbits, symbiosis, predation.  Very zen.
 
+## Zero-setup install (macOS)
+
+One command sets up everything — the developer tools, the code, and the first
+run — asking before each step:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/synapseradio/particle-garden/HEAD/tools/garden.sh || echo 'echo "Could not download the Particle Garden installer - check your connection and try again." >&2; exit 1')"
+```
+
+Append flags after the closing quote (with a `--` placeholder first), e.g.
+`... )" -- --dry-run` to preview without changing anything. Undo it all later
+with `./leave` inside the created folder.
+
 ## Download
 
 Pre-built binaries on [Releases](https://github.com/synapseradio/particle-garden/releases):
@@ -72,7 +85,7 @@ Quick version:
 ```bash
 git clone https://github.com/synapseradio/particle-garden
 cd particle-garden
-nimble install -y
+nimble install -d -y
 nimble setup
 just happen
 ./main

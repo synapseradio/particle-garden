@@ -1,0 +1,513 @@
+#!/usr/bin/env bash
+#
+# Undo what ./enter installed on this Mac, from the ledger of what it
+# actually did. Homebrew and the Xcode Command Line Tools are never removed.
+#
+# Author: Nick Krause
+# Created: 2026-08-01
+#
+# The shared core (traps, log, confirm, spinner, ledger, lock, is_clone) lives
+# in scripts/lib/ beside this script and is sourced at the top of main —
+# before the clone can be removed, so the removal itself is still safe.
+# Nothing here reads the clone after that point.
+#
+# Functions below are reached through process_kind's handler indirection,
+# which shellcheck cannot see.
+# shellcheck disable=SC2329
+
+if [ -z "${BASH_VERSION-}" ]; then exec /bin/bash "$0" "$@"; fi
+
+if [[ ${DEBUG-} =~ ^(1|yes|true)$ ]]; then set -o xtrace; fi
+
+# Strict mode only when executed, never when sourced (the BATS unit suite
+# sources this file to reach individual functions).
+if ! (return 0 2>/dev/null); then
+  set -o errexit
+  set -o nounset
+  set -o pipefail
+  set -o errtrace
+fi
+
+# Kinds are removed in this order; within a kind, reverse install order.
+REMOVAL_KINDS='clone hook tool pkg shellenv'
+TRAP_ERR_REPORT='report_removal_failure'
+ORIG_PWD=''
+CLONE_WAS_REMOVED=''
+REMOVED_CLONE_PATH=''
+R_KINDS=()
+R_NAMES=()
+R_DETAILS=()
+S_REMOVED=''
+S_KEPT=''
+S_WITH_FOLDER=''
+S_UNTOUCHED=''
+S_GONE=''
+
+#######################################
+# What script_trap_err says when a removal blows up.
+#######################################
+function report_removal_failure() {
+  log 'ERROR' 'Something went wrong mid-removal. The ledger still knows what remains — run ./leave again to finish.' "${C_ERROR-}"
+}
+
+# ===========================================================================
+# Removal handlers
+# ===========================================================================
+
+#######################################
+# Appends one line to a summary bucket. Every final-state-`installed` record
+# lands in exactly one bucket.
+#######################################
+function add_summary() {
+  local bucket="$1"
+  local text="$2"
+  case "${bucket}" in
+    REMOVED) S_REMOVED="${S_REMOVED}
+  - ${text}" ;;
+    KEPT) S_KEPT="${S_KEPT}
+  - ${text}" ;;
+    WITH_FOLDER) S_WITH_FOLDER="${S_WITH_FOLDER}
+  - ${text}" ;;
+    UNTOUCHED) S_UNTOUCHED="${S_UNTOUCHED}
+  - ${text}" ;;
+    GONE) S_GONE="${S_GONE}
+  - ${text}" ;;
+  esac
+}
+
+#######################################
+# True for items never removed: Homebrew and the CLT always, plus --keep.
+#######################################
+function is_protected() {
+  case "$1" in
+    brew | clt) return 0 ;;
+  esac
+  case ",${keep_list-}," in
+    *",$1,"*) return 0 ;;
+  esac
+  return 1
+}
+
+#######################################
+# Removes the clone, guarded four ways: the path is the ledger's recorded
+# detail, is_clone passes, the git dir is not a linked-worktree gitdir (a
+# mis-pivoted test env or hand-edited ledger must never delete a developer
+# worktree), and the user confirmed. Only then rm -rf.
+#######################################
+function handle_clone() {
+  local name="$1"
+  local path="$2"
+
+  if [ -z "${path}" ]; then
+    log 'WARN' 'The ledger has a clone record with no path — refusing to guess.' "${C_WARN-}"
+    add_summary KEPT 'the Particle Garden folder — kept (the ledger record had no path)'
+    return 0
+  fi
+
+  if [ ! -e "${path}" ]; then
+    ledger_append removed clone "${name}" 'already gone'
+    add_summary GONE "the Particle Garden folder (${path}) — already gone"
+    CLONE_WAS_REMOVED=1
+    REMOVED_CLONE_PATH="${path}"
+    return 0
+  fi
+
+  if ! is_clone "${path}"; then
+    log 'WARN' "Refusing to remove ${path} — it doesn't look like a Particle Garden clone." "${C_WARN-}"
+    add_summary KEPT "the folder at ${path} — kept (it doesn't look like a Particle Garden clone)"
+    return 0
+  fi
+
+  local git_dir
+  git_dir="$(git -C "${path}" rev-parse --git-dir 2>/dev/null || true)"
+  case "${git_dir}" in
+    */worktrees/*)
+      log 'WARN' "Refusing to remove ${path} — it's a linked git worktree, which belongs to a repository elsewhere." "${C_WARN-}"
+      add_summary KEPT "the folder at ${path} — kept (linked git worktree)"
+      return 0
+      ;;
+  esac
+
+  if ! confirm "Remove the Particle Garden folder at ${path}?" y; then
+    ledger_append kept clone "${name}" "${path}"
+    add_summary KEPT "the Particle Garden folder (${path}) — kept at your request"
+    return 0
+  fi
+
+  maybe_run rm -rf -- "${path}"
+  ledger_append removed clone "${name}" "${path}"
+  add_summary REMOVED "the Particle Garden folder (${path})"
+  CLONE_WAS_REMOVED=1
+  REMOVED_CLONE_PATH="${path}"
+}
+
+#######################################
+# Removes the pre-push guard, only when its marker line is present — a hook
+# somebody else wrote is never touched. When the clone was removed the hook
+# went with it.
+#######################################
+function handle_hook() {
+  local name="$1"
+  local hook="$2"
+
+  if [ -n "${CLONE_WAS_REMOVED-}" ]; then
+    add_summary WITH_FOLDER 'the push guard (pre-push hook) — removed with the folder'
+    ledger_append removed hook "${name}" 'removed with the clone'
+    return 0
+  fi
+
+  if [ ! -f "${hook}" ]; then
+    ledger_append removed hook "${name}" 'already gone'
+    add_summary GONE "the push guard (${hook}) — already gone"
+    return 0
+  fi
+
+  if ! grep -qF 'particle-garden' "${hook}"; then
+    log 'WARN' "The pre-push hook at ${hook} isn't the one enter installed — leaving it alone." "${C_WARN-}"
+    add_summary KEPT "the pre-push hook at ${hook} — kept (not the one enter installed)"
+    return 0
+  fi
+
+  if ! confirm "Remove the push guard (pre-push hook) at ${hook}?" y; then
+    ledger_append kept hook "${name}" "${hook}"
+    add_summary KEPT "the push guard (${hook}) — kept at your request"
+    return 0
+  fi
+
+  maybe_run rm -f -- "${hook}"
+  ledger_append removed hook "${name}" "${hook}"
+  add_summary REMOVED "the push guard (${hook})"
+}
+
+#######################################
+# Brew-installed tools. Homebrew itself and the CLT are never removed;
+# nim, just, and bun default to staying — other projects may use them.
+#######################################
+function handle_tool() {
+  local name="$1"
+  local detail="$2"
+
+  if [ "${name}" = 'brew' ] || [ "${name}" = 'clt' ]; then
+    ledger_append kept tool "${name}" 'never removed by design'
+    add_summary KEPT "$(tool_label "${name}") — stays by design"
+    return 0
+  fi
+
+  if is_protected "${name}"; then
+    ledger_append kept tool "${name}" 'protected by --keep'
+    add_summary KEPT "$(tool_label "${name}") — kept (--keep)"
+    return 0
+  fi
+
+  if ! confirm "Remove ${name}? Other projects on this Mac may use it." n; then
+    ledger_append kept tool "${name}" 'kept by default'
+    add_summary KEPT "$(tool_label "${name}") — kept"
+    return 0
+  fi
+
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "brew uninstall ${name}" "${C_HINT-}"
+    add_summary REMOVED "$(tool_label "${name}")"
+    return 0
+  fi
+
+  if ! command -v brew >/dev/null 2>&1; then
+    log 'WARN' "brew isn't on PATH, so ${name} can't be uninstalled through it — kept." "${C_WARN-}"
+    add_summary KEPT "$(tool_label "${name}") — kept (brew not found)"
+    return 0
+  fi
+
+  if with_spinner "Removing ${name}…" brew uninstall "${name}"; then
+    ledger_append removed tool "${name}" "${detail}"
+    add_summary REMOVED "$(tool_label "${name}")"
+  else
+    log 'WARN' "brew uninstall ${name} failed — kept. Try it by hand: brew uninstall ${name}" "${C_WARN-}"
+    add_summary KEPT "$(tool_label "${name}") — kept (brew uninstall failed)"
+  fi
+}
+
+function tool_label() {
+  case "$1" in
+    clt) printf 'the Xcode Command Line Tools' ;;
+    brew) printf 'Homebrew' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+#######################################
+# Package records from older ledgers. enter writes none: dependencies arrive
+# through `just be`, and what lands in ~/.nimble is shared with every other
+# Nim project on the machine.
+#######################################
+function handle_pkg() {
+  local name="$1"
+
+  add_summary KEPT "${name} — kept (leave doesn't know how to remove it)"
+}
+
+#######################################
+# Excises the marker-fenced Homebrew block from ~/.zprofile: copy to a
+# .particle-garden.bak first, strip with awk into a temp file, mv back —
+# never sed -i.
+#######################################
+function handle_shellenv() {
+  local name="$1"
+  local zprofile="$2"
+
+  if [ -z "${zprofile}" ]; then
+    zprofile="$(zprofile_path)"
+  fi
+
+  if is_protected zprofile; then
+    ledger_append kept shellenv "${name}" 'protected by --keep'
+    add_summary KEPT "the Homebrew setup block in ${zprofile} — kept (--keep)"
+    return 0
+  fi
+
+  if [ ! -f "${zprofile}" ] || ! grep -qF "${ZPROFILE_MARK_START}" "${zprofile}"; then
+    ledger_append removed shellenv "${name}" 'already gone'
+    add_summary GONE "the Homebrew setup block in ${zprofile} — already gone"
+    return 0
+  fi
+
+  if ! confirm "Remove the Homebrew setup block enter added to ${zprofile}? (a backup is kept)" y; then
+    ledger_append kept shellenv "${name}" "${zprofile}"
+    add_summary KEPT "the Homebrew setup block in ${zprofile} — kept at your request"
+    return 0
+  fi
+
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "strip the marked block from ${zprofile} (backup at ${zprofile}.particle-garden.bak)" "${C_HINT-}"
+    add_summary REMOVED "the Homebrew setup block in ${zprofile}"
+    return 0
+  fi
+
+  cp "${zprofile}" "${zprofile}.particle-garden.bak"
+  local tmp="${zprofile}.particle-garden.tmp"
+  awk -v start="${ZPROFILE_MARK_START}" -v end="${ZPROFILE_MARK_END}" '
+    $0 == start { skip = 1 }
+    skip != 1 { print }
+    $0 == end { skip = 0 }' "${zprofile}" > "${tmp}"
+  mv "${tmp}" "${zprofile}"
+  ledger_append removed shellenv "${name}" "${zprofile}"
+  add_summary REMOVED "the Homebrew setup block in ${zprofile} (backup: ${zprofile}.particle-garden.bak)"
+}
+
+#######################################
+# Runs one handler over every removal record of the given kind, in the order
+# compute_removals emitted them.
+#######################################
+function process_kind() {
+  local kind="$1"
+  local handler="$2"
+  local i=0
+  while [ "${i}" -lt "${#R_KINDS[@]}" ]; do
+    if [ "${R_KINDS[${i}]}" = "${kind}" ]; then
+      "${handler}" "${R_NAMES[${i}]}" "${R_DETAILS[${i}]}"
+    fi
+    i=$((i + 1))
+  done
+}
+
+#######################################
+# Slurps every still-installed record into arrays before any question is
+# asked, so confirm() and the record stream never share stdin. A kind the
+# ledger carries but REMOVAL_KINDS omits has no handler and stays put.
+#######################################
+function load_removals() {
+  local kind name
+  for kind in ${REMOVAL_KINDS}; do
+    while IFS= read -r name; do
+      if [ -z "${name}" ]; then
+        continue
+      fi
+      R_KINDS+=("${kind}")
+      R_NAMES+=("${name}")
+      R_DETAILS+=("$(ledger_detail "${kind}" "${name}")")
+    done <<EOF
+$(ledger_installed_of_kind "${kind}")
+EOF
+  done
+}
+
+#######################################
+# Every final-state-`installed` record appears in exactly one bucket, plus
+# the standing notes: Homebrew and the CLT stay by design, repo git config
+# stays as-is, and a cd hint when the shell sits in a removed folder.
+#######################################
+function print_summary() {
+  printf '\n'
+  if [ -n "${dry_run-}" ]; then
+    printf 'Dry run — nothing was actually removed. This is what leave would do:\n'
+  fi
+  if [ -n "${S_REMOVED}" ]; then
+    printf 'Removed:%s\n' "${S_REMOVED}"
+  fi
+  if [ -n "${S_WITH_FOLDER}" ]; then
+    printf 'Removed with the folder:%s\n' "${S_WITH_FOLDER}"
+  fi
+  if [ -n "${S_GONE}" ]; then
+    printf 'Already gone:%s\n' "${S_GONE}"
+  fi
+  if [ -n "${S_KEPT}" ]; then
+    printf 'Kept:%s\n' "${S_KEPT}"
+  fi
+  if [ -n "${S_UNTOUCHED}" ]; then
+    printf 'Untouched:%s\n' "${S_UNTOUCHED}"
+  fi
+  printf 'Homebrew and the Xcode Command Line Tools stay put — leave never removes them.\n'
+  printf 'Repo git configuration (pull.rebase, branch tracking, any fork remotes) was left as-is.\n'
+  if [ -n "${REMOVED_CLONE_PATH-}" ]; then
+    case "${ORIG_PWD}/" in
+      "${REMOVED_CLONE_PATH}"/*)
+        printf 'Your shell is still sitting in a removed folder — run: cd ~\n'
+        ;;
+    esac
+  fi
+}
+
+# ===========================================================================
+# CLI surface
+# ===========================================================================
+
+function script_usage() {
+  cat <<EOF
+Undo what ./enter installed, from its ledger of what it actually did.
+
+Usage: ${script_name-leave} [options]
+
+Offers each removal individually: the Particle Garden folder, the push
+guard, and the tools enter installed. Homebrew and the Xcode Command Line
+Tools are never removed. Tools other projects may use (nim, just, bun)
+default to staying. Nim and UI packages the build fetched stay too — they
+live in the folder and in ~/.nimble, shared with every other Nim project.
+
+Options:
+  -h, --help            Show this help and exit.
+  -v, --verbose         Log every step, with timestamps.
+      --dry-run         Show what would be removed without removing anything.
+      --yes             Take the default answer to every question, unattended.
+      --no-color        Plain output (the NO_COLOR variable works too).
+      --state-dir <path>  Where the install ledger lives
+                          (default: ~/.local/state/particle-garden).
+      --keep <a,b,c>    Never remove the named items. Names:
+                          particle-garden, nim, just, bun, zprofile.
+
+Exit codes:
+  0 done · 1 a removal failed · 2 bad usage · 4 not macOS ·
+  5 another enter/leave is running.
+EOF
+}
+
+#######################################
+# Parses flags into globals: verbose, no_color, dry_run, assume_yes,
+# opt_state_dir, keep_list.
+#######################################
+function parse_params() {
+  local param
+  while [ $# -gt 0 ]; do
+    param="$1"
+    shift
+    case "${param}" in
+      -h | --help)
+        script_usage
+        exit 0
+        ;;
+      -v | --verbose)
+        verbose=true
+        ;;
+      --no-color | --no-colour)
+        no_color=true
+        ;;
+      --dry-run)
+        dry_run=true
+        ;;
+      --yes)
+        assume_yes=true
+        ;;
+      --state-dir)
+        if [ $# -lt 1 ]; then
+          script_exit '--state-dir needs a path after it.' 2
+        fi
+        opt_state_dir="$1"
+        shift
+        ;;
+      --keep)
+        if [ $# -lt 1 ]; then
+          script_exit '--keep needs a comma-separated list after it.' 2
+        fi
+        keep_list="$1"
+        shift
+        ;;
+      --)
+        ;;
+      *)
+        script_exit "Unknown option: ${param} (try --help)" 2
+        ;;
+    esac
+  done
+}
+
+# ===========================================================================
+# Main
+# ===========================================================================
+
+function main() {
+  # The shared core, in one line. Everything below reaches for a function it
+  # defines, so nothing may run above it.
+  # shellcheck source=scripts/lib/load.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/load.sh"
+
+  trap script_trap_err ERR
+  trap script_trap_exit EXIT
+  trap 'spinner_stop; exit 130' INT
+
+  script_init "${BASH_SOURCE[0]}" "$@"
+  parse_params "$@"
+  color_init
+
+  if [ "$(uname -s)" != 'Darwin' ]; then
+    script_exit "Particle Garden's installer only knows macOS, and so does leave." 4
+  fi
+
+  # rm -rf of the process CWD would leave every later subshell — and the
+  # user's interactive shell — in a deleted directory.
+  ORIG_PWD="${PWD}"
+  cd "${HOME}"
+
+  if [ ! -f "$(ledger_path)" ]; then
+    printf 'Nothing recorded — nothing to undo.\n'
+    exit 0
+  fi
+
+  acquire_lock
+  ledger_append run session leave "pid $$"
+
+  load_removals
+
+  if [ "${#R_KINDS[@]}" -eq 0 ]; then
+    printf 'Everything the ledger knows about was already here before enter — nothing to remove.\n'
+    printf 'Homebrew and the Xcode Command Line Tools stay put — leave never removes them.\n'
+    exit 0
+  fi
+
+  log 'INFO' 'Undoing what enter installed — each removal is asked about first.' "${C_HEADER-}"
+
+  process_kind clone handle_clone
+  process_kind hook handle_hook
+  process_kind tool handle_tool
+  process_kind pkg handle_pkg
+  process_kind shellenv handle_shellenv
+
+  print_summary
+}
+
+# Invoke main only when executed directly, never when sourced — the BATS
+# suite sources this file. main-at-EOF also makes it safe for leave to delete
+# the directory it runs from: bash has consumed the whole file before main
+# executes.
+if ! (return 0 2>/dev/null); then
+  main "$@"
+fi
+
+# vim: ft=bash ts=2 sw=2 sts=2 et

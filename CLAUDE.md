@@ -17,7 +17,8 @@ design history, no presumption about the reader or future work. Where article 8 
 conditions beside a constant, one or two lines of conditions satisfy it.
 
 ## Build and test
-- `just happen` after every change; `just check` (both suites) before any release; `just be` = pull, build, run.
+- `just happen` after every change; `just check` (both suites) before any release; `just be` = deps, build, run.
+- Run the narrowest bats target that covers the change: `bats tests/shell/<file>.bats`, `bats -f '<name>' <file>`, or `bats --filter-tags unit tests/shell`. The whole shell suite runs once, at the end.
 - When subagents carry the work, tests run once at the end by the integrator — never per subagent.
 - Generated outputs (`web/app.js`, `web/ui-bundle.*`, top-level `web/shaders/*.wgsl`) are never edited by hand.
 

@@ -1,0 +1,1032 @@
+#!/usr/bin/env bash
+#
+# One-shot onboarding: check for everything Particle Garden needs on this Mac,
+# ask before installing anything missing, then build and run it (just be).
+#
+# Author: Nick Krause
+# Created: 2026-08-01
+#
+# Phases run as: clt brew just nim bun repo run. Function names follow
+# phase_<id>_<verb>, called through phase_dispatch — shellcheck cannot see
+# those calls, hence the file-wide disable below.
+# shellcheck disable=SC2329
+#
+# Traps, logging, prompts, the spinner, the ledger, the lock, and is_clone
+# live in scripts/lib/ and are shared with ./leave, sourced from within the
+# clone — so this script runs only from inside one. Project dependencies are
+# `just be`'s job, not this script's.
+
+if [ -z "${BASH_VERSION-}" ]; then exec /bin/bash "$0" "$@"; fi
+
+if [[ ${DEBUG-} =~ ^(1|yes|true)$ ]]; then set -o xtrace; fi
+
+# Strict mode only when executed, never when sourced (the BATS unit suite
+# sources this file to reach individual functions).
+if ! (return 0 2>/dev/null); then
+  set -o errexit
+  set -o nounset
+  set -o pipefail
+  set -o errtrace
+fi
+
+# The bootstrap README documents. It clones, then runs this script inside the
+# clone; this script never fetches code itself, so it points here when asked
+# to work outside one.
+GARDEN_SH_URL='https://raw.githubusercontent.com/synapseradio/particle-garden/HEAD/tools/garden.sh'
+PHASE_ORDER='clt brew just nim bun repo'
+TRAP_ERR_REPORT='report_phase_failure'
+CURRENT_PHASE=''
+CLONE_DIR=''
+OWNER_EMAIL=''
+ARCH=''
+PLAN=()
+
+#######################################
+# What script_trap_err says when a phase blows up. Silent before the first
+# phase starts — there is nothing to name yet.
+#######################################
+function report_phase_failure() {
+  if [ -z "${CURRENT_PHASE-}" ]; then
+    return 0
+  fi
+  log 'ERROR' "Something went wrong during the $(phase_title "${CURRENT_PHASE}") step." "${C_ERROR-}"
+  log 'INFO' 'Nothing after that step was touched. Fix the issue (network down?) and run ./enter again — finished steps are skipped.'
+}
+
+# ===========================================================================
+# Install helpers
+# ===========================================================================
+
+#######################################
+# True when brew can install without sudo, i.e. its bin dir is writable.
+# Output is only streamed in that case — otherwise brew may prompt.
+#######################################
+function brew_prefix_writable() {
+  local prefix
+  prefix="$(brew --prefix 2>/dev/null)" || return 1
+  [ -w "${prefix}/bin" ]
+}
+
+#######################################
+# Installs one Homebrew formula, through run_step only when no sudo prompt can
+# appear. bun falls back to the oven-sh tap. `hash -r` afterwards — bash
+# caches PATH lookups and would keep resolving the old or absent binary.
+#######################################
+function brew_install_formula() {
+  local formula="$1"
+
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "brew install ${formula}" "${C_HINT-}"
+    return 0
+  fi
+
+  local st=0
+  if brew_prefix_writable; then
+    if ! run_step "Installing ${formula} with Homebrew…" brew install "${formula}"; then
+      st=1
+    fi
+  else
+    log 'INFO' "Installing ${formula} — Homebrew may ask for your macOS password." "${C_INFO-}"
+    if ! brew install "${formula}"; then
+      st=1
+    fi
+  fi
+
+  if [ "${st}" -ne 0 ] && [ "${formula}" = 'bun' ]; then
+    log 'INFO' 'Plain bun formula failed — trying the oven-sh tap.' "${C_INFO-}"
+    if run_step 'Installing bun from the oven-sh tap…' brew install oven-sh/bun/bun; then
+      st=0
+    fi
+  fi
+
+  if [ "${st}" -ne 0 ]; then
+    log 'ERROR' "brew install ${formula} failed." "${C_ERROR-}"
+    return 1
+  fi
+
+  hash -r
+}
+
+#######################################
+# True when the installed nim's major version satisfies particle_garden.nimble
+# (>= 2.0.0 and < 3.0.0). Parses with awk, never `head -1` — head can exit
+# 141 (SIGPIPE) under pipefail.
+#######################################
+function nim_version_ok() {
+  local ver major
+  ver="$(nim --version 2>/dev/null | awk 'NR == 1 { print $4 }')"
+  case "${ver}" in
+    [0-9]*.*) ;;
+    *) return 1 ;;
+  esac
+  major="${ver%%.*}"
+  case "${major}" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  [ "${major}" -ge 2 ] && [ "${major}" -lt 3 ]
+}
+
+function nim_found_version() {
+  nim --version 2>/dev/null | awk 'NR == 1 { print $4 }'
+}
+
+# ===========================================================================
+# Phase: clt (Xcode Command Line Tools)
+# ===========================================================================
+
+function phase_clt_detect() {
+  xcode-select -p >/dev/null 2>&1 && xcrun --find clang >/dev/null 2>&1
+}
+
+function phase_clt_prompt() {
+  printf "Install Apple's Xcode Command Line Tools? (compiler and git — Apple opens its own install window, a few GB)"
+}
+
+function phase_clt_install() {
+  # Exits 1 when already requested or installed — the poll decides the truth.
+  maybe_run xcode-select --install 2>/dev/null || true
+
+  if [ -n "${dry_run-}" ]; then
+    return 0
+  fi
+
+  log 'INFO' 'Apple opened an install window — it may be hiding behind other windows. Click Install there.' "${C_INFO-}"
+  spinner_start 'Waiting for the Command Line Tools installer to finish…'
+  local waited=0
+  until phase_clt_detect; do
+    sleep 5
+    waited=$((waited + 5))
+    if [ $((waited % 60)) -eq 0 ]; then
+      spinner_message "Still waiting on the Command Line Tools installer (about $((waited / 60)) min so far — big download, no rush)…"
+    fi
+  done
+  spinner_stop
+}
+
+function phase_clt_verify() {
+  phase_clt_detect || return 1
+  clang --version >/dev/null 2>&1 || return 1
+  command -v git >/dev/null 2>&1 || return 1
+  hash -r
+}
+
+function phase_clt_record() {
+  ledger_append installed tool clt "$(xcode-select -p 2>/dev/null || true)"
+  if [ -z "${dry_run-}" ]; then
+    rm -f "$(state_dir)/clt-installed-by-garden"
+  fi
+}
+
+#######################################
+# Detect-hit path. garden.sh may have installed the CLT before enter existed
+# locally; its marker turns `preexisting` into `installed` so ./leave knows.
+# The marker is consumed exactly once.
+#######################################
+function phase_clt_adopt() {
+  local marker
+  marker="$(state_dir)/clt-installed-by-garden"
+  if [ -f "${marker}" ]; then
+    ledger_append installed tool clt 'installed by the garden.sh bootstrap'
+    if [ -z "${dry_run-}" ]; then
+      rm -f "${marker}"
+    fi
+  else
+    record_preexisting tool clt "$(xcode-select -p 2>/dev/null || true)"
+  fi
+}
+
+# ===========================================================================
+# Phase: brew (Homebrew)
+# ===========================================================================
+
+#######################################
+# PATH hit, or a known prefix hit — in which case brew's shellenv is evaluated
+# in-process immediately so the postcondition holds for the rest of the run
+# (monotone progress: never "restart your terminal"). ENTER_BREW_PATHS
+# overrides the probe list (test seam).
+#######################################
+function phase_brew_detect() {
+  if command -v brew >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local candidates="${ENTER_BREW_PATHS:-/opt/homebrew/bin/brew:/usr/local/bin/brew}"
+  local oldifs="${IFS}"
+  local c
+  IFS=':'
+  for c in ${candidates}; do
+    if [ -x "${c}" ]; then
+      IFS="${oldifs}"
+      eval "$("${c}" shellenv)"
+      hash -r
+      return 0
+    fi
+  done
+  IFS="${oldifs}"
+  return 1
+}
+
+function phase_brew_prompt() {
+  printf 'Install Homebrew? (the package manager the rest of the tools come from — its installer will explain itself and may ask for your macOS password)'
+}
+
+#######################################
+# Runs the official installer interactively, never NONINTERACTIVE=1 — under
+# NONINTERACTIVE it switches to `sudo -n`, which dies without a cached sudo
+# timestamp: the exact state of a fresh machine. Consent was already gathered;
+# stdin is the terminal (the bash -c bootstrap form preserves it); the spinner
+# stays off because the installer prints, waits for RETURN, and sudo-prompts.
+#######################################
+function phase_brew_install() {
+  if [ -n "${dry_run-}" ]; then
+    # shellcheck disable=SC2016
+    log 'DRY-RUN' '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' "${C_HINT-}"
+    return 0
+  fi
+
+  log 'INFO' "Handing over to Homebrew's installer — it explains each step." "${C_INFO-}"
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  local brew_bin
+  if command -v brew >/dev/null 2>&1; then
+    # A Rosetta shell reports x86_64 while brew lives in /opt/homebrew —
+    # trust PATH over uname when brew already resolves.
+    brew_bin="$(command -v brew)"
+  elif [ "${ARCH}" = 'arm64' ]; then
+    brew_bin='/opt/homebrew/bin/brew'
+  else
+    brew_bin='/usr/local/bin/brew'
+  fi
+  eval "$("${brew_bin}" shellenv)"
+  hash -r
+}
+
+function phase_brew_verify() {
+  brew --version >/dev/null 2>&1 || return 1
+  hash -r
+}
+
+function phase_brew_record() {
+  ledger_append installed tool brew "$(command -v brew || true)"
+}
+
+function phase_brew_adopt() {
+  record_preexisting tool brew "$(command -v brew || true)"
+}
+
+#######################################
+# Offers to persist brew's shellenv in ~/.zprofile (marker-fenced block, once).
+# When the file is a symlink — commonly into a dotfiles repo — the prompt
+# names the real target and defaults to no.
+#######################################
+function persist_shellenv_offer() {
+  local zprofile
+  zprofile="$(zprofile_path)"
+
+  if [ -f "${zprofile}" ] && grep -qF "${ZPROFILE_MARK_START}" "${zprofile}"; then
+    return 0
+  fi
+
+  local brew_bin
+  brew_bin="$(command -v brew 2>/dev/null || true)"
+  if [ -z "${brew_bin}" ]; then
+    return 0
+  fi
+
+  local prompt='Add Homebrew to your shell startup file (~/.zprofile) so brew works in new terminal windows?'
+  local default='y'
+  if [ -L "${zprofile}" ]; then
+    prompt="Your ~/.zprofile is a symlink to $(readlink "${zprofile}") — append the Homebrew setup block there anyway?"
+    default='n'
+  fi
+
+  if ! confirm "${prompt}" "${default}"; then
+    ledger_append declined shellenv zprofile "${zprofile}"
+    return 0
+  fi
+
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "append the Homebrew shellenv block to ${zprofile}" "${C_HINT-}"
+    return 0
+  fi
+
+  {
+    printf '%s\n' "${ZPROFILE_MARK_START}"
+    # shellcheck disable=SC2016
+    printf 'eval "$(%s shellenv)"\n' "${brew_bin}"
+    printf '%s\n' "${ZPROFILE_MARK_END}"
+  } >> "${zprofile}"
+  ledger_append installed shellenv zprofile "${zprofile}"
+}
+
+# ===========================================================================
+# Phases: just, nim, bun
+# ===========================================================================
+
+function phase_just_detect() {
+  command -v just >/dev/null 2>&1
+}
+
+function phase_just_prompt() {
+  printf 'Install just? (the build runner — one small Homebrew package)'
+}
+
+function phase_just_install() {
+  brew_install_formula just
+}
+
+function phase_just_verify() {
+  just --version >/dev/null 2>&1 || return 1
+  hash -r
+}
+
+function phase_just_record() {
+  ledger_append installed tool just "$(command -v just || true)"
+}
+
+function phase_just_adopt() {
+  record_preexisting tool just "$(command -v just || true)"
+}
+
+#######################################
+# A present-but-incompatible nim is a hard stop, never an install-over:
+# particle_garden.nimble requires >= 2.0.0 and < 3.0.0.
+#######################################
+function phase_nim_detect() {
+  if ! command -v nim >/dev/null 2>&1 || ! command -v nimble >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! nim_version_ok; then
+    script_exit "Found nim $(nim_found_version), but Particle Garden needs nim 2.x (>= 2.0.0 and < 3.0.0, per particle_garden.nimble). I won't install over your nim. Switch versions with choosenim: curl https://nim-lang.org/choosenim/init.sh -sSf | sh — then run ./enter again." 1
+  fi
+  return 0
+}
+
+function phase_nim_prompt() {
+  printf 'Install Nim? (the language Particle Garden is written in — one Homebrew package)'
+}
+
+function phase_nim_install() {
+  brew_install_formula nim
+}
+
+function phase_nim_verify() {
+  nim --version >/dev/null 2>&1 || return 1
+  nimble --version >/dev/null 2>&1 || return 1
+  nim_version_ok || return 1
+  hash -r
+}
+
+function phase_nim_record() {
+  ledger_append installed tool nim "$(command -v nim || true)"
+}
+
+function phase_nim_adopt() {
+  record_preexisting tool nim "$(command -v nim || true)"
+}
+
+function phase_bun_detect() {
+  command -v bun >/dev/null 2>&1
+}
+
+function phase_bun_prompt() {
+  printf 'Install Bun? (builds the control panel — one Homebrew package)'
+}
+
+function phase_bun_install() {
+  brew_install_formula bun
+}
+
+function phase_bun_verify() {
+  bun --version >/dev/null 2>&1 || return 1
+  hash -r
+}
+
+function phase_bun_record() {
+  ledger_append installed tool bun "$(command -v bun || true)"
+}
+
+function phase_bun_adopt() {
+  record_preexisting tool bun "$(command -v bun || true)"
+}
+
+# ===========================================================================
+# Phase: repo
+# ===========================================================================
+
+function phase_repo_detect() {
+  is_clone "${CLONE_DIR}"
+}
+
+#######################################
+# Runs after a detect miss, and never returns. This script fetches no code:
+# it sources scripts/lib from its own clone, so a miss means it is looking at
+# the wrong place — an occupied directory, or nothing at all.
+#######################################
+function phase_repo_gate() {
+  if [ -e "${CLONE_DIR}" ]; then
+    refuse_not_a_clone
+  fi
+  refuse_no_clone
+}
+
+#######################################
+# Detect-hit path: consume garden.sh's clone marker. When it names this path
+# the clone was created by the bootstrap on our behalf — ledger `installed`
+# so ./leave can remove it; without the marker, `preexisting`. A stale marker
+# whose named path is not a clone is deleted and ignored. Treatment applies
+# to adopted clones too — the hook and the fork would otherwise be
+# unreachable for every real user.
+#######################################
+function phase_repo_adopt() {
+  local marker marker_path
+  marker="$(state_dir)/clone-created-by-garden"
+  if [ -f "${marker}" ]; then
+    marker_path="$(cat "${marker}")"
+    if [ "${marker_path}" = "${CLONE_DIR}" ]; then
+      ledger_append installed clone particle-garden "${CLONE_DIR}"
+      if [ -z "${dry_run-}" ]; then
+        rm -f "${marker}"
+      fi
+    elif ! is_clone "${marker_path}"; then
+      if [ -z "${dry_run-}" ]; then
+        rm -f "${marker}"
+      fi
+      record_preexisting clone particle-garden "${CLONE_DIR}"
+    else
+      record_preexisting clone particle-garden "${CLONE_DIR}"
+    fi
+  else
+    record_preexisting clone particle-garden "${CLONE_DIR}"
+  fi
+  repo_treatment
+}
+
+#######################################
+# Refusal shared with tools/garden.sh — same wording, same exit code, so the
+# two halves of one command never give contradictory advice.
+#######################################
+function refuse_not_a_clone() {
+  script_exit "There's already something at ${CLONE_DIR} that doesn't look like a Particle Garden clone. Move it aside, or pick another spot with --clone-dir <path>." 2
+}
+
+#######################################
+# The refusal for an empty spot. Fetching the code belongs to garden.sh, which
+# clones and then runs this script inside the result.
+#######################################
+function refuse_no_clone() {
+  log 'INFO' 'One command gets the code and the tools together:' "${C_INFO-}"
+  log 'INFO' "  /bin/bash -c \"\$(curl -fsSL ${GARDEN_SH_URL})\"" "${C_HINT-}"
+  script_exit "There's no Particle Garden clone at ${CLONE_DIR}, and ./enter sets up tools inside a clone rather than downloading one." 2
+}
+
+function repo_default_branch() {
+  local ref
+  ref="$(git -C "${CLONE_DIR}" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  case "${ref}" in
+    origin/*) printf '%s\n' "${ref#origin/}" ;;
+    *) printf 'main\n' ;;
+  esac
+}
+
+#######################################
+# gh on PATH and authenticated — the only state in which a fork offer makes
+# sense. GH_PROMPT_DISABLED keeps gh from prompting inside the check.
+#######################################
+function have_gh_auth() {
+  command -v gh >/dev/null 2>&1 || return 1
+  GH_PROMPT_DISABLED=1 gh auth status >/dev/null 2>&1
+}
+
+#######################################
+# One git config write, dry-run-gated, ledgered as an audit note. Nothing
+# ever undoes these — ./leave says so in its summary.
+#######################################
+function repo_config_set() {
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "git -C ${CLONE_DIR} config $*" "${C_HINT-}"
+    return 0
+  fi
+  git -C "${CLONE_DIR}" config "$@"
+  ledger_append note gitconfig "$1" "set in ${CLONE_DIR}"
+}
+
+#######################################
+# Converts the existing clone into a fork in place: origin becomes the fork,
+# upstream the canonical repo; pulls rebase from upstream, pushes land on the
+# fork. Returns 1 when the fork attempt fails (e.g. the authenticated user
+# owns the repo) so the caller falls through to the plain treatment.
+#######################################
+function try_fork_conversion() {
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "gh -C ${CLONE_DIR} repo fork --remote" "${C_HINT-}"
+    return 0
+  fi
+
+  if ! gh -C "${CLONE_DIR}" repo fork --remote; then
+    return 1
+  fi
+
+  local default_branch
+  default_branch="$(repo_default_branch)"
+  if ! git -C "${CLONE_DIR}" branch --set-upstream-to="upstream/${default_branch}" "${default_branch}"; then
+    log 'WARN' "Couldn't point ${default_branch} at upstream/${default_branch} — git pull may need attention." "${C_WARN-}"
+  fi
+  git -C "${CLONE_DIR}" config remote.pushDefault origin
+  git -C "${CLONE_DIR}" config push.default current
+  ledger_append note gitconfig fork-conversion "origin=fork upstream=canonical in ${CLONE_DIR}"
+}
+
+#######################################
+# Installs the pre-push guard for non-fork clones, idempotent via its marker
+# line. Never overwrites a foreign hook. Skipped in linked worktrees — their
+# hooks live in the main repo's .git/hooks and would leak to every worktree.
+#######################################
+function install_prepush_hook() {
+  local git_dir hooks_dir hook
+  git_dir="$(git -C "${CLONE_DIR}" rev-parse --git-dir 2>/dev/null || true)"
+  case "${git_dir}" in
+    */worktrees/*)
+      log 'WARN' 'This clone is a linked git worktree — its hooks are shared with the main repo, so the push guard is skipped.' "${C_WARN-}"
+      return 0
+      ;;
+  esac
+
+  hooks_dir="$(git -C "${CLONE_DIR}" rev-parse --git-path hooks)"
+  hook="${hooks_dir}/pre-push"
+
+  if [ -f "${hook}" ]; then
+    if grep -qF 'particle-garden' "${hook}"; then
+      return 0
+    fi
+    log 'WARN' "A pre-push hook already exists at ${hook} — leaving it alone." "${C_WARN-}"
+    return 0
+  fi
+
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "install the pre-push guard at ${hook}" "${C_HINT-}"
+    return 0
+  fi
+
+  mkdir -p "${hooks_dir}"
+  write_prepush_hook "${hook}"
+  chmod 755 "${hook}"
+  ledger_append installed hook pre-push "${hook}"
+}
+
+#######################################
+# The hook body: blocks pushes unless git's user.email matches the owner
+# (GitHub refuses unauthorized pushes server-side anyway — this just says so
+# kindly before the network does it coldly). Quoted heredoc; only the owner
+# email is substituted, via printf.
+#######################################
+function write_prepush_hook() {
+  local hook="$1"
+  {
+    printf '#!/bin/sh\n'
+    printf '# particle-garden guard — installed by ./enter, removed by ./leave.\n'
+    printf "owner_email='%s'\n" "${OWNER_EMAIL}"
+    cat <<'HOOK'
+email="$(git config user.email)"
+if [ "$email" != "$owner_email" ]; then
+  echo "This clone points at the shared Particle Garden repo, and your git email ($email) is not the owner's." >&2
+  echo "GitHub would refuse the push anyway. To publish your changes, fork it: gh repo fork --remote" >&2
+  echo "If you really mean it: git push --no-verify" >&2
+  exit 1
+fi
+exit 0
+HOOK
+  } > "${hook}"
+}
+
+#######################################
+# Repairs missing @{upstream} tracking, without which a plain `git pull` or
+# `git push` dies. Three gates: never under --dry-run (it writes); only when
+# HEAD is the repo's default branch (an adopted feature-branch worktree keeps
+# its tracking untouched, with a warning — pulling main into a branch is
+# worse than a warning); never when tracking already resolves.
+#######################################
+function ensure_tracking() {
+  if [ -n "${dry_run-}" ]; then
+    verbose_log 'dry-run: leaving branch tracking untouched'
+    return 0
+  fi
+
+  if git -C "${CLONE_DIR}" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local head default_branch
+  head="$(git -C "${CLONE_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  default_branch="$(repo_default_branch)"
+
+  if [ "${head}" != "${default_branch}" ]; then
+    log 'WARN' "The branch ${head} has no upstream tracking and isn't ${default_branch}, so I'm leaving it alone — git pull and git push on this branch will need a remote naming it." "${C_WARN-}"
+    return 0
+  fi
+
+  local remote='origin'
+  if git -C "${CLONE_DIR}" remote get-url upstream >/dev/null 2>&1; then
+    remote='upstream'
+  fi
+  git -C "${CLONE_DIR}" branch --set-upstream-to="${remote}/${default_branch}" "${head}"
+  ledger_append note gitconfig tracking "${head} -> ${remote}/${default_branch} in ${CLONE_DIR}"
+}
+
+#######################################
+# Applied to any clone whose origin is the canonical repo — adopted or
+# self-cloned. Fork offer only when gh is authenticated and no upstream
+# remote exists; on decline or fork failure, the plain treatment:
+# pull.rebase, the pre-push guard, tracking repair.
+#######################################
+function repo_treatment() {
+  local origin
+  origin="$(git -C "${CLONE_DIR}" remote get-url origin 2>/dev/null || true)"
+  case "${origin}" in
+    *github.com*synapseradio/particle-garden*) ;;
+    *)
+      verbose_log "origin is ${origin:-unset} — leaving repo configuration alone."
+      ensure_tracking
+      return 0
+      ;;
+  esac
+
+  if have_gh_auth && ! git -C "${CLONE_DIR}" remote get-url upstream >/dev/null 2>&1; then
+    if confirm "You're signed into GitHub — fork Particle Garden to your account so your own changes have somewhere to go?" n; then
+      if try_fork_conversion; then
+        ensure_tracking
+        return 0
+      fi
+      log 'INFO' "The fork didn't go through (normal when you own the repo) — continuing with the plain setup." "${C_INFO-}"
+    fi
+  fi
+
+  repo_config_set pull.rebase true
+  install_prepush_hook
+  ensure_tracking
+}
+
+# ===========================================================================
+# Phase machinery
+# ===========================================================================
+
+function phase_title() {
+  case "$1" in
+    clt) printf 'Xcode Command Line Tools' ;;
+    brew) printf 'Homebrew' ;;
+    just) printf 'just (build runner)' ;;
+    nim) printf 'Nim' ;;
+    bun) printf 'Bun' ;;
+    repo) printf 'Particle Garden code' ;;
+    run) printf 'first run' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+function phase_dispatch() {
+  local id="$1"
+  local verb="$2"
+  "phase_${id}_${verb}"
+}
+
+#######################################
+# Runs every detect and fills PLAN with id:present|missing (unit-testable,
+# and the checklist the user sees before anything is asked).
+#######################################
+function compute_plan() {
+  PLAN=()
+  local id
+  for id in ${PHASE_ORDER}; do
+    if phase_dispatch "${id}" detect; then
+      PLAN+=("${id}:present")
+    else
+      PLAN+=("${id}:missing")
+    fi
+  done
+}
+
+function render_plan() {
+  local entry id state
+  log 'INFO' 'Here is what this Mac already has, and what enter will set up (asking first):' "${C_HEADER-}"
+  for entry in ${PLAN[@]+"${PLAN[@]}"}; do
+    id="${entry%%:*}"
+    state="${entry#*:}"
+    if [ "${state}" = 'present' ]; then
+      log 'OK' "  $(phase_title "${id}") — already here" "${C_SUCCESS-}"
+    else
+      log 'TODO' "  $(phase_title "${id}") — will set up" "${C_INFO-}"
+    fi
+  done
+  log 'INFO' "Finish line: cd ${CLONE_DIR} && just be" "${C_HEADER-}"
+}
+
+#######################################
+# A declined phase stops the run before any mutation in that phase, lists
+# what remains, and says how to resume. Exit 3.
+#######################################
+function decline_exit() {
+  local declined="$1"
+  local remaining=''
+  local reached=''
+  local id
+  for id in ${PHASE_ORDER}; do
+    if [ "${id}" = "${declined}" ]; then
+      reached=1
+    fi
+    if [ -n "${reached}" ]; then
+      remaining="${remaining}
+  - $(phase_title "${id}")"
+    fi
+  done
+  log 'INFO' "Stopping here — nothing in this step was changed. Still to do before the garden runs:${remaining}
+  - just be (the build and first run)" "${C_INFO-}"
+  log 'INFO' 'Pick it back up any time by running ./enter again — finished steps are skipped.' "${C_INFO-}"
+  exit 3
+}
+
+#######################################
+# One phase: detect → (hit: adopt) | (miss: confirm → install → verify →
+# record). Verify is skipped entirely under --dry-run — nothing was installed,
+# so every verify would false-fail.
+#######################################
+function run_phase() {
+  local id="$1"
+  CURRENT_PHASE="${id}"
+  local title
+  title="$(phase_title "${id}")"
+
+  if phase_dispatch "${id}" detect; then
+    log 'OK' "${title} — already here." "${C_SUCCESS-}"
+    phase_dispatch "${id}" adopt
+    return 0
+  fi
+
+  if type "phase_${id}_gate" >/dev/null 2>&1; then
+    phase_dispatch "${id}" gate
+  fi
+
+  if ! confirm "$(phase_dispatch "${id}" prompt)" y; then
+    decline_exit "${id}"
+  fi
+
+  phase_dispatch "${id}" install
+
+  if [ -z "${dry_run-}" ]; then
+    if ! phase_dispatch "${id}" verify; then
+      script_exit "The ${title} step finished but its check failed — run ./enter again, and if it sticks, something on this machine is in the way." 1
+    fi
+  fi
+
+  phase_dispatch "${id}" record
+  log 'OK' "${title} — ready." "${C_SUCCESS-}"
+}
+
+# ===========================================================================
+# Handoff (run phase)
+# ===========================================================================
+
+#######################################
+# Printed BEFORE invoking anything: ./main runs until Ctrl-C, and SIGINT hits
+# the whole foreground process group, so a message printed after `just be`
+# never reaches the user. Goes to stdout — it is the product of this script.
+#######################################
+function print_guidance() {
+  printf '\n'
+  if [ -z "${no_run-}" ]; then
+    printf 'Building now — the first build takes a few minutes.\n'
+  fi
+  printf 'When it is ready, a window opens at http://localhost:8089 (needs Chrome or Edge 113+ for WebGPU).\n'
+  printf 'Start it again later:  cd %s && just be\n' "${CLONE_DIR}"
+  printf 'Undo everything:       cd %s && ./leave\n' "${CLONE_DIR}"
+  printf 'Stop it:               press Ctrl-C\n'
+  printf '\n'
+}
+
+#######################################
+# One friendly line interpreting a failed `just be` — interpretation only, no
+# git operation is performed (a porcelain read decides which hint applies).
+#######################################
+function interpret_be_failure() {
+  local st="$1"
+  local dirty
+  dirty="$(git -C "${CLONE_DIR}" status --porcelain 2>/dev/null | grep -cv '^??' || true)"
+  if [ "${dirty:-0}" -gt 0 ]; then
+    log 'ERROR' "just be stopped (exit ${st}). You may have local edits in ${CLONE_DIR} — try: cd ${CLONE_DIR} && git stash, then just be." "${C_ERROR-}"
+  else
+    log 'ERROR' "just be stopped (exit ${st}). If the UI packages complained about the lockfile, try: cd ${CLONE_DIR}/web-ui && bun install — then just be." "${C_ERROR-}"
+  fi
+}
+
+#######################################
+# Hands off to `just be`, which owns pull + build + run — enter never fetches
+# or pulls. The lock stays held across the child: releasing it would let a
+# second enter corrupt the build mid-staticRead; the pid stale-check keeps a
+# crashed holder from wedging future runs. Not exec — the EXIT trap must fire.
+#######################################
+function handoff() {
+  CURRENT_PHASE='run'
+  spinner_stop
+  print_guidance
+
+  if [ -n "${no_run-}" ]; then
+    return 0
+  fi
+
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' "cd ${CLONE_DIR} && just be" "${C_HINT-}"
+    return 0
+  fi
+
+  # errtrace would fire the ERR trap on the child's own exit status —
+  # disarm both so just be's status reaches the passthrough below.
+  trap - INT
+  trap - ERR
+  local st=0
+  set +o errexit
+  (cd "${CLONE_DIR}" && just be)
+  st=$?
+  set -o errexit
+  trap script_trap_err ERR
+
+  case "${st}" in
+    0 | 130) exit "${st}" ;;
+  esac
+  interpret_be_failure "${st}"
+  exit "${st}"
+}
+
+# ===========================================================================
+# CLI surface
+# ===========================================================================
+
+function script_usage() {
+  cat <<EOF
+Particle Garden installer for macOS.
+
+Usage: ${script_name-enter} [options]
+
+Checks for each tool Particle Garden needs, asks before installing anything
+missing, then builds and runs the garden (just be). Safe to run again —
+finished steps are skipped.
+
+Options:
+  -h, --help            Show this help and exit.
+  -v, --verbose         Log every step, with timestamps.
+      --quiet           Hide install output behind a spinner; show it only
+                        if the step fails.
+      --dry-run         Show what would happen without changing anything.
+      --yes             Answer every question with its default, unattended.
+      --no-run          Set everything up but skip the final build-and-run.
+      --no-color        Plain output (the NO_COLOR variable works too).
+      --state-dir <path>  Where the install ledger lives
+                          (default: ~/.local/state/particle-garden).
+      --clone-dir <path>  Where the Particle Garden code goes
+                          (default: ./particle-garden).
+
+Exit codes:
+  0 done · 1 a step failed · 2 bad usage · 3 declined · 4 not macOS ·
+  5 another enter/leave is running.
+EOF
+}
+
+#######################################
+# Parses flags into globals: verbose, quiet, no_color, dry_run, assume_yes,
+# no_run, opt_state_dir, opt_clone_dir.
+#######################################
+function parse_params() {
+  local param
+  while [ $# -gt 0 ]; do
+    param="$1"
+    shift
+    case "${param}" in
+      -h | --help)
+        script_usage
+        exit 0
+        ;;
+      -v | --verbose)
+        verbose=true
+        ;;
+      --quiet)
+        quiet=true
+        ;;
+      --no-color | --no-colour)
+        no_color=true
+        ;;
+      --dry-run)
+        dry_run=true
+        ;;
+      --yes)
+        assume_yes=true
+        ;;
+      --no-run)
+        no_run=true
+        ;;
+      --state-dir)
+        if [ $# -lt 1 ]; then
+          script_exit '--state-dir needs a path after it.' 2
+        fi
+        opt_state_dir="$1"
+        shift
+        ;;
+      --clone-dir)
+        if [ $# -lt 1 ]; then
+          script_exit '--clone-dir needs a path after it.' 2
+        fi
+        opt_clone_dir="$1"
+        shift
+        ;;
+      --)
+        ;;
+      *)
+        script_exit "Unknown option: ${param} (try --help)" 2
+        ;;
+    esac
+  done
+}
+
+# ===========================================================================
+# Preflight
+# ===========================================================================
+
+#######################################
+# Resolves CLONE_DIR exactly once; every later consumer reads the result.
+# Precedence: --clone-dir > ENTER_CLONE_DIR > adoption of the script's own
+# directory when it already is a clone > ./particle-garden.
+#######################################
+function resolve_clone_dir() {
+  local self_dir
+  self_dir="$(cd "${script_dir}" 2>/dev/null && pwd || true)"
+
+  if [ -n "${opt_clone_dir-}" ]; then
+    CLONE_DIR="${opt_clone_dir}"
+  elif [ -n "${ENTER_CLONE_DIR-}" ]; then
+    CLONE_DIR="${ENTER_CLONE_DIR}"
+  elif [ -n "${self_dir}" ] && is_clone "${self_dir}"; then
+    CLONE_DIR="${self_dir}"
+  else
+    CLONE_DIR="${PWD}/particle-garden"
+  fi
+}
+
+function preflight() {
+  if [ "$(uname -s)" != 'Darwin' ]; then
+    script_exit "Particle Garden's installer only knows macOS. On Linux or Windows, see the Build from Source notes in README.md." 4
+  fi
+
+  if [ "${EUID}" -eq 0 ]; then
+    log 'WARN' 'Running as root — everything installed will be owned by root, which usually hurts later. Consider running as your normal user.' "${C_WARN-}"
+  fi
+
+  ARCH="$(uname -m)"
+  OWNER_EMAIL="${ENTER_OWNER_EMAIL:-synapseradio@gmail.com}"
+  resolve_clone_dir
+  ledger_init enter
+  step_log_reset
+  acquire_lock
+}
+
+# ===========================================================================
+# Main
+# ===========================================================================
+
+function main() {
+  # The shared core, in one line. Everything below reaches for a function it
+  # defines, so nothing may run above it.
+  # shellcheck source=scripts/lib/load.sh
+  . "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/load.sh"
+
+  trap script_trap_err ERR
+  trap script_trap_exit EXIT
+  trap 'spinner_stop; exit 130' INT
+
+  script_init "${BASH_SOURCE[0]}" "$@"
+  parse_params "$@"
+  color_init
+  preflight
+
+  log 'INFO' "Welcome — let's get Particle Garden growing on this Mac." "${C_HEADER-}"
+  if [ -n "${dry_run-}" ]; then
+    log 'DRY-RUN' 'Nothing will be changed on this run.' "${C_HINT-}"
+  fi
+
+  compute_plan
+  render_plan
+
+  run_phase clt
+  run_phase brew
+  persist_shellenv_offer
+  run_phase just
+  run_phase nim
+  run_phase bun
+  run_phase repo
+  handoff
+}
+
+# Invoke main only when executed directly, never when sourced — the BATS
+# suite sources this file, and a half-downloaded copy fails to parse instead
+# of half-executing.
+if ! (return 0 2>/dev/null); then
+  main "$@"
+fi
+
+# vim: ft=bash ts=2 sw=2 sts=2 et

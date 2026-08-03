@@ -23,7 +23,7 @@ Verify: `nim --version`
 
 ```bash
 # Install dependencies (first time only)
-nimble install
+nimble install -d -y
 nimble setup
 
 # Build and run
