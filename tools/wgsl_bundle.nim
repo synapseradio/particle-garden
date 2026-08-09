@@ -1,5 +1,3 @@
-# WGSL SHADER BUNDLER
-#
 # This tool preprocesses WGSL shaders by:
 # 1. Resolving //! import directives (module system)
 # 2. Substituting {{PLACEHOLDER}} values from shader_config.nim
@@ -37,8 +35,6 @@ type
     content: string
     imports: seq[string]
 
-# IMPORT PARSING
-
 proc parseImports(content: string): seq[string] =
   ## Extract module names from //! import directives.
   ## Returns deduplicated list in declaration order.
@@ -58,8 +54,6 @@ proc stripImportDirectives(content: string): string =
       lines.add(line)
   result = lines.join("\n")
 
-# MODULE LOADING
-
 proc loadModule(name: string, loaded: var Table[string, Module]): Module =
   ## Load a module by name, caching in `loaded` table.
   if name in loaded:
@@ -74,8 +68,6 @@ proc loadModule(name: string, loaded: var Table[string, Module]): Module =
   result.content = readFile(path)
   result.imports = parseImports(result.content)
   loaded[name] = result
-
-# DEPENDENCY RESOLUTION (Topological Sort)
 
 proc topologicalSort(modules: Table[string, Module]): seq[string] =
   ## Kahn's algorithm for dependency ordering.
@@ -107,15 +99,12 @@ proc topologicalSort(modules: Table[string, Module]): seq[string] =
       if inDegree[dependent] == 0:
         queue.add(dependent)
 
-  # Check for cycles
   if result.len != modules.len:
     var missing: seq[string]
     for name in modules.keys:
       if name notin result:
         missing.add(name)
     quit "Error: Circular dependency detected involving: " & missing.join(", ")
-
-# PLACEHOLDER SUBSTITUTION
 
 let PLACEHOLDERS = getPlaceholderMap()
 
@@ -136,8 +125,6 @@ proc substitutePlaceholders(code: string, shaderName: string): string =
     if endIdx > startIdx:
       let placeholder = result[startIdx..endIdx+1]
       quit "Error: Unreplaced placeholder in " & shaderName & ": " & placeholder
-
-# SHADER BUNDLING
 
 proc bundle(srcPath: string): string =
   ## Bundle a shader with all its dependencies.
@@ -213,8 +200,6 @@ proc bundle(srcPath: string): string =
       "  expected: " & $expectedBindings & "\n" &
       "  got:      " & $declaredBindings
 
-# INCREMENTAL BUILD SUPPORT
-
 const PlaceholderSources = [
   "src/shader_config.nim",
   "src/field_core.nim",
@@ -250,7 +235,6 @@ proc needsRebuild(srcPath, outPath: string): bool =
 
   return false
 
-# GENERATED STRUCT MODULES
 # WGSL struct modules generated from the Nim layout tables in gpu_types.nim, the
 # single source of truth. Emitted into ModulesDir before import resolution so a
 # shader can `//! import` them. Kept out of version control (see .gitignore);
@@ -317,8 +301,6 @@ proc generateStructModules() =
   generateStructModule("overlay_params",
     structModuleHeader("overlay_params", "OverlayParamsLayout"),
     toWgslStruct(OverlayParamsLayout))
-
-# MAIN
 
 proc main() =
   echo "WGSL Shader Bundler"

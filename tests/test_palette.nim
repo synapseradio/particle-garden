@@ -1,7 +1,3 @@
-# Unit tests for pure color-generation functions in palette.nim.
-# Tests hslToRgb known values, generatePalette count/length behavior, scheme
-# distinctness, and channel range invariants.
-
 import std/unittest
 import ../src/palette
 

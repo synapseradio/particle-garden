@@ -1,6 +1,3 @@
-# ==============================================================================
-# PAN HANDLER - Pure screen-pixel panning
-# ==============================================================================
 #
 # Pure functions moving a Camera by a gesture measured in screen pixels, and the
 # session that says whether a middle-button drag is under way. No DOM

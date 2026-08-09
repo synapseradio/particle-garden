@@ -1,24 +1,13 @@
-# ==============================================================================
-# PARTICLE GARDEN - CONSOLIDATED WEB APPLICATION
-# ==============================================================================
-#
 # Build with `just happen` (recipe build-app in the justfile).
-#
-# ==============================================================================
 
 import std/asyncjs
 from std/jsffi import JsObject, toJs, to, `[]`, `[]=`
 from std/dom import Window, requestAnimationFrame
 
-# ==============================================================================
-# CORE MODULES - Import in dependency order
-# ==============================================================================
-#
 # IMPORTANT: These imports MUST remain in layer order. Each layer depends on
 # the previous layers. Reordering (e.g., alphabetizing) will break compilation.
 #
 # Dependency chain: config → buffers → {grid, canvas_input, web_api} → webgpu_*
-#
 
 # Layer 1: Configuration (no dependencies)
 import config
@@ -42,10 +31,6 @@ import webgpu_render
 import ui/state/app_state
 import ui/state/sim_config
 
-# ==============================================================================
-# BINDINGS - Helper procs
-# ==============================================================================
-
 from bindings/js_interop import
   console, jsRandom, newJsObject, setRandomSeed,
   setGlobal, getGlobal, consoleLog, consoleWarn, consoleError, performanceNow
@@ -64,10 +49,6 @@ proc logGpuProfile(particleCount: int, gridMs: float, physicsMs: float, drawMs: 
                    presentMs: float, bloomMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms bloom=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
-
-# ==============================================================================
-# APPLICATION STATE
-# ==============================================================================
 
 # Runtime state aggregate (isRunning, particleCount, fps, timing, profiling).
 # The exportc name keeps the JS backend from losing the global's generated
@@ -101,10 +82,6 @@ var forceWeatherPhase {.exportc.}: float = 0
 
 # Per-frame timing staging; folded into runtimeState via withTiming each frame
 var currentTiming* = initTimingState()
-
-# ==============================================================================
-# PARTICLE INITIALIZATION
-# ==============================================================================
 
 proc initParticles*() {.exportc.} =
   ## Positions are in WORLD coordinates (decoupled from canvas).
@@ -178,10 +155,6 @@ proc resizeParticles*() {.exportc.} =
 proc resetParticles*() {.exportc.} =
   initParticles()  # also triggers the GPU upload
 
-# ==============================================================================
-# PHYSICS (WebGPU Compute)
-# ==============================================================================
-
 proc physics(dt: float): Future[void] {.async.} =
   let physicsStart = performanceNow()
 
@@ -227,11 +200,6 @@ proc physics(dt: float): Future[void] {.async.} =
 
   computeTimeMs = performanceNow() - physicsStart
 
-# ==============================================================================
-# MAIN LOOP
-# ==============================================================================
-
-# Forward declaration for loop
 proc loop(now: float): Future[void] {.async.}
 
 proc loop(now: float): Future[void] {.async.} =
@@ -327,10 +295,6 @@ proc loop(now: float): Future[void] {.async.} =
 
   discard domWindow.requestAnimationFrame(proc(timestamp: float) = discard loop(timestamp))
 
-# ==============================================================================
-# INITIALIZATION
-# ==============================================================================
-
 proc init(): Future[void] {.async, exportc.} =
   ## Requires WebGPU; there is no fallback path.
 
@@ -420,9 +384,5 @@ proc init(): Future[void] {.async, exportc.} =
   # Buffers and pipelines exist now; release gardenAPI consumers waiting on
   # matrix/COLORS/stats access.
   web_api.signalReady()
-
-# ==============================================================================
-# ENTRY POINT
-# ==============================================================================
 
 domDocument.addEventListener("DOMContentLoaded", proc() = discard init())

@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - MEMORY LAYOUT TESTS
-
 import std/unittest
 import ../src/memory_layout
 import ../src/ui/state/matrix_state

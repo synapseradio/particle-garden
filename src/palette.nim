@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - PALETTE (Pure Color Generation)
-# ==============================================================================
-#
 # Pure functions for generating species color palettes. No side effects, no
 # JS/FFI dependencies: compiles native (nimble test) and JS (config.nim's
 # frontend build) identically.
@@ -15,14 +11,8 @@
 # This module is the serialization contract for palettes: presets store
 # a generated or edited palette by its RGB tuples, so the shape returned here
 # (seq[tuple[red, green, blue: float]]) is load-bearing beyond config.nim.
-#
-# ==============================================================================
 
 import std/math
-
-# ==============================================================================
-# SECTION 1: TYPES
-# ==============================================================================
 
 type
   PaletteScheme* = enum
@@ -41,10 +31,6 @@ type
   RgbColor* = tuple[red, green, blue: float]
     ## One color as RGB channels, each in [0, 1]. The palette serialization
     ## contract: presets store palettes in this shape.
-
-# ==============================================================================
-# SECTION 2: CONSTANTS
-# ==============================================================================
 
 const
   GOLDEN_RATIO_CONJUGATE* = 0.6180339887498949
@@ -80,10 +66,6 @@ const OPEN_COLOR_SWATCHES*: array[6, RgbColor] = [
   rgbFrom8Bit(0xcc, 0x5d, 0xe8),  # grape-5
   rgbFrom8Bit(0x3b, 0xc9, 0xdb),  # cyan-4
 ]
-
-# ==============================================================================
-# SECTION 3: HSL -> RGB CONVERSION
-# ==============================================================================
 
 func hslToRgb*(hue, saturation, lightness: float): RgbColor =
   ## Convert an HSL color to RGB.
@@ -122,10 +104,6 @@ func hslToRgb*(hue, saturation, lightness: float): RgbColor =
     blue: hueToChannel(chromaLow, chromaHigh, wrappedHue - 1.0 / 3.0)
   )
 
-# ==============================================================================
-# SECTION 4: HUE SEQUENCES PER SCHEME
-# ==============================================================================
-
 func hueRangeFor(scheme: PaletteScheme): tuple[start, spread: float] =
   ## Starting hue and angular spread (both as wheel fractions) for a bounded
   ## scheme. Only meaningful for psWarm/psCool; psGolden and psSpectrum
@@ -154,10 +132,6 @@ func hueAt(scheme: PaletteScheme, index, count: int): float =
     # hueAt for this scheme. Guarded here so a future call path fails loudly.
     raise newException(ValueError, "psOpenColor has no hue sequence")
 
-# ==============================================================================
-# SECTION 5: PALETTE GENERATION
-# ==============================================================================
-
 func generatePalette*(count: int, scheme: PaletteScheme = psGolden;
     saturation: float = DEFAULT_SATURATION,
     lightness: float = DEFAULT_LIGHTNESS): seq[RgbColor] =
@@ -181,10 +155,6 @@ func generatePalette*(count: int, scheme: PaletteScheme = psGolden;
   for colorIndex in 0 ..< count:
     let hue = hueAt(scheme, colorIndex, count)
     result[colorIndex] = hslToRgb(hue, saturation, lightness)
-
-# ==============================================================================
-# SECTION 6: FLAT ENCODING (for Float32Array / GPU buffers)
-# ==============================================================================
 
 func flattenPalette*(palette: seq[RgbColor]): seq[float] =
   ## Interleave a palette's RGB tuples into a flat [r0, g0, b0, r1, g1, b1, ...]

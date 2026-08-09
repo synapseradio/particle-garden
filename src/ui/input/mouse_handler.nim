@@ -1,8 +1,4 @@
-# ==============================================================================
-# MOUSE HANDLER - Pure mouse event processing
-# ==============================================================================
 #
-# Pure functions that transform InputState based on mouse events.
 # No DOM access, no side effects - just state transitions.
 #
 # Each handler takes current state + event data, returns new state.

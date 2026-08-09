@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - GPU PASS PROFILER (timestamp-query)
-# ==============================================================================
-#
 # Measures GPU execution time per pass with WebGPU timestamp queries.
 # Inactive when the adapter lacks the timestamp-query feature — callers see
 # zeroed timings and the stats panel keeps showing placeholders.

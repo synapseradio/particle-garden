@@ -21,7 +21,6 @@
 // +---+---+---+
 //
 // This gives us 5 cells instead of 9, cutting work nearly in half.
-// Each pair (i,j) is computed EXACTLY ONCE, with forces applied to both via atomics.
 //
 // =============================================================================
 
@@ -33,7 +32,6 @@
 // by the sim_params module imported above.
 @group(0) @binding(0) var<uniform> params: SimParams;
 
-// SORTED buffer: particles reordered by spatial grid position for sequential memory access
 @group(0) @binding(1) var<storage, read> particlesSorted: array<Particle>;
 
 // Index mapping: sortedIdx → originalIdx (needed to write results back to original buffers)
@@ -134,7 +132,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let attenuationOnThis =
     crowdingAttenuation(thisParticle.crowdDensity, params.crowdingStrength);
 
-  // Find this particle's grid cell
   var cellX = i32(thisParticle.pos.x * invCellWidth);
   var cellY = i32(thisParticle.pos.y * invCellHeight);
   cellX = clamp(cellX, 0, gridWidth - 1);
@@ -215,7 +212,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let invDistance = 1.0 / distance;
         let normalizedDist = distance * invRadius;  // 0.0 = touching, 1.0 = at radius edge
 
-        // Get attraction coefficients for both directions
         // Matrix is asymmetric: Red may attract Blue, while Blue repels Red
         let matrixIdxThisToOther = thisParticle.species * MAX_SPECIES + otherParticle.species;
         let matrixIdxOtherToThis = otherParticle.species * MAX_SPECIES + thisParticle.species;

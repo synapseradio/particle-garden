@@ -1,6 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - DORMANCY PREDICATES
-# ==============================================================================
 #
 # A dormant control dims, names its missing precondition, and stays movable.
 # Each predicate declares the simulation fields, render fields, and pushed

@@ -1,6 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - WEB API (window.gardenAPI)
-# ==============================================================================
 #
 # The one boundary the TypeScript UI talks through, and the home of the
 # typed-state -> CONFIG bridge. A single `gardenAPI` object is created at
@@ -79,10 +77,6 @@ when defined(js):
     ## Wall-clock ISO-8601 timestamp for a preset's createdAt. preset.nim has
     ## no clock access (pure, no FFI) by design; this is the one place a
     ## real value gets stamped in.
-
-  # ============================================================================
-  # SECTION 1: TYPED CONFIG STATE (the synchronous mirror)
-  # ============================================================================
 
   var currentSimulation* = initSimulationState()
   var currentRender* = initRenderState()
@@ -190,10 +184,6 @@ when defined(js):
     mutate(renderState)
     currentRender = renderState
     applyRenderToConfig(renderState)
-
-  # ============================================================================
-  # SECTION 2: DESCRIPTOR TABLE
-  # ============================================================================
 
   let paramDescriptors = buildParamDescriptors()
 
@@ -313,8 +303,6 @@ when defined(js):
     clampParamValue(paramsById[id], value)
 
   # ============================================================================
-  # SECTION 3: PALETTE EDITOR STATE
-  # ============================================================================
   #
   # Session-only UI state, deliberately not part of SimConfig or the preset
   # store (see palette_state.nim). Changing any knob regenerates the six
@@ -340,10 +328,6 @@ when defined(js):
     paletteEditorState = paletteEditorState.withScheme(scheme)
     applyPaletteToColors()
 
-  # ============================================================================
-  # SECTION 4: MATRIX STATE
-  # ============================================================================
-
   # The species count the matrix bookkeeping last saw; lets a grow
   # distinguish newly exposed cells from established ones.
   var lastSpeciesCount = CONFIG.speciesCount
@@ -368,10 +352,6 @@ when defined(js):
       for cell in exposed:
         buffers.matrix[matrixIndex(cell.row, cell.col)] =
           sampleRuleValue(CONFIG.ruleTemperature, gaussian)
-
-  # ============================================================================
-  # SECTION 5: MUTATION IMPLS (toggles, counts)
-  # ============================================================================
 
   proc triggerParticleReinit() =
     if not canvas_input.onInitParticles.isNil:
@@ -430,10 +410,6 @@ when defined(js):
     let overlay = cast[HTMLElement](getElementById(cstring("webgpu-required")))
     if not overlay.isNil:
       overlay.style.display = cstring"block"
-
-  # ============================================================================
-  # SECTION 6: PARAMETER GET / SET / COMMIT
-  # ============================================================================
 
   const ReadElsewhere = ["paletteSaturation", "paletteLightness",
     "sphStiffness", "cameraZoom"]
@@ -804,8 +780,6 @@ when defined(js):
     else: discard
 
   # ============================================================================
-  # SECTION 7: LIFECYCLE (ready gate + stats push)
-  # ============================================================================
   #
   # buffers.matrix exists only after init() has run allocateBuffers, so the
   # TS side must defer matrix/COLORS reads (and stats interest) to onReady.
@@ -885,10 +859,6 @@ when defined(js):
     stats["fieldAliveCells"] = toJs(fieldAliveCells)
     for callback in statsCallbacks:
       callback(stats)
-
-  # ============================================================================
-  # SECTION 8: PRESETS (snapshot / apply)
-  # ============================================================================
 
   proc snapshotPreset(name: string): Preset =
     ## Capture the CURRENT live CONFIG, attraction matrix, species chemistry,
@@ -1074,10 +1044,6 @@ when defined(js):
         # everything through gardenAPI after a successful apply.
         discard
 
-  # ============================================================================
-  # SECTION 9: CATALOGS
-  # ============================================================================
-
   proc paletteSchemeLabel(scheme: PaletteScheme): string =
     case scheme
     of psOpenColor: "Open Color"
@@ -1113,8 +1079,6 @@ when defined(js):
       jsArray.push(entry)
     jsArray
 
-  # ----------------------------------------------------------------------------
-  # Starter presets
   # ----------------------------------------------------------------------------
   #
   # Complete, already-valid presets served as JSON strings and applied through
@@ -1153,10 +1117,6 @@ when defined(js):
         regime.label, regime.feed, regime.kill, regime.minDeposit)))
       jsArray.push(entry)
     jsArray
-
-  # ============================================================================
-  # SECTION 10: THE gardenAPI OBJECT
-  # ============================================================================
 
   proc buildGardenApi(): JsObject =
     result = newJsObject()

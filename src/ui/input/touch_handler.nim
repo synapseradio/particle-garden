@@ -1,8 +1,4 @@
-# ==============================================================================
-# TOUCH HANDLER - Pure touch event processing
-# ==============================================================================
 #
-# Pure functions that transform InputState based on touch events.
 # Touch is mapped to mouse-like behavior: first touch = left mouse button.
 #
 # ==============================================================================

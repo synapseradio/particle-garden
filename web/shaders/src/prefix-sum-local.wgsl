@@ -44,7 +44,6 @@ fn main(
   workgroupBarrier();
 
   // ========== UP-SWEEP (Reduce) ==========
-  // Build tree of partial sums
   var offset = 1u;
   for (var d = BLOCK_SIZE >> 1u; d > 0u; d >>= 1u) {
     workgroupBarrier();

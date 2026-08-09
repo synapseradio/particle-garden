@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - NATIVE DESKTOP WRAPPER
-# ==============================================================================
-#
 # ARCHITECTURE: WebGPU-only physics with native window wrapper.
 #
 # This application uses a hybrid "Native + Web" architecture:
@@ -16,15 +12,12 @@
 # SECURITY HEADERS (COOP/COEP):
 # The server provides Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy
 # headers to enable SharedArrayBuffer (used for memory buffer initialization).
-#
-# ==============================================================================
 
 import webui
 import std/[os, asynchttpserver, asyncdispatch, net, strutils, tables]
 
 const ServerPort = 8089
 
-# MIME types by extension
 const MimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript",

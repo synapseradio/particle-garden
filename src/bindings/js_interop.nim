@@ -1,31 +1,5 @@
-# ==============================================================================
-# JS INTEROP - FOUNDATION BINDINGS MODULE
-# ==============================================================================
-#
-# This module provides the foundation for Nim-to-JavaScript interop used across
-# all other bindings modules. It centralizes common patterns and utilities.
-#
-# EXPORTS:
-# - JsObject utility procs (isNil, isUndefined, toJs conversions)
-# - Console bindings (log, warn, error, debug, info)
-# - GlobalThis access for browser globals
-# - Promise/Future interop utilities
-# - Common type conversion patterns
-# - Performance timing utilities
-#
-# USAGE:
-#   import bindings/js_interop
-#
-# All other bindings modules should import this module for common utilities.
-#
-# ==============================================================================
-
 import std/jsffi
 import std/asyncjs
-
-# ==============================================================================
-# SECTION 1: UNDEFINED AND NULL HANDLING
-# ==============================================================================
 
 var jsUndefined* {.importjs: "undefined".}: JsObject
 
@@ -38,10 +12,6 @@ proc isNull*(obj: JsObject): bool {.importjs: "(# === null)".}
 proc isNullOrUndefined*(obj: JsObject): bool {.importjs: "(# == null)".}
 
 proc isDefined*(obj: JsObject): bool {.importjs: "(# !== undefined)".}
-
-# ==============================================================================
-# SECTION 2: TYPE CHECKING UTILITIES
-# ==============================================================================
 
 proc jsTypeof*(obj: JsObject): cstring {.importjs: "(typeof #)".}
 
@@ -58,10 +28,6 @@ proc isJsNumber*(obj: JsObject): bool {.importjs: "(typeof # === 'number')".}
 proc isJsBoolean*(obj: JsObject): bool {.importjs: "(typeof # === 'boolean')".}
 
 proc instanceOf*(obj: JsObject, constructor: JsObject): bool {.importjs: "(# instanceof #)".}
-
-# ==============================================================================
-# SECTION 3: TYPE CONVERSIONS
-# ==============================================================================
 
 proc toJsObject*(value: int): JsObject {.importjs: "(#)".}
 
@@ -94,10 +60,6 @@ proc stringifyJs*(obj: JsObject): cstring {.importjs: "JSON.stringify(#)".}
 
 proc stringifyJsPretty*(obj: JsObject, indent: int = 2): cstring {.importjs: "JSON.stringify(#, null, #)".}
 
-# ==============================================================================
-# SECTION 4: OBJECT UTILITIES
-# ==============================================================================
-
 proc jsKeys*(obj: JsObject): JsObject {.importjs: "Object.keys(#)".}
 
 proc jsValues*(obj: JsObject): JsObject {.importjs: "Object.values(#)".}
@@ -119,10 +81,6 @@ proc newJsArray*(): JsObject {.importjs: "([])".}
 proc newJsArray*(length: int): JsObject {.importjs: "new Array(#)".}
 
 proc push*(arr: JsObject, val: JsObject): int {.importjs: "#.push(#)", discardable.}
-
-# ==============================================================================
-# SECTION 5: CONSOLE BINDINGS
-# ==============================================================================
 
 type
   Console* = ref object of JsObject
@@ -153,16 +111,11 @@ proc timeEnd*(console: Console, label: cstring) {.importjs: "#.timeEnd(#)".}
 
 proc table*(console: Console, data: JsObject) {.importjs: "#.table(#)".}
 
-# Convenience procs that use the global console
 proc consoleLog*(args: varargs[JsObject, toJs]) {.importjs: "console.log(...@)".}
 
 proc consoleWarn*(args: varargs[JsObject, toJs]) {.importjs: "console.warn(...@)".}
 
 proc consoleError*(args: varargs[JsObject, toJs]) {.importjs: "console.error(...@)".}
-
-# ==============================================================================
-# SECTION 6: GLOBALTHIS ACCESS
-# ==============================================================================
 
 var globalThis* {.importjs: "globalThis".}: JsObject
 
@@ -176,10 +129,6 @@ proc getGlobal*(name: cstring): JsObject {.importjs: "globalThis[#]".}
 
 proc hasGlobal*(name: cstring): bool {.importjs: "(# in globalThis)".}
 
-# ==============================================================================
-# SECTION 7: PERFORMANCE TIMING
-# ==============================================================================
-
 type
   Performance* = ref object of JsObject
 
@@ -192,10 +141,6 @@ proc performanceNow*(): float {.importjs: "performance.now()".}
 proc mark*(performance: Performance, name: cstring) {.importjs: "#.mark(#)".}
 
 proc measure*(performance: Performance, name: cstring, startMark: cstring, endMark: cstring) {.importjs: "#.measure(#, #, #)".}
-
-# ==============================================================================
-# SECTION 8: PROMISE/FUTURE INTEROP
-# ==============================================================================
 
 type
   JsPromise*[T] = ref object of JsObject
@@ -229,10 +174,6 @@ proc toPromise*[T](future: Future[T]): JsPromise[T] =
 proc toFuture*[T](promise: JsPromise[T]): Future[T] =
   cast[Future[T]](promise)
 
-# ==============================================================================
-# SECTION 9: TIMERS
-# ==============================================================================
-
 type
   TimeoutId* = distinct int
   IntervalId* = distinct int
@@ -249,10 +190,6 @@ proc requestAnimationFrame*(callback: proc(timestamp: float)): int {.importjs: "
 
 proc cancelAnimationFrame*(id: int) {.importjs: "cancelAnimationFrame(#)".}
 
-# ==============================================================================
-# SECTION 10: ERROR HANDLING
-# ==============================================================================
-
 type
   JsError* = ref object of JsObject
     message* {.importjs: "message".}: cstring
@@ -266,10 +203,6 @@ proc newJsTypeError*(message: cstring): JsError {.importjs: "new TypeError(#)".}
 proc newJsRangeError*(message: cstring): JsError {.importjs: "new RangeError(#)".}
 
 proc throwJs*(error: JsError) {.importjs: "throw #".}
-
-# ==============================================================================
-# SECTION 11: MATH UTILITIES
-# ==============================================================================
 
 var jsMath* {.importjs: "Math".}: JsObject
 
@@ -344,10 +277,6 @@ proc gaussian*(): float =
   let uniform1 = jsMax(jsRandom(), 1e-12)   # guard ln(0)
   let uniform2 = jsRandom()
   jsSqrt(-2.0 * jsLog(uniform1)) * jsCos(2.0 * jsPi * uniform2)
-
-# ==============================================================================
-# SECTION 12: UTILITY MACROS AND TEMPLATES
-# ==============================================================================
 
 template withPerformanceTiming*(label: string, body: untyped): float =
   let t0 = performanceNow()

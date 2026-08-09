@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - OBSERVABLE TESTS
-
 import std/unittest
 import ../src/ui/core/observable
 

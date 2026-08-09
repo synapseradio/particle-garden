@@ -1,8 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - SPATIAL GRID DIMENSIONS
-# ==============================================================================
-#
-# Spatial partitioning grid dimensions for particle simulation.
 #
 # This module only computes grid dimensions. The actual grid building
 # (counting, prefix sum, scatter) happens entirely on the GPU via
@@ -17,19 +13,11 @@ from std/jsffi import JsObject
 import bindings/js_interop
 import config
 
-# ==============================================================================
-# SECTION 1: TYPE DEFINITIONS
-# ==============================================================================
-
 type
   GridDimensions* = ref object of JsObject
     gridW* {.exportc.}: int
     gridH* {.exportc.}: int
     cellSize* {.exportc.}: int
-
-# ==============================================================================
-# SECTION 2: MODULE STATE
-# ==============================================================================
 
 # Grid dimensions - updated each frame from WORLD size and interaction radius
 var gridW* {.exportc.}: int = 0
@@ -38,10 +26,6 @@ var cellSize* {.exportc.}: int = 0
 
 # Performance timing
 var gridTimeMs* {.exportc.}: float = 0.0
-
-# ==============================================================================
-# SECTION 3: GRID DIMENSION COMPUTATION
-# ==============================================================================
 
 proc computeGridDimensions*(canvasWidth: int, canvasHeight: int): GridDimensions {.exportc.} =
   ## Compute grid dimensions without doing any sorting.

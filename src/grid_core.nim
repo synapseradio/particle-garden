@@ -1,6 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - GRID CORE (Pure Mathematical Functions)
-# ==============================================================================
 #
 # Pure functions for spatial grid calculations. These have no side effects
 # and can be tested in isolation without buffer access.
@@ -20,10 +18,6 @@ import memory_layout
 
 # Re-export MAX_GRID for backward compatibility with existing code
 const MAX_GRID* = memory_layout.MAX_GRID
-
-# ==============================================================================
-# GRID DIMENSION COMPUTATION
-# ==============================================================================
 
 func computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
     gridW: int, gridH: int, cellSize: int] =
@@ -45,7 +39,6 @@ func computeGridDims*(canvasW, canvasH, interactionRadius: int): tuple[
   var gridW = canvasW div cellSize
   var gridH = canvasH div cellSize
 
-  # Clamp to valid range [1, MAX_GRID]
   if gridW < 1:
     gridW = 1
   elif gridW > MAX_GRID:
@@ -68,17 +61,12 @@ func computeInverseCellDims*(gridW, gridH: int;
   )
 
 
-# ==============================================================================
-# CELL INDEX COMPUTATION
-# ==============================================================================
-
 func positionToCellIndex*(px, py: float; gridW, gridH: int;
     invCellW, invCellH: float): int =
   ## Out-of-bounds positions are clamped to valid cells.
   var cx = int(px * invCellW)
   var cy = int(py * invCellH)
 
-  # Clamp to valid range
   if cx < 0:
     cx = 0
   elif cx >= gridW:
@@ -95,10 +83,6 @@ func positionToCellIndex*(px, py: float; gridW, gridH: int;
 func cellIndexToCoords*(cellIdx, gridW: int): tuple[cx: int, cy: int] =
   result = (cx: cellIdx mod gridW, cy: cellIdx div gridW)
 
-
-# ==============================================================================
-# PREFIX SUM HELPERS
-# ==============================================================================
 
 func computePrefixSum*(counts: openArray[int]): seq[int] =
   ## Gives the starting index in the sorted buffer for each cell.
@@ -132,10 +116,6 @@ func validateGridOffsets*(offsets, counts: openArray[int];
 
   result = (totalCount == particleCount)
 
-
-# ==============================================================================
-# INVARIANT CHECKING
-# ==============================================================================
 
 func isValidCellIndex*(cellIdx, gridW, gridH: int): bool =
   result = cellIdx >= 0 and cellIdx < gridW * gridH

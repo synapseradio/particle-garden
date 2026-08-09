@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - TEST SUITE
-
 import test_physics
 import test_grid
 import test_memory_layout

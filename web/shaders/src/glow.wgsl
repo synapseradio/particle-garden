@@ -21,7 +21,6 @@ const OFFSETS = array<vec2f, 6>(
   vec2f( 1.0,  1.0),
 );
 
-// AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
 @group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors (vertex-only visibility)
@@ -70,7 +69,7 @@ const DENSITY_MIN: f32 = {{TUNABLE_GLOW_DENSITY_MIN}};                // Sparse 
 const DENSITY_MAX: f32 = {{TUNABLE_GLOW_DENSITY_MAX}};
 
 // GAUSSIAN FALLOFF
-const GLOW_DIVISOR: f32 = {{TUNABLE_GLOW_DIVISOR}};                   // Overall intensity scaling
+const GLOW_DIVISOR: f32 = {{TUNABLE_GLOW_DIVISOR}};
 
 // COLOR WARMTH (dense → warm, sparse → neutral; ceiling is params.glowWarmth)
 const WARMTH_GREEN: f32 = {{TUNABLE_GLOW_WARMTH_GREEN}};
@@ -82,11 +81,9 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let particleId = id / 6u;
   let cornerId = id % 6u;
 
-  // Read particle data from AoS buffer
   let p = particles[particleId];
   let offset = OFFSETS[cornerId];
 
-  // Compute normalized velocity BEFORE using it for radius
   let speed = length(p.vel);
   let velocityNorm = clamp(speed / max(params.maxVelocity, 0.0001), 0.0, 1.0);
   output.velocityNorm = velocityNorm;
@@ -103,7 +100,6 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // step with them — all three move together or none does.
   let worldOffset = offset * glowRadius / scale;
 
-  // Species tint (colors has vertex-only visibility; interpolate to fragment)
   let speciesIndex = min(p.species, MAX_SPECIES - 1u);
   output.tint = colors[speciesIndex].rgb;
 

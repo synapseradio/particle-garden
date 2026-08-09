@@ -1,6 +1,3 @@
-# ==============================================================================
-# PALETTE STATE - Palette editor typed state (Pure)
-# ==============================================================================
 #
 # The palette editor's live tunables: which scheme is active, plus the
 # saturation/lightness knobs generatePalette accepts. web_api.nim holds one of

@@ -1,7 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - WEBGPU RENDER MODULE
-# ==============================================================================
-#
 # GPU-only particle rendering using WebGPU render pipeline.
 # Reads particle data directly from compute shader storage buffers.
 # Zero CPU readback - all data stays on GPU.
@@ -47,14 +44,6 @@ import overlay_core
 # canvas_input sits a layer below (app.nim's import order); it carries the
 # drag-active parameter id the panel writes and the cursor the ring follows.
 import canvas_input
-
-# ==============================================================================
-# SECTION 1: TYPE DEFINITIONS
-# ==============================================================================
-
-# ==============================================================================
-# SECTION 2: MODULE STATE
-# ==============================================================================
 
 var canvas*: HTMLCanvasElement
 var gpuContext: GPUCanvasContext
@@ -115,7 +104,6 @@ let colorData = newFloat32Array(24)
 var bindGroupLayout: GPUBindGroupLayout
 var isInitialized: bool = false
 
-# Ping-pong trail textures (persistent across frames)
 var trailTextureA: GPUTexture
 var trailTextureB: GPUTexture
 var trailViewA: GPUTextureView
@@ -128,7 +116,6 @@ var blitBindGroupB: GPUBindGroup
 var fadeBindGroupReadA: GPUBindGroup
 var fadeBindGroupReadB: GPUBindGroup
 
-# Shared sampler for texture reads
 var linearSampler: GPUSampler
 
 # Depth texture for Z-ordering (larger particles behind smaller ones)
@@ -249,10 +236,6 @@ proc validateEntryCount(entries: JsObject, groupName: string, expected: int) =
       "Bind group entry count mismatch for \"" & groupName & "\": expected " &
       $expected & " entries, got " & $actual)
 
-# ==============================================================================
-# SECTION 3: SHADER SOURCE
-# ==============================================================================
-
 const RENDER_SHADER = staticRead("../web/shaders/render.wgsl")
 
 # Glow, fade, and composite (blit) shaders live in web/shaders/src/ and go
@@ -273,11 +256,6 @@ func halfDimension(fullSize: int): int =
   ## Half-resolution size for the bloom targets, never below 1.
   max(1, fullSize div BLOOM_DOWNSCALE)
 
-# ==============================================================================
-# SECTION 4: INITIALIZATION
-# ==============================================================================
-
-# Forward declarations
 proc updateBindGroup*()
 proc createBloomTargets()
 proc createBloomBindGroups()
@@ -319,7 +297,6 @@ proc initWebGPURender*(): bool =
   shaderDesc["code"] = RENDER_SHADER.cstring.toJs
   let shaderModule = webgpu_init.device.createShaderModule(shaderDesc)
 
-  # Create render params uniform buffer (resolution, worldSize, baseSize, glowIntensity, etc.)
   let paramsSize = wgslUniformSize(RenderParamsLayout)
   let paramsDesc = newJsObject()
   paramsDesc["size"] = paramsSize.toJs
@@ -471,13 +448,11 @@ proc initWebGPURender*(): bool =
   fragmentStage["targets"] = targets
   pipelineDesc["fragment"] = fragmentStage
 
-  # Primitive state (triangle list for quads)
   let primitive = newJsObject()
   primitive["topology"] = "triangle-list".cstring.toJs
   primitive["cullMode"] = "none".cstring.toJs
   pipelineDesc["primitive"] = primitive
 
-  # Depth stencil state for Z-ordering (larger particles behind smaller ones)
   let depthStencil = newJsObject()
   depthStencil["format"] = "depth24plus".cstring.toJs
   depthStencil["depthWriteEnabled"] = true.toJs
@@ -502,7 +477,6 @@ proc initWebGPURender*(): bool =
   glowVertexStage["entryPoint"] = "vs_main".cstring.toJs
   glowPipelineDesc["vertex"] = glowVertexStage
 
-  # Fragment stage with additive blending
   let glowFragmentStage = newJsObject()
   glowFragmentStage["module"] = glowShaderModule.toJs
   glowFragmentStage["entryPoint"] = "fs_main".cstring.toJs
@@ -543,11 +517,6 @@ proc initWebGPURender*(): bool =
 
   glowPipeline = webgpu_init.device.createRenderPipeline(glowPipelineDesc)
 
-  # ==========================================================================
-  # TRAIL RENDERING INFRASTRUCTURE
-  # ==========================================================================
-
-  # Create shared sampler for texture reads (created once, reused everywhere)
   let samplerDesc = newJsObject()
   samplerDesc["magFilter"] = "linear".cstring.toJs
   samplerDesc["minFilter"] = "linear".cstring.toJs
@@ -561,7 +530,6 @@ proc initWebGPURender*(): bool =
   samplerDesc["label"] = "Linear Sampler".cstring.toJs
   linearSampler = webgpu_init.device.createSampler(samplerDesc)
 
-  # Create fade params uniform buffer (fadeAmount + fieldDriftScale + 2 pads)
   let fadeParamsSize = wgslUniformSize(FadeParamsLayout)
   let fadeParamsDesc = newJsObject()
   fadeParamsDesc["size"] = fadeParamsSize.toJs
@@ -569,13 +537,11 @@ proc initWebGPURender*(): bool =
   fadeParamsDesc["label"] = "Fade Params Buffer".cstring.toJs
   fadeParamsBuffer = webgpu_init.device.createBuffer(fadeParamsDesc)
 
-  # Create fade shader module (samples previous frame texture)
   let fadeShaderDesc = newJsObject()
   fadeShaderDesc["label"] = "Fade Overlay Shader".cstring.toJs
   fadeShaderDesc["code"] = FADE_SHADER.cstring.toJs
   let fadeShaderModule = webgpu_init.device.createShaderModule(fadeShaderDesc)
 
-  # Create fade bind group layout (texture + sampler + uniform)
   let fadeLayoutDesc = newJsObject()
   fadeLayoutDesc["label"] = "Fade Bind Group Layout".cstring.toJs
   let fadeLayoutEntries = newJsArray()
@@ -683,16 +649,11 @@ proc initWebGPURender*(): bool =
 
   fadePipeline = webgpu_init.device.createRenderPipeline(fadePipelineDesc)
 
-  # ==========================================================================
-  # BLIT PIPELINE (copies offscreen texture to swap chain)
-  # ==========================================================================
-
   let blitShaderDesc = newJsObject()
   blitShaderDesc["label"] = "Blit Shader".cstring.toJs
   blitShaderDesc["code"] = BLIT_SHADER.cstring.toJs
   let blitShaderModule = webgpu_init.device.createShaderModule(blitShaderDesc)
 
-  # Create blit bind group layout (texture + sampler)
   let blitLayoutDesc = newJsObject()
   blitLayoutDesc["label"] = "Blit Bind Group Layout".cstring.toJs
   let blitLayoutEntries = newJsArray()
@@ -969,10 +930,6 @@ proc initWebGPURender*(): bool =
 
   fieldCompositePipeline = webgpu_init.device.createRenderPipeline(fieldPipelineDesc)
 
-  # ==========================================================================
-  # HDR BLOOM PIPELINES: glow-to-HDR, separable blur, tonemap composite
-  # ==========================================================================
-
   # --- Glow-to-HDR pipeline: the glow shader, retargeted to the half-res
   # rgba16float bloom source. Same layout/bindings/additive-blend as the
   # present-pass glow, but no depth attachment (bloom needs no Z-ordering).
@@ -1202,10 +1159,6 @@ proc initWebGPURender*(): bool =
   tonemapParamsDesc["label"] = "Tonemap Params".cstring.toJs
   tonemapParamsBuffer = webgpu_init.device.createBuffer(tonemapParamsDesc)
 
-  # ==========================================================================
-  # PERSISTENT TRAIL TEXTURES (survive across frames for ping-pong)
-  # ==========================================================================
-
   let trailTextureDesc = newJsObject()
   let trailSize = newJsArray()
   discard trailSize.push(canvas.width.toJs)
@@ -1221,7 +1174,6 @@ proc initWebGPURender*(): bool =
   trailViewA = trailTextureA.createView()
   trailViewB = trailTextureB.createView()
 
-  # Create depth texture for Z-ordering (larger particles behind smaller ones)
   let depthTextureDesc = newJsObject()
   let depthSize = newJsArray()
   discard depthSize.push(canvas.width.toJs)
@@ -1250,7 +1202,6 @@ proc initWebGPURender*(): bool =
   bgColor["b"] = 0.0.toJs
   bgColor["a"] = 0.0.toJs
 
-  # Clear texture A
   let clearPassDescA = newJsObject()
   clearPassDescA["label"] = "Clear Trail Texture A".cstring.toJs
   let attachmentsA = newJsArray()
@@ -1264,7 +1215,6 @@ proc initWebGPURender*(): bool =
   let clearPassA = initEncoder.beginRenderPass(clearPassDescA)
   clearPassA.endPass()
 
-  # Clear texture B
   let clearPassDescB = newJsObject()
   clearPassDescB["label"] = "Clear Trail Texture B".cstring.toJs
   let attachmentsB = newJsArray()
@@ -1278,17 +1228,11 @@ proc initWebGPURender*(): bool =
   let clearPassB = initEncoder.beginRenderPass(clearPassDescB)
   clearPassB.endPass()
 
-  # Submit initialization commands
   let initCommandBuffer = initEncoder.finish()
   let initCommandArray = newJsArray()
   discard initCommandArray.push(cast[JsObject](initCommandBuffer))
   webgpu_init.queue.submit(initCommandArray)
 
-  # ==========================================================================
-  # PRE-CACHED BIND GROUPS (created once, selected at runtime)
-  # ==========================================================================
-
-  # Blit bind group A (reads from trail texture A)
   let blitBGA = newJsObject()
   blitBGA["label"] = "Blit Bind Group A".cstring.toJs
   blitBGA["layout"] = blitBindGroupLayout.toJs
@@ -1306,7 +1250,6 @@ proc initWebGPURender*(): bool =
   blitBGA["entries"] = blitEntriesA
   blitBindGroupA = webgpu_init.device.createBindGroup(blitBGA)
 
-  # Blit bind group B (reads from trail texture B)
   let blitBGB = newJsObject()
   blitBGB["label"] = "Blit Bind Group B".cstring.toJs
   blitBGB["layout"] = blitBindGroupLayout.toJs
@@ -1405,7 +1348,6 @@ proc updateBindGroup*() =
   renderBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
   cachedRenderFieldGeneration = webgpu_init.fieldGeneration()
 
-  # Create glow bind group (same layout, same entries)
   let glowBindGroupDesc = newJsObject()
   glowBindGroupDesc["label"] = "Glow Bind Group AoS".cstring.toJs
   glowBindGroupDesc["layout"] = glowPipeline.getBindGroupLayout(0).toJs
@@ -1711,10 +1653,6 @@ proc ensureTonemapBindGroups() =
     return
   createBloomBindGroups()
 
-# ==============================================================================
-# SECTION 5: RENDER LOOP
-# ==============================================================================
-
 proc render*(particleCount: int) =
   ## Render particles using WebGPU with ping-pong trail rendering.
   ##
@@ -1729,7 +1667,6 @@ proc render*(particleCount: int) =
   # recreated since the last frame. Cheap generation compare; usually a no-op.
   ensureRenderFieldBinding()
 
-  # Update render params uniform
   # Layout matches RenderParams indices in gpu_types.nim
   renderParamsData[RENDER_RESOLUTION_X] = float32(canvas.width)
   renderParamsData[RENDER_RESOLUTION_Y] = float32(canvas.height)
@@ -1788,12 +1725,11 @@ proc render*(particleCount: int) =
         colorData[speciesIndex * 4 + channel] = channelValue
         colorsChanged = true
     if colorData[speciesIndex * 4 + 3] != 1.0:
-      colorData[speciesIndex * 4 + 3] = 1.0  # padding/alpha
+      colorData[speciesIndex * 4 + 3] = 1.0
       colorsChanged = true
   if colorsChanged:
     webgpu_init.queue.writeBuffer(colorBuffer, 0, colorData)
 
-  # Update fade params
   # Layout matches FadeParams indices in gpu_types.nim
   # The trail length the user set, in particle diameters, becomes the per-frame
   # multiplier fade.wgsl keeps of the previous frame: higher = more of the
@@ -1853,10 +1789,6 @@ proc render*(particleCount: int) =
   encoderDesc["label"] = "Render Command Encoder".cstring.toJs
   let commandEncoder = webgpu_init.device.createCommandEncoder(encoderDesc)
 
-  # ==========================================================================
-  # PASS 1: OFFSCREEN RENDER (to persistent trail texture)
-  # ==========================================================================
-
   let offscreenPassDesc = newJsObject()
   offscreenPassDesc["label"] = "Offscreen Render Pass".cstring.toJs
   gpu_profiler.attachTimestamps(offscreenPassDesc, gpu_profiler.passDraw)
@@ -1876,7 +1808,6 @@ proc render*(particleCount: int) =
   discard offscreenAttachments.push(offscreenAttachment)
   offscreenPassDesc["colorAttachments"] = offscreenAttachments
 
-  # Add depth attachment for Z-ordering
   let depthAttachment = newJsObject()
   depthAttachment["view"] = depthTextureView.toJs
   depthAttachment["depthLoadOp"] = "clear".cstring.toJs
@@ -1886,23 +1817,17 @@ proc render*(particleCount: int) =
 
   let offscreenPass = commandEncoder.beginRenderPass(offscreenPassDesc)
 
-  # Step 1: Draw faded previous frame (if trails enabled)
   if config.CONFIG.trails:
     offscreenPass.setPipeline(fadePipeline)
     offscreenPass.setBindGroup(0, fadeReadBG)
     offscreenPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
-  # Step 2: Draw particles (alpha blending, crisp circles)
   # NOTE: Glow is drawn in present pass (not here) to avoid accumulating in trails
   offscreenPass.setPipeline(renderPipeline)
   offscreenPass.setBindGroup(0, renderBindGroup)
   offscreenPass.draw(6 * particleCount, 1, 0, 0)
 
   offscreenPass.endPass()
-
-  # ==========================================================================
-  # PASS 2: PRESENT (BLIT, or HDR BLOOM + TONEMAP when bloom is enabled)
-  # ==========================================================================
 
   let currentTexture = gpuContext.getCurrentTexture()
   let swapChainView = currentTexture.createView()
@@ -1998,8 +1923,6 @@ proc render*(particleCount: int) =
     presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
     let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
 
-    # The field is composited inside the tonemap (no separate backdrop draw in
-    # the bloom path); the tonemap bind group carries the field at binding 4.
     let tonemapBG = if trailParity == 0: tonemapBindGroupTrailB else: tonemapBindGroupTrailA
     presentPass.setPipeline(tonemapPipeline)
     presentPass.setBindGroup(0, tonemapBG)
@@ -2041,7 +1964,7 @@ proc render*(particleCount: int) =
     presentDepthAttachment["view"] = depthTextureView.toJs
     presentDepthAttachment["depthLoadOp"] = "clear".cstring.toJs
     presentDepthAttachment["depthClearValue"] = 1.0.toJs
-    presentDepthAttachment["depthStoreOp"] = "discard".cstring.toJs  # Don't need depth after this
+    presentDepthAttachment["depthStoreOp"] = "discard".cstring.toJs
     presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
 
     let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
@@ -2057,7 +1980,6 @@ proc render*(particleCount: int) =
       presentPass.setBindGroup(0, fieldCompositeBindGroup)
       presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
-    # Step 1: Draw glow FIRST (additive blending on background)
     # GUARANTEE: Glow is ALWAYS behind particles because:
     #   - Glow draws here with depthCompare="less" (but depth just cleared to 1.0)
     #   - Trail blit uses depthCompare="always" — ignores depth entirely
@@ -2066,7 +1988,6 @@ proc render*(particleCount: int) =
     presentPass.setBindGroup(0, glowBindGroup)
     presentPass.draw(6 * particleCount, 1, 0, 0)
 
-    # Step 2: Alpha-blit trail texture on top of glow
     # Trail has transparent background where no particles, so glow shows through
     presentPass.setPipeline(blitPipeline)
     presentPass.setBindGroup(0, blitBG)
@@ -2082,14 +2003,12 @@ proc render*(particleCount: int) =
   # Resolve pass timestamps (render encoder is the frame's final submit)
   gpu_profiler.encodeResolve(commandEncoder)
 
-  # Submit
   let commandBuffer = commandEncoder.finish()
   let commandBufferArray = newJsArray()
   discard commandBufferArray.push(cast[JsObject](commandBuffer))
   webgpu_init.queue.submit(commandBufferArray)
   gpu_profiler.pumpReadback()
 
-  # Flip trail parity for next frame
   trailParity = 1 - trailParity
 
   # The trail texture just written was drawn under THIS camera, so from the next
@@ -2147,7 +2066,6 @@ proc recreateTrailTextures() =
   bgColorResize["b"] = 0.0.toJs
   bgColorResize["a"] = 0.0.toJs
 
-  # Clear texture A
   let clearDescA = newJsObject()
   clearDescA["label"] = "Clear Trail A (resize)".cstring.toJs
   let clearAttachA = newJsArray()
@@ -2161,7 +2079,6 @@ proc recreateTrailTextures() =
   let clearA = clearEncoder.beginRenderPass(clearDescA)
   clearA.endPass()
 
-  # Clear texture B
   let clearDescB = newJsObject()
   clearDescB["label"] = "Clear Trail B (resize)".cstring.toJs
   let clearAttachB = newJsArray()
@@ -2175,7 +2092,6 @@ proc recreateTrailTextures() =
   let clearB = clearEncoder.beginRenderPass(clearDescB)
   clearB.endPass()
 
-  # Submit clear commands
   let clearCmdBuf = clearEncoder.finish()
   let clearCmdArr = newJsArray()
   discard clearCmdArr.push(cast[JsObject](clearCmdBuf))
@@ -2224,7 +2140,6 @@ proc recreateTrailTextures() =
   createBloomTargets()
   createBloomBindGroups()
 
-  # Reset trail parity to start fresh
   trailParity = 0
 
 proc resize*() =
@@ -2232,6 +2147,5 @@ proc resize*() =
   canvas.width = windowInnerWidth()
   canvas.height = windowInnerHeight()
 
-  # Recreate trail textures and bind groups at new size
   if isInitialized:
     recreateTrailTextures()

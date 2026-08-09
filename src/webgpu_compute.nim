@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - WEBGPU COMPUTE PIPELINE ORCHESTRATION (AoS Layout)
-# ==============================================================================
-#
 # This module dispatches the GPU compute pipeline with AoS (Array of
 # Structures) buffers. Which passes run each frame, and their order, is
 # sim_registry.buildFrame's to say — this module executes that frame
@@ -44,10 +40,6 @@ import field_core
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
 
-# ==============================================================================
-# SECTION 2: BINDING CONTRACT VALIDATION CONSTANTS (AoS)
-# ==============================================================================
-
 # Expected entry counts for each pass (from shader binding manifests).
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_COUNT* = 3          # AoS: uniform + particles + gridCounts
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL* = 4
@@ -65,7 +57,6 @@ const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 4            # srcField(sample) + d
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 6        # gridParams + particles + field(sample) + velocityDelta + fieldParams + speciesChemistry
 
 proc getExpectedEntryCount(passName: cstring): int =
-  ## Get expected bind group entry count for a pass name.
   case $passName
   of "binCount": result = EXPECTED_BIND_GROUP_ENTRIES_BIN_COUNT
   of "prefixLocal": result = EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL
@@ -83,10 +74,6 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "rdStepToFront", "rdStepToTrail": result = EXPECTED_BIND_GROUP_ENTRIES_RD_STEP
   of "fieldForce": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE
   else: result = -1
-
-# ==============================================================================
-# SECTION 3: PIPELINE STATE
-# ==============================================================================
 
 var shaderModules* {.exportc.}: JsObject = createJsObject()
 var pipelines* {.exportc.}: JsObject = createJsObject()
@@ -168,10 +155,6 @@ proc setCouplings*(couplings: WorldCouplings) =
   if rebuild:
     activeFrame = buildFrame(couplings)
 
-# ==============================================================================
-# SECTION 4: SHADER VALIDATION
-# ==============================================================================
-
 proc jsArrayLength*(arr: JsObject): int {.importjs: "#.length".}
 proc jsArrayFilter*(arr: JsObject, predicate: proc(item: JsObject): bool): JsObject {.importjs: "#.filter(#)".}
 proc msgType*(msg: JsObject): cstring {.importjs: "#.type".}
@@ -216,10 +199,6 @@ proc validateBindGroupEntryCount*(entries: JsObject, passName: cstring, phase: c
   if actual != expected:
     raise newException(CatchableError, "Bind group entry count mismatch for pass \"" & $passName & "\" during " & $phase &
       ": Expected " & $expected & " entries, got " & $actual)
-
-# ==============================================================================
-# SECTION 5: BIND GROUP CREATION
-# ==============================================================================
 
 proc createBindGroupWithValidation*(
   passName: cstring,
@@ -269,9 +248,6 @@ proc createBindGroupResourceEntry(binding: int, resource: JsObject): JsObject =
 proc push(arr: JsObject, item: JsObject): int {.importjs: "#.push(#)", discardable.}
 
 proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} =
-  ## Create bind groups for all passes (AoS layout).
-
-  # Pass 1: Bin Count (AoS: particles buffer)
   let binCountEntries = createJsArray()
   discard binCountEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
   discard binCountEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
@@ -285,7 +261,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Bin Count Bind Group"
   )
 
-  # Pass 2a: Prefix Local
   let prefixLocalEntries = createJsArray()
   discard prefixLocalEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
   discard prefixLocalEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.gridCounts)))
@@ -300,7 +275,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Prefix Local Bind Group"
   )
 
-  # Pass 2b: Prefix Blocks
   let prefixBlocksEntries = createJsArray()
   discard prefixBlocksEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
   discard prefixBlocksEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.blockSums)))
@@ -314,7 +288,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Prefix Blocks Bind Group"
   )
 
-  # Pass 2c: Prefix Final
   let prefixFinalEntries = createJsArray()
   discard prefixFinalEntries.push(createBindGroupEntry(0, uniformBuffers["scanParams"]))
   discard prefixFinalEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.gridOffsets)))
@@ -328,7 +301,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Prefix Final Bind Group"
   )
 
-  # Pass 3: Bin Scatter (AoS - unified scatter of entire Particle struct)
   let binScatterEntries = createJsArray()
   discard binScatterEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
   discard binScatterEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
@@ -345,7 +317,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Bin Scatter Bind Group"
   )
 
-  # Pass 4: Forces (AoS - reads from particlesSorted, writes velocity+density deltas)
   # Note: Original particles buffer not needed here - we read sorted, write to delta buffers
   let forcesEntries = createJsArray()
   discard forcesEntries.push(createBindGroupEntry(0, uniformBuffers["simParams"]))
@@ -386,7 +357,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "SPH Forces Bind Group"
   )
 
-  # Pass 5: Integrate (AoS - unified velocity + position update)
   # Applies velocity deltas (Newton's 3rd law accumulation) and density deltas
   # (symmetric neighbor accumulation) with temporal smoothing
   let integrateEntries = createJsArray()
@@ -518,10 +488,6 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Field Force Bind Group"
   )
 
-# ==============================================================================
-# SECTION 6: SHADER LOADING
-# ==============================================================================
-
 proc fetch*(path: cstring): Future[JsObject] {.importjs: "fetch(#)".}
 proc ok*(response: JsObject): bool {.importjs: "#.ok".}
 proc statusText*(response: JsObject): cstring {.importjs: "#.statusText".}
@@ -534,7 +500,6 @@ proc loadShader(path: cstring, label: cstring): Future[GPUShaderModule] {.async.
 
   let code = await response.text()
 
-  # DIAGNOSTIC: Count @binding declarations in shader code
   let bindingCount = ($code).count("@binding")
   consoleLog(("[SHADER LOAD] " & $label & " - Length: " & $len($code) & " bytes, @binding count: " & $bindingCount).toJs)
 
@@ -545,10 +510,6 @@ proc loadShader(path: cstring, label: cstring): Future[GPUShaderModule] {.async.
   let shaderModule = device.createShaderModule(descriptor)
   await validateShaderCompilation(shaderModule, label)
   return shaderModule
-
-# ==============================================================================
-# SECTION 7: PIPELINE CREATION HELPERS
-# ==============================================================================
 
 proc createPipelineWithValidation(name: cstring, shaderModule: GPUShaderModule, entryPoint: cstring): Future[GPUComputePipeline] {.async.} =
   device.pushErrorScope("validation")
@@ -570,10 +531,6 @@ proc createPipelineWithValidation(name: cstring, shaderModule: GPUShaderModule, 
   consoleLog(("  + " & $name & " pipeline created").toJs)
   return pipeline
 
-# ==============================================================================
-# SECTION 8: PIPELINE INITIALIZATION
-# ==============================================================================
-
 proc initPipelines*(): Future[JsObject] {.async, exportc.} =
   ## Create every compute pipeline the world can dispatch and arm the frame
   ## description the executor walks.
@@ -584,27 +541,18 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     return resultObj
 
   try:
-    # =========================================================================
-    # PHASE: SHADER SPEC COLLECTION
-    # =========================================================================
     # Every pipeline the world can dispatch, created once. There is no
     # per-world subset to collect and deduplicate, because there is one world —
     # and registering everything is what lets a strength leave zero without
     # waiting for a shader to be fetched and compiled.
     let specs = allShaderSpecs()
 
-    # =========================================================================
-    # PHASE: SHADER LOADING
-    # =========================================================================
     consoleLog("[PHASE: SHADER LOADING] Loading compute shaders...".toJs)
     for spec in specs:
       let shaderModule = await loadShader(spec.path.cstring, spec.label.cstring)
       shaderModules[spec.key.cstring] = cast[JsObject](shaderModule)
     consoleLog(("[PHASE: SHADER LOADING] Success - " & $specs.len & " compute shaders loaded").toJs)
 
-    # =========================================================================
-    # PHASE: UNIFORM BUFFER CREATION
-    # =========================================================================
     let uniformUsage = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst)
 
     uniformBuffers["gridParams"] = device.createBufferLabeled(
@@ -642,9 +590,6 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
 
     consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 7 uniform buffers created".toJs)
 
-    # =========================================================================
-    # PHASE: PIPELINE CREATION + LAYOUT EXTRACTION
-    # =========================================================================
     consoleLog("[PHASE: PIPELINE CREATION] Creating compute pipelines...".toJs)
 
     for spec in specs:
@@ -686,14 +631,6 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     resultObj["error"] = ("Pipeline initialization error: " & err.msg).cstring.toJs
     return resultObj
 
-# ==============================================================================
-# SECTION 9: PHYSICS FRAME EXECUTION
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# The alive-cell census readback
-# ------------------------------------------------------------------------------
-
 proc uint32At(view: JsObject, index: int): int {.importjs: "#[#]".}
 proc uint32View(buffer: JsObject): JsObject {.importjs: "new Uint32Array(#)".}
 
@@ -713,11 +650,9 @@ proc readFieldAlive(): Future[void] {.async.} =
   fieldAliveReadbackBusy = false
 
 proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
-  ## Run one physics frame using the AoS GPU compute pipeline.
   if not isPipelineReady:
     raise newException(CatchableError, "Pipelines not initialized. Call initPipelines() first.")
 
-  # Extract parameters
   let dt = params["dt"].to(float)
   let particleCount = params["particleCount"].to(int)
   let width = params["width"].to(float)
@@ -748,10 +683,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # receives the same value via its WORKGROUP_SIZE placeholder.
   let scanBlockSize = shader_config.getWorkgroupSize("prefix-sum-local")
   let scanBlocks = jsCeil(numCells.float / scanBlockSize.float)
-
-  # =========================================================================
-  # PHASE: PER-FRAME UNIFORM UPDATE
-  # =========================================================================
 
   # Grid parameters (used by bin-count and bin-scatter)
   # Layout matches GridParamsLayout in gpu_types.nim
@@ -799,10 +730,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Copy attraction matrix (36 floats starting at SIM_ATTRACTION_MATRIX_START)
   for matrixSlot in 0..<36:
     simParamsData[SIM_ATTRACTION_MATRIX_START + matrixSlot] = cast[JsObject](matrix[matrixSlot]).to(float)
-  # Zone boundary params
   simParamsData[SIM_REPULSION_END] = float32(config.CONFIG.repulsionEnd)
   simParamsData[SIM_ATTRACTION_PEAK] = float32(config.CONFIG.attractionPeak)
-  # Force model params
   simParamsUint[SIM_FORCE_MODEL] = uint32(config.CONFIG.forceModel)  # 0=polynomial, 1=exponential
   simParamsData[SIM_EXP_ALPHA] = float32(config.CONFIG.expRepulsionAlpha)
   simParamsData[SIM_EXP_BETA] = float32(config.CONFIG.expAttractionBeta)
@@ -825,7 +754,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     float32(config.CONFIG.sphRadiusFraction)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
-  # Integration parameters
   # Layout matches IntegrationParams indices in gpu_types.nim
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
@@ -867,9 +795,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   queue.writeBufferTyped(
     cast[GPUBuffer](uniformBuffers["speciesChemistry"]), 0, chemistryData)
 
-  # =========================================================================
-  # PHASE: BIND GROUP CREATION (cached by grid dimensions)
-  # =========================================================================
   if gridW != cachedBindGroupGridW or gridH != cachedBindGroupGridH:
     await createBindGroups(gridW, gridH)
     cachedBindGroupGridW = gridW
@@ -985,7 +910,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       cast[GPUBuffer](gpuBuffers.fieldAlive), 0,
       cast[GPUBuffer](gpuBuffers.fieldAliveReadback), 0, 4)
 
-  # Submit
   let commandBuffer = commandEncoder.finish()
   let commandBufferArray = createJsArray()
   discard commandBufferArray.push(cast[JsObject](commandBuffer))
@@ -994,10 +918,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   if sampleFieldAlive:
     fieldAliveReadbackBusy = true
     discard readFieldAlive()
-
-# ==============================================================================
-# SECTION 10: INITIAL DATA UPLOAD (AoS)
-# ==============================================================================
 
 proc uploadParticleRange*(startIndex, endIndex: int) =
   ## Upload particles [startIndex, endIndex) from the CPU staging buffer into
@@ -1027,7 +947,6 @@ proc uploadParticleRange*(startIndex, endIndex: int) =
     cast[GPUBuffer](gpuBuffers.particlesA), startIndex * 32, particleData)
 
 proc uploadInitialData*(particleCount: int): Future[JsObject] {.async, exportc.} =
-  ## Upload initial particle data to GPU buffers (AoS layout).
   ## Reads from CPU buffers and packs into 32-byte Particle structs.
   if device.isNil or queue.isNil:
     consoleError("Cannot upload initial data: WebGPU device not initialized".toJs)
@@ -1037,12 +956,10 @@ proc uploadInitialData*(particleCount: int): Future[JsObject] {.async, exportc.}
     return resultObj
 
   try:
-    # Create AoS particle data buffer
     # Each particle: 8 floats (32 bytes) = pos.x, pos.y, vel.x, vel.y, species(as f32), density, pad, pad
     let particleData = newFloat32Array(particleCount * 8)
     let particleDataUint = newUint32Array(particleData.buffer)
 
-    # Pack particle data from CPU SoA buffers into AoS format
     for particleIndex in 0..<particleCount:
       let baseIdx = particleIndex * 8
       particleData[baseIdx + 0] = cpuBuffers.particlesA[particleIndex * 8 + 0]  # pos.x
@@ -1054,7 +971,6 @@ proc uploadInitialData*(particleCount: int): Future[JsObject] {.async, exportc.}
       particleDataUint[baseIdx + 6] = 0  # padding
       particleDataUint[baseIdx + 7] = 0  # padding
 
-    # Upload to GPU
     let bytesTotal = particleCount * 32
     queue.writeBufferTyped(cast[GPUBuffer](gpuBuffers.particlesA), 0, particleData)
 

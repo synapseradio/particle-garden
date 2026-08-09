@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - CANVAS INPUT
-# ==============================================================================
-#
 # Mouse and touch input on the simulation canvas, plus the window-resize and
 # particle-reinit callbacks app.nim registers. This is the physics-input
 # side; everything panel-shaped lives in the Solid UI behind
@@ -12,8 +8,6 @@
 # touch_handler functions and set the observable.
 #
 # JS-only wiring over natively-tested pure modules; verified by `just happen`.
-#
-# ==============================================================================
 
 from std/dom import Event, MouseEvent, TouchEvent, KeyboardEvent, Node, Element,
   preventDefault
@@ -35,16 +29,8 @@ import camera_core
 import config
 import config_ranges
 
-# ==============================================================================
-# SECTION 1: INPUT STATE
-# ==============================================================================
-
 var currentInput* = newObservable(initInputState())
 
-# ==============================================================================
-# CAMERA HOOKS
-# ==============================================================================
-#
 # The camera lives in webgpu_render.nim, which is a layer ABOVE this file in
 # app.nim's import order — so it cannot be read from here directly. app.nim
 # wires these two, exactly as it wires onResize below. Nil until it does, and
@@ -83,10 +69,6 @@ proc updateInputState*() =
   if current.hasActiveBlast():
     currentInput.set(current.withBlastDecay(BLAST_DECAY_FACTOR))
 
-# ==============================================================================
-# SECTION 2: CALLBACKS
-# ==============================================================================
-
 # Set via setInitParticlesCallback - called when particle/species count
 # changes require a re-initialization (web_api routes its resetParticles
 # and count commits through this).
@@ -117,10 +99,6 @@ proc setReseedFieldCallback*(callback: proc()) {.exportc.} =
 
 proc setResizeCallback*(callback: proc()) {.exportc.} =
   onResize = callback
-
-# ==============================================================================
-# SECTION 3: EVENT SETUP
-# ==============================================================================
 
 proc setupEvents*(canvas: JsObject) {.exportc.} =
   let canvasEl = cast[HTMLCanvasElement](canvas)

@@ -1,6 +1,3 @@
-# ==============================================================================
-# WHEEL HANDLER - Pure wheel-to-camera processing
-# ==============================================================================
 #
 # Pure functions turning a wheel event into a new Camera. No DOM references, so
 # the zoom-at-cursor behaviour is native-tested rather than only observable by

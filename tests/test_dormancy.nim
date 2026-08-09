@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - DORMANCY AND HORIZON TESTS
-#
 # Dormancy: what a predicate READS is checked here (named fields walked
 # against the state records, so a rename breaks loudly); what it MEANS is
 # review-enforced. Horizons: executable exactly where a stepping mirror

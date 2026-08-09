@@ -1,7 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - COLORMAP CORE (Pure)
-# ==============================================================================
-#
 # The single native-tested source for the reaction-diffusion field colormaps
 # and their defaults. Pure (no FFI, no DOM): compiles on both the native
 # (nimble test) and JS backends.
@@ -30,14 +26,8 @@
 #     inhibitor channels DISTINCTLY: inhibitor (the pattern) glows warm amber,
 #     activator (the substrate) tints a dim cool azure. Not a single-scalar
 #     ramp; it consumes both channels.
-#
-# ==============================================================================
 
 import std/strutils
-
-# ==============================================================================
-# RAMP COUNT + DEFAULTS
-# ==============================================================================
 
 const
   COLORMAP_COUNT* = 3
@@ -110,9 +100,6 @@ const
   TWO_TONE_COOL_LEVEL* = 0.25
     ## Ceiling on the cool substrate tint, so the warm pattern stays dominant.
 
-# ==============================================================================
-# POLYNOMIAL COEFFICIENTS (single authority)
-# ==============================================================================
 # 6th-order polynomial fits, one vec3 per Horner term (7 terms). Evaluated as
 # c0 + t*(c1 + t*(c2 + ... + t*c6)). Source: rerun.io re_renderer
 # shader/colormap.wgsl, itself Matt Zucker's matplotlib-colormap approximations.
@@ -189,10 +176,6 @@ func evalColormap*(index: int, activator, inhibitor: float): array[3, float] =
   of COLORMAP_INDEX_TWO_TONE: evalTwoTone(activator, inhibitor)
   else: evalInferno(fieldScalar(inhibitor))
 
-# ==============================================================================
-# FIELD COVERAGE
-# ==============================================================================
-#
 # How much of a pixel the field claims, which is what lets the field read as
 # light rather than as a backdrop. Mirrored by colormapFieldIntensity /
 # colormapFieldCoverage in web/shaders/modules/colormap.wgsl, and consumed by

@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - THE COUPLING SPACE (SHARED TEST FIXTURE)
-#
 # The corners of the coupling-strength space, so an invariant asserted "for
 # every world" genuinely covers the space rather than a handful of settings the
 # author happened to think of. Both the frame tests and the manifest tests sweep

@@ -37,7 +37,6 @@ suite "PaletteEditorState - Length Invariant":
       let state = PaletteEditorState(scheme: scheme, saturation: 0.7, lightness: 0.5)
       check paletteFor(state).len == MAX_SPECIES
 
-# psOpenColor ignores saturation/lightness differences; the other schemes don't.
 suite "PaletteEditorState - Scheme Inertness":
   test "psOpenColor ignores saturation/lightness differences":
     let stateA = PaletteEditorState(scheme: psOpenColor, saturation: 0.1, lightness: 0.9)

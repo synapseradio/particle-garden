@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - TRAIL CORE TESTS
-#
 # Behavioral tests for src/trail_core.nim: the trail's geometric decay and the
 # trail-length slider's mapping onto it. Two halves of one effect, and the
 # suite reaches both — the per-frame decay is what web/shaders/src/fade.wgsl

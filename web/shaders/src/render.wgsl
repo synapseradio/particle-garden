@@ -50,20 +50,19 @@ const OFFSETS = array<vec2f, 6>(
 // - Controls how quickly particles shrink as local density increases
 // - Half-neighbor iteration produces ~50% of full 9-cell density values
 // - Rate of 0.07 compensates: exp(-5 * 0.07) ~ 0.70 at "half density"
-// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER (3x base size)
-// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER (2x base size)
+// - At density=0: sizeMod = MAX_SIZE_MULTIPLIER
+// - As density->inf: sizeMod -> MIN_SIZE_MULTIPLIER
 const SIZE_DECAY_RATE: f32 = 0.07;
 // Substituted from camera_core.DENSITY_SIZE_FLOOR, which the visibility
 // math reads; the two cannot drift.
 const MIN_SIZE_MULTIPLIER: f32 = {{DENSITY_SIZE_FLOOR}};
-const MAX_SIZE_MULTIPLIER: f32 = 1.3;      // Size multiplier at zero density (ceiling)
+const MAX_SIZE_MULTIPLIER: f32 = 1.3;
 
 // Density-based brightness: lonely particles are dimmer
 const BRIGHTNESS_GROWTH_RATE: f32 = 0.07;  // Mirrors SIZE_DECAY_RATE
 const MIN_BRIGHTNESS: f32 = 0.44;          // Lonely particles at 44% brightness
 const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full brightness
 
-// AoS particle buffer
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
 @group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors from config.nim
@@ -103,15 +102,12 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   let scale = params.resolution / params.worldSize;
 
-  // Motion blur: elongate quad in velocity direction
   let speed = length(p.vel);
   let hasMotion = speed > 0.001 && params.trailLengthScale > 0.0;
 
   let velDir = select(vec2f(1.0, 0.0), p.vel / speed, hasMotion);
   let velPerp = vec2f(-velDir.y, velDir.x);
 
-  // Trail elongation: how far to extend the tail
-  // Scales with velocity and trailLengthScale parameter
   let elongation = select(0.0, speed * params.trailLengthScale, hasMotion);
 
   // Transform corner offset from axis-aligned to velocity-aligned
@@ -132,8 +128,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   let worldOffset = (velDir * alongVel + velPerp * acrossVel) / scale;
 
   // Transform to clip space through the camera, drawing the particle at its
-  // nearest toroidal image so the world seam never shows. Reduces to the old
-  // (worldPos / worldSize) * 2 - 1 exactly at the default camera.
+  // nearest toroidal image so the world seam never shows.
   //
   // The image is chosen from the particle CENTRE and the corner offset added
   // afterwards. Wrapping the already-offset corner instead would tear a quad in
@@ -148,7 +143,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
   // Z-ordering: Species-based layers with stable particle hash
   // Each species occupies its own depth band (0.1-0.9 divided into 6 bands)
   // Within a band, particle ID hash provides stable ordering (no flickering)
-  let speciesBandSize = 0.8 / 6.0;  // ~0.133 per species
+  let speciesBandSize = 0.8 / 6.0;
   let speciesBase = 0.1 + f32(p.species) * speciesBandSize;
   let particleHash = fract(f32(particleId) * 0.6180339887);  // Golden ratio hash
   let zDepth = speciesBase + particleHash * speciesBandSize * 0.9;  // Stay within band

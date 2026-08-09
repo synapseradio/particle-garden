@@ -174,7 +174,6 @@ suite "Limit Constants Contract":
     ##      256x256 grid allows ~15px cells at 4K resolution
     check MAX_GRID >= 128
 
-# These assertions run at compile time and prevent building invalid configurations
 static:
   doAssert MAX_SPECIES >= 2, "Need at least 2 species for particle life"
 

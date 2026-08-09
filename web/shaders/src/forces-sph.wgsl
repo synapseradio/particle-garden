@@ -103,8 +103,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let thisParticle = particlesSorted[thisSortedIdx];
   let thisOriginalIdx = sortedToOriginal[thisSortedIdx];
 
-  // Precompute constants (avoid recomputing in inner loops)
-  //
   // THE SMOOTHING RADIUS IS A FRACTION OF THE INTERACTION RADIUS, never a
   // length of its own. The fraction's range tops out at 1, so this product can
   // never exceed the interaction radius — which matters because the neighbour
@@ -155,7 +153,6 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // note in forces.wgsl: with both force models coupled, whichever ran second
   // would otherwise erase the first.
 
-  // Find this particle's grid cell
   var cellX = i32(thisParticle.pos.x * invCellWidth);
   var cellY = i32(thisParticle.pos.y * invCellHeight);
   cellX = clamp(cellX, 0, gridWidth - 1);

@@ -1,6 +1,3 @@
-# ==============================================================================
-# OBSERVABLE - Core reactive state container
-# ==============================================================================
 #
 # Pub/sub container for the two pieces of state that cross module boundaries
 # on the Nim side: canvas_input's currentInput and sim_config's worldCouplings.
@@ -63,7 +60,6 @@ proc scheduleNotification(fn: proc()) =
 
   when defined(js):
     if pendingNotifications.len == 1:
-      # First pending notification - schedule flush on microtask
       queueMicrotask(flushPending)
   else:
     # Native: flush synchronously (for tests)

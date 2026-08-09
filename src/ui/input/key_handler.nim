@@ -1,6 +1,3 @@
-# ==============================================================================
-# KEY HANDLER - Pure keyboard-to-camera processing
-# ==============================================================================
 #
 # Pure functions turning a keypress into a new Camera. No DOM references, so the
 # bindings are native-tested rather than only observable by typing at a running

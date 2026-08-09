@@ -1,27 +1,8 @@
-# ==============================================================================
-# DOM EXTENSIONS - Minimal extensions to std/dom
-# ==============================================================================
-#
-# Extensions to std/dom for what's missing:
-# - HTMLCanvasElement type (std/dom has no Canvas support)
-# - Type aliases for HTML naming convention
-# - Global document/window bindings
-# - Event listener overloads for specific event types
-# - ClassList.toggle with force parameter
-# - forEach for querySelectorAll results
-# - dataset accessor
-#
-# ==============================================================================
-
 from std/dom import
   Element, InputElement, Document, Window, EventTarget, Node,
   ClassList, Event, MouseEvent, TouchEvent, KeyboardEvent
 
 from std/jsffi import JsObject
-
-# ==============================================================================
-# TYPE ALIASES - Map our HTML* names to std/dom names
-# ==============================================================================
 
 type
   HTMLElement* = Element
@@ -37,10 +18,6 @@ type
     ## HTML canvas element for 2D/WebGL rendering
     width* {.importjs: "width".}: int
     height* {.importjs: "height".}: int
-
-# ==============================================================================
-# WHEEL EVENT - Not in std/dom
-# ==============================================================================
 
 type
   WheelEvent* = ref object of Event
@@ -85,26 +62,16 @@ proc toDataURL*(canvas: HTMLCanvasElement, mimeType: cstring): cstring {.importj
 
 proc toDataURL*(canvas: HTMLCanvasElement, mimeType: cstring, quality: float): cstring {.importjs: "#.toDataURL(#, #)".}
 
-# ==============================================================================
-# GLOBAL BINDINGS - Named domDocument/domWindow to avoid conflicts
-# ==============================================================================
-
 var domDocument* {.importjs: "document", nodecl.}: Document
   ## The global document object. Named domDocument to avoid shadowing.
 
 var domWindow* {.importjs: "window", nodecl.}: Window
   ## The global window object. Named domWindow to avoid shadowing.
 
-# ==============================================================================
-# EVENT LISTENER OVERLOADS - for various callback signatures
-# ==============================================================================
-
-# No-argument callbacks
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc()) {.importjs: "#.addEventListener(#, #)".}
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(), useCapture: bool) {.importjs: "#.addEventListener(#, #, #)".}
 
-# Specific event type callbacks
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: Event)) {.importjs: "#.addEventListener(#, #)".}
 
 proc addEventListener*(et: EventTarget, event: cstring, handler: proc(e: MouseEvent)) {.importjs: "#.addEventListener(#, #)".}
@@ -121,22 +88,10 @@ proc setClass*(c: ClassList, class: cstring, present: bool): bool {.importjs: "#
   ## Set class presence explicitly - returns true if class is now present
   ## This is classList.toggle(class, force) which sets rather than toggles
 
-# ==============================================================================
-# NODELIST/SEQ HELPERS - forEach for querySelectorAll results
-# ==============================================================================
-
 proc forEach*(elements: seq[Element], callback: proc(el: Element)) {.importjs: "#.forEach(#)".}
-
-# ==============================================================================
-# ELEMENT EXTENSIONS - dataset, etc.
-# ==============================================================================
 
 proc dataset*(el: Element): JsObject {.importjs: "#.dataset".}
   ## Access element's data-* attributes as object
-
-# ==============================================================================
-# TYPE CONVERSION HELPERS
-# ==============================================================================
 
 proc toHTMLInputElement*(el: Element): HTMLInputElement {.inline.} =
   cast[HTMLInputElement](el)

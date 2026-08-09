@@ -1,5 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - FIELD CORE (Pure Reaction-Diffusion Math)
 # ==============================================================================
 #
 # Pure functions for the Gray-Scott reaction-diffusion field: the 9-point
@@ -23,10 +22,6 @@
 # ==============================================================================
 
 import std/math
-
-# ==============================================================================
-# FIELD DIMENSIONS
-# ==============================================================================
 
 const
   FIELD_WORLD_ASPECT* = 16.0 / 9.0
@@ -68,10 +63,6 @@ const
     ## Every frame runs 1 + RD_STEPS_PER_FRAME passes over all of it, so
     ## RD_STEPS_PER_FRAME is the lever to reach for if the field pass costs too
     ## much — it trades evolution speed for bandwidth and must stay odd.
-
-# ==============================================================================
-# TUNING CONSTANTS
-# ==============================================================================
 
 const
   RD_DIFFUSION_A* = 1.0
@@ -493,10 +484,6 @@ func rdSeedCell*(x, y: int, nonce: uint32, width, height, blobCount: int,
   (activator: 1.0 + (RD_SEED_CORE_ACTIVATOR - 1.0) * coverage,
    inhibitor: RD_SEED_CORE_INHIBITOR * coverage)
 
-# ==============================================================================
-# FIELD GRID TOPOLOGY
-# ==============================================================================
-
 func fieldWrap*(cell, dims: int): int =
   ## The field's toroidal wrap: every integer cell coordinate, however far
   ## outside the grid, names exactly one in-range cell. Floor-mod, because the
@@ -506,10 +493,6 @@ func fieldWrap*(cell, dims: int): int =
   if result < 0:
     result += dims
 
-# ==============================================================================
-# 9-POINT LAPLACIAN STENCIL
-# ==============================================================================
-
 func laplacian9*(center, north, south, east, west, ne, nw, se, sw: float):
     float =
   ## The discrete 2D Laplacian at one grid cell via the normalized 9-point
@@ -518,10 +501,6 @@ func laplacian9*(center, north, south, east, west, ne, nw, se, sw: float):
   ## curvature to diffuse), linear in its nine inputs, and reduces to -center
   ## when all neighbors are 0 (an isolated peak's own decay).
   0.2 * (north + south + east + west) + 0.05 * (ne + nw + se + sw) - center
-
-# ==============================================================================
-# GRAY-SCOTT REACTION-DIFFUSION STEP
-# ==============================================================================
 
 func grayScottStep*(activator, inhibitor, laplacianA, laplacianB,
     diffusionA, diffusionB, feed, kill, deltaT: float):

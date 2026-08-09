@@ -1,6 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - SPH CORE (Pure 2D Smoothed-Particle-Hydrodynamics Math)
-# ==============================================================================
 #
 # Pure functions for the SPH fluid: 2D smoothing kernels, the Tait
 # equation of state, and the XSPH velocity-smoothing term. No side effects, no
@@ -19,10 +17,6 @@
 # ==============================================================================
 
 import std/math
-
-# ==============================================================================
-# TUNING CONSTANTS
-# ==============================================================================
 
 const
   SPH_DENSITY_HEADROOM* = 2.0
@@ -58,10 +52,6 @@ const
     ## about 21 times the stiffness, so a stiffness near 236 is where this first
     ## binds — which is why it shapes the measured stability boundary only in
     ## runs deliberately driven past the ceiling.
-
-# ==============================================================================
-# SMOOTHING KERNELS (2D)
-# ==============================================================================
 
 func poly6Weight2d*(distance, smoothingRadius: float): float =
   ## The 2D-normalized poly6 kernel W(r, h) = C * (h^2 - r^2)^3, and 0 for
@@ -101,10 +91,6 @@ func spikyGradientMagnitude2d*(distance, smoothingRadius: float): float =
   let diff = smoothingRadius - distance
   normalization * diff * diff
 
-# ==============================================================================
-# TAIT EQUATION OF STATE
-# ==============================================================================
-
 func taitPressure*(density, restDensity, stiffness, gamma: float): float =
   ## Tait equation of state: P = stiffness * ((density/restDensity)^gamma - 1).
   ## P(restDensity) == 0 for any stiffness and gamma, so a fluid at rest density
@@ -125,10 +111,6 @@ func flooredTaitPressure*(density, restDensity, stiffness, gamma: float):
   ## every contact reads as compression and the fluid disperses as a gas.
   taitPressure(max(density, restDensity), restDensity, stiffness, gamma)
 
-# ==============================================================================
-# XSPH VELOCITY SMOOTHING
-# ==============================================================================
-
 func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
     epsilon: float): float =
   ## One neighbor's contribution to the XSPH velocity-smoothing term, evaluated
@@ -143,10 +125,6 @@ func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
   ## corrections to form the full term.
   let weight = max(0.0, min(1.0, neighborWeight))
   epsilon * weight * (velocityNeighbor - velocitySelf)
-
-# ==============================================================================
-# THE STABLE STIFFNESS CEILING
-# ==============================================================================
 
 const
   SPH_STABILITY_COEFFICIENT* = 0.0025
@@ -190,10 +168,6 @@ func stableStiffnessCeiling*(smoothingRadius: float; substeps: int;
     return 0.0
   min(envelopeMax,
     SPH_STABILITY_COEFFICIENT * smoothingRadius * substeps.float / dt)
-
-# ==============================================================================
-# FIXED-POINT DENSITY ENCODING
-# ==============================================================================
 
 func fixedPointCeiling*(fixedPointScale: float): float =
   ## Largest value an i32 atomic accumulator represents at this scale. The

@@ -44,7 +44,7 @@ const
     ## at every density — so it must stay reachable, and any regression the
     ## crowding term introduces bisects to this one number.
   CROWDING_STRENGTH_MAX* = 2.0
-    ## PROVISIONAL, pending the calibration one-world task C1.9 carries. That
+    ## PROVISIONAL, pending the calibration. That
     ## task measures the strength at which a collapsing single-species world
     ## stops tightening and the strength at which ordinary colonies visibly
     ## soften, sets the default between them, and sets this ceiling above the
@@ -84,19 +84,19 @@ const
     ## file reject a coordinate outside its own slider, for the same reason they
     ## reject an unreachable regime notch.
     ##
-    ## PROVISIONAL, chosen by construction rather than by watching, and one-world
-    ## task C4.1 replaces them. Read them as a spread over the force parameters
+    ## PROVISIONAL, chosen by construction rather than by watching.
+    ## Read them as a spread over the force parameters
     ## that keeps the tour inside every range with room to spare, not as settled
     ## configurations: nothing here has been watched settle. [?]
     ##
-    ## The construction, so C4.1 knows what it is replacing. Five points, each
+    ## The construction. Five points, each
     ## moving at least two axes away from its neighbours so no segment reads as
     ## a single slider drifting: loose and drifty, tighter colonies, a
     ## short-range damped state, long-range slow structures, and a near-free
     ## wander. Every coordinate sits well inside its range, so narrowing a range
     ## for an unrelated reason does not immediately strand a waypoint.
     ##
-    ## WHY THESE THREE AXES, of the four C4.1 lists as candidates.
+    ## WHY THESE THREE AXES.
     ## `ruleTemperature` is excluded and that exclusion is a measurement, not a
     ## preference: it feeds `sampleRuleValue` alone (`src/web_api.nim`), which
     ## runs when the rules are re-sampled, so touring it moves a slider and

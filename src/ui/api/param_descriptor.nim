@@ -218,10 +218,6 @@ func notch(value: float; label: string): ParamNotch =
 func derivedBound(ceilingId: ParamCeilingId): ParamBound =
   ParamBound(kind: bDerived, ceilingId: ceilingId)
 
-# ==============================================================================
-# THE CEILING REGISTRY
-# ==============================================================================
-
 func ceilingInputs*(sim: SimulationState): CeilingInputs =
   ## The snapshot every registered ceiling reads. Taken from the simulation
   ## state rather than from CONFIG so the value lands in the same tick as the
@@ -494,7 +490,6 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       GLOW_WARMTH_MIN, GLOW_WARMTH_MAX, visual.glowWarmth, 2, psRender,
       probe = "glow.warmth"),
 
-    # Bloom & Grade section
     # All five grade sliders name the bloom toggle: the tonemap uniform is
     # written every frame but consumed only inside the bloom present path,
     # a branch no gate sees — the predicate and that branch agree by review.

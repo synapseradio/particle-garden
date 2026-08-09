@@ -1,5 +1,4 @@
 # =============================================================================
-# GPU TYPES - Type-Safe GPU Buffer Layouts
 # =============================================================================
 #
 # The single source of truth for GPU struct layouts in Nim.
@@ -16,10 +15,6 @@ import std/strutils
 # sizes its arrays against it, so a raise that outgrows the packing fails the
 # static assertion below rather than silently truncating a species.
 import memory_layout
-
-# =============================================================================
-# GPU TYPE SYSTEM
-# =============================================================================
 
 type
   GpuType* = enum
@@ -55,10 +50,6 @@ type
                        ## field list; emitted into the generated module by
                        ## tools/wgsl_bundle.nim's structModuleHeader. Empty for
                        ## a struct whose fields need no such commentary.
-
-# =============================================================================
-# TYPE SIZE HELPERS
-# =============================================================================
 
 func gpuTypeSize*(t: GpuType): int =
   case t
@@ -412,7 +403,7 @@ const
   # TonemapParams struct (32 bytes, generated into web/shaders/modules/tonemap_params.wgsl)
   # The bloom composite/tonemap pass uniform: HDR exposure, the bloom mix gain,
   # the three colour-grade knobs (saturation, contrast, signed temperature), and
-  # the S10 field-visualization pair — colormapIndex (which procedural ramp maps
+  # the field-visualization pair — colormapIndex (which procedural ramp maps
   # the RD field) and fieldOpacity (how much the field contributes). The RD
   # field-composite (bloom-off) floor reads the same two slots from the same
   # buffer. Written every frame from CONFIG.
@@ -436,10 +427,6 @@ const
     ],
     totalSize: 32
   )
-
-# =============================================================================
-# FIELD LOOKUP
-# =============================================================================
 
 func fieldByName*(gpuStruct: GpuStruct, name: string): GpuField =
   ## Find a field by name, raises if not found
@@ -537,10 +524,6 @@ func toWgslStruct*(layout: GpuStruct): string =
     result &= "  " & field.name & ": " & toWgslType(field) & ",\n"
   result &= "}\n"
 
-# =============================================================================
-# FIELD-INDEX CODEGEN (macro)
-# =============================================================================
-
 func toUpperSnake*(name: string): string =
   ## camelCase or _leading-underscore name -> UPPER_SNAKE. "gridCellsX" ->
   ## "GRID_CELLS_X", "_pad2" -> "PAD2". Names the generated index constants.
@@ -597,10 +580,6 @@ macro genFieldIndices*(layout: static GpuStruct, prefix: static string): untyped
       result.add newExportedIntConst(constBase, field.offset div 4)
   result.add newExportedIntConst(prefix & "_PARAMS_F32_COUNT", layout.totalSize div 4)
 
-# =============================================================================
-# COMPILE-TIME VALIDATION
-# =============================================================================
-
 static:
   # Validate Particle struct matches memory_layout.nim constants
   assert ParticleLayout.totalSize == 32, "Particle must be 32 bytes"
@@ -613,13 +592,10 @@ static:
   assert ParticleLayout.fieldOffset("crowdDensity") ==
     memory_layout.PARTICLE_CROWD_DENSITY_OFFSET
 
-  # Validate GridParams struct
   assert GridParamsLayout.totalSize == 32, "GridParams must be 32 bytes"
 
-  # Validate ScanParams struct
   assert ScanParamsLayout.totalSize == 16, "ScanParams must be 16 bytes"
 
-  # Validate SimParams critical fields
   assert SimParamsLayout.fieldOffset("dt") == 0
   assert SimParamsLayout.fieldOffset("attractionMatrix") == 64
   assert SimParamsLayout.fieldOffset("repulsionEnd") == 208
@@ -645,10 +621,6 @@ static:
 
 genFieldIndices(SimParamsLayout, "SIM")
 
-# =============================================================================
-# GRIDPARAMS FIELD INDICES
-# =============================================================================
-
 const
   GRID_W* = 0
   GRID_H* = 1
@@ -659,10 +631,6 @@ const
   GRID_PAD1* = 6
   GRID_PAD2* = 7
   GRID_PARAMS_U32_COUNT* = 8
-
-# =============================================================================
-# SCANPARAMS FIELD INDICES
-# =============================================================================
 
 const
   SCAN_NUM_CELLS* = 0

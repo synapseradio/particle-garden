@@ -1,6 +1,3 @@
-# ==============================================================================
-# RENDER STATE - Visual rendering parameters
-# ==============================================================================
 #
 # The typed record for every visual-side tunable: the eight ConfigObject
 # fields the render/glow pipeline reads. ui.nim holds this in an Observable
@@ -17,7 +14,6 @@ import ../../colormap_core
 
 type
   RenderState* = object
-    ## Visual rendering parameters.
     ## Pure immutable data - updates go through a copied var and re-set.
     particleSize*: int
     trails*: bool

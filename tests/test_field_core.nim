@@ -1,5 +1,3 @@
-# PARTICLE GARDEN - FIELD CORE TESTS
-#
 # Analytic tests for src/field_core.nim: the pure 9-point Laplacian stencil and
 # Gray-Scott reaction-diffusion step that the rd-step.wgsl compute shader
 # mirrors. Every function is a plain scalar-in/scalar-out math

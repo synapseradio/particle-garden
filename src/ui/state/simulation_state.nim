@@ -1,6 +1,3 @@
-# ==============================================================================
-# SIMULATION STATE - Physics simulation parameters
-# ==============================================================================
 #
 # The typed record for every physics-side tunable: the ConfigObject fields the
 # compute pipeline and force model read. web_api.nim holds this behind
@@ -17,7 +14,6 @@ import ../../climate_core  # CLIMATE_DEFAULT_SPEED, the drift-rate authority
 
 type
   SimulationState* = object
-    ## Physics simulation parameters.
     ## Pure immutable data - updates go through a copied var and re-set.
     particleCount*: int
     speciesCount*: int

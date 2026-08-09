@@ -1,5 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - CLIMATE CORE (Pure Drifting Weather)
 # ==============================================================================
 #
 # A weather is a closed tour of waypoints that the frame loop walks, writing

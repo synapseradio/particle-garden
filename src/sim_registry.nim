@@ -86,10 +86,6 @@ func acts(strength: float): bool =
   ## without deleting this function first.
   strength != 0.0
 
-# ==============================================================================
-# SECTION 2: FRAME DESCRIPTION TYPES
-# ==============================================================================
-
 type
   SimBuffer* = enum
     ## GPU buffers a frame node may clear or copy. The executor maps each to
@@ -191,10 +187,6 @@ const
     ## app.nim adds this slot into the reported physics time, so the number the
     ## stats show covers forces and integrate together.
 
-# ==============================================================================
-# SECTION 3: NODE CONSTRUCTORS
-# ==============================================================================
-
 func clearBufferNode*(target: SimBuffer): FrameNode =
   FrameNode(kind: fnkClearBuffer, clearTarget: target)
 
@@ -208,10 +200,6 @@ func computePassNode*(label: string, profilerSlot: int,
 
 func dispatch*(pipelineKey: string, size: DispatchSize): Dispatch =
   Dispatch(pipelineKey: pipelineKey, size: size)
-
-# ==============================================================================
-# SECTION 4: FRAME DESCRIPTIONS PER KIND
-# ==============================================================================
 
 func buildFrame*(couplings: WorldCouplings): FrameDescription =
   ## The full GPU frame this world runs: everything world-intrinsic, plus each

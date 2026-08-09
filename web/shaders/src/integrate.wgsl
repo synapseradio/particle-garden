@@ -84,7 +84,6 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   p.sphDensity =
     f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
-  // Apply velocity delta and friction
   var newVelX = (p.vel.x + deltaVx) * params.friction;
   var newVelY = (p.vel.y + deltaVy) * params.friction;
 
@@ -106,7 +105,6 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var newPosX = p.pos.x + newVelX;
   var newPosY = p.pos.y + newVelY;
 
-  // Toroidal wrap
   if (newPosX < 0.0) {
     newPosX += params.worldWidth;
   } else if (newPosX >= params.worldWidth) {

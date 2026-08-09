@@ -3,12 +3,7 @@
 # ==============================================================================
 #
 # Pure state type for application runtime (running, timing, profiling).
-# Can be wrapped in Observable[AppState] for reactive updates.
 #
-# ==============================================================================
-
-# ==============================================================================
-# SECTION 1: TIMING STATE
 # ==============================================================================
 
 type
@@ -28,10 +23,6 @@ func initTimingState*(): TimingState =
     computeTimeMs: 0.0,
     frameTimeMs: 0.0
   )
-
-# ==============================================================================
-# SECTION 2: PROFILING STATE
-# ==============================================================================
 
 type
   ProfilingState* = object
@@ -68,10 +59,6 @@ func averageGridTime*(state: ProfilingState): float =
 func averageTotalTime*(state: ProfilingState): float =
   if state.frameCount > 0: state.totalTimeSum / float(state.frameCount) else: 0.0
 
-# ==============================================================================
-# SECTION 3: APP STATE
-# ==============================================================================
-
 type
   AppState* = object
     ## Full application runtime state.
@@ -89,10 +76,6 @@ func initAppState*(): AppState =
     timing: initTimingState(),
     profiling: initProfilingState()
   )
-
-# ==============================================================================
-# SECTION 4: IMMUTABLE UPDATES
-# ==============================================================================
 
 func withRunning*(state: AppState; running: bool): AppState =
   result = state

@@ -3,12 +3,7 @@
 # ==============================================================================
 #
 # Pure data types representing user input state. No DOM, no side effects.
-# This module defines the shape of input state that flows through the system.
 #
-# ==============================================================================
-
-# ==============================================================================
-# SECTION 1: INPUT STATE TYPE
 # ==============================================================================
 
 type
@@ -20,7 +15,6 @@ type
     mouseX*: float
     mouseY*: float
 
-    # Mouse button state
     mouseDown*: bool       # Left button
     mouseRightDown*: bool  # Right button
 
@@ -29,10 +23,6 @@ type
     blastX*: float
     blastY*: float
     blastStrength*: float
-
-# ==============================================================================
-# SECTION 2: CONSTRUCTORS
-# ==============================================================================
 
 func initInputState*(): InputState =
   InputState(
@@ -44,10 +34,6 @@ func initInputState*(): InputState =
     blastY: 0.0,
     blastStrength: 0.0
   )
-
-# ==============================================================================
-# SECTION 3: PURE UPDATE FUNCTIONS
-# ==============================================================================
 
 func withMousePosition*(state: InputState; posX, posY: float): InputState =
   result = state
@@ -80,10 +66,6 @@ func withBlastDecay*(state: InputState; decayFactor: float): InputState =
 func withBlastCleared*(state: InputState): InputState =
   result = state
   result.blastStrength = 0.0
-
-# ==============================================================================
-# SECTION 4: QUERIES
-# ==============================================================================
 
 func hasActiveBlast*(state: InputState): bool =
   state.blastStrength > 0.001

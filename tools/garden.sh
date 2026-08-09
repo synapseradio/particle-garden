@@ -11,9 +11,6 @@
 # hands facts to enter through two marker files in the state dir, which enter
 # consumes exactly once. Everything lives in functions with one guarded main
 # at EOF, so a half-downloaded copy fails to parse instead of half-executing.
-#
-# Author: Nick Krause
-# Created: 2026-08-01
 
 if [ -z "${BASH_VERSION-}" ]; then exec /bin/bash "$0" "$@"; fi
 

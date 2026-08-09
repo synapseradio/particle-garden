@@ -10,7 +10,7 @@
 #   - shader_config.nim substitutes the kernel weights into blur.wgsl as
 #     {{BLOOM_WEIGHTS}} / {{BLOOM_WEIGHT_COUNT}} placeholders. The weights are
 #     computed HERE, in Nim, so the falloff shape is natively testable rather
-#     than hand-written in WGSL (a user-accepted design decision).
+#     than hand-written in WGSL.
 #   - ui/state/render_state.nim and config_ranges.nim read the BLOOM_DEFAULT_*
 #     constants below, the same way they read field_core's RD_DEFAULT_*.
 #
@@ -36,8 +36,7 @@ const
   # can seed them into the authoritative RenderState and config_ranges.nim can
   # static-assert them in range — exactly the field_core RD_DEFAULT_* pattern.
   BLOOM_DEFAULT_ENABLED* = false
-    ## Bloom is opt-in: the default look is the non-bloom quality floor, so the
-    ## default appearance is unchanged from before S9. The toggle turns it on.
+    ## Bloom is opt-in: the default look is the non-bloom quality floor.
   BLOOM_DEFAULT_INTENSITY* = 1.0
   BLOOM_DEFAULT_EXPOSURE* = 1.0
   BLOOM_DEFAULT_SATURATION* = 1.0

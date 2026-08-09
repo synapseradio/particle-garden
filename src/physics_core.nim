@@ -1,6 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - PHYSICS CORE (Pure Mathematical Functions)
-# ==============================================================================
 #
 # Pure functions for particle physics calculations. These have no side effects
 # and can be tested in isolation without buffer access.
@@ -18,18 +16,10 @@
 
 import std/math
 
-# ==============================================================================
-# CONSTANTS
-# ==============================================================================
-
 const
   INV_03* = 1.0f / 0.3f  # Inverse of repulsion threshold
   INV_07* = 1.0f / 0.7f  # Inverse of attraction envelope width
   MIN_DIST_SQ* = 4.0f    # Minimum distance squared (2.0^2) to avoid division issues
-
-# ==============================================================================
-# FORCE CALCULATION
-# ==============================================================================
 
 func calculateForce*(normalizedDistance, attr, fMul, invD: float32): float32 =
   ## Calculate force magnitude between two particles.
@@ -233,10 +223,6 @@ func calculateForceMagnitude*(normalizedDistance, attr: float32): float32 =
     result = attr * (1.0f - absTriangleOffset * INV_07)
 
 
-# ==============================================================================
-# DISTANCE NORMALIZATION
-# ==============================================================================
-
 func normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ): tuple[
     normalizedDist: float32, invD: float32, valid: bool] =
   ## Normalize displacement vector to interaction range.
@@ -266,10 +252,6 @@ func normalizeDistance*(dx, dy, rMax: float32; minDistSq: float32 = MIN_DIST_SQ)
   result = (normalizedDist: normalizedDistance, invD: invD, valid: true)
 
 
-# ==============================================================================
-# DENSITY ACCUMULATION
-# ==============================================================================
-
 func accumulateDensity*(normalizedDistance: float32; sameSpecies: bool): float32 =
   ## Calculate density contribution from a neighbor particle.
   ##
@@ -284,10 +266,6 @@ func accumulateDensity*(normalizedDistance: float32; sameSpecies: bool): float32
   else:
     result = 0.0f
 
-
-# ==============================================================================
-# TOROIDAL WRAPPING
-# ==============================================================================
 
 func wrapDelta*(delta, size, halfSize: float32): float32 =
   ## Apply toroidal wrapping to a displacement component.
@@ -323,10 +301,6 @@ func wrapPosition*(pos, size: float32): float32 =
     result = pos
 
 
-# ==============================================================================
-# CELL INDEX COMPUTATION
-# ==============================================================================
-
 func computeCellCoords*(px, py: float32; gridW, gridH: int;
     invCellW, invCellH: float32): tuple[cx: int, cy: int] =
   ## Compute grid cell coordinates from particle position.
@@ -340,7 +314,6 @@ func computeCellCoords*(px, py: float32; gridW, gridH: int;
   var cx = int(px * invCellW)
   var cy = int(py * invCellH)
 
-  # Clamp to valid range
   if cx < 0:
     cx = 0
   elif cx >= gridW:
@@ -355,19 +328,8 @@ func computeCellCoords*(px, py: float32; gridW, gridH: int;
 
 
 func cellCoordsToIndex*(cx, cy, gridW: int): int =
-  ## Convert cell coordinates to linear cell index.
-  ##
-  ## cx, cy - Cell coordinates
-  ## gridW - Grid width
-  ##
-  ## Returns linear index: cy * gridW + cx
-  ##
   result = cy * gridW + cx
 
-
-# ==============================================================================
-# NEIGHBOR CELL ITERATION
-# ==============================================================================
 
 func getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
     canvasW, canvasH: float32): tuple[nx: int, ny: int, cell: int,
@@ -389,7 +351,6 @@ func getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
   var wrapX = 0.0f
   var wrapY = 0.0f
 
-  # Wrap X
   if nx < 0:
     nx += gridW
     wrapX = -canvasW
@@ -397,7 +358,6 @@ func getNeighborCell*(cx, cy, dx, dy, gridW, gridH: int;
     nx -= gridW
     wrapX = canvasW
 
-  # Wrap Y
   if ny < 0:
     ny += gridH
     wrapY = -canvasH

@@ -57,10 +57,7 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check defaults.glowWarmth == clamp(defaults.glowWarmth, GLOW_WARMTH_MIN, GLOW_WARMTH_MAX)
 
   test "every preset default equals the state field that owns it":
-    # THE TOTAL RELATION, and the reason the per-key test that used to sit here
-    # went away: that one pinned three glow defaults to their own literals, so
-    # it stayed green when render_state moved and could only ever cover the keys
-    # somebody remembered to add. This walks PresetSettings, SimulationState and
+    # THE TOTAL RELATION. This walks PresetSettings, SimulationState and
     # RenderState by fieldPairs, so a field added to any of the three is covered
     # without editing this test.
     #

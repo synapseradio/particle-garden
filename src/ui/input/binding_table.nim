@@ -1,6 +1,3 @@
-# ==============================================================================
-# PARTICLE GARDEN - INPUT BINDING TABLE
-# ==============================================================================
 #
 # The single declaration of every mouse gesture, touch gesture, and key
 # binding. The key handler derives its dispatch from the key rows, and help

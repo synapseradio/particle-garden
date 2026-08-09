@@ -1,7 +1,4 @@
 # ==============================================================================
-# PARTICLE GARDEN - WEBGPU DEVICE INITIALIZATION
-# ==============================================================================
-#
 # This module handles:
 # - Feature detection for WebGPU availability
 # - GPU adapter and device acquisition with appropriate limits
@@ -28,17 +25,11 @@ proc makeJsObject(): JsObject {.importjs: "({})".}
 proc makeJsArray(): JsObject {.importjs: "([])".}
 proc push(arr: JsObject, item: JsObject): int {.importjs: "#.push(#)", discardable.}
 
-# ==============================================================================
-# SECTION 1: TYPE DEFINITIONS
-# ==============================================================================
-
 type
   GPUBuffersObject* = ref object of JsObject
-    # AoS particle buffers (32 bytes per particle)
     particlesA* {.importjs: "particlesA".}: GPUBuffer       ## Primary particles
     particlesSorted* {.importjs: "particlesSorted".}: GPUBuffer  ## Sorted for forces
 
-    # Index mappings
     sortedIndices* {.importjs: "sortedIndices".}: GPUBuffer  ## sorted -> original
     reverseIndices* {.importjs: "reverseIndices".}: GPUBuffer ## original -> sorted
 
@@ -59,16 +50,13 @@ type
     fieldAliveReadback* {.importjs: "fieldAliveReadback".}: GPUBuffer
       ## The 4-byte MAP_READ staging pair for fieldAlive.
 
-    # Grid structure
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
     gridOffsets* {.importjs: "gridOffsets".}: GPUBuffer
     fillPointers* {.importjs: "fillPointers".}: GPUBuffer
 
-    # Prefix sum intermediates
     blockSums* {.importjs: "blockSums".}: GPUBuffer
     blockOffsets* {.importjs: "blockOffsets".}: GPUBuffer
 
-    # Shared state
     sync* {.importjs: "sync".}: GPUBuffer
 
   InitResult* = ref object of JsObject
@@ -95,18 +83,10 @@ type
     gridOffsets* {.importjs: "gridOffsets".}: int
     sync* {.importjs: "sync".}: int
 
-# ==============================================================================
-# SECTION 2: HELPER BINDINGS
-# ==============================================================================
-
 proc jsObjectLength*(obj: JsObject): int {.importjs: "Object.keys(#).length".}
 proc jsCeilDiv*(numerator, denominator: int): int {.importjs: "Math.ceil(# / #)".}
 proc makeFeatureList(name: cstring): JsObject {.importjs: "[#]".}
 proc destroyAllBuffers*(obj: JsObject) {.importjs: "Object.values(#).forEach((buffer) => { if (buffer && typeof buffer.destroy === 'function') { buffer.destroy(); } })".}
-
-# ==============================================================================
-# SECTION 3: GPU STATE
-# ==============================================================================
 
 var adapter* {.exportc.}: GPUAdapter = nil
 var device* {.exportc.}: GPUDevice = nil
@@ -140,17 +120,12 @@ var fieldLinearSampler {.exportc: "pgFieldSampler".}: GPUSampler = nil
 var fieldDepositBuffer {.exportc: "pgFieldDeposit".}: GPUBuffer = nil
 var fieldGenerationCounter {.exportc: "pgFieldGeneration".}: int = 0
 
-# ==============================================================================
-# SECTION 4: BUFFER SIZE CALCULATIONS
-# ==============================================================================
-
 proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   ## Calculate GPU buffer sizes for AoS layout.
   let gridCells = memory_layout.MAX_GRID * memory_layout.MAX_GRID
 
   result = BufferSizes()
 
-  # AoS particle buffers: 32 bytes per particle
   result.particlesA = memory_layout.MAX_PARTICLES * memory_layout.PARTICLE_STRIDE
   result.particlesSorted = memory_layout.MAX_PARTICLES * memory_layout.PARTICLE_STRIDE
 
@@ -161,8 +136,6 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   # Velocity deltas: 2 i32s per particle (interleaved vx, vy)
   result.velocityDelta = memory_layout.MAX_PARTICLES * 2 * 4
 
-  # Density deltas: 1 i32 per particle (fixed-point for atomic accumulation)
-  # Required for symmetric density in half-neighbor iteration
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
   result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 4
@@ -174,10 +147,6 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 
   # Sync: 256 i32s
   result.sync = 256 * 4
-
-# ==============================================================================
-# SECTION 5: FEATURE DETECTION
-# ==============================================================================
 
 proc createFieldResources() =
   ## (Re)create the reaction-diffusion field textures, deposit buffer, and
@@ -303,26 +272,14 @@ proc detectWebGPU*(): bool {.exportc.} =
 
   return true
 
-# ==============================================================================
-# SECTION 6: INITIALIZATION
-# ==============================================================================
-
 proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   ## Initialize WebGPU device and create AoS GPU buffers.
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Phase 1: Feature Detection
-  # ─────────────────────────────────────────────────────────────────────────
 
   if not detectWebGPU():
     let errorResult = makeJsObject()
     errorResult["success".cstring] = false.toJs
     errorResult["error".cstring] = "WebGPU is not available in this browser. Try Chrome 113+ or Edge 113+.".cstring.toJs
     return errorResult
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Phase 2: Request Adapter
-  # ─────────────────────────────────────────────────────────────────────────
 
   let adapterOptions = makeJsObject()
   adapterOptions["powerPreference".cstring] = "high-performance".cstring.toJs
@@ -340,10 +297,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
     {.emit: "console.log('WebGPU adapter acquired:', 'Info unavailable');".}
   else:
     {.emit: "console.log('WebGPU adapter acquired:', `adapterInfo`);".}
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Phase 3: Request Device with Limits
-  # ─────────────────────────────────────────────────────────────────────────
 
   let sizes = calculateBufferSizes()
 
@@ -394,10 +347,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
 
   {.emit: "console.log('WebGPU device created with limits:', `device`.limits);".}
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # Phase 4: Create GPU Buffers (AoS Layout)
-  # ─────────────────────────────────────────────────────────────────────────
-
   let bufferUsage = bitwiseOr(bitwiseOr(gpuBufferUsageStorage, gpuBufferUsageCopySrc), gpuBufferUsageCopyDst)
 
   proc createBuf(size: int, usage: int, label: cstring): GPUBuffer =
@@ -407,19 +356,14 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
     desc["label".cstring] = label.toJs
     return device.createBuffer(desc)
 
-  # AoS particle buffers (32 bytes per particle)
   buffers.particlesA = createBuf(sizes.particlesA, bufferUsage, "Particles A (AoS, 32 bytes/particle)")
   buffers.particlesSorted = createBuf(sizes.particlesSorted, bufferUsage, "Particles Sorted (AoS, 32 bytes/particle)")
 
-  # Index mappings
   buffers.sortedIndices = createBuf(sizes.sortedIndices, bufferUsage, "Sorted Indices (sorted -> original)")
   buffers.reverseIndices = createBuf(sizes.reverseIndices, bufferUsage, "Reverse Indices (original -> sorted)")
 
-  # Velocity deltas for Newton's 3rd law atomics
   buffers.velocityDelta = createBuf(sizes.velocityDelta, bufferUsage, "Velocity Delta (interleaved i32)")
 
-  # Density deltas for symmetric accumulation (half-neighbor pattern)
-  # Each pair processed once; both particles receive density contribution via atomics
   buffers.densityDelta = createBuf(sizes.densityDelta, bufferUsage, "Density Delta (fixed-point i32)")
   buffers.sphDensityDelta = createBuf(
     sizes.sphDensityDelta, bufferUsage, "SPH Kernel Density Delta (fixed-point i32)")
@@ -431,7 +375,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
     bitwiseOr(gpuBufferUsageCopyDst, gpuBufferUsageMapRead),
     "Field Alive-Cell Readback")
 
-  # Grid buffers
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")
   buffers.gridOffsets = createBuf(sizes.gridOffsets, bufferUsage, "Grid Cell Offsets")
   buffers.fillPointers = createBuf(sizes.gridOffsets, bufferUsage, "Fill Pointers")
@@ -441,7 +384,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   buffers.blockSums = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Totals")
   buffers.blockOffsets = createBuf(blockSumsSize, bufferUsage, "Prefix Sum Block Offsets")
 
-  # Shared state
   buffers.sync = createBuf(sizes.sync, bufferUsage, "Synchronization Buffer")
 
   let bufferCount = jsObjectLength(cast[JsObject](buffers))
@@ -451,10 +393,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   # like the SPH buffers, so a strength leaving zero finds them ready).
   createFieldResources()
   {.emit: "console.log('WebGPU RD field resources created (512x512 rgba16float ping-pong)');".}
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Success
-  # ─────────────────────────────────────────────────────────────────────────
 
   isWebGPUAvailable = true
 
@@ -472,10 +410,6 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   successResult["info".cstring] = infoObj
 
   return successResult
-
-# ==============================================================================
-# SECTION 7: CLEANUP
-# ==============================================================================
 
 proc cleanup*() {.exportc.} =
   destroyAllBuffers(cast[JsObject](buffers))
