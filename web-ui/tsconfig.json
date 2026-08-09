@@ -10,7 +10,22 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "types": ["@types/bun"]
+    "types": ["@types/bun"],
+
+    // The strictness ratchet, the TS counterpart of quality_flags in the
+    // justfile: this panel restates nothing Nim owns, so a silent mistake here
+    // has no other check behind it. The two lists are meant to stay
+    // comparable — a class of defect that fails the Nim build should fail this
+    // one. Every flag below was measured against the tree when added: six find
+    // nothing, and noUncheckedIndexedAccess found eleven sites, all fixed
+    // rather than asserted away.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true
   },
   "include": ["src", "test", "build.ts"]
 }

@@ -23,7 +23,7 @@ describe("the restricted markdown subset parses", () => {
   test("consecutive dashed lines form one list", () => {
     const blocks = parseMarkdown("- a\n- b\n\n- c");
     expect(blocks.length).toBe(2);
-    expect(blocks[0].kind).toBe("list");
+    expect(blocks[0]?.kind).toBe("list");
     expect((blocks[0] as { items: unknown[] }).items.length).toBe(2);
   });
 
@@ -62,6 +62,6 @@ describe("markup outside the subset stays literal text", () => {
 
   test("a level-four heading reads as a paragraph", () => {
     const blocks = parseMarkdown("#### deep");
-    expect(blocks[0].kind).toBe("paragraph");
+    expect(blocks[0]?.kind).toBe("paragraph");
   });
 });

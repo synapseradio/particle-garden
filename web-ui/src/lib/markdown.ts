@@ -34,9 +34,12 @@ export function parseInlines(text: string): Inline[] {
     } else if (token.startsWith("*")) {
       inlines.push({ kind: "em", text: token.slice(1, -1) });
     } else {
-      const link = /^\[([^\]]+)\]\(#([^)\s]+)\)$/.exec(token);
-      if (link) {
-        inlines.push({ kind: "link", text: link[1], target: link[2] });
+      // A match array types every group as optional. Naming the groups and
+      // guarding them is what turns the pattern's own guarantee — both groups
+      // are obligatory — into one the compiler holds.
+      const [, label, target] = /^\[([^\]]+)\]\(#([^)\s]+)\)$/.exec(token) ?? [];
+      if (label !== undefined && target !== undefined) {
+        inlines.push({ kind: "link", text: label, target });
       }
     }
     cursor = start + token.length;
@@ -67,14 +70,14 @@ export function parseMarkdown(source: string): Block[] {
 
   for (const rawLine of source.split("\n")) {
     const line = rawLine.trimEnd();
-    const heading = /^(#{1,3}) (.+)$/.exec(line);
-    if (heading) {
+    const [, hashes, title] = /^(#{1,3}) (.+)$/.exec(line) ?? [];
+    if (hashes !== undefined && title !== undefined) {
       flushParagraph();
       flushList();
       blocks.push({
         kind: "heading",
-        level: heading[1].length,
-        inlines: parseInlines(heading[2]),
+        level: hashes.length,
+        inlines: parseInlines(title),
       });
     } else if (line.startsWith("- ")) {
       flushParagraph();
