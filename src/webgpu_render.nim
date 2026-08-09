@@ -1766,9 +1766,9 @@ proc render*(particleCount: int) =
   if overlayKind != okNone:
     overlayParamsData[OVERLAY_KIND] = float32(ord(overlayKind))
     if overlayKind == okRing:
-      let cursor = screenUvToWorld(
-        float32(canvas_input.getMouseX() / float(canvas.width)),
-        float32(canvas_input.getMouseY() / float(canvas.height)),
+      let cursor = screenPixelToWorld(
+        float32(canvas_input.getMouseX()), float32(canvas_input.getMouseY()),
+        float32(canvas.width), float32(canvas.height),
         activeCamera, float32(config.WORLD_W), float32(config.WORLD_H))
       overlayParamsData[OVERLAY_CENTER_X] = cursor.x
       overlayParamsData[OVERLAY_CENTER_Y] = cursor.y

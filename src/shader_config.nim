@@ -37,7 +37,11 @@ type
     ## These become {{TUNABLE_*}} placeholders in WGSL.
 
     minDistanceSq*: float     ## Minimum distance squared to prevent div/zero (default 4.0)
-    mouseRangeSq*: float      ## Mouse interaction radius squared (default 90000.0 = 300px)
+    mouseRangeSq*: float      ## Mouse interaction radius squared (default
+                              ## 90000.0 = 300 world units). Reaches the GPU as
+                              ## SimParams.mouseRange rather than a placeholder:
+                              ## app.nim divides its root by the camera zoom
+                              ## per frame.
     blastRangeSq*: float      ## Blast effect radius squared (default 40000.0 = 200px)
 
     densitySmoothFactor*: float  ## Smoothing for density updates (default 0.7)
@@ -288,7 +292,6 @@ proc getPlaceholderMap*(): Table[string, string] =
 
   # Tunable constants (formatted as WGSL float literals)
   result["TUNABLE_MIN_DISTANCE_SQ"] = fmt"{activeConfig.tuning.minDistanceSq:.1f}"
-  result["TUNABLE_MOUSE_RANGE_SQ"] = fmt"{activeConfig.tuning.mouseRangeSq:.1f}"
   result["TUNABLE_BLAST_RANGE_SQ"] = fmt"{activeConfig.tuning.blastRangeSq:.1f}"
   result["TUNABLE_DENSITY_SMOOTH_FACTOR"] = fmt"{activeConfig.tuning.densitySmoothFactor:.2f}"
   result["TUNABLE_FIXED_POINT_SCALE"] = fmt"{activeConfig.tuning.fixedPointScale:.1f}"

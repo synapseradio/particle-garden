@@ -12,8 +12,11 @@ without switching anything off, so every slider in the panel acts on the
 same world you are watching.
 
 Hold the left button to gather particles toward the cursor, hold the right
-to scatter them, and double-click to set off a blast. The wheel moves the
-view, and a pinch (or Ctrl-scroll) zooms at the cursor.
+to scatter them, and double-click to set off a blast. Both follow the view:
+the pull lands under the cursor wherever the camera sits, and its reach on
+screen stays the same at every zoom, while a blast stays pinned to the world
+point you clicked even as the view moves on. The wheel moves the view, and a
+pinch (or Ctrl-scroll) zooms at the cursor.
 
 Worth trying first: press one of the named pattern buttons in the
 Reaction-Diffusion section and watch the field ignite around the colonies.

@@ -176,7 +176,11 @@ const
       GpuField(name: "forceModel",      kind: gtU32, offset: 216, size: 4, count: 1),
       GpuField(name: "expAlpha",        kind: gtF32, offset: 220, size: 4, count: 1),
       GpuField(name: "expBeta",         kind: gtF32, offset: 224, size: 4, count: 1),
-      GpuField(name: "_pad2",           kind: gtF32, offset: 228, size: 4, count: 1),
+      # The mouse influence radius in world units, written per frame as the
+      # 300-unit base (shader_config's mouseRangeSq) divided by the camera
+      # zoom, so the on-screen disc keeps a constant size. Spends what was the
+      # _pad2 word; every offset stays where it was.
+      GpuField(name: "mouseRange",      kind: gtF32, offset: 228, size: 4, count: 1),
       # SPH fluid parameters (232-248). forces-sph.wgsl reads these; the
       # species force shader ignores them.
       GpuField(name: "sphRestDensity",  kind: gtF32, offset: 232, size: 4, count: 1),
@@ -184,8 +188,9 @@ const
       GpuField(name: "sphGamma",        kind: gtF32, offset: 240, size: 4, count: 1),
       GpuField(name: "sphViscosity",    kind: gtF32, offset: 244, size: 4, count: 1),
       # Crowding (248-252). forces.wgsl reads it; the fluid ignores it. Appended
-      # rather than spending _pad2 above, so the force-model block and the SPH
-      # block keep the offsets every existing write targets.
+      # rather than spending the pad word above (since spent on mouseRange), so
+      # the force-model block and the SPH block keep the offsets every existing
+      # write targets.
       GpuField(name: "crowdingStrength", kind: gtF32, offset: 248, size: 4, count: 1),
       # The SPH smoothing radius as a fraction of interactionRadius (252-256).
       # forces-sph.wgsl multiplies the two; the fraction is capped at 1 by its
@@ -615,7 +620,7 @@ static:
 # =============================================================================
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
 # emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
-# _END=51, ... SIM_PAD2=57, SIM_CROWDING_STRENGTH=62,
+# _END=51, ... SIM_MOUSE_RANGE=57, SIM_CROWDING_STRENGTH=62,
 # SIM_SPH_RADIUS_FRACTION=63, and SIM_PARAMS_F32_COUNT=64, so
 # webgpu_compute.nim hand-writes no magic number.
 

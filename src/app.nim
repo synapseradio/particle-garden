@@ -1,6 +1,7 @@
 # Build with `just happen` (recipe build-app in the justfile).
 
 import std/asyncjs
+from std/math import sqrt
 from std/jsffi import JsObject, toJs, to, `[]`, `[]=`
 from std/dom import Window, requestAnimationFrame
 
@@ -14,6 +15,14 @@ import config
 
 # Layer 2: Buffers (depends on config)
 import buffers
+
+# Pure camera math (depends only on physics_core): the pointer-to-world
+# conversion the physics params below go through.
+import camera_core
+
+# Shader tuning constants (pure): the mouse-range base the per-frame
+# zoom-scaled radius divides.
+import shader_config
 
 # Layer 3: Browser integration modules
 import grid
@@ -180,14 +189,31 @@ proc physics(dt: float): Future[void] {.async.} =
   params["rMax"] = toJs(config.CONFIG.interactionRadius)
   params["fMul"] = toJs(config.CONFIG.forceStrength)
   params["friction"] = toJs(1.0 - config.CONFIG.friction)
-  let mouseScaleX = config.WORLD_W / float(canvasWidth())
-  let mouseScaleY = config.WORLD_H / float(canvasHeight())
-  params["mouseX"] = toJs(canvas_input.getMouseX() * mouseScaleX)
-  params["mouseY"] = toJs(canvas_input.getMouseY() * mouseScaleY)
+  # The cursor passes through the live camera, so the force lands under it at
+  # any pan or zoom. forces.wgsl expects world space; its single-step toroidal
+  # wrap covers the transformed range because the camera centre stays wrapped
+  # in [0, worldSize).
+  let camera = webgpu_render.camera()
+  let mouseWorld = screenPixelToWorld(
+    float32(canvas_input.getMouseX()), float32(canvas_input.getMouseY()),
+    float32(canvasWidth()), float32(canvasHeight()),
+    camera, float32(config.WORLD_W), float32(config.WORLD_H))
+  params["mouseX"] = toJs(mouseWorld.x)
+  params["mouseY"] = toJs(mouseWorld.y)
   params["mouseDown"] = toJs(if canvas_input.getMouseDown(): 1 else: 0)
   params["mouseRightDown"] = toJs(if canvas_input.getMouseRightDown(): 1 else: 0)
-  params["blastX"] = toJs(canvas_input.getBlastX() * mouseScaleX)
-  params["blastY"] = toJs(canvas_input.getBlastY() * mouseScaleY)
+  # The influence radius shrinks in world units as the camera closes in, so
+  # the disc the user sees keeps one size at every zoom. At zoom 1 this is
+  # exactly the 300-unit base. The blast radius stays world-fixed: a blast is
+  # a world event, not a screen one.
+  params["mouseRange"] =
+    toJs(sqrt(shader_config.getTunableFloat("MOUSE_RANGE_SQ")) /
+      float(camera.zoom))
+  # Blast coordinates are world-space already, converted at capture in
+  # canvas_input: a blast pins a past click to the world, so panning during
+  # its decay must not drag it with the screen.
+  params["blastX"] = toJs(canvas_input.getBlastX())
+  params["blastY"] = toJs(canvas_input.getBlastY())
   params["blastStrength"] = toJs(canvas_input.getBlastStrength())
   params["matrix"] = toJs(buffers.matrix)
 

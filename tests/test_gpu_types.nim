@@ -111,7 +111,7 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     check "gridCellsX: u32," in generated
     check "attractionMatrix: array<vec4<f32>, 9>," in generated
     check "forceModel: u32," in generated
-    check "_pad2: f32," in generated
+    check "mouseRange: f32," in generated
     check generated.strip.endsWith("}")
 
   test "toWgslType spells arrays and scalars the way WGSL expects":
@@ -139,7 +139,7 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_ATTRACTION_MATRIX_START == 16
     check SIM_ATTRACTION_MATRIX_END == 51
     check SIM_REPULSION_END == 52
-    check SIM_PAD2 == 57
+    check SIM_MOUSE_RANGE == 57
     check SIM_CROWDING_STRENGTH == 62
     check SIM_SPH_RADIUS_FRACTION == 63
     check SIM_PARAMS_F32_COUNT == 64
@@ -151,7 +151,8 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
   test "the crowding and radius-fraction slots close the struct in order":
-    # Both were appended rather than folded into _pad2, so every offset that
+    # Both were appended rather than folded into the pad word (since spent on
+    # mouseRange), so every offset that
     # existed before them still points at the field it did. The radius fraction
     # is last, and a slot that stopped being last would mean something else was
     # appended without this test seeing it.
@@ -167,7 +168,8 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
 suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
   # Four SPH f32 fields append after the force-model block. Their write
   # indices must equal their byte offset / 4, and sit immediately after
-  # SIM_PAD2, or webgpu_compute's SPH uniform writes land on the wrong slot.
+  # SIM_MOUSE_RANGE, or webgpu_compute's SPH uniform writes land on the wrong
+  # slot.
 
   test "each SPH index equals its field's byte offset divided by four":
     check SIM_SPH_REST_DENSITY == SimParamsLayout.fieldOffset("sphRestDensity") div 4
@@ -175,8 +177,8 @@ suite "Generated SIM_ SPH Indices Follow The Force-Model Block":
     check SIM_SPH_GAMMA == SimParamsLayout.fieldOffset("sphGamma") div 4
     check SIM_SPH_VISCOSITY == SimParamsLayout.fieldOffset("sphViscosity") div 4
 
-  test "the four SPH slots are contiguous and follow SIM_PAD2":
-    check SIM_SPH_REST_DENSITY == SIM_PAD2 + 1
+  test "the four SPH slots are contiguous and follow SIM_MOUSE_RANGE":
+    check SIM_SPH_REST_DENSITY == SIM_MOUSE_RANGE + 1
     check SIM_SPH_STIFFNESS == SIM_SPH_REST_DENSITY + 1
     check SIM_SPH_GAMMA == SIM_SPH_STIFFNESS + 1
     check SIM_SPH_VISCOSITY == SIM_SPH_GAMMA + 1

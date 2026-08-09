@@ -103,6 +103,19 @@ proc setResizeCallback*(callback: proc()) {.exportc.} =
 proc setupEvents*(canvas: JsObject) {.exportc.} =
   let canvasEl = cast[HTMLCanvasElement](canvas)
 
+  proc pointerWorld(pixelX, pixelY: float): tuple[x, y: float32] =
+    ## The world point under a pointer pixel, through the live camera. Before
+    ## app.nim wires the camera hooks the default camera stands in, which is
+    ## exact while nothing can have moved the view yet.
+    let camera =
+      if cameraGetter.isNil:
+        initCamera(float32(config.WORLD_W), float32(config.WORLD_H))
+      else:
+        cameraGetter()
+    screenPixelToWorld(float32(pixelX), float32(pixelY),
+      float32(canvasEl.width), float32(canvasEl.height),
+      camera, float32(config.WORLD_W), float32(config.WORLD_H))
+
   domWindow.addEventListener("resize", proc() =
     if not onResize.isNil:
       onResize()
@@ -136,9 +149,18 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     preventDefault(event)
   )
 
-  # Double-click triggers blast effect (powerful repellent)
+  # Double-click triggers blast effect (powerful repellent). The click
+  # converts to world space HERE, at capture: a blast pins a moment to a world
+  # point, so a camera move during its decay must not drag it with the screen.
+  # The same zero-size guard the wheel handler uses, and for the same reason:
+  # a canvas mid-resize has no pixels to divide by.
   canvasEl.addEventListener("dblclick", proc(event: MouseEvent) =
-    let eventData = extractMouseData(event)
+    if float(canvasEl.width) <= 0.0 or float(canvasEl.height) <= 0.0:
+      return
+    var eventData = extractMouseData(event)
+    let world = pointerWorld(eventData.clientX, eventData.clientY)
+    eventData.clientX = float(world.x)
+    eventData.clientY = float(world.y)
     currentInput.set(handleDoubleClick(currentInput.get(), eventData))
   )
 
@@ -159,9 +181,20 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     preventDefault(event)
     let eventData = extractTouchData(event)
     # Two fingers down is the touch equivalent of the double-click blast; one
-    # finger is an ordinary press.
+    # finger is an ordinary press. The tap's touches convert to world space at
+    # capture, exactly as the dblclick above does: the pixel-to-world transform
+    # is affine, so the midpoint the handler takes lands on the converted
+    # midpoint. The one-finger press stays in canvas pixels — it feeds the live
+    # cursor, which app.nim converts per frame through the current camera.
     if eventData.touches.len >= 2:
-      currentInput.set(handleTwoFingerTap(currentInput.get(), eventData))
+      if float(canvasEl.width) <= 0.0 or float(canvasEl.height) <= 0.0:
+        return
+      var worldTap = eventData
+      for touch in worldTap.touches.mitems:
+        let world = pointerWorld(touch.clientX, touch.clientY)
+        touch.clientX = float(world.x)
+        touch.clientY = float(world.y)
+      currentInput.set(handleTwoFingerTap(currentInput.get(), worldTap))
     else:
       currentInput.set(handleTouchStart(currentInput.get(), eventData))
   )

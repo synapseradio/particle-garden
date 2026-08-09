@@ -11,14 +11,18 @@ type
     ## Complete input state for the simulation.
     ## Immutable - updates return new state.
 
-    # Mouse position (canvas coordinates)
+    # Mouse position (canvas pixels — the live cursor converts to world per
+    # frame through the current camera, in app.nim)
     mouseX*: float
     mouseY*: float
 
     mouseDown*: bool       # Left button
     mouseRightDown*: bool  # Right button
 
-    # Blast effect (triggered by double-click)
+    # Blast effect (triggered by double-click or two-finger tap)
+    # blastX/blastY are WORLD coordinates, converted at capture in
+    # canvas_input: the blast pins a past click to the world, unlike the
+    # cursor, which is a live screen point.
     # blastStrength decays from 1.0 to 0.0 over ~300ms
     blastX*: float
     blastY*: float

@@ -49,7 +49,6 @@
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};  // Prevents division-by-zero when particles overlap
-const MOUSE_RANGE_SQ: f32 = {{TUNABLE_MOUSE_RANGE_SQ}};  // 300² - mouse influence radius squared
 
 // =============================================================================
 // EXPONENTIAL FORCE MODEL
@@ -335,9 +334,12 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     else if (mouseOffsetY < -halfWorldHeight) { mouseOffsetY += params.worldHeight; }
 
     let mouseDistSq = mouseOffsetX * mouseOffsetX + mouseOffsetY * mouseOffsetY;
-    if (mouseDistSq > 0.0 && mouseDistSq < MOUSE_RANGE_SQ) {
+    // params.mouseRange is the 300-unit base over the camera zoom, so the
+    // influence disc keeps a constant on-screen size. Peak strength stays
+    // 300 at every zoom; only the extent scales.
+    if (mouseDistSq > 0.0 && mouseDistSq < params.mouseRange * params.mouseRange) {
       let mouseDist = sqrt(mouseDistSq);
-      let mouseForce = 300.0 * (1.0 - mouseDist / 300.0) / mouseDist;
+      let mouseForce = 300.0 * (1.0 - mouseDist / params.mouseRange) / mouseDist;
 
       var mouseSign = 0.0;
       if (params.mouseLeftDown > 0.5) { mouseSign += 1.0; }

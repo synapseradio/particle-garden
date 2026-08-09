@@ -330,6 +330,51 @@ suite "Screen UV And World Are Exact Inverses":
     check abs(was.x - 0.5'f32) < 1e-4'f32
     check abs(was.y - 0.5'f32) < 1e-4'f32
 
+suite "Screen Pixels Map Through The Camera To World Points":
+  # Why this suite exists: the physics path hands the mouse and the blast to
+  # forces.wgsl in world coordinates. Converting a pointer pixel with a fixed
+  # pixel * (world / canvas) scale is correct only at the default camera, so
+  # the attraction force drifted from the cursor the moment the view panned or
+  # zoomed — while the overlay ring, which went through the camera, stayed put.
+
+  const
+    VIEW_W_PX = 1600.0'f32
+    VIEW_H_PX = 900.0'f32
+
+  test "the default camera reduces a pixel to the fixed canvas-to-world scale":
+    # Why the bug survived: at initCamera the camera-aware transform and the
+    # fixed scale agree exactly, so nothing at the default view could show it.
+    let camera = initCamera(WORLD_W, WORLD_H)
+    for pixelX in [0.0'f32, 1.0'f32, 400.0'f32, 800.0'f32, 1599.0'f32]:
+      for pixelY in [0.0'f32, 1.0'f32, 225.0'f32, 450.0'f32, 899.0'f32]:
+        let world = screenPixelToWorld(pixelX, pixelY, VIEW_W_PX, VIEW_H_PX,
+          camera, WORLD_W, WORLD_H)
+        check abs(world.x - pixelX * WORLD_W / VIEW_W_PX) < 1e-2'f32
+        check abs(world.y - pixelY * WORLD_H / VIEW_H_PX) < 1e-2'f32
+
+  test "the canvas midpoint lands on the camera centre wherever the view sits":
+    # The property from the bug report: whatever the pan and zoom, the pixel in
+    # the middle of the screen is looking at the camera's centre.
+    for camera in [
+        Camera(centerX: 700.0'f32, centerY: 400.0'f32, zoom: 3.0'f32),
+        Camera(centerX: 1900.0'f32, centerY: 20.0'f32, zoom: 8.0'f32),
+        Camera(centerX: 10.0'f32, centerY: 1000.0'f32, zoom: 0.25'f32)]:
+      let world = screenPixelToWorld(VIEW_W_PX * 0.5'f32, VIEW_H_PX * 0.5'f32,
+        VIEW_W_PX, VIEW_H_PX, camera, WORLD_W, WORLD_H)
+      check closeTo(world.x, camera.centerX)
+      check closeTo(world.y, camera.centerY)
+
+  test "a pixel maps to the world point that projects back onto it":
+    let camera = Camera(centerX: 300.0'f32, centerY: 900.0'f32, zoom: 2.5'f32)
+    for pixelStep in 0 .. 8:
+      let pixelX = VIEW_W_PX * pixelStep.float32 / 8.0'f32
+      let pixelY = VIEW_H_PX * pixelStep.float32 / 8.0'f32
+      let world = screenPixelToWorld(pixelX, pixelY, VIEW_W_PX, VIEW_H_PX,
+        camera, WORLD_W, WORLD_H)
+      let uv = worldToScreenUv(world.x, world.y, camera, WORLD_W, WORLD_H)
+      check abs(uv.x * VIEW_W_PX - pixelX) < 1e-2'f32
+      check abs(uv.y * VIEW_H_PX - pixelY) < 1e-2'f32
+
 suite "A Floor On What Can Be Seen":
   test "the composed radius clears the floor at the worst reachable corner":
     # Minimum size, the density multiplier at its floor, minimum zoom — the

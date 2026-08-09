@@ -666,6 +666,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let mouseY = params["mouseY"].to(float)
   let mouseDown = params["mouseDown"].to(int)
   let mouseRightDown = params["mouseRightDown"].to(int)
+  let mouseRange = params["mouseRange"].to(float)
   let blastX = params["blastX"].to(float)
   let blastY = params["blastY"].to(float)
   let blastStrength = params["blastStrength"].to(float)
@@ -735,7 +736,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsUint[SIM_FORCE_MODEL] = uint32(config.CONFIG.forceModel)  # 0=polynomial, 1=exponential
   simParamsData[SIM_EXP_ALPHA] = float32(config.CONFIG.expRepulsionAlpha)
   simParamsData[SIM_EXP_BETA] = float32(config.CONFIG.expAttractionBeta)
-  simParamsData[SIM_PAD2] = 0.0  # padding for 16-byte alignment
+  simParamsData[SIM_MOUSE_RANGE] = mouseRange
   # SPH fluid params (read by forces-sph.wgsl; ignored by forces.wgsl).
   # gamma is the fixed Tait exponent from sph_core, not a live CONFIG value.
   simParamsData[SIM_SPH_REST_DENSITY] = float32(config.CONFIG.sphRestDensity)

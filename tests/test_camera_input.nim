@@ -37,7 +37,10 @@ func screenPixelsMoved(before, after: Camera): tuple[x, y: float32] =
 
 func worldUnderPointer(camera: Camera, pixelX, pixelY: float32):
     tuple[x, y: float32] =
-  screenUvToWorld(pixelX / VIEW_W_PX, pixelY / VIEW_H_PX, camera,
+  ## The shipped pixel-to-world conversion, with this file's canvas and world
+  ## constants applied — so the gesture claims below exercise the same
+  ## transform the physics input path uses.
+  screenPixelToWorld(pixelX, pixelY, VIEW_W_PX, VIEW_H_PX, camera,
     WORLD_W, WORLD_H)
 
 suite "The Wheel Zooms At The Cursor":

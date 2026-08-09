@@ -132,6 +132,15 @@ func screenUvToWorld*(uvX, uvY: float32, camera: Camera,
    y: camera.centerY + (uvY * 2.0'f32 - 1.0'f32) * worldHeight /
      (2.0'f32 * camera.zoom))
 
+func screenPixelToWorld*(pixelX, pixelY, viewWidthPx, viewHeightPx: float32,
+    camera: Camera, worldWidth, worldHeight: float32): tuple[x, y: float32] =
+  ## Where in the world a pointer pixel is looking: screenUvToWorld with the
+  ## pixel-to-UV division folded in. The one conversion every pointer consumer
+  ## shares — physics input, the blast anchor, and the drag-overlay ring — so
+  ## none of them can disagree about what the cursor points at.
+  screenUvToWorld(pixelX / viewWidthPx, pixelY / viewHeightPx, camera,
+    worldWidth, worldHeight)
+
 func worldToScreenUv*(worldX, worldY: float32, camera: Camera,
     worldWidth, worldHeight: float32): tuple[x, y: float32] =
   ## Where a world point sits on screen. The forward direction; callers ask it
