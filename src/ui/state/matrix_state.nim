@@ -22,10 +22,6 @@ import ../../config_ranges
 const
   MATRIX_SIZE* = 6                    ## Maximum species count
 
-# ==============================================================================
-# SECTION 2: INDEX CALCULATIONS (pure functions)
-# ==============================================================================
-
 func matrixIndex*(row, col: int): int =
   ## Row = species feeling the force
   ## Col = species exerting the force
@@ -39,10 +35,6 @@ func isValidIndex*(row, col, speciesCount: int): bool =
   col >= 0 and col < speciesCount and
   speciesCount <= MATRIX_SIZE
 
-# ==============================================================================
-# SECTION 3: VALUE OPERATIONS (pure functions)
-# ==============================================================================
-
 func clampMatrixValue*(value: float): float =
   max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, value))
 
@@ -54,10 +46,6 @@ func isRepulsion*(value: float): bool =
 
 func isNeutral*(value: float): bool =
   abs(value) < 0.001
-
-# ==============================================================================
-# SECTION 4: COLOR CALCULATIONS (pure functions)
-# ==============================================================================
 
 type
   CellColor* = object
@@ -83,10 +71,6 @@ func cellColorFromValue*(value: float): CellColor =
 func toHslaString*(color: CellColor): string =
   "hsla(" & $color.hue & "," & $color.saturation & "%," & $color.lightness & "%," & $color.alpha & ")"
 
-# ==============================================================================
-# SECTION 5: SPECIES COLOR (for headers)
-# ==============================================================================
-
 type
   SpeciesColor* = object
     ## RGB color for species header.
@@ -109,10 +93,6 @@ func speciesColorFromIndex*(index: int, colors: openArray[float]): SpeciesColor 
 func toRgbaString*(color: SpeciesColor): string =
   "rgba(" & $color.red & "," & $color.green & "," & $color.blue & "," & $color.alpha & ")"
 
-# ==============================================================================
-# SECTION 5b: SPECIES GROWTH
-# ==============================================================================
-
 type
   MatrixCell* = tuple[row, col: int]
 
@@ -127,11 +107,8 @@ func newlyExposedCells*(oldCount, newCount: int): seq[MatrixCell] =
       if row >= oldCount or col >= oldCount:
         result.add((row: row, col: col))
 
-# ==============================================================================
-# SECTION 6: RULE RANDOMIZATION (pure core)
-# ==============================================================================
-
-proc sampleRuleValue*(sigma: float, nextGaussian: proc(): float): float =
+func sampleRuleValue*(sigma: float, nextGaussian: proc(): float): float
+    {.effectsOf: nextGaussian.} =
   ## One matrix rule value: standard-normal draws from nextGaussian scaled by
   ## sigma TIMES the served bound, rejecting any product outside
   ## [MATRIX_MIN_VALUE, MATRIX_MAX_VALUE] (boundaries accepted). Sigma is a

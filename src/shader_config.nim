@@ -14,11 +14,9 @@
 
 type
   ShaderProfile* = enum
-    ## Build profile affecting shader configuration
     spProduction    ## Validated defaults
 
   WorkgroupConfig* = object
-    ## Workgroup sizes for each compute shader.
     ## Must match the @workgroup_size() directive in WGSL.
     binCount*: int        ## bin-count.wgsl: particles per workgroup
     binScatter*: int      ## bin-scatter.wgsl: particles per workgroup
@@ -36,15 +34,12 @@ type
     fieldStepY*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, Y
 
   TuningConstants* = object
-    ## Physics and rendering constants that can be tuned without shader edits.
     ## These become {{TUNABLE_*}} placeholders in WGSL.
 
-    # Force calculation
     minDistanceSq*: float     ## Minimum distance squared to prevent div/zero (default 4.0)
     mouseRangeSq*: float      ## Mouse interaction radius squared (default 90000.0 = 300px)
     blastRangeSq*: float      ## Blast effect radius squared (default 40000.0 = 200px)
 
-    # Density estimation
     densitySmoothFactor*: float  ## Smoothing for density updates (default 0.7)
 
     # Fixed-point arithmetic (DO NOT CHANGE unless you know what you're doing)
@@ -71,7 +66,6 @@ type
     sphMaxPressureAccel*: float  ## Per-pair pressure acceleration clamp (default 5000.0)
 
   ShaderConfig* = object
-    ## Complete shader configuration
     profile*: ShaderProfile
     workgroups*: WorkgroupConfig
     tuning*: TuningConstants
@@ -86,7 +80,7 @@ const
     binCount: 128,        # Good balance for particle binning
     binScatter: 128,      # Matches binCount for consistency
     forces: 128,          # Main physics loop - optimized for memory coalescing
-    integrate: 128,       # Velocity integration
+    integrate: 128,
     prefixSumLocal: 256,  # Must match BLOCK_SIZE in shader
     prefixSumBlocks: 256, # Single workgroup processes all blocks
     prefixSumFinal: 256,  # Matches local for consistency
@@ -100,7 +94,7 @@ const
     minDistanceSq: 4.0,           # 2px minimum separation
     mouseRangeSq: 90000.0,        # 300px mouse interaction radius
     blastRangeSq: 40000.0,        # 200px blast radius
-    densitySmoothFactor: 0.7,     # Smooth density transitions
+    densitySmoothFactor: 0.7,
     fixedPointScale: 65536.0,     # 2^16 for atomic accumulation
     glowVelocityLogScale: 5.0,    # These eight are calibrated to match
     glowVelocityBase: 0.5,        # glow.wgsl's shipped curve exactly, so the
@@ -130,15 +124,18 @@ const
     tuning: PRODUCTION_TUNING,
   )
 
-# Current active configuration (can be modified for development)
-var activeConfig* = PRODUCTION_CONFIG
+# The active configuration. `const`, not `let` or `var`: the accessors below
+# are read by the response probes, which are the reference oracles for GPU math
+# the native suite cannot execute, and an oracle reading global state measures
+# something no later run can reproduce. Nim counts a module-level `let` as
+# global state too, so `const` is what lets those accessors be `func`.
+const activeConfig* = PRODUCTION_CONFIG
 
 # =============================================================================
 # CONFIGURATION ACCESSORS
 # =============================================================================
 
 proc getWorkgroupSize*(name: string): int =
-  ## Get workgroup size by shader name
   case name
   of "bin-count": activeConfig.workgroups.binCount
   of "bin-scatter": activeConfig.workgroups.binScatter
@@ -153,8 +150,7 @@ proc getWorkgroupSize*(name: string): int =
   of "field-step-y": activeConfig.workgroups.fieldStepY
   else: 128  # Safe default
 
-proc getTunableFloat*(name: string): float =
-  ## Get tunable constant by name
+func getTunableFloat*(name: string): float =
   case name
   of "MIN_DISTANCE_SQ": activeConfig.tuning.minDistanceSq
   of "MOUSE_RANGE_SQ": activeConfig.tuning.mouseRangeSq
@@ -211,7 +207,7 @@ from glow_core import GlowTuning
 # The particle budget that derivation is taken against.
 from memory_layout import MAX_PARTICLES
 
-proc glowTuning*(): GlowTuning =
+func glowTuning*(): GlowTuning =
   ## The glow curve constants in the shape glow_core's mirror takes them. The
   ## values are the ones getPlaceholderMap emits as the {{TUNABLE_GLOW_*}}
   ## family below, so the mirror and the shader run the same curve.
@@ -230,10 +226,8 @@ proc glowTuning*(): GlowTuning =
     warmthBlue: activeConfig.tuning.glowWarmthBlue)
 
 proc getPlaceholderMap*(): Table[string, string] =
-  ## Generate placeholder substitutions for the shader bundler
   result = initTable[string, string]()
 
-  # Workgroup sizes
   result["WORKGROUP_SIZE_BIN_COUNT"] = $activeConfig.workgroups.binCount
   result["WORKGROUP_SIZE_BIN_SCATTER"] = $activeConfig.workgroups.binScatter
   result["WORKGROUP_SIZE_FORCES"] = $activeConfig.workgroups.forces

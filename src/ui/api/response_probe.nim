@@ -64,10 +64,6 @@ const
     ## integrate a 64x64 grid for dozens of frames per sample, and the native
     ## suite has to stay fast.
 
-# ------------------------------------------------------------------------------
-# Context
-# ------------------------------------------------------------------------------
-
 type
   ProbeContext* = object
     ## Every parameter other than the one under measurement, fixed at named
@@ -81,7 +77,11 @@ type
     pbClosedForm
     pbStepped
 
-  ProbeFn* = proc (value: float; ctx: ProbeContext): float {.nimcall.}
+  ProbeFn* = proc (value: float; ctx: ProbeContext): float
+    {.nimcall, noSideEffect.}
+    ## A probe is the reference oracle for GPU math the native suite cannot
+    ## execute, so it must answer the same at every call: noSideEffect is what
+    ## holds every implementation to that, under --warningAsError:Effect.
 
   ProbeSpec* = object
     fn*: ProbeFn
@@ -97,10 +97,6 @@ func defaultProbeContext*(): ProbeContext =
     sim: initSimulationState(),
     render: initRenderState(),
     cameraZoom: CAMERA_ZOOM_MIN)
-
-# ------------------------------------------------------------------------------
-# Named reference coordinates
-# ------------------------------------------------------------------------------
 
 const
   RefAttractionDist = 0.7
@@ -154,11 +150,7 @@ const
   RefRuleSamples = 16
     ## Accepted draws the rule-temperature probe averages over.
 
-# ------------------------------------------------------------------------------
-# Probes
-# ------------------------------------------------------------------------------
-
-proc forceMultiplierProbe(value: float; ctx: ProbeContext): float =
+func forceMultiplierProbe(value: float; ctx: ProbeContext): float =
   ## forceStrength: the shipped attraction-zone force at a fixed separation,
   ## scaled by the multiplier under measurement (forces.wgsl applies it after
   ## the curve).
@@ -169,7 +161,7 @@ proc forceMultiplierProbe(value: float; ctx: ProbeContext): float =
       ctx.sim.crowdingStrength.float32))
   abs(curve.float * value)
 
-proc forceReachProbe(value: float; ctx: ProbeContext): float =
+func forceReachProbe(value: float; ctx: ProbeContext): float =
   ## interactionRadius: force at the same RELATIVE position of a growing
   ## reach. The curve value is fixed by the normalized distance; the radius
   ## enters through the shader's 1/distance conversion, so the same relative
@@ -179,19 +171,19 @@ proc forceReachProbe(value: float; ctx: ProbeContext): float =
     ctx.sim.attractionPeak.float32, 1.0'f32)
   abs(curve.float * ctx.sim.forceStrength) / (RefAttractionDist * value)
 
-proc crowdingShareProbe(value: float; ctx: ProbeContext): float =
+func crowdingShareProbe(value: float; ctx: ProbeContext): float =
   ## crowdingStrength: the share of its attraction a particle LOSES at the
   ## reference density — zero at strength zero (today's force law), rising as
   ## the cap engages.
   1.0 - crowdingAttenuation(RefCrowdDensity.float32, value.float32).float
 
-proc frictionProbe(value: float; ctx: ProbeContext): float =
+func frictionProbe(value: float; ctx: ProbeContext): float =
   ## friction: the post-step speed of a below-cap mover. Friction is a
   ## retention factor in integrate.wgsl, so this is linear until the cap.
   postStepSpeed(RefFrameSpeed.float32, value.float32,
     ctx.sim.maxVelocity.float32).float
 
-proc maxVelocityProbe(value: float; ctx: ProbeContext): float =
+func maxVelocityProbe(value: float; ctx: ProbeContext): float =
   ## maxVelocity: the post-step speed of a mover far above every cap, so the
   ## observable follows the cap itself. DECLARED LIFT: damping held at
   ## identity, because the shipped friction default (0.05) sets the cap's
@@ -199,12 +191,12 @@ proc maxVelocityProbe(value: float; ctx: ProbeContext): float =
   ## half — the observable here is the cap alone.
   postStepSpeed(RefCapProbeSpeed.float32, 1.0'f32, value.float32).float
 
-proc timeScaleProbe(value: float; ctx: ProbeContext): float =
+func timeScaleProbe(value: float; ctx: ProbeContext): float =
   ## timeScale: how far a reference speed travels in one rendered frame.
   ## app.nim multiplies the frame's dt by timeScale before anything integrates.
   RefFrameSpeed * value
 
-proc ruleTemperatureProbe(value: float; ctx: ProbeContext): float =
+func ruleTemperatureProbe(value: float; ctx: ProbeContext): float =
   ## ruleTemperature: the mean magnitude of accepted rule draws at sigma =
   ## value, driven through sampleRuleValue with a deterministic cycle of
   ## standard-normal quantiles (rejection sampling forbids a live RNG here —
@@ -213,7 +205,7 @@ proc ruleTemperatureProbe(value: float; ctx: ProbeContext): float =
   const quantiles = [0.01, -0.05, 0.2533, -0.2533, 0.6745, -0.6745,
     1.2816, -1.2816]
   var cursor = 0
-  proc nextQuantile(): float =
+  func nextQuantile(): float =
     result = quantiles[cursor mod quantiles.len]
     inc cursor
   if value <= 0.0:
@@ -223,7 +215,7 @@ proc ruleTemperatureProbe(value: float; ctx: ProbeContext): float =
     total += abs(sampleRuleValue(value, nextQuantile))
   total / RefRuleSamples.float
 
-proc repulsionEndProbe(value: float; ctx: ProbeContext): float =
+func repulsionEndProbe(value: float; ctx: ProbeContext): float =
   ## repulsionEnd: the force at a fixed mid-track separation while the zone
   ## boundary sweeps across it — repulsive Hermite on one side, attraction
   ## bump on the other. The partner peak lifts just above the boundary where
@@ -234,7 +226,7 @@ proc repulsionEndProbe(value: float; ctx: ProbeContext): float =
   polynomialForce(RefMidZoneDist.float32, RefAttraction.float32,
     value.float32, peak.float32, 1.0'f32).float
 
-proc attractionPeakProbe(value: float; ctx: ProbeContext): float =
+func attractionPeakProbe(value: float; ctx: ProbeContext): float =
   ## attractionPeak: where the pull is strongest — the argmax separation of
   ## the shipped bump over the attraction zone, which is the spacing a
   ## bound pair settles toward. A location observable rather than a height
@@ -256,13 +248,13 @@ proc attractionPeakProbe(value: float; ctx: ProbeContext): float =
       bestDist = dist
   bestDist
 
-proc expRepulsionProbe(value: float; ctx: ProbeContext): float =
+func expRepulsionProbe(value: float; ctx: ProbeContext): float =
   ## expRepulsionAlpha: the exponential model's repulsion decay in isolation
   ## (attraction zero removes the other term).
   abs(exponentialForce(RefRepulsionDist.float32, 0.0'f32, value.float32,
     ctx.sim.expAttractionBeta.float32, 1.0'f32).float)
 
-proc expAttractionProbe(value: float; ctx: ProbeContext): float =
+func expAttractionProbe(value: float; ctx: ProbeContext): float =
   ## expAttractionBeta: the attraction term in isolation — the model at the
   ## reference attraction minus the model at attraction zero.
   let alpha = ctx.sim.expRepulsionAlpha.float32
@@ -272,14 +264,14 @@ proc expAttractionProbe(value: float; ctx: ProbeContext): float =
     alpha, value.float32, 1.0'f32)
   (withAttraction - repulsionOnly).float
 
-proc fluidStrengthProbe(value: float; ctx: ProbeContext): float =
+func fluidStrengthProbe(value: float; ctx: ProbeContext): float =
   ## fluidStrength: the one factor every SPH velocity delta passes through
   ## (forces-sph.wgsl), scaling the reference pair's pressure impulse.
   value * flooredTaitPressure(RefCompression * ctx.sim.sphRestDensity,
     ctx.sim.sphRestDensity, ctx.sim.sphStiffness, SPH_DEFAULT_GAMMA) *
     SPH_CEILING_REFERENCE_FRAME_SECONDS
 
-proc sphRestDensityProbe(value: float; ctx: ProbeContext): float =
+func sphRestDensityProbe(value: float; ctx: ProbeContext): float =
   ## sphRestDensity: the pressure available across the neighbourhood
   ## densities a world can reach at this rest setting, integrated from the
   ## rest floor up to the smaller of the Tait input ceiling
@@ -307,20 +299,20 @@ proc sphRestDensityProbe(value: float; ctx: ProbeContext): float =
       SPH_DEFAULT_GAMMA)
   total * (bandHigh - bandLow) / bandSamples.float
 
-proc sphStiffnessProbe(value: float; ctx: ProbeContext): float =
+func sphStiffnessProbe(value: float; ctx: ProbeContext): float =
   ## sphStiffness: pressure at the reference compression. Linear in the gain
   ## by the Tait form.
   flooredTaitPressure(RefCompression * ctx.sim.sphRestDensity,
     ctx.sim.sphRestDensity, value, SPH_DEFAULT_GAMMA)
 
-proc sphViscosityProbe(value: float; ctx: ProbeContext): float =
+func sphViscosityProbe(value: float; ctx: ProbeContext): float =
   ## sphViscosity: one pair's velocity blend. forces-sph.wgsl folds viscosity
   ## and the XSPH epsilon into one symmetric diffusion coefficient, so the
   ## mirror's XSPH summand carries it with epsilon = viscosity + the constant.
   xsphVelocityCorrection(0.0, RefVelocityGap, RefNeighborWeight,
     value + SPH_XSPH_EPSILON)
 
-proc sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
+func sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
   ## sphRadiusFraction: the stable stiffness ceiling the fraction buys — the
   ## measured linear stability law (sph_core.stableStiffnessCeiling), the
   ## fraction's shipped consequence. The first sweep read a poly6 weight at
@@ -350,7 +342,7 @@ const
 
 type FieldProbeField = array[FieldProbeGrid, array[FieldProbeGrid, float]]
 
-proc fieldAliveFraction(feed, kill, deposit: float): float =
+func fieldAliveFraction(feed, kill, deposit: float): float =
   ## The fraction of cells holding a live pattern after the declared horizon:
   ## a deterministic center seed plus a scattered deposit mask, advanced with
   ## the shipped frame shape — one deposit fold, then RD_STEPS_PER_FRAME
@@ -404,35 +396,35 @@ proc fieldAliveFraction(feed, kill, deposit: float): float =
       if inhibitor[y][x] > FieldProbeAliveThreshold: inc alive
   alive.float / (FieldProbeGrid * FieldProbeGrid).float
 
-proc rdFeedProbe(value: float; ctx: ProbeContext): float =
+func rdFeedProbe(value: float; ctx: ProbeContext): float =
   ## rdFeed: the alive fraction after the horizon, feed under measurement.
   ## Most of the feed-kill rectangle admits no nontrivial fixed point on any
   ## single slice, which is why the pair is judged through its joint group's
   ## regime-point slices rather than whole-track metrics.
   fieldAliveFraction(value, ctx.sim.rdKill, ctx.sim.rdDeposit)
 
-proc rdKillProbe(value: float; ctx: ProbeContext): float =
+func rdKillProbe(value: float; ctx: ProbeContext): float =
   ## rdKill: the alive fraction after the horizon, kill under measurement.
   fieldAliveFraction(ctx.sim.rdFeed, value, ctx.sim.rdDeposit)
 
-proc rdDepositProbe(value: float; ctx: ProbeContext): float =
+func rdDepositProbe(value: float; ctx: ProbeContext): float =
   ## rdDeposit: one cell's inhibitor after this frame's deposit lands,
   ## through the shipped resolve fold (cap, per-step scale, floor).
   resolveCellDeposit(RefInhibitor, value)
 
-proc rdFieldForceProbe(value: float; ctx: ProbeContext): float =
+func rdFieldForceProbe(value: float; ctx: ProbeContext): float =
   ## rdFieldForce: the tropism force a reference gradient exerts at full
   ## species tropism, linear in the scale under measurement.
   speciesTropismForce(RefGradient, value, 1.0)
 
-proc climateSpeedProbe(value: float; ctx: ProbeContext): float =
+func climateSpeedProbe(value: float; ctx: ProbeContext): float =
   ## climateSpeed: phase advanced per second. The tour period is its inverse;
   ## the probe reads the step to keep the zero-speed endpoint finite.
   tourPhaseStep(value, 1.0)
 
 # --- render-side probes ---------------------------------------------------------
 
-proc glowUniformsFor(ctx: ProbeContext): GlowUniforms =
+func glowUniformsFor(ctx: ProbeContext): GlowUniforms =
   GlowUniforms(
     baseSize: ctx.render.particleSize.float + 1.0,
     glowIntensity: ctx.render.glowIntensity,
@@ -442,7 +434,7 @@ proc glowUniformsFor(ctx: ProbeContext): GlowUniforms =
     glowWarmth: ctx.render.glowWarmth,
     glowDensityFloor: 0.0)
 
-proc glowIntensityProbe(value: float; ctx: ProbeContext): float =
+func glowIntensityProbe(value: float; ctx: ProbeContext): float =
   ## glowIntensity: the display-clamped halo alpha integral — the observable
   ## that saturates where the screen stops answering, which is exactly the
   ## deadness the metric must see. DECLARED COORDINATE: full
@@ -456,39 +448,39 @@ proc glowIntensityProbe(value: float; ctx: ProbeContext): float =
   uniforms.velocityGlowScale = VELOCITY_GLOW_SCALE_MAX
   haloAlphaIntegralClamped(glowTuning(), uniforms, 1.0, 1.0)
 
-proc velocityGlowProbe(value: float; ctx: ProbeContext): float =
+func velocityGlowProbe(value: float; ctx: ProbeContext): float =
   var uniforms = glowUniformsFor(ctx)
   uniforms.velocityGlowScale = value
   haloAlphaIntegralClamped(glowTuning(), uniforms, RefVelocityNorm,
     RefGlowDensity)
 
-proc glowRadiusProbe(value: float; ctx: ProbeContext): float =
+func glowRadiusProbe(value: float; ctx: ProbeContext): float =
   var uniforms = glowUniformsFor(ctx)
   uniforms.glowRadiusScale = value
   haloAlphaIntegralClamped(glowTuning(), uniforms, RefVelocityNorm,
     RefGlowDensity)
 
-proc glowFalloffProbe(value: float; ctx: ProbeContext): float =
+func glowFalloffProbe(value: float; ctx: ProbeContext): float =
   var uniforms = glowUniformsFor(ctx)
   uniforms.glowFalloff = value
   haloAlphaIntegralClamped(glowTuning(), uniforms, RefVelocityNorm,
     RefGlowDensity)
 
-proc glowWarmthProbe(value: float; ctx: ProbeContext): float =
+func glowWarmthProbe(value: float; ctx: ProbeContext): float =
   ## glowWarmth: the warmth shift itself — alpha ignores warmth by design, so
   ## the integral would read this control as dead while the colour moves.
   var uniforms = glowUniformsFor(ctx)
   uniforms.glowWarmth = value
   haloWarmth(glowTuning(), uniforms, RefGlowDensity)
 
-proc trailPersistenceProbe(value: float; ctx: ProbeContext): float =
+func trailPersistenceProbe(value: float; ctx: ProbeContext): float =
   ## trailLength: the 1/e persistence horizon in frames. Linear in the
   ## slider: the shipped mapping decays to a fixed residual over a frame
   ## count proportional to the length (trail_core.persistenceFrames), so
   ## the horizon measures live end to end.
   persistenceFrames(value)
 
-proc bloomIntensityProbe(value: float; ctx: ProbeContext): float =
+func bloomIntensityProbe(value: float; ctx: ProbeContext): float =
   ## bloomIntensity: graded output luminance with the bloom term scaled by
   ## the value, the trail and grade held at reference (tonemap.wgsl's light
   ## sum feeding tonemapGrade).
@@ -500,7 +492,7 @@ proc bloomIntensityProbe(value: float; ctx: ProbeContext): float =
     ctx.render.temperature)
   tonemapLuminance(graded.r, graded.g, graded.b)
 
-proc exposureProbe(value: float; ctx: ProbeContext): float =
+func exposureProbe(value: float; ctx: ProbeContext): float =
   let graded = gradedRgb(
     RefTrailLight.r + ctx.render.bloomIntensity * RefBloomLight.r,
     RefTrailLight.g + ctx.render.bloomIntensity * RefBloomLight.g,
@@ -509,7 +501,7 @@ proc exposureProbe(value: float; ctx: ProbeContext): float =
     ctx.render.temperature)
   tonemapLuminance(graded.r, graded.g, graded.b)
 
-proc saturationProbe(value: float; ctx: ProbeContext): float =
+func saturationProbe(value: float; ctx: ProbeContext): float =
   ## saturation: chroma spread of the graded colour. Luminance is provably
   ## invariant under the saturation mix (pinned in test_bloom_core), so a
   ## luminance observable would read this control as dead while the colour
@@ -519,25 +511,25 @@ proc saturationProbe(value: float; ctx: ProbeContext): float =
   abs(graded.r - graded.g) + abs(graded.g - graded.b) +
     abs(graded.b - graded.r)
 
-proc contrastProbe(value: float; ctx: ProbeContext): float =
+func contrastProbe(value: float; ctx: ProbeContext): float =
   ## contrast: total channel distance from the 0.5 pivot.
   let graded = gradedRgb(RefTrailLight.r, RefTrailLight.g, RefTrailLight.b,
     ctx.render.exposure, ctx.render.saturation, value,
     ctx.render.temperature)
   abs(graded.r - 0.5) + abs(graded.g - 0.5) + abs(graded.b - 0.5)
 
-proc temperatureProbe(value: float; ctx: ProbeContext): float =
+func temperatureProbe(value: float; ctx: ProbeContext): float =
   ## temperature: the red-blue split the grade's last stage creates.
   let graded = gradedRgb(RefTrailLight.r, RefTrailLight.g, RefTrailLight.b,
     ctx.render.exposure, ctx.render.saturation, ctx.render.contrast, value)
   graded.r - graded.b
 
-proc fieldOpacityProbe(value: float; ctx: ProbeContext): float =
+func fieldOpacityProbe(value: float; ctx: ProbeContext): float =
   ## fieldOpacity: the composited field coverage over the background at a
   ## reference field sample — linear end to end, a must-pass anchor.
   fieldCoverage(0, 0.4, 0.5, value)
 
-proc paletteDistance(saturation, lightness: float): float =
+func paletteDistance(saturation, lightness: float): float =
   let colors = generatePalette(RefPaletteCount, psGolden, saturation,
     lightness)
   var total = 0.0
@@ -551,12 +543,12 @@ proc paletteDistance(saturation, lightness: float): float =
       inc pairs
   if pairs == 0: 0.0 else: total / pairs.float
 
-proc paletteSaturationProbe(value: float; ctx: ProbeContext): float =
+func paletteSaturationProbe(value: float; ctx: ProbeContext): float =
   ## paletteSaturation: mean pairwise colour distance across the generated
   ## species palette — how far apart the species actually look.
   paletteDistance(value, DEFAULT_LIGHTNESS)
 
-proc paletteLightnessProbe(value: float; ctx: ProbeContext): float =
+func paletteLightnessProbe(value: float; ctx: ProbeContext): float =
   ## paletteLightness: the palette's mean luminance. Its promise is that the
   ## colours LIGHTEN together, and the first sweep measured why pairwise
   ## distance cannot see that: both lightness endpoints collapse every
@@ -573,7 +565,7 @@ proc paletteLightnessProbe(value: float; ctx: ProbeContext): float =
     total += tonemapLuminance(color.red, color.green, color.blue)
   total / colors.len.float
 
-proc cameraApparentScale(zoom: float): float =
+func cameraApparentScale(zoom: float): float =
   ## The on-screen span of a fixed world segment at a zoom, through the
   ## camera transform mirror.
   let camera = zoomedAt(initCamera(RefWorldW.float32, RefWorldH.float32),
@@ -584,10 +576,10 @@ proc cameraApparentScale(zoom: float): float =
     RefWorldW.float32, RefWorldH.float32)
   abs(east.x - west.x).float
 
-proc cameraZoomProbe(value: float; ctx: ProbeContext): float =
+func cameraZoomProbe(value: float; ctx: ProbeContext): float =
   cameraApparentScale(value)
 
-proc visibleRadiusProbe(value: float; ctx: ProbeContext): float =
+func visibleRadiusProbe(value: float; ctx: ProbeContext): float =
   ## particleSize: the COMPOSED on-screen radius in pixels, through
   ## camera_core's chain at the density multiplier's floor on this slice's
   ## zoom. The zoom-corner slices are what make the sweep, not review, hold
@@ -595,12 +587,12 @@ proc visibleRadiusProbe(value: float; ctx: ProbeContext): float =
   visibleRadiusPx(value.float32, DENSITY_SIZE_FLOOR,
     ctx.cameraZoom.float32).float
 
-proc secretionProbe(value: float; ctx: ProbeContext): float =
+func secretionProbe(value: float; ctx: ProbeContext): float =
   ## secretion (per species): the deposit a species' particle actually lands,
   ## through the shipped species-deposit composition.
   speciesDeposit(ctx.sim.rdDeposit, value)
 
-proc tropismProbe(value: float; ctx: ProbeContext): float =
+func tropismProbe(value: float; ctx: ProbeContext): float =
   ## tropism (per species): the force the reference gradient exerts on a
   ## species at this tropism weight.
   speciesTropismForce(RefGradient, ctx.sim.rdFieldForce, value)
@@ -691,10 +683,6 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
       budget: pbClosedForm),
   }.toTable
 
-# ------------------------------------------------------------------------------
-# Slices
-# ------------------------------------------------------------------------------
-
 type
   SliceSpec* = object
     name*: string
@@ -773,10 +761,6 @@ proc servedMax*(descriptor: ParamDescriptor; ctx: ProbeContext): float =
       timeScale: ctx.sim.timeScale))
   else:
     descriptor.maxValue
-
-# ------------------------------------------------------------------------------
-# The metrics
-# ------------------------------------------------------------------------------
 
 type
   SliceMeasurement* = object
@@ -866,10 +850,6 @@ proc passes*(measurement: SliceMeasurement): bool =
   measurement.span >= SPAN_MIN and
     measurement.liveFraction >= LIVE_FRACTION_MIN and
     measurement.cliff <= CLIFF_MAX
-
-# ------------------------------------------------------------------------------
-# The measured table
-# ------------------------------------------------------------------------------
 
 proc allSliceMeasurements*(): OrderedTable[string, seq[SliceMeasurement]] =
   ## Every probed descriptor's metrics on every declared slice, measured

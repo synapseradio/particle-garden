@@ -17,7 +17,7 @@ type
     simFields*: seq[string]   ## SimulationState fields the predicate reads.
     renderFields*: seq[string]  ## RenderState fields it reads.
     statsFields*: seq[string]   ## World signals from the pushed stats stream.
-    eval*: proc (values: Table[string, float]): bool {.nimcall.}
+    eval*: proc (values: Table[string, float]): bool {.nimcall, noSideEffect.}
       ## True means DORMANT. The table is keyed by exactly the declared
       ## field names; booleans arrive as 0.0 / 1.0.
 
@@ -30,25 +30,25 @@ func subcriticalClimate*(feed, kill: float): bool =
   ## by deposits — feed and kill alone cannot light the field.
   feed < 4.0 * (feed + kill) * (feed + kill)
 
-proc evalBloomOff(values: Table[string, float]): bool =
+func evalBloomOff(values: Table[string, float]): bool =
   values["bloomEnabled"] == 0.0
 
-proc evalForceOff(values: Table[string, float]): bool =
+func evalForceOff(values: Table[string, float]): bool =
   values["forceStrength"] == 0.0
 
-proc evalFluidOff(values: Table[string, float]): bool =
+func evalFluidOff(values: Table[string, float]): bool =
   values["fluidStrength"] == 0.0
 
-proc evalDepositOff(values: Table[string, float]): bool =
+func evalDepositOff(values: Table[string, float]): bool =
   values["rdDeposit"] == 0.0
 
-proc evalTropismOff(values: Table[string, float]): bool =
+func evalTropismOff(values: Table[string, float]): bool =
   values["rdFieldForce"] == 0.0
 
-proc evalFieldUnlit(values: Table[string, float]): bool =
+func evalFieldUnlit(values: Table[string, float]): bool =
   values["fieldAliveCells"] == 0.0
 
-proc evalFieldSubcritical(values: Table[string, float]): bool =
+func evalFieldSubcritical(values: Table[string, float]): bool =
   ## Both terms matter: the named regimes sit subcritical, so the line speaks
   ## only while the field is dark; crossing into F >= 4(F+k)^2 wakes the pair
   ## before anything ignites.
