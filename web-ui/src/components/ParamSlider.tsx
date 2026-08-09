@@ -67,23 +67,24 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
         )
       : null;
 
+  // Where a value sits on the track, from the boundary. Both the ticks and the
+  // magnet read it, so a notch is reached exactly where its tick is drawn on
+  // any curve.
+  const positionOf = (value: number) =>
+    props.ctrl.paramPositionOf(props.id, value);
+
   // Only notches that land inside the track get a tick. Nim already asserts
   // every notch is in range, so this filter is a guard against an older
-  // app.js, not an expected case. Tick positions come through the boundary's
-  // curve conversion, so a curved track keeps its ticks under the handle
-  // positions that reach them.
+  // app.js, not an expected case.
   const ticks = () =>
     descriptor.notches
-      .map((notch) => ({
-        notch,
-        position: props.ctrl.paramPositionOf(props.id, notch.value),
-      }))
+      .map((notch) => ({ notch, position: positionOf(notch.value) }))
       .filter((tick) => tick.position >= 0 && tick.position <= 1);
 
   const write = (raw: number) => {
     props.ctrl.setParam(
       props.id,
-      applySnap(raw, descriptor.notches, descriptor.min, descriptor.max),
+      applySnap(raw, descriptor.notches, positionOf),
     );
   };
 

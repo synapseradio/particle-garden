@@ -78,6 +78,17 @@ type
   SliderCurve* = enum
     ## The travel curve. Position, in [0, 1], is what the user's
     ## hand moves; the curve decides what a distance of travel buys where.
+    ##
+    ## Every descriptor takes the cLinear default. Warping one is three
+    ## things: set `curve` (and `curveExponent` for cPower) on the descriptor;
+    ## clear the curve-floor gate at the bottom of this module, which pairs
+    ## cLog with a range minimum above zero; and, where the descriptor carries
+    ## notches, confirm the magnet still measures in travel — notches.ts snaps
+    ## through positionOf for exactly that reason, and its curved-track test
+    ## is what holds it.
+    ##
+    ## cameraZoom is the leading candidate: zoom is multiplicative, which is
+    ## what cLog buys, and CAMERA_ZOOM_MIN already sits above zero.
     cLinear
     cLog    ## equal travel multiplies the value equally; demands a floor
             ## above zero, and the static gate below holds the pair together

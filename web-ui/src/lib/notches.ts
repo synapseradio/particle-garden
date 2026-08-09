@@ -1,6 +1,13 @@
 // Notch geometry and snapping. Pure functions over the descriptor's own
-// numbers — this file computes positions and pick-distances, and invents no
-// values of its own.
+// numbers — this file compares pick-distances, and invents no values of its
+// own.
+//
+// Every distance here is measured in TRAVEL, the [0, 1] the handle moves
+// through, never in value. The two agree only on a linear track: under a
+// curve, equal value distances buy unequal travel, and a magnet measured in
+// value would grip hard where the curve is dense and let go early where it is
+// sparse. The conversion is the boundary's, handed in as positionOf, because
+// Nim owns every mapping between position and value.
 
 import type { ParamNotch } from "../garden-api";
 
@@ -28,20 +35,20 @@ const NEIGHBOUR_PULL_FRACTION = 0.4;
 export function snapTarget(
   raw: number,
   notches: readonly ParamNotch[],
-  min: number,
-  max: number,
+  positionOf: (value: number) => number,
 ): ParamNotch | null {
-  const span = max - min;
-  if (!(span > 0)) return null;
-  const trackPull = span * SNAP_FRACTION;
-  const neighbours = neighbourDistances(notches);
+  const rawPosition = positionOf(raw);
+  // A boundary that cannot say where a value sits cannot be snapped against.
+  if (!Number.isFinite(rawPosition)) return null;
   let best: ParamNotch | null = null;
   let bestDistance = Infinity;
-  for (let index = 0; index < notches.length; index += 1) {
-    const notch = notches[index];
-    const distance = Math.abs(notch.value - raw);
+  for (const { notch, position, nearest } of withNeighbours(
+    notches,
+    positionOf,
+  )) {
+    const distance = Math.abs(position - rawPosition);
     if (distance >= bestDistance) continue;
-    if (distance <= effectivePull(neighbours[index], trackPull)) {
+    if (distance <= effectivePull(nearest)) {
       best = notch;
       bestDistance = distance;
     }
@@ -49,35 +56,48 @@ export function snapTarget(
   return best;
 }
 
-// Each notch's distance to its nearest neighbour, in the served order.
+// Each notch paired with its track position and its travel distance to the
+// nearest other notch. Paired at construction rather than held in parallel
+// arrays, so the three can never be read out of step.
 //
 // Memoized against the notch array itself, which the descriptor hands over once
 // and never mutates: a drag asks for this on every input event, and computing
-// it inside the snap loop costs a full rescan per candidate. The WeakMap holds
+// it inside the snap loop costs a full rescan per candidate. One array belongs
+// to one descriptor, and so does the curve behind positionOf, so a cache hit
+// carries the positions that array's own descriptor produces. The WeakMap holds
 // no array alive past its descriptor.
-const neighbourCache = new WeakMap<readonly ParamNotch[], number[]>();
+type NotchNeighbour = { notch: ParamNotch; position: number; nearest: number };
 
-function neighbourDistances(notches: readonly ParamNotch[]): number[] {
+const neighbourCache = new WeakMap<readonly ParamNotch[], NotchNeighbour[]>();
+
+function withNeighbours(
+  notches: readonly ParamNotch[],
+  positionOf: (value: number) => number,
+): NotchNeighbour[] {
   const cached = neighbourCache.get(notches);
   if (cached !== undefined) return cached;
-  const distances = notches.map((notch) => {
+  const placed = notches.map((notch) => ({
+    notch,
+    position: positionOf(notch.value),
+  }));
+  const paired = placed.map(({ notch, position }) => {
     let nearest = Infinity;
-    for (const other of notches) {
-      if (other === notch) continue;
-      nearest = Math.min(nearest, Math.abs(other.value - notch.value));
+    for (const other of placed) {
+      if (other.notch === notch) continue;
+      nearest = Math.min(nearest, Math.abs(other.position - position));
     }
-    return nearest;
+    return { notch, position, nearest };
   });
-  neighbourCache.set(notches, distances);
-  return distances;
+  neighbourCache.set(notches, paired);
+  return paired;
 }
 
 // How far one notch pulls: the track-wide pull, capped so it cannot reach into
 // a neighbour's territory. A lone notch has no neighbour to be capped against
 // and keeps the whole magnet. See NEIGHBOUR_PULL_FRACTION.
-function effectivePull(nearest: number, trackPull: number): number {
-  if (!Number.isFinite(nearest)) return trackPull;
-  return Math.min(trackPull, nearest * NEIGHBOUR_PULL_FRACTION);
+function effectivePull(nearest: number): number {
+  if (!Number.isFinite(nearest)) return SNAP_FRACTION;
+  return Math.min(SNAP_FRACTION, nearest * NEIGHBOUR_PULL_FRACTION);
 }
 
 // The value a drag should actually write: the snapped notch where one is in
@@ -85,8 +105,7 @@ function effectivePull(nearest: number, trackPull: number): number {
 export function applySnap(
   raw: number,
   notches: readonly ParamNotch[],
-  min: number,
-  max: number,
+  positionOf: (value: number) => number,
 ): number {
-  return snapTarget(raw, notches, min, max)?.value ?? raw;
+  return snapTarget(raw, notches, positionOf)?.value ?? raw;
 }
