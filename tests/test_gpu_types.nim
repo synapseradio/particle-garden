@@ -79,7 +79,7 @@ suite "GPU Field Accessors":
 
   test "fieldIndex equals byte offset divided by 4 for scalar fields":
     check ParticleLayout.fieldIndex("species") == 4
-    check SimParamsLayout.fieldIndex("repulsionEnd") == 52
+    check SimParamsLayout.fieldIndex("repulsionEnd") == 80
 
   test "fieldIndex raises ValueError for vector and array fields":
     expect ValueError:
@@ -100,16 +100,16 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     # leave the tail of the struct unchecked there.
     check wgslComputedOffsets(SimParamsLayout).len == SimParamsLayout.fields.len
 
-  test "SimParams is 256 bytes written and 256 bytes allocated (no round-up left)":
-    check SimParamsLayout.totalSize == 256
-    check wgslUniformSize(SimParamsLayout) == 256
+  test "SimParams is 368 bytes written and 368 bytes allocated (no round-up left)":
+    check SimParamsLayout.totalSize == 368
+    check wgslUniformSize(SimParamsLayout) == 368
 
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
     let generated = toWgslStruct(SimParamsLayout)
     check generated.startsWith("struct SimParams {")
     check "dt: f32," in generated
     check "gridCellsX: u32," in generated
-    check "attractionMatrix: array<vec4<f32>, 9>," in generated
+    check "attractionMatrix: array<vec4<f32>, 16>," in generated
     check "forceModel: u32," in generated
     check "mouseRange: f32," in generated
     check generated.strip.endsWith("}")
@@ -118,7 +118,7 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     check toWgslType(SimParamsLayout.fieldByName("dt")) == "f32"
     check toWgslType(SimParamsLayout.fieldByName("gridCellsX")) == "u32"
     check toWgslType(SimParamsLayout.fieldByName("attractionMatrix")) ==
-      "array<vec4<f32>, 9>"
+      "array<vec4<f32>, 16>"
 
 
 suite "Generated SIM_ Indices Match The SimParams Byte Layout":
@@ -137,17 +137,18 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_DT == 0
     check SIM_FLUID_STRENGTH == 15
     check SIM_ATTRACTION_MATRIX_START == 16
-    check SIM_ATTRACTION_MATRIX_END == 51
-    check SIM_REPULSION_END == 52
-    check SIM_MOUSE_RANGE == 57
-    check SIM_CROWDING_STRENGTH == 62
-    check SIM_SPH_RADIUS_FRACTION == 63
-    check SIM_PARAMS_F32_COUNT == 64
+    check SIM_ATTRACTION_MATRIX_END == 79
+    check SIM_REPULSION_END == 80
+    check SIM_MOUSE_RANGE == 85
+    check SIM_CROWDING_STRENGTH == 90
+    check SIM_SPH_RADIUS_FRACTION == 91
+    check SIM_PARAMS_F32_COUNT == 92
 
-  test "the attraction matrix spans exactly its 36 float slots":
-    check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 == 36
+  test "the attraction matrix spans exactly its 64 float slots":
+    check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 ==
+      MAX_SPECIES * MAX_SPECIES
 
-  test "SIM_PARAMS_F32_COUNT covers the whole 256-byte struct":
+  test "SIM_PARAMS_F32_COUNT covers the whole 368-byte struct":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
   test "the crowding and radius-fraction slots close the struct in order":
@@ -397,7 +398,7 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
   test "toWgslStruct renders SpeciesChemistry as two vec4 arrays":
     # Two parallel arrays rather than MAX_SPECIES interleaved pairs, because
     # WGSL's uniform address space rounds an array element's stride up to 16
-    # bytes: array<vec2<f32>, 6> would occupy 96 bytes, not 48.
+    # bytes: array<vec2<f32>, 8> would occupy 128 bytes, not 64.
     let generated = toWgslStruct(SpeciesChemistryLayout)
     check generated.startsWith("struct SpeciesChemistry {")
     check "secretion: array<vec4<f32>, 2>," in generated

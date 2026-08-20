@@ -67,9 +67,9 @@ type
   PresetApplyStep* = enum
     pasSpeciesCount   ## setSpeciesCount(n, randomizeNew = false) — no re-init.
     pasParticleCount  ## Write particleCount, then trigger the one re-init.
-    pasMatrix         ## Write all 36 attraction-matrix floats.
-    pasChemistry      ## Write the 6 (secretion, tropism) pairs.
-    pasPalette        ## Write the 6 literal species colors into COLORS.
+    pasMatrix         ## Write every attraction-matrix float.
+    pasChemistry      ## Write the per-species (secretion, tropism) pairs.
+    pasPalette        ## Write the literal species colors into COLORS.
     pasScalars        ## Remaining settings: friction, forceModel, trails, etc.
     pasUiRefresh      ## Refresh slider DOM, matrix legend, button active-states.
 

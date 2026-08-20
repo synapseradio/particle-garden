@@ -65,7 +65,7 @@ const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full bright
 
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
-@group(0) @binding(2) var<uniform> colors: array<vec4f, 6>;  // Species colors from config.nim
+@group(0) @binding(2) var<uniform> colors: array<vec4f, 8>;  // Species colors from config.nim
 @group(0) @binding(3) var fieldTexture: texture_2d<f32>;     // RD field (activator, inhibitor)
 @group(0) @binding(4) var<uniform> cam: Camera;              // View over the toroidal world
 
@@ -141,9 +141,12 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
     cameraOffsetToClip(worldOffset, cam, params.worldSize);
 
   // Z-ordering: Species-based layers with stable particle hash
-  // Each species occupies its own depth band (0.1-0.9 divided into 6 bands)
-  // Within a band, particle ID hash provides stable ordering (no flickering)
-  let speciesBandSize = 0.8 / 6.0;
+  // Each species occupies its own depth band (0.1-0.9 divided into MAX_SPECIES
+  // bands). Within a band, particle ID hash provides stable ordering (no
+  // flickering). Divided by the ceiling, not the live count, so a species'
+  // depth band never moves when the count changes — and the top band stays
+  // inside clip space at every count.
+  let speciesBandSize = 0.8 / f32(MAX_SPECIES);
   let speciesBase = 0.1 + f32(p.species) * speciesBandSize;
   let particleHash = fract(f32(particleId) * 0.6180339887);  // Golden ratio hash
   let zDepth = speciesBase + particleHash * speciesBandSize * 0.9;  // Stay within band
@@ -159,7 +162,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   output.density = p.density;
 
-  let speciesIdx = min(p.species, 5u);
+  let speciesIdx = min(p.species, MAX_SPECIES - 1u);
   let speciesColor = colors[speciesIdx].rgb;
 
   // Light the particle by the field it is standing in. Sampled at the

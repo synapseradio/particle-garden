@@ -47,8 +47,8 @@ suite "Configuration Defaults Contract":
     check DEFAULT_PARTICLE_COUNT <= MAX_PARTICLES
 
   test "default speciesCount within matrix limits":
-    ## The attraction matrix is fixed at 36 floats (6 species max); going
-    ## beyond this corrupts memory and produces nonsense physics.
+    ## The attraction matrix is fixed at MAX_SPECIES * MAX_SPECIES floats;
+    ## going beyond this corrupts memory and produces nonsense physics.
     check DEFAULT_SPECIES_COUNT >= 1
     check DEFAULT_SPECIES_COUNT <= MAX_SPECIES
 
@@ -158,10 +158,9 @@ suite "Configuration Relationships":
 suite "Limit Constants Contract":
   test "MAX_SPECIES supports attraction matrix":
     ## CONTRACT: MAX_SPECIES defines the attraction matrix dimension
-    ## WHY: The matrix is MAX_SPECIES x MAX_SPECIES = 36 floats
-    ## The exact value (6) is pinned by a static assert in memory_layout.nim;
-    ## this documents the derived matrix-element count the GPU buffer must hold.
-    check MAX_SPECIES * MAX_SPECIES == 36
+    ## WHY: The matrix is MAX_SPECIES x MAX_SPECIES = 64 floats
+    ## This documents the derived matrix-element count the GPU buffer must hold.
+    check MAX_SPECIES * MAX_SPECIES == 64
 
   test "MAX_PARTICLES provides headroom above default":
     ## BEHAVIORAL: MAX_PARTICLES should be well above default

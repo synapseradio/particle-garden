@@ -55,16 +55,19 @@ func rgbFrom8Bit(red8, green8, blue8: int): RgbColor =
   ## An RGB tuple from 8-bit channel values, e.g. a hex swatch's bytes.
   (red: red8.float / 255.0, green: green8.float / 255.0, blue: blue8.float / 255.0)
 
-const OPEN_COLOR_SWATCHES*: array[6, RgbColor] = [
+const OPEN_COLOR_SWATCHES*: array[8, RgbColor] = [
   ## Bright picks from the Open Color palette, verified against the canonical
   ## open-color.json, ordered to keep the classic species identities
-  ## (red, green, blue, yellow, magenta-slot, cyan).
+  ## (red, green, blue, yellow, magenta-slot, cyan), then orange and teal
+  ## filling the two widest hue gaps the first six leave.
   rgbFrom8Bit(0xff, 0x6b, 0x6b),  # red-5
   rgbFrom8Bit(0x51, 0xcf, 0x66),  # green-5
   rgbFrom8Bit(0x33, 0x9a, 0xf0),  # blue-5
   rgbFrom8Bit(0xff, 0xd4, 0x3b),  # yellow-4
   rgbFrom8Bit(0xcc, 0x5d, 0xe8),  # grape-5
   rgbFrom8Bit(0x3b, 0xc9, 0xdb),  # cyan-4
+  rgbFrom8Bit(0xff, 0x92, 0x2b),  # orange-5
+  rgbFrom8Bit(0x38, 0xd9, 0xa9),  # teal-4
 ]
 
 func hslToRgb*(hue, saturation, lightness: float): RgbColor =
@@ -146,8 +149,8 @@ func generatePalette*(count: int, scheme: PaletteScheme = psGolden;
 
   result = newSeq[RgbColor](count)
   if scheme == psOpenColor:
-    # Fixed swatch picks: truncate below six, wrap above. Saturation and
-    # lightness are inert (documented on the enum).
+    # Fixed swatch picks: truncate below the swatch count, wrap above.
+    # Saturation and lightness are inert (documented on the enum).
     for colorIndex in 0 ..< count:
       result[colorIndex] = OPEN_COLOR_SWATCHES[colorIndex mod OPEN_COLOR_SWATCHES.len]
     return

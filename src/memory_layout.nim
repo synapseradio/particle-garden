@@ -35,7 +35,7 @@
 
 const
   MAX_PARTICLES* = 128000
-  MAX_SPECIES* = 6        ## Maximum species for attraction matrix (6x6 = 36 floats)
+  MAX_SPECIES* = 8        ## Maximum species for attraction matrix (8x8 = 64 floats)
   MAX_GRID* = 256         ## Maximum grid cells per dimension (256x256 = 65536 cells)
 
 # ==============================================================================
@@ -103,7 +103,7 @@ type
     gridCounts*: int   ## Uint32Array: particles per cell (atomic counters)
     gridOffsets*: int  ## Uint32Array: prefix sum offsets
 
-    matrix*: int    ## Float32Array[36]: 6x6 attraction matrix
+    matrix*: int    ## Float32Array: MAX_SPECIES x MAX_SPECIES attraction matrix
     sync*: int      ## Int32Array[256]: synchronization buffer
 
     totalSize*: int
@@ -131,7 +131,7 @@ func computeMemoryOffsets(): MemoryOffsets =
   offset += GRID_CELLS * 4
 
   let matrix = offset
-  offset += 36 * 4
+  offset += MAX_SPECIES * MAX_SPECIES * 4
 
   offset = align4(offset)
   let sync = offset

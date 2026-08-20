@@ -10,18 +10,18 @@ suite "Matrix Index - Calculations":
 
   test "matrixIndex first row":
     check matrixIndex(0, 1) == 1
-    check matrixIndex(0, 5) == 5
+    check matrixIndex(0, 7) == 7
 
   test "matrixIndex second row":
-    check matrixIndex(1, 0) == 6
-    check matrixIndex(1, 1) == 7
+    check matrixIndex(1, 0) == 8
+    check matrixIndex(1, 1) == 9
 
   test "matrixIndex last cell":
-    check matrixIndex(5, 5) == 35
+    check matrixIndex(7, 7) == 63
 
   test "matrixCoords inverse of matrixIndex":
-    for row in 0 ..< 6:
-      for col in 0 ..< 6:
+    for row in 0 ..< MATRIX_SIZE:
+      for col in 0 ..< MATRIX_SIZE:
         let idx = matrixIndex(row, col)
         let (gotRow, gotCol) = matrixCoords(idx)
         check gotRow == row
@@ -43,8 +43,8 @@ suite "Matrix Index - Validation":
     check isValidIndex(0, -1, 4) == false
 
   test "isValidIndex exceeds MAX_SPECIES":
-    check isValidIndex(0, 0, 7) == false
-    check isValidIndex(0, 0, 6) == true
+    check isValidIndex(0, 0, 9) == false
+    check isValidIndex(0, 0, 8) == true
 
 
 suite "Matrix Values - Clamping":

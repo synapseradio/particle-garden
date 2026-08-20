@@ -205,7 +205,8 @@ suite "Preset Round-Trip Contract":
         (if matrixIndex mod 2 == 0: 0.05 else: -0.05)
     customPreset.palette = [
       [0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9],
-      [0.15, 0.25, 0.35], [0.45, 0.55, 0.65], [0.75, 0.85, 0.95]
+      [0.15, 0.25, 0.35], [0.45, 0.55, 0.65], [0.75, 0.85, 0.95],
+      [0.12, 0.22, 0.32], [0.42, 0.52, 0.62]
     ]
 
     let loaded = parsePreset(toJsonString(customPreset))
@@ -553,7 +554,7 @@ suite "Preset Clamp Behavior Contract":
     let result = validate(node)
     check result.preset.settings.particleCount == PARTICLE_COUNT_MIN
 
-  test "speciesCount clamps into [2, 6]":
+  test "speciesCount clamps into [2, 8]":
     let tooLow = validate(%*{"settings": {"speciesCount": 0}})
     let tooHigh = validate(%*{"settings": {"speciesCount": 99}})
     check tooLow.preset.settings.speciesCount == SPECIES_COUNT_MIN
@@ -705,6 +706,78 @@ suite "Preset Migration Hook Contract":
     let result = validate(node)
     check result.isOk
     check result.preset.schemaVersion == CURRENT_SCHEMA_VERSION
+
+
+suite "v2 -> v3 Matrix Restride":
+  # Every schemaVersion <= 2 file stores its attraction matrix flattened
+  # row-major at stride OLD_MAX_SPECIES. Reloaded at the wider stride without
+  # remapping, old index 6 (row 1, col 0) would read as row 0, col 6 — the
+  # matrix scrambles silently, since elemAt is nil-safe and just fills zeros
+  # past the old tail. These pin the remap: old flat index i lands at
+  # (i div OLD_MAX_SPECIES) * MAX_SPECIES + (i mod OLD_MAX_SPECIES), and
+  # every slot in a new row or column stays 0 (neutral).
+
+  proc strideSixMatrix(): seq[float] =
+    ## 36 pairwise-distinct values, all inside the served band (±0.33), so a
+    ## clamp cannot mask a misplaced slot.
+    for oldIndex in 0 ..< OLD_MAX_SPECIES * OLD_MAX_SPECIES:
+      result.add (oldIndex + 1).float * 0.005
+
+  test "validate restrides a v2 matrix so every rule keeps its row and column":
+    let old = strideSixMatrix()
+    let node = %*{"schemaVersion": 2, "matrix": old}
+    let result = validate(node)
+    check result.isOk
+    for oldIndex in 0 ..< old.len:
+      let newIndex = (oldIndex div OLD_MAX_SPECIES) * preset.MAX_SPECIES +
+        (oldIndex mod OLD_MAX_SPECIES)
+      check result.preset.matrix[newIndex] == old[oldIndex]
+
+  test "the new rows and columns of a restrided v2 matrix are neutral":
+    let node = %*{"schemaVersion": 2, "matrix": strideSixMatrix()}
+    let result = validate(node)
+    for row in 0 ..< preset.MAX_SPECIES:
+      for col in 0 ..< preset.MAX_SPECIES:
+        if row >= OLD_MAX_SPECIES or col >= OLD_MAX_SPECIES:
+          check result.preset.matrix[row * preset.MAX_SPECIES + col] == 0.0
+
+  test "a v1 file falls through the mode translation and the restride in one call":
+    # The migrate ladder falls through, so a v1 file gets both the coupling
+    # translation (rdDeposit zeroed behind a particle-life mode) and the
+    # matrix restride. Old slot 6 is row 1 col 0; it must land at the new
+    # row 1 col 0 rather than staying at flat index 6 (row 0, col 6).
+    let node = %*{
+      "schemaVersion": 1,
+      "mode": "particle-life",
+      "settings": {"rdDeposit": 0.02},
+      "matrix": strideSixMatrix()
+    }
+    let result = validate(node)
+    check result.isOk
+    check result.preset.settings.rdDeposit == 0.0
+    check result.preset.matrix[preset.MAX_SPECIES] == 7.0 * 0.005
+    check result.preset.matrix[6] == 0.0
+
+  test "a v2 file without a matrix still loads with the neutral default":
+    let result = validate(%*{"schemaVersion": 2, "name": "No matrix"})
+    check result.isOk
+    for value in result.preset.matrix:
+      check value == 0.0
+
+  test "chemistry and palette are indexed per species slot and need no restride":
+    # Six entries fill the first six slots; the two new slots repair with each
+    # slot's own default, exactly as a current-version file missing them would.
+    var chemistry: seq[float]
+    for slot in 0 ..< OLD_MAX_SPECIES * 2:
+      chemistry.add 0.5
+    let node = %*{"schemaVersion": 2, "chemistry": chemistry}
+    let result = validate(node)
+    check result.isOk
+    for slot in 0 ..< OLD_MAX_SPECIES * 2:
+      check result.preset.chemistry[slot] == 0.5
+    let defaults = defaultChemistry()
+    for slot in OLD_MAX_SPECIES * 2 ..< CHEMISTRY_LEN:
+      check result.preset.chemistry[slot] == defaults[slot]
 
 
 # The stiffness a preset carries is stored absolutely and clamped at load

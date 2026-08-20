@@ -1,7 +1,7 @@
 #
 # The palette editor's live tunables: which scheme is active, plus the
 # saturation/lightness knobs generatePalette accepts. web_api.nim holds one of
-# these behind gardenAPI and regenerates the six species colors into
+# these behind gardenAPI and regenerates the species colors into
 # config.COLORS whenever it changes.
 #
 # Deliberately NOT part of SimConfig or the preset store: the editor's
@@ -89,7 +89,7 @@ func parsePaletteScheme*(id: string): PaletteScheme =
 # ==============================================================================
 
 func paletteFor*(state: PaletteEditorState): seq[RgbColor] =
-  ## The six species colors this state currently describes.
+  ## The species colors this state currently describes, one per slot.
   generatePalette(MAX_SPECIES, state.scheme, state.saturation, state.lightness)
 
 func flatPaletteFor*(state: PaletteEditorState): seq[float] =

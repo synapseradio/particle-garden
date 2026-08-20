@@ -728,8 +728,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[SIM_BLAST_Y] = blastY
   simParamsData[SIM_BLAST_STRENGTH] = blastStrength
   simParamsData[SIM_FLUID_STRENGTH] = float32(config.CONFIG.fluidStrength)
-  # Copy attraction matrix (36 floats starting at SIM_ATTRACTION_MATRIX_START)
-  for matrixSlot in 0..<36:
+  # Copy the attraction matrix into its SIM_ATTRACTION_MATRIX_START.._END run
+  for matrixSlot in 0 .. SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START:
     simParamsData[SIM_ATTRACTION_MATRIX_START + matrixSlot] = cast[JsObject](matrix[matrixSlot]).to(float)
   simParamsData[SIM_REPULSION_END] = float32(config.CONFIG.repulsionEnd)
   simParamsData[SIM_ATTRACTION_PEAK] = float32(config.CONFIG.attractionPeak)

@@ -96,8 +96,8 @@ let renderParamsData = newFloat32Array(RENDER_PARAMS_F32_COUNT)
 let overlayParamsData = newFloat32Array(OVERLAY_PARAMS_F32_COUNT)
 let fadeData = newFloat32Array(FADE_PARAMS_F32_COUNT)
 let tonemapData = newFloat32Array(TONEMAP_PARAMS_F32_COUNT)
-let colorData = newFloat32Array(24)
-  ## Six species colors, one vec4f each for 16-byte alignment. Unlike the
+let colorData = newFloat32Array(config.MAX_SPECIES * 4)
+  ## Species colors, one vec4f each for 16-byte alignment. Unlike the
   ## arrays above this one is also the record of what colorBuffer already
   ## holds, which is what lets a frame that changed no color skip the upload
   ## entirely — the palette moves when someone edits it, not once a frame.
@@ -304,8 +304,9 @@ proc initWebGPURender*(): bool =
   paramsDesc["label"] = "Render Params Buffer".cstring.toJs
   renderParamsBuffer = webgpu_init.device.createBuffer(paramsDesc)
 
-  # Create species color uniform buffer (6 vec4f for 16-byte alignment)
-  let colorBufferSize = 6 * 4 * 4  # 6 species × 4 floats × 4 bytes = 96 bytes
+  # Create species color uniform buffer (one vec4f per species for 16-byte
+  # alignment; the count matches the shaders' array<vec4f, 8> declarations)
+  let colorBufferSize = config.MAX_SPECIES * 4 * 4
   let colorDesc = newJsObject()
   colorDesc["size"] = colorBufferSize.toJs
   colorDesc["usage"] = bitwiseOr(gpuBufferUsageUniform, gpuBufferUsageCopyDst).toJs
@@ -1718,7 +1719,7 @@ proc render*(particleCount: int) =
   # skips the upload. The alpha slot is what guarantees the first frame uploads
   # — colorData starts zeroed, and 1.0 never matches that.
   var colorsChanged = false
-  for speciesIndex in 0 ..< 6:
+  for speciesIndex in 0 ..< config.MAX_SPECIES:
     for channel in 0 ..< 3:
       let channelValue = config.COLORS[speciesIndex * 3 + channel]
       if colorData[speciesIndex * 4 + channel] != channelValue:

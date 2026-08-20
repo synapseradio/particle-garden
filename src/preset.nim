@@ -46,11 +46,15 @@ export config_ranges
 # SECTION 1: SCHEMA VERSION
 # ==============================================================================
 
-const CURRENT_SCHEMA_VERSION* = 2
+const CURRENT_SCHEMA_VERSION* = 3
   ## The schema version this build writes and fully understands.
   ## `validate` rejects any JSON claiming a higher version. Bumps add a
   ## branch to `migrate` that upgrades a node one version forward;
   ## `CURRENT_SCHEMA_VERSION` moves up alongside it.
+  ##
+  ## v3 widens the species ceiling from 6 to 8: the flattened attraction
+  ## matrix restrides on load (see `migrate`), while chemistry and palette
+  ## are indexed per species slot and extend by ordinary per-slot repair.
   ##
   ## v2 carries coupling strengths and names no mode; v1 names a mode and
   ## carries a value for every scalar whether or not that mode reads it.
@@ -67,28 +71,28 @@ const CURRENT_SCHEMA_VERSION* = 2
 # SECTION 2: SHAPE
 # ==============================================================================
 
-const MAX_SPECIES* = 6
+const MAX_SPECIES* = 8
   ## Mirrors memory_layout.MAX_SPECIES. Not imported directly: memory_layout
-  ## is a cross-language contract file (WGSL shaders hardcode the same 6),
+  ## is a cross-language contract file (the WGSL twin generates from it),
   ## and this module intentionally carries no dependency on it or on any
   ## other src/ module, to stay a leaf the storage/UI layer can build on
   ## without pulling in FFI-bearing code transitively.
 
-const MATRIX_LEN* = MAX_SPECIES * MAX_SPECIES ## 36: the flattened 6x6 attraction matrix.
+const MATRIX_LEN* = MAX_SPECIES * MAX_SPECIES ## 64: the flattened 8x8 attraction matrix.
 
 const CHEMISTRY_STRIDE* = 2
   ## (secretion, tropism) per species slot. Mirrors config.nim's
   ## SPECIES_CHEMISTRY_STRIDE, as a literal for the same
   ## dependency-restriction reason MAX_SPECIES is one.
 
-const CHEMISTRY_LEN* = MAX_SPECIES * CHEMISTRY_STRIDE ## 12: six slots, two values each.
+const CHEMISTRY_LEN* = MAX_SPECIES * CHEMISTRY_STRIDE ## 16: eight slots, two values each.
 
 type
   PaletteColor* = array[3, float] ## Interleaved RGB, each channel in [0, 1].
-  Matrix* = array[MATRIX_LEN, float] ## Row-major 6x6 attraction matrix, values in [-1, 1].
-  Palette* = array[MAX_SPECIES, PaletteColor] ## One color per species slot, always 6 long.
+  Matrix* = array[MATRIX_LEN, float] ## Row-major 8x8 attraction matrix, values in [-1, 1].
+  Palette* = array[MAX_SPECIES, PaletteColor] ## One color per species slot.
   Chemistry* = array[CHEMISTRY_LEN, float]
-    ## Interleaved (secretion, tropism) per species slot, always 12 long.
+    ## Interleaved (secretion, tropism) per species slot.
     ## A DIMENSION rather than a scalar, which is why it sits beside `matrix`
     ## in the Preset rather than inside PresetSettings: the settings record
     ## holds one number per name, and this holds MAX_SPECIES x 2.
@@ -144,7 +148,7 @@ type
 
   Preset* = object
     ## The full persisted shape: `{schemaVersion, name, createdAt, settings,
-    ## matrix[36], chemistry[12], palette}`.
+    ## matrix[64], chemistry[16], palette}`.
     ##
     ## NO MODE FIELD, and its absence is the schema saying there is one world.
     ## A preset is a POINT in that world's parameter space: the strengths it
@@ -188,7 +192,9 @@ func openColorDefaultPalette(): Palette =
   ## source config.nim initializes COLORS from — regrouped into the
   ## per-species triples the preset schema stores.
   for speciesIndex in 0 ..< MAX_SPECIES:
-    let swatch = OPEN_COLOR_SWATCHES[speciesIndex]
+    # Mod-wrapped like generatePalette's psOpenColor branch, so a species
+    # count past the swatch count reuses hues instead of indexing out.
+    let swatch = OPEN_COLOR_SWATCHES[speciesIndex mod OPEN_COLOR_SWATCHES.len]
     result[speciesIndex] = [swatch.red, swatch.green, swatch.blue]
 
 const DEFAULT_PALETTE*: Palette = openColorDefaultPalette()
@@ -454,14 +460,14 @@ proc validateSettings(node: JsonNode): PresetSettings =
 proc validateMatrix(node: JsonNode): Matrix =
   ## Missing/non-numeric entries default to 0.0 (neutral); present numeric
   ## entries clamp to [-1, 1]. Repaired per-index, so one bad slot in an
-  ## otherwise-good 36-element array does not discard the other 35.
+  ## otherwise-good array does not discard the rest.
   for matrixIndex in 0 ..< MATRIX_LEN:
     result[matrixIndex] = clampFloat(
       elemAt(node, matrixIndex).getFloat(0.0), MATRIX_MIN_VALUE, MATRIX_MAX_VALUE)
 
 proc validateChemistry(node: JsonNode): Chemistry =
   ## Repaired per slot, like the matrix: a missing or non-numeric entry falls
-  ## back to that slot's default rather than discarding the other eleven.
+  ## back to that slot's default rather than discarding the rest.
   ##
   ## The two channels clamp against DIFFERENT ranges, and asymmetrically —
   ## tropism's ceiling sits below the magnitude of its floor, so a
@@ -495,7 +501,7 @@ proc validateColor(node: JsonNode; fallback: PaletteColor): PaletteColor =
 
 proc validatePalette(node: JsonNode): Palette =
   ## Repaired per-species-slot: one malformed color falls back to that
-  ## slot's default without discarding the other five.
+  ## slot's default without discarding the rest.
   for speciesIndex in 0 ..< MAX_SPECIES:
     result[speciesIndex] = validateColor(
       elemAt(node, speciesIndex), DEFAULT_PALETTE[speciesIndex])
@@ -531,6 +537,12 @@ const LEGACY_MODE_COUPLINGS: array[3, (string, LegacyCouplings)] = [
   ## field force from sliders its mode hid. Loading it untranslated switches
   ## chemistry on in a world that has none. The mode id is the only record of
   ## which values that world reads, so the decode consults it once and drops it.
+
+const OLD_MAX_SPECIES* = 6
+  ## The species ceiling every schemaVersion <= 2 file was written against —
+  ## the stride its flattened attraction matrix uses. The v3 branch of
+  ## `migrate` remaps that stride onto MAX_SPECIES; tests/test_preset.nim
+  ## pins the remap.
 
 const V1_FIELD_FORCE_SCALE* = 0.25
   ## What a v1 field force multiplies by to mean the same thing here.
@@ -599,6 +611,24 @@ proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
       # moment that default changes. Written unconditionally, so a v1 file
       # that somehow carries the key is overwritten rather than trusted.
       settings["sphRadiusFraction"] = %1.0
+  if fromVersion < 3:
+    # v2 -> v3: the species ceiling grew from 6 to 8, so the flattened
+    # row-major matrix restrides — old index i (row i div 6, col i mod 6)
+    # keeps its row and column, and every slot in a new row or column stays
+    # 0 (neutral). Without the remap, elemAt's nil-safe reads would scramble
+    # the matrix silently: old index 6 (row 1, col 0) lands at row 0, col 6.
+    # Chemistry and palette are indexed per species slot, so their new slots
+    # repair with defaults through the ordinary validation path.
+    let oldMatrix = field(result, "matrix")
+    if oldMatrix != nil and oldMatrix.kind == JArray:
+      var restrided = newSeq[JsonNode](MATRIX_LEN)
+      for slot in 0 ..< MATRIX_LEN:
+        restrided[slot] = %0.0
+      for oldIndex in 0 ..< min(oldMatrix.len, OLD_MAX_SPECIES * OLD_MAX_SPECIES):
+        let newIndex = (oldIndex div OLD_MAX_SPECIES) * MAX_SPECIES +
+          (oldIndex mod OLD_MAX_SPECIES)
+        restrided[newIndex] = oldMatrix[oldIndex]
+      result["matrix"] = %restrided
 
 proc validate*(node: JsonNode): PresetLoadResult =
   ## Validates and normalizes an already-parsed JSON node into a `Preset`.

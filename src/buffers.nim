@@ -56,7 +56,8 @@ proc allocateBuffers*() {.exportc.} =
   gridCounts = newUint32Array(sharedBuffer, layout.gridCounts, maxCells)
   gridOffsets = newUint32Array(sharedBuffer, layout.gridOffsets, maxCells)
 
-  matrix = newFloat32Array(sharedBuffer, layout.matrix, 36)
+  matrix = newFloat32Array(sharedBuffer, layout.matrix,
+    memory_layout.MAX_SPECIES * memory_layout.MAX_SPECIES)
 
 # ==============================================================================
 # SECTION 8: AoS FIELD INDICES

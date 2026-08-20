@@ -139,9 +139,9 @@ const
       "// numBlocks is the workgroup count (ceil(numCells / BLOCK_SIZE)).\n"
   )
 
-  # SimParams struct (256 bytes written, 256 allocated; matches forces.wgsl /
+  # SimParams struct (368 bytes written, 368 allocated; matches forces.wgsl /
   # forces-sph.wgsl)
-  # Layout: 16 scalar fields (64 bytes) + 9 vec4 matrix (144 bytes) + 6 force-model
+  # Layout: 16 scalar fields (64 bytes) + 16 vec4 matrix (256 bytes) + 6 force-model
   # fields (24 bytes) + 4 SPH fields (16 bytes) + crowding (4 bytes) + the SPH
   # radius fraction (4 bytes). The written size fills the allocation
   # exactly, so the next field costs a 16-byte block rather than a pad.
@@ -168,39 +168,39 @@ const
       # only because that is where the free word is; forces-sph.wgsl is the
       # sole reader.
       GpuField(name: "fluidStrength",   kind: gtF32, offset: 60, size: 4, count: 1),
-      # Attraction matrix: 36 floats packed as 9 vec4s (64-208)
-      GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 144, count: 9, elemKind: gtVec4F32),
-      # Force model parameters (208-232)
-      GpuField(name: "repulsionEnd",    kind: gtF32, offset: 208, size: 4, count: 1),
-      GpuField(name: "attractionPeak",  kind: gtF32, offset: 212, size: 4, count: 1),
-      GpuField(name: "forceModel",      kind: gtU32, offset: 216, size: 4, count: 1),
-      GpuField(name: "expAlpha",        kind: gtF32, offset: 220, size: 4, count: 1),
-      GpuField(name: "expBeta",         kind: gtF32, offset: 224, size: 4, count: 1),
+      # Attraction matrix: 64 floats packed as 16 vec4s (64-320)
+      GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 256, count: 16, elemKind: gtVec4F32),
+      # Force model parameters (320-344)
+      GpuField(name: "repulsionEnd",    kind: gtF32, offset: 320, size: 4, count: 1),
+      GpuField(name: "attractionPeak",  kind: gtF32, offset: 324, size: 4, count: 1),
+      GpuField(name: "forceModel",      kind: gtU32, offset: 328, size: 4, count: 1),
+      GpuField(name: "expAlpha",        kind: gtF32, offset: 332, size: 4, count: 1),
+      GpuField(name: "expBeta",         kind: gtF32, offset: 336, size: 4, count: 1),
       # The mouse influence radius in world units, written per frame as the
       # 300-unit base (shader_config's mouseRangeSq) divided by the camera
       # zoom, so the on-screen disc keeps a constant size. Spends what was the
       # _pad2 word; every offset stays where it was.
-      GpuField(name: "mouseRange",      kind: gtF32, offset: 228, size: 4, count: 1),
-      # SPH fluid parameters (232-248). forces-sph.wgsl reads these; the
+      GpuField(name: "mouseRange",      kind: gtF32, offset: 340, size: 4, count: 1),
+      # SPH fluid parameters (344-360). forces-sph.wgsl reads these; the
       # species force shader ignores them.
-      GpuField(name: "sphRestDensity",  kind: gtF32, offset: 232, size: 4, count: 1),
-      GpuField(name: "sphStiffness",    kind: gtF32, offset: 236, size: 4, count: 1),
-      GpuField(name: "sphGamma",        kind: gtF32, offset: 240, size: 4, count: 1),
-      GpuField(name: "sphViscosity",    kind: gtF32, offset: 244, size: 4, count: 1),
-      # Crowding (248-252). forces.wgsl reads it; the fluid ignores it. Appended
+      GpuField(name: "sphRestDensity",  kind: gtF32, offset: 344, size: 4, count: 1),
+      GpuField(name: "sphStiffness",    kind: gtF32, offset: 348, size: 4, count: 1),
+      GpuField(name: "sphGamma",        kind: gtF32, offset: 352, size: 4, count: 1),
+      GpuField(name: "sphViscosity",    kind: gtF32, offset: 356, size: 4, count: 1),
+      # Crowding (360-364). forces.wgsl reads it; the fluid ignores it. Appended
       # rather than spending the pad word above (since spent on mouseRange), so
       # the force-model block and the SPH block keep the offsets every existing
       # write targets.
-      GpuField(name: "crowdingStrength", kind: gtF32, offset: 248, size: 4, count: 1),
-      # The SPH smoothing radius as a fraction of interactionRadius (252-256).
+      GpuField(name: "crowdingStrength", kind: gtF32, offset: 360, size: 4, count: 1),
+      # The SPH smoothing radius as a fraction of interactionRadius (364-368).
       # forces-sph.wgsl multiplies the two; the fraction is capped at 1 by its
       # range, so the smoothing radius can never outrun the neighbour sweep,
       # whose cells are sized to the interaction radius (src/grid.nim). Appended
       # for the reason crowding was, rather than joining the SPH block above:
       # every write that exists keeps the offset it targets.
-      GpuField(name: "sphRadiusFraction", kind: gtF32, offset: 252, size: 4, count: 1),
+      GpuField(name: "sphRadiusFraction", kind: gtF32, offset: 364, size: 4, count: 1),
     ],
-    totalSize: 256
+    totalSize: 368
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
@@ -375,8 +375,8 @@ const
   #
   # PACKING. Two parallel `array<vec4<f32>, 2>` rather than MAX_SPECIES
   # interleaved pairs, because WGSL's uniform address space rounds an array's
-  # element stride up to 16 bytes: `array<vec2<f32>, 6>` would occupy 96 bytes,
-  # not 48, and blow the 64-byte budget. Packing four species per vec4 gives
+  # element stride up to 16 bytes: `array<vec2<f32>, 8>` would occupy 128 bytes,
+  # not 64, and blow the 64-byte budget. Packing four species per vec4 gives
   # eight slots per array in exactly 32 bytes each, so both channels fit in 64
   # with room for MAX_SPECIES up to 8. Shaders index a species the same way
   # forces.wgsl indexes the attraction matrix: `secretion[i / 4u][i % 4u]`.
@@ -504,7 +504,6 @@ func wgslComputedOffsets*(layout: GpuStruct): seq[int] =
 
 func wgslUniformSize*(layout: GpuStruct): int =
   ## Bytes a uniform buffer must allocate: struct size rounded up to 16.
-  ## SimParams is 248 bytes written, 256 allocated.
   roundUpTo(layout.totalSize, 16)
 
 func toWgslStruct*(layout: GpuStruct): string =
@@ -603,7 +602,7 @@ static:
 
   assert SimParamsLayout.fieldOffset("dt") == 0
   assert SimParamsLayout.fieldOffset("attractionMatrix") == 64
-  assert SimParamsLayout.fieldOffset("repulsionEnd") == 208
+  assert SimParamsLayout.fieldOffset("repulsionEnd") == 320
 
   # WGSL's own layout algorithm must assign every SimParams member the exact
   # offset the Nim writer targets, or a uniform write lands on the wrong field.
@@ -612,16 +611,16 @@ static:
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
         "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
-    assert SimParamsLayout.totalSize == 256, "SimParams writes 256 bytes"
-    assert SimParamsLayout.wgslUniformSize == 256, "SimParams allocates 256 bytes"
+    assert SimParamsLayout.totalSize == 368, "SimParams writes 368 bytes"
+    assert SimParamsLayout.wgslUniformSize == 368, "SimParams allocates 368 bytes"
 
 # =============================================================================
 # SIMPARAMS FIELD INDICES (for type-safe buffer writes)
 # =============================================================================
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
 # emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
-# _END=51, ... SIM_MOUSE_RANGE=57, SIM_CROWDING_STRENGTH=62,
-# SIM_SPH_RADIUS_FRACTION=63, and SIM_PARAMS_F32_COUNT=64, so
+# _END=79, ... SIM_MOUSE_RANGE=85, SIM_CROWDING_STRENGTH=90,
+# SIM_SPH_RADIUS_FRACTION=91, and SIM_PARAMS_F32_COUNT=92, so
 # webgpu_compute.nim hand-writes no magic number.
 
 genFieldIndices(SimParamsLayout, "SIM")

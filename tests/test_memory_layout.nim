@@ -43,7 +43,7 @@ suite "Memory Layout No Overlap":
     check OFFSETS.matrix >= OFFSETS.gridOffsets + GRID_CELLS * 4
 
   test "sync buffer starts after matrix":
-    check OFFSETS.sync >= OFFSETS.matrix + 36 * 4
+    check OFFSETS.sync >= OFFSETS.matrix + MAX_SPECIES * MAX_SPECIES * 4
 
 suite "Memory Layout Size Constraints":
   test "total size fits in allocated memory":
