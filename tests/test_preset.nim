@@ -169,7 +169,7 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.forceStrength = 2.5
     customPreset.settings.crowdingStrength = 1.25
     customPreset.settings.friction = 0.12
-    customPreset.settings.ruleTemperature = 0.45
+    customPreset.settings.ruleWildness = 0.45
     customPreset.settings.timeScale = 1.5
     customPreset.settings.particleSize = 5
     customPreset.settings.trails = true
@@ -203,11 +203,11 @@ suite "Preset Round-Trip Contract":
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
         (if matrixIndex mod 2 == 0: 0.05 else: -0.05)
-    customPreset.palette = [
-      [0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9],
-      [0.15, 0.25, 0.35], [0.45, 0.55, 0.65], [0.75, 0.85, 0.95],
-      [0.12, 0.22, 0.32], [0.42, 0.52, 0.62]
-    ]
+    # Every slot a distinct in-band triple, filled by formula so the fixture
+    # does not pin the species ceiling.
+    for slot in 0 ..< preset.MAX_SPECIES:
+      let base = slot.float / (preset.MAX_SPECIES * 4).float
+      customPreset.palette[slot] = [base, base + 0.1, base + 0.2]
 
     let loaded = parsePreset(toJsonString(customPreset))
     check loaded.isOk
@@ -657,7 +657,7 @@ suite "Preset Clamp Behavior Contract":
     check defaults.interactionRadius == clamp(defaults.interactionRadius, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX)
     check defaults.forceStrength == clamp(defaults.forceStrength, FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX)
     check defaults.friction == clamp(defaults.friction, FRICTION_MIN, FRICTION_MAX)
-    check defaults.ruleTemperature == clamp(defaults.ruleTemperature, RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX)
+    check defaults.ruleWildness == clamp(defaults.ruleWildness, RULE_WILDNESS_MIN, RULE_WILDNESS_MAX)
     check defaults.timeScale == clamp(defaults.timeScale, TIME_SCALE_MIN, TIME_SCALE_MAX)
     check defaults.particleSize == clamp(defaults.particleSize, PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX)
     check defaults.trailLength == clamp(defaults.trailLength, TRAIL_LENGTH_MIN, TRAIL_LENGTH_MAX)
@@ -777,6 +777,73 @@ suite "v2 -> v3 Matrix Restride":
       check result.preset.chemistry[slot] == 0.5
     let defaults = defaultChemistry()
     for slot in OLD_MAX_SPECIES * 2 ..< CHEMISTRY_LEN:
+      check result.preset.chemistry[slot] == defaults[slot]
+
+
+suite "v3 -> v4 Matrix Restride":
+  # v3 raised the ceiling to 8 and v4 raises it to 12, by the same mechanism.
+  # The stride a v3 file was written at is spelled here as a literal rather
+  # than read from preset.nim, so the fixture stays an independent oracle: if
+  # the migration's own idea of the old stride drifts, these fail.
+  const V3_STRIDE = 8
+
+  proc strideEightMatrix(): seq[float] =
+    ## 64 pairwise-distinct values, all inside the served band (±0.33), so a
+    ## clamp cannot mask a misplaced slot.
+    for oldIndex in 0 ..< V3_STRIDE * V3_STRIDE:
+      result.add (oldIndex + 1).float * 0.004
+
+  test "validate restrides a v3 matrix so every rule keeps its row and column":
+    let old = strideEightMatrix()
+    let result = validate(%*{"schemaVersion": 3, "matrix": old})
+    check result.isOk
+    for oldIndex in 0 ..< old.len:
+      let newIndex = (oldIndex div V3_STRIDE) * preset.MAX_SPECIES +
+        (oldIndex mod V3_STRIDE)
+      check result.preset.matrix[newIndex] == old[oldIndex]
+
+  test "the new rows and columns of a restrided v3 matrix are neutral":
+    let result = validate(%*{"schemaVersion": 3, "matrix": strideEightMatrix()})
+    for row in 0 ..< preset.MAX_SPECIES:
+      for col in 0 ..< preset.MAX_SPECIES:
+        if row >= V3_STRIDE or col >= V3_STRIDE:
+          check result.preset.matrix[row * preset.MAX_SPECIES + col] == 0.0
+
+  test "a v2 file restrides once through each step rather than twice through one":
+    # The ladder falls through, so a v2 matrix crosses two restrides: 6 -> 8
+    # then 8 -> 12. Composed, old flat index i must still land at
+    # (i div 6) * 12 + (i mod 6). A v3 branch that restrided straight to 12
+    # would scramble here, because the v4 branch would then read a 12-stride
+    # array as an 8-stride one.
+    var old: seq[float]
+    for oldIndex in 0 ..< OLD_MAX_SPECIES * OLD_MAX_SPECIES:
+      old.add (oldIndex + 1).float * 0.005
+    let result = validate(%*{"schemaVersion": 2, "matrix": old})
+    check result.isOk
+    for oldIndex in 0 ..< old.len:
+      let newIndex = (oldIndex div OLD_MAX_SPECIES) * preset.MAX_SPECIES +
+        (oldIndex mod OLD_MAX_SPECIES)
+      check result.preset.matrix[newIndex] == old[oldIndex]
+
+  test "a v3 file without a matrix still loads with the neutral default":
+    let result = validate(%*{"schemaVersion": 3, "name": "No matrix"})
+    check result.isOk
+    for value in result.preset.matrix:
+      check value == 0.0
+
+  test "a v3 file's chemistry and palette extend by per-slot repair":
+    # Species-major with a fixed per-species stride, so the four new slots take
+    # each slot's own default exactly as a current-version file missing them
+    # would. Nothing restrides.
+    var chemistry: seq[float]
+    for slot in 0 ..< V3_STRIDE * 2:
+      chemistry.add 0.5
+    let result = validate(%*{"schemaVersion": 3, "chemistry": chemistry})
+    check result.isOk
+    for slot in 0 ..< V3_STRIDE * 2:
+      check result.preset.chemistry[slot] == 0.5
+    let defaults = defaultChemistry()
+    for slot in V3_STRIDE * 2 ..< CHEMISTRY_LEN:
       check result.preset.chemistry[slot] == defaults[slot]
 
 

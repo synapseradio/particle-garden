@@ -334,13 +334,13 @@ when defined(js):
 
   proc randomizeMatrix*() =
     ## Randomize all active matrix cells with the bell-curve rule sampler
-    ## (gaussian draws scaled by CONFIG.ruleTemperature, rejection-sampled
+    ## (gaussian draws scaled by CONFIG.ruleWildness, rejection-sampled
     ## into [-1, 1] by matrix_state.sampleRuleValue).
     let activeSpecies = CONFIG.speciesCount
     for row in 0 ..< activeSpecies:
       for col in 0 ..< activeSpecies:
         buffers.matrix[matrixIndex(row, col)] =
-          sampleRuleValue(CONFIG.ruleTemperature, gaussian)
+          sampleRuleValue(CONFIG.ruleWildness, gaussian)
 
   proc applySpeciesCountChange(newCount: int; randomizeNew: bool) =
     ## React to a species-count change: a grow randomizes only the newly
@@ -351,7 +351,7 @@ when defined(js):
     if randomizeNew:
       for cell in exposed:
         buffers.matrix[matrixIndex(cell.row, cell.col)] =
-          sampleRuleValue(CONFIG.ruleTemperature, gaussian)
+          sampleRuleValue(CONFIG.ruleWildness, gaussian)
 
   proc triggerParticleReinit() =
     if not canvas_input.onInitParticles.isNil:
@@ -871,7 +871,7 @@ when defined(js):
     settings.forceStrength = CONFIG.forceStrength
     settings.crowdingStrength = CONFIG.crowdingStrength
     settings.friction = CONFIG.friction
-    settings.ruleTemperature = CONFIG.ruleTemperature
+    settings.ruleWildness = CONFIG.ruleWildness
     settings.timeScale = CONFIG.timeScale
     settings.particleSize = CONFIG.particleSize
     settings.trails = CONFIG.trails
@@ -998,7 +998,7 @@ when defined(js):
           simState.forceStrength = settings.forceStrength
           simState.crowdingStrength = settings.crowdingStrength
           simState.friction = settings.friction
-          simState.ruleTemperature = settings.ruleTemperature
+          simState.ruleWildness = settings.ruleWildness
           simState.timeScale = settings.timeScale
           simState.maxVelocity = settings.maxVelocity
           simState.repulsionEnd = settings.repulsionEnd

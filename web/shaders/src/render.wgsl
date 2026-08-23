@@ -65,7 +65,10 @@ const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full bright
 
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
-@group(0) @binding(2) var<uniform> colors: array<vec4f, 8>;  // Species colors from config.nim
+// Sized from memory_layout.MAX_SPECIES by the bundler, not by hand: a WGSL
+// out-of-range uniform read is clamped rather than trapped, so a short array
+// would render the species past its end in the last species' colour silently.
+@group(0) @binding(2) var<uniform> colors: array<vec4f, {{MAX_SPECIES}}>;
 @group(0) @binding(3) var fieldTexture: texture_2d<f32>;     // RD field (activator, inhibitor)
 @group(0) @binding(4) var<uniform> cam: Camera;              // View over the toroidal world
 

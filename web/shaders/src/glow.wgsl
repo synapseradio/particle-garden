@@ -23,7 +23,9 @@ const OFFSETS = array<vec2f, 6>(
 
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(0) @binding(1) var<uniform> params: RenderParams;
-@group(0) @binding(2) var<uniform> colors: array<vec4f, 8>;  // Species colors (vertex-only visibility)
+// Species colors (vertex-only visibility), sized from memory_layout.MAX_SPECIES
+// by the bundler for the reason render.wgsl states at the same binding.
+@group(0) @binding(2) var<uniform> colors: array<vec4f, {{MAX_SPECIES}}>;
 // Binding 4, not 3: the bind group layout is SHARED with render.wgsl, where
 // binding 3 is the field texture used for particle lighting. This shader does
 // not read the field, but it cannot reuse its slot — the layout is one object

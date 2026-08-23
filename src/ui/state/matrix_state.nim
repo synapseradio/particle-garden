@@ -20,7 +20,7 @@ import ../../config_ranges
 # reads it like every other consumer.
 
 const
-  MATRIX_SIZE* = 8                    ## Maximum species count
+  MATRIX_SIZE* = 12                   ## Maximum species count
 
 func matrixIndex*(row, col: int): int =
   ## Row = species feeling the force

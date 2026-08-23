@@ -79,7 +79,7 @@ suite "GPU Field Accessors":
 
   test "fieldIndex equals byte offset divided by 4 for scalar fields":
     check ParticleLayout.fieldIndex("species") == 4
-    check SimParamsLayout.fieldIndex("repulsionEnd") == 80
+    check SimParamsLayout.fieldIndex("repulsionEnd") == 160
 
   test "fieldIndex raises ValueError for vector and array fields":
     expect ValueError:
@@ -100,16 +100,16 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     # leave the tail of the struct unchecked there.
     check wgslComputedOffsets(SimParamsLayout).len == SimParamsLayout.fields.len
 
-  test "SimParams is 368 bytes written and 368 bytes allocated (no round-up left)":
-    check SimParamsLayout.totalSize == 368
-    check wgslUniformSize(SimParamsLayout) == 368
+  test "SimParams is 688 bytes written and 688 bytes allocated (no round-up left)":
+    check SimParamsLayout.totalSize == 688
+    check wgslUniformSize(SimParamsLayout) == 688
 
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
     let generated = toWgslStruct(SimParamsLayout)
     check generated.startsWith("struct SimParams {")
     check "dt: f32," in generated
     check "gridCellsX: u32," in generated
-    check "attractionMatrix: array<vec4<f32>, 16>," in generated
+    check "attractionMatrix: array<vec4<f32>, 36>," in generated
     check "forceModel: u32," in generated
     check "mouseRange: f32," in generated
     check generated.strip.endsWith("}")
@@ -118,7 +118,7 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     check toWgslType(SimParamsLayout.fieldByName("dt")) == "f32"
     check toWgslType(SimParamsLayout.fieldByName("gridCellsX")) == "u32"
     check toWgslType(SimParamsLayout.fieldByName("attractionMatrix")) ==
-      "array<vec4<f32>, 16>"
+      "array<vec4<f32>, 36>"
 
 
 suite "Generated SIM_ Indices Match The SimParams Byte Layout":
@@ -137,18 +137,18 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_DT == 0
     check SIM_FLUID_STRENGTH == 15
     check SIM_ATTRACTION_MATRIX_START == 16
-    check SIM_ATTRACTION_MATRIX_END == 79
-    check SIM_REPULSION_END == 80
-    check SIM_MOUSE_RANGE == 85
-    check SIM_CROWDING_STRENGTH == 90
-    check SIM_SPH_RADIUS_FRACTION == 91
-    check SIM_PARAMS_F32_COUNT == 92
+    check SIM_ATTRACTION_MATRIX_END == 159
+    check SIM_REPULSION_END == 160
+    check SIM_MOUSE_RANGE == 165
+    check SIM_CROWDING_STRENGTH == 170
+    check SIM_SPH_RADIUS_FRACTION == 171
+    check SIM_PARAMS_F32_COUNT == 172
 
-  test "the attraction matrix spans exactly its 64 float slots":
+  test "the attraction matrix spans exactly its 144 float slots":
     check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 ==
       MAX_SPECIES * MAX_SPECIES
 
-  test "SIM_PARAMS_F32_COUNT covers the whole 368-byte struct":
+  test "SIM_PARAMS_F32_COUNT covers the whole 688-byte struct":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
   test "the crowding and radius-fraction slots close the struct in order":
@@ -369,9 +369,9 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
   # secretion, field-force by its tropism. Both passes bind this one uniform,
   # so a drift here corrupts the deposit and the force together.
 
-  test "SpeciesChemistryLayout is 16 floats, 64 bytes written and allocated":
-    check SpeciesChemistryLayout.totalSize == 64
-    check wgslUniformSize(SpeciesChemistryLayout) == 64
+  test "SpeciesChemistryLayout is 24 floats, 96 bytes written and allocated":
+    check SpeciesChemistryLayout.totalSize == 96
+    check wgslUniformSize(SpeciesChemistryLayout) == 96
 
   test "the generated CHEM_ indices bracket two contiguous channels":
     # The Nim writer reaches species i at CHEM_SECRETION_START + i; the shader
@@ -379,15 +379,15 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
     # arithmetic over one contiguous f32 run, which is what lets the two sides
     # agree without a second table.
     check CHEM_SECRETION_START == 0
-    check CHEM_SECRETION_END == 7
-    check CHEM_TROPISM_START == 8
-    check CHEM_TROPISM_END == 15
-    check CHEM_PARAMS_F32_COUNT == 16
+    check CHEM_SECRETION_END == 11
+    check CHEM_TROPISM_START == 12
+    check CHEM_TROPISM_END == 23
+    check CHEM_PARAMS_F32_COUNT == 24
     # The channels must not overlap, or a secretion write lands on a tropism.
     check CHEM_SECRETION_END < CHEM_TROPISM_START
 
   test "every species slot the ceiling allows is addressable in both channels":
-    # CONTRACT: the packing holds four species per vec4, two vec4s per channel.
+    # CONTRACT: the packing holds four species per vec4, three vec4s per channel.
     # Raising MAX_SPECIES past that must widen the struct, not silently drop
     # the species that do not fit. gpu_types asserts this statically; this
     # states the same relation where a reader can see it.
@@ -398,11 +398,11 @@ suite "Generated SpeciesChemistry Layout (Per-Species Field Coupling)":
   test "toWgslStruct renders SpeciesChemistry as two vec4 arrays":
     # Two parallel arrays rather than MAX_SPECIES interleaved pairs, because
     # WGSL's uniform address space rounds an array element's stride up to 16
-    # bytes: array<vec2<f32>, 8> would occupy 128 bytes, not 64.
+    # bytes: array<vec2<f32>, 12> would occupy 192 bytes, not 96.
     let generated = toWgslStruct(SpeciesChemistryLayout)
     check generated.startsWith("struct SpeciesChemistry {")
-    check "secretion: array<vec4<f32>, 2>," in generated
-    check "tropism: array<vec4<f32>, 2>," in generated
+    check "secretion: array<vec4<f32>, 3>," in generated
+    check "tropism: array<vec4<f32>, 3>," in generated
     check generated.strip.endsWith("}")
 
   test "FieldParams stays closed while chemistry grows beside it":

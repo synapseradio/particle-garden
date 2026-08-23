@@ -468,8 +468,8 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       horizon = rhSettling, horizonReview = true),
     # Structural: the consumer is the randomize action, which answers at the
     # next commit and is always available — hence no dormancy either.
-    floatParam("ruleTemperature", "🌡️ Temperature", "species",
-      RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX, sim.ruleTemperature, 2,
+    floatParam("ruleWildness", "Wildness", "species",
+      RULE_WILDNESS_MIN, RULE_WILDNESS_MAX, sim.ruleWildness, 2,
       psSimulation, probe = "matrix.sampleSpread",
       horizon = rhStructural, horizonReview = true),
     floatParam("maxVelocity", "Max Velocity", "simulation",

@@ -27,7 +27,7 @@ type
                               ## colony without cancelling what holds it apart.
                               ## Zero reproduces the force law with crowding absent.
     friction*: float
-    ruleTemperature*: float   ## Std dev sigma for the bell-curve rule randomizer
+    ruleWildness*: float   ## Std dev sigma for the bell-curve rule randomizer
     timeScale*: float
     maxVelocity*: float
     repulsionEnd*: float      ## Where the repulsion zone ends (0-1)
@@ -92,7 +92,7 @@ func initSimulationState*(): SimulationState =
     # default was chosen against.
     crowdingStrength: 0.0,
     friction: 0.05,
-    ruleTemperature: 0.3,  # Tight bell curve: +/-0.99 is ~3.3 sigma out
+    ruleWildness: 0.3,  # Tight bell curve: +/-0.99 is ~3.3 sigma out
     timeScale: 0.5,
     maxVelocity: 50.0,
     repulsionEnd: 0.5,     # Inner 50% is repulsion zone

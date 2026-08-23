@@ -16,7 +16,7 @@ const descriptors: GroupedParam[] = [
   { id: "forceStrength", group: "species" },
   { id: "friction", group: "simulation" },
   { id: "timeScale", group: "simulation" },
-  { id: "ruleTemperature", group: "species" },
+  { id: "ruleWildness", group: "species" },
   { id: "fluidStrength", group: "fluid" },
   { id: "sphRestDensity", group: "fluid" },
   { id: "rdFeed", group: "rd" },
@@ -29,7 +29,7 @@ describe("groupParamIds", () => {
     expect(groupParamIds(descriptors, "rd")).toEqual(["rdFeed", "rdKill"]);
     expect(groupParamIds(descriptors, "species")).toEqual([
       "forceStrength",
-      "ruleTemperature",
+      "ruleWildness",
     ]);
   });
 

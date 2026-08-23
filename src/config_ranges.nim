@@ -67,8 +67,8 @@ const
     ## same-species pile-up. [?]
   MATRIX_VALUE_STEP* = 0.001
   MATRIX_VALUE_PRECISION* = 3
-  RULE_TEMPERATURE_MIN* = 0.1
-  RULE_TEMPERATURE_MAX* = 0.6
+  RULE_WILDNESS_MIN* = 0.1
+  RULE_WILDNESS_MAX* = 0.6
     ## Sigma for the matrix rule sampler, as a FRACTION of MATRIX_MAX_VALUE
     ## (matrix_state.sampleRuleValue applies the scale), so this range keeps
     ## its meaning across any matrix re-range.
@@ -97,7 +97,7 @@ const
     ## for an unrelated reason does not immediately strand a waypoint.
     ##
     ## WHY THESE THREE AXES.
-    ## `ruleTemperature` is excluded and that exclusion is a measurement, not a
+    ## `ruleWildness` is excluded and that exclusion is a measurement, not a
     ## preference: it feeds `sampleRuleValue` alone (`src/web_api.nim`), which
     ## runs when the rules are re-sampled, so touring it moves a slider and
     ## changes nothing a viewer can see until something else randomises the

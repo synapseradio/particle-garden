@@ -27,8 +27,8 @@ suite "Simulation Defaults Lie Inside Their Slider Ranges":
     check defaults.friction <= FRICTION_MAX
     check defaults.timeScale >= TIME_SCALE_MIN
     check defaults.timeScale <= TIME_SCALE_MAX
-    check defaults.ruleTemperature >= RULE_TEMPERATURE_MIN
-    check defaults.ruleTemperature <= RULE_TEMPERATURE_MAX
+    check defaults.ruleWildness >= RULE_WILDNESS_MIN
+    check defaults.ruleWildness <= RULE_WILDNESS_MAX
     check defaults.maxVelocity >= MAX_VELOCITY_MIN
     check defaults.maxVelocity <= MAX_VELOCITY_MAX
 

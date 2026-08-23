@@ -158,9 +158,9 @@ suite "Configuration Relationships":
 suite "Limit Constants Contract":
   test "MAX_SPECIES supports attraction matrix":
     ## CONTRACT: MAX_SPECIES defines the attraction matrix dimension
-    ## WHY: The matrix is MAX_SPECIES x MAX_SPECIES = 64 floats
+    ## WHY: The matrix is MAX_SPECIES x MAX_SPECIES = 144 floats
     ## This documents the derived matrix-element count the GPU buffer must hold.
-    check MAX_SPECIES * MAX_SPECIES == 64
+    check MAX_SPECIES * MAX_SPECIES == 144
 
   test "MAX_PARTICLES provides headroom above default":
     ## BEHAVIORAL: MAX_PARTICLES should be well above default

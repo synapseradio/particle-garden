@@ -55,11 +55,15 @@ func rgbFrom8Bit(red8, green8, blue8: int): RgbColor =
   ## An RGB tuple from 8-bit channel values, e.g. a hex swatch's bytes.
   (red: red8.float / 255.0, green: green8.float / 255.0, blue: blue8.float / 255.0)
 
-const OPEN_COLOR_SWATCHES*: array[8, RgbColor] = [
-  ## Bright picks from the Open Color palette, verified against the canonical
-  ## open-color.json, ordered to keep the classic species identities
-  ## (red, green, blue, yellow, magenta-slot, cyan), then orange and teal
-  ## filling the two widest hue gaps the first six leave.
+const OPEN_COLOR_SWATCHES*: array[12, RgbColor] = [
+  ## Bright picks from the Open Color palette (https://yeun.github.io/open-color/),
+  ## verified against the canonical open-color.json, ordered to keep the classic
+  ## species identities (red, green, blue, yellow, magenta-slot, cyan), then
+  ## orange and teal filling the two widest hue gaps the first six leave, then
+  ## pink, violet, indigo and lime filling the four widest the first eight
+  ## leave. Closest pair is violet/indigo at CIE76 dE 24.8 — an order of
+  ## magnitude above the ~2.3 just-noticeable difference, so no two species
+  ## read as the same colour.
   rgbFrom8Bit(0xff, 0x6b, 0x6b),  # red-5
   rgbFrom8Bit(0x51, 0xcf, 0x66),  # green-5
   rgbFrom8Bit(0x33, 0x9a, 0xf0),  # blue-5
@@ -68,6 +72,10 @@ const OPEN_COLOR_SWATCHES*: array[8, RgbColor] = [
   rgbFrom8Bit(0x3b, 0xc9, 0xdb),  # cyan-4
   rgbFrom8Bit(0xff, 0x92, 0x2b),  # orange-5
   rgbFrom8Bit(0x38, 0xd9, 0xa9),  # teal-4
+  rgbFrom8Bit(0xf0, 0x65, 0x95),  # pink-5
+  rgbFrom8Bit(0x84, 0x5e, 0xf7),  # violet-5
+  rgbFrom8Bit(0x5c, 0x7c, 0xfa),  # indigo-5
+  rgbFrom8Bit(0x94, 0xd8, 0x2d),  # lime-5
 ]
 
 func hslToRgb*(hue, saturation, lightness: float): RgbColor =

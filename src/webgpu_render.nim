@@ -1745,9 +1745,9 @@ proc render*(particleCount: int) =
   webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
   # Tonemap/grade uniforms — written every frame regardless of the present path.
-  # The HDR tonemap reads all of them; the bloom-off field-composite floor reads
-  # colormapIndex + fieldOpacity from this same buffer. fieldOpacity is the
-  # user's slider, passed through unchanged.
+  # Both present paths run the full grade from this one buffer: the HDR tonemap
+  # and the bloom-off field composite each call tonemapGrade, so every knob here
+  # reaches the screen either way.
   tonemapData[TONEMAP_EXPOSURE] = float32(config.CONFIG.exposure)
   tonemapData[TONEMAP_BLOOM_INTENSITY] = float32(config.CONFIG.bloomIntensity)
   tonemapData[TONEMAP_SATURATION] = float32(config.CONFIG.saturation)

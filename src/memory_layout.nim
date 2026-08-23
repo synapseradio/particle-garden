@@ -35,7 +35,9 @@
 
 const
   MAX_PARTICLES* = 128000
-  MAX_SPECIES* = 8        ## Maximum species for attraction matrix (8x8 = 64 floats)
+  MAX_SPECIES* = 12       ## Maximum species for attraction matrix (12x12 = 144 floats)
+    ## A multiple of 4, so every vec4-packed GPU layout indexed by species
+    ## (the attraction matrix, both chemistry channels) fills whole slots.
   MAX_GRID* = 256         ## Maximum grid cells per dimension (256x256 = 65536 cells)
 
 # ==============================================================================
@@ -180,9 +182,12 @@ static:
 
   assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated memory"
 
-  # MAX_SPECIES's WGSL twin is generated from this value (src/gpu_types.nim's
-  # ParticleLayout, emitted into web/shaders/modules/particle.wgsl by
-  # tools/wgsl_bundle.nim), so it cannot drift there. A live copy remains at
+  # Nothing in WGSL spells the species count by hand. tools/wgsl_bundle.nim
+  # emits the `const MAX_SPECIES` in web/shaders/modules/particle.wgsl and the
+  # {{MAX_SPECIES}} array size render.wgsl and glow.wgsl declare their colour
+  # uniforms at, both from this value; the attraction matrix and both chemistry
+  # channels are sized from src/gpu_types.nim's layout tables, which assert
+  # against it. A live copy remains at
   # src/ui/state/matrix_state.MATRIX_SIZE, the species count served across the
   # API boundary as matrixStride; tests/test_memory_layout.nim asserts the two
   # agree. The assertion lives in the test rather than here because matrix_state

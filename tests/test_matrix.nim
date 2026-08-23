@@ -10,14 +10,14 @@ suite "Matrix Index - Calculations":
 
   test "matrixIndex first row":
     check matrixIndex(0, 1) == 1
-    check matrixIndex(0, 7) == 7
+    check matrixIndex(0, 11) == 11
 
   test "matrixIndex second row":
-    check matrixIndex(1, 0) == 8
-    check matrixIndex(1, 1) == 9
+    check matrixIndex(1, 0) == 12
+    check matrixIndex(1, 1) == 13
 
   test "matrixIndex last cell":
-    check matrixIndex(7, 7) == 63
+    check matrixIndex(11, 11) == 143
 
   test "matrixCoords inverse of matrixIndex":
     for row in 0 ..< MATRIX_SIZE:
@@ -43,8 +43,8 @@ suite "Matrix Index - Validation":
     check isValidIndex(0, -1, 4) == false
 
   test "isValidIndex exceeds MAX_SPECIES":
-    check isValidIndex(0, 0, 9) == false
-    check isValidIndex(0, 0, 8) == true
+    check isValidIndex(0, 0, 13) == false
+    check isValidIndex(0, 0, 12) == true
 
 
 suite "Matrix Values - Clamping":
@@ -176,7 +176,7 @@ suite "Species Color - String Conversion":
     check toRgbaString(color) == "rgba(255,128,0,0.5)"
 
 # sampleRuleValue is the pure core of the matrix randomizer: it scales draws
-# from an injected standard-normal source by sigma (CONFIG.ruleTemperature)
+# from an injected standard-normal source by sigma (CONFIG.ruleWildness)
 # and rejects any product outside [-1, 1], preserving the bell shape instead
 # of piling clamped mass onto the boundaries.
 

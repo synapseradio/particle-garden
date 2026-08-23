@@ -196,8 +196,8 @@ func timeScaleProbe(value: float; ctx: ProbeContext): float =
   ## app.nim multiplies the frame's dt by timeScale before anything integrates.
   RefFrameSpeed * value
 
-func ruleTemperatureProbe(value: float; ctx: ProbeContext): float =
-  ## ruleTemperature: the mean magnitude of accepted rule draws at sigma =
+func ruleWildnessProbe(value: float; ctx: ProbeContext): float =
+  ## ruleWildness: the mean magnitude of accepted rule draws at sigma =
   ## value, driven through sampleRuleValue with a deterministic cycle of
   ## standard-normal quantiles (rejection sampling forbids a live RNG here —
   ## the probe must be a function). The smallest quantile keeps acceptance
@@ -624,7 +624,7 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
     "motion.softCap": ProbeSpec(fn: maxVelocityProbe, budget: pbClosedForm),
     "motion.frameTravel": ProbeSpec(fn: timeScaleProbe,
       budget: pbClosedForm),
-    "matrix.sampleSpread": ProbeSpec(fn: ruleTemperatureProbe,
+    "matrix.sampleSpread": ProbeSpec(fn: ruleWildnessProbe,
       budget: pbClosedForm),
     "sph.pairShare": ProbeSpec(fn: fluidStrengthProbe,
       budget: pbClosedForm),

@@ -208,15 +208,18 @@ Key operations:
 
 ## Constants
 
-Shader constants for the particle life algorithm:
+A shader constant reaches WGSL one of two ways, and neither lets this file
+restate its value.
 
-```wgsl
-const MAX_SPECIES: u32 = 6u;         // Maximum species count
-const MIN_DIST_SQ: f32 = 4.0;        // Min distance² (prevents division by zero)
-const INV_03: f32 = 3.333333333;     // 1.0 / 0.3 (repulsion threshold)
-const INV_07: f32 = 1.428571429;     // 1.0 / 0.7 (attraction falloff)
-const MD2_LIMIT: f32 = 90000.0;      // Mouse distance² limit
-```
+`MAX_SPECIES` is generated: `tools/wgsl_bundle.nim` writes it into
+`modules/particle.wgsl` from `memory_layout.MAX_SPECIES`, so the species
+ceiling has one home and every shader indexing by species imports it.
+
+Every tuned constant arrives as a `{{TUNABLE_*}}` placeholder the bundler
+substitutes from `src/shader_config.nim` — `MIN_DISTANCE_SQ` in
+`forces.wgsl`, the SPH pressure scales in `forces-sph.wgsl`, the glow curve
+in `glow.wgsl`. Read the value in `shader_config.nim`, where it sits beside
+the conditions it was measured under.
 
 ## Toroidal Topology
 

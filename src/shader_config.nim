@@ -208,8 +208,9 @@ from trail_core import TRAIL_TAPER_FULL_ELONGATION
 # this module substitutes into that shader. Importing its type is what lets the
 # mirror read them from here instead of carrying a second copy.
 from glow_core import GlowTuning
-# The particle budget that derivation is taken against.
-from memory_layout import MAX_PARTICLES
+# The particle budget that derivation is taken against, and the species ceiling
+# the render-side colour arrays are sized from.
+from memory_layout import MAX_PARTICLES, MAX_SPECIES
 
 func glowTuning*(): GlowTuning =
   ## The glow curve constants in the shape glow_core's mirror takes them. The
@@ -231,6 +232,12 @@ func glowTuning*(): GlowTuning =
 
 proc getPlaceholderMap*(): Table[string, string] =
   result = initTable[string, string]()
+
+  # The species ceiling as an array-size token. render.wgsl and glow.wgsl
+  # declare their colour uniforms `array<vec4f, {{MAX_SPECIES}}>`; both also
+  # import the generated particle module, whose `const MAX_SPECIES` the bundler
+  # writes from this same constant, so the two agree by construction.
+  result["MAX_SPECIES"] = $MAX_SPECIES
 
   result["WORKGROUP_SIZE_BIN_COUNT"] = $activeConfig.workgroups.binCount
   result["WORKGROUP_SIZE_BIN_SCATTER"] = $activeConfig.workgroups.binScatter

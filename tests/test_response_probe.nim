@@ -202,7 +202,7 @@ regime-point slices.
 | crowdingStrength | default | 1.0000 | 1.000 | 0.030 | none | pass |
 | friction | default | 1.0000 | 1.000 | 0.020 | none | pass |
 | timeScale | default | 0.9800 | 1.000 | 0.020 | none | pass |
-| ruleTemperature | default | 0.8333 | 1.000 | 0.020 | none | pass |
+| ruleWildness | default | 0.8333 | 1.000 | 0.020 | none | pass |
 | maxVelocity | default | 1.0000 | 0.500 | 0.040 | 0.50-1.00 | FAIL |
 | particleSize | zoomFloor | 0.7778 | 1.000 | 0.143 | none | pass |
 | particleSize | zoomCeiling | 0.7778 | 1.000 | 0.143 | none | pass |

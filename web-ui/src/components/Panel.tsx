@@ -85,7 +85,7 @@ export function Panel(props: { ctrl: PanelController }) {
             "crowdingStrength",
             "friction",
             "timeScale",
-            "ruleTemperature",
+            "ruleWildness",
           ]}
         >
           {(id) => <ParamSlider ctrl={ctrl} id={id} />}

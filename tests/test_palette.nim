@@ -145,14 +145,19 @@ suite "generatePalette - Open Color Scheme":
   # Default species colors are Open Color swatches
   # (https://yeun.github.io/open-color/), picked bright and ordered to
   # preserve the classic species identities: red, green, blue, yellow, grape
-  # (magenta slot), cyan, then orange and teal filling the two widest hue
-  # gaps. Hex values verified against the canonical open-color.json
-  # (red-5 #ff6b6b, green-5 #51cf66, blue-5 #339af0, yellow-4 #ffd43b,
-  # grape-5 #cc5de8, cyan-4 #3bc9db, orange-5 #ff922b, teal-4 #38d9a9).
+  # (magenta slot), cyan, then orange and teal filling the two widest hue gaps
+  # the first six leave, then pink, violet, indigo and lime filling the four
+  # widest the first eight leave. Hex values verified against the canonical
+  # open-color.json (red-5 #ff6b6b, green-5 #51cf66, blue-5 #339af0,
+  # yellow-4 #ffd43b, grape-5 #cc5de8, cyan-4 #3bc9db, orange-5 #ff922b,
+  # teal-4 #38d9a9, pink-5 #f06595, violet-5 #845ef7, indigo-5 #5c7cfa,
+  # lime-5 #94d82d).
 
-  test "psOpenColor returns the eight verified Open Color swatches in species order":
-    let colors = generatePalette(8, psOpenColor)
-    check colors.len == 8
+  const SWATCH_COUNT = 12
+
+  test "psOpenColor returns the twelve verified Open Color swatches in species order":
+    let colors = generatePalette(SWATCH_COUNT, psOpenColor)
+    check colors.len == SWATCH_COUNT
     check approxEqRgb(colors[0], 255.0/255.0, 107.0/255.0, 107.0/255.0)  # red-5
     check approxEqRgb(colors[1],  81.0/255.0, 207.0/255.0, 102.0/255.0)  # green-5
     check approxEqRgb(colors[2],  51.0/255.0, 154.0/255.0, 240.0/255.0)  # blue-5
@@ -161,22 +166,26 @@ suite "generatePalette - Open Color Scheme":
     check approxEqRgb(colors[5],  59.0/255.0, 201.0/255.0, 219.0/255.0)  # cyan-4
     check approxEqRgb(colors[6], 255.0/255.0, 146.0/255.0,  43.0/255.0)  # orange-5
     check approxEqRgb(colors[7],  56.0/255.0, 217.0/255.0, 169.0/255.0)  # teal-4
+    check approxEqRgb(colors[8], 240.0/255.0, 101.0/255.0, 149.0/255.0)  # pink-5
+    check approxEqRgb(colors[9], 132.0/255.0,  94.0/255.0, 247.0/255.0)  # violet-5
+    check approxEqRgb(colors[10], 92.0/255.0, 124.0/255.0, 250.0/255.0)  # indigo-5
+    check approxEqRgb(colors[11], 148.0/255.0, 216.0/255.0, 45.0/255.0)  # lime-5
 
   test "psOpenColor swatches are bright (every swatch peaks at or above 0.8)":
     # Each swatch's dominant channel must carry real luminance against the
     # dark canvas — that's what 'brighter' requires here.
-    for color in generatePalette(8, psOpenColor):
+    for color in generatePalette(SWATCH_COUNT, psOpenColor):
       check max(color.red, max(color.green, color.blue)) >= 0.8
 
   test "psOpenColor ignores saturation and lightness arguments":
     # The swatches are fixed picks, not HSL-generated; the knobs are documented
     # as inert for this scheme.
-    check generatePalette(8, psOpenColor, saturation = 0.1, lightness = 0.9) ==
-      generatePalette(8, psOpenColor)
+    check generatePalette(SWATCH_COUNT, psOpenColor, saturation = 0.1,
+      lightness = 0.9) == generatePalette(SWATCH_COUNT, psOpenColor)
 
-  test "psOpenColor wraps around past eight colors and truncates below":
-    let wrapped = generatePalette(10, psOpenColor)
-    check wrapped.len == 10
-    check wrapped[8] == wrapped[0]
-    check wrapped[9] == wrapped[1]
+  test "psOpenColor wraps around past the swatch count and truncates below":
+    let wrapped = generatePalette(SWATCH_COUNT + 2, psOpenColor)
+    check wrapped.len == SWATCH_COUNT + 2
+    check wrapped[SWATCH_COUNT] == wrapped[0]
+    check wrapped[SWATCH_COUNT + 1] == wrapped[1]
     check generatePalette(2, psOpenColor).len == 2

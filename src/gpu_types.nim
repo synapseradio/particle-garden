@@ -139,9 +139,9 @@ const
       "// numBlocks is the workgroup count (ceil(numCells / BLOCK_SIZE)).\n"
   )
 
-  # SimParams struct (368 bytes written, 368 allocated; matches forces.wgsl /
+  # SimParams struct (688 bytes written, 688 allocated; matches forces.wgsl /
   # forces-sph.wgsl)
-  # Layout: 16 scalar fields (64 bytes) + 16 vec4 matrix (256 bytes) + 6 force-model
+  # Layout: 16 scalar fields (64 bytes) + 36 vec4 matrix (576 bytes) + 6 force-model
   # fields (24 bytes) + 4 SPH fields (16 bytes) + crowding (4 bytes) + the SPH
   # radius fraction (4 bytes). The written size fills the allocation
   # exactly, so the next field costs a 16-byte block rather than a pad.
@@ -168,39 +168,39 @@ const
       # only because that is where the free word is; forces-sph.wgsl is the
       # sole reader.
       GpuField(name: "fluidStrength",   kind: gtF32, offset: 60, size: 4, count: 1),
-      # Attraction matrix: 64 floats packed as 16 vec4s (64-320)
-      GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 256, count: 16, elemKind: gtVec4F32),
-      # Force model parameters (320-344)
-      GpuField(name: "repulsionEnd",    kind: gtF32, offset: 320, size: 4, count: 1),
-      GpuField(name: "attractionPeak",  kind: gtF32, offset: 324, size: 4, count: 1),
-      GpuField(name: "forceModel",      kind: gtU32, offset: 328, size: 4, count: 1),
-      GpuField(name: "expAlpha",        kind: gtF32, offset: 332, size: 4, count: 1),
-      GpuField(name: "expBeta",         kind: gtF32, offset: 336, size: 4, count: 1),
+      # Attraction matrix: MAX_SPECIES^2 = 144 floats packed as 36 vec4s (64-640)
+      GpuField(name: "attractionMatrix", kind: gtArray, offset: 64, size: 576, count: 36, elemKind: gtVec4F32),
+      # Force model parameters (640-664)
+      GpuField(name: "repulsionEnd",    kind: gtF32, offset: 640, size: 4, count: 1),
+      GpuField(name: "attractionPeak",  kind: gtF32, offset: 644, size: 4, count: 1),
+      GpuField(name: "forceModel",      kind: gtU32, offset: 648, size: 4, count: 1),
+      GpuField(name: "expAlpha",        kind: gtF32, offset: 652, size: 4, count: 1),
+      GpuField(name: "expBeta",         kind: gtF32, offset: 656, size: 4, count: 1),
       # The mouse influence radius in world units, written per frame as the
       # 300-unit base (shader_config's mouseRangeSq) divided by the camera
       # zoom, so the on-screen disc keeps a constant size. Spends what was the
       # _pad2 word; every offset stays where it was.
-      GpuField(name: "mouseRange",      kind: gtF32, offset: 340, size: 4, count: 1),
-      # SPH fluid parameters (344-360). forces-sph.wgsl reads these; the
+      GpuField(name: "mouseRange",      kind: gtF32, offset: 660, size: 4, count: 1),
+      # SPH fluid parameters (664-680). forces-sph.wgsl reads these; the
       # species force shader ignores them.
-      GpuField(name: "sphRestDensity",  kind: gtF32, offset: 344, size: 4, count: 1),
-      GpuField(name: "sphStiffness",    kind: gtF32, offset: 348, size: 4, count: 1),
-      GpuField(name: "sphGamma",        kind: gtF32, offset: 352, size: 4, count: 1),
-      GpuField(name: "sphViscosity",    kind: gtF32, offset: 356, size: 4, count: 1),
-      # Crowding (360-364). forces.wgsl reads it; the fluid ignores it. Appended
+      GpuField(name: "sphRestDensity",  kind: gtF32, offset: 664, size: 4, count: 1),
+      GpuField(name: "sphStiffness",    kind: gtF32, offset: 668, size: 4, count: 1),
+      GpuField(name: "sphGamma",        kind: gtF32, offset: 672, size: 4, count: 1),
+      GpuField(name: "sphViscosity",    kind: gtF32, offset: 676, size: 4, count: 1),
+      # Crowding (680-684). forces.wgsl reads it; the fluid ignores it. Appended
       # rather than spending the pad word above (since spent on mouseRange), so
       # the force-model block and the SPH block keep the offsets every existing
       # write targets.
-      GpuField(name: "crowdingStrength", kind: gtF32, offset: 360, size: 4, count: 1),
-      # The SPH smoothing radius as a fraction of interactionRadius (364-368).
+      GpuField(name: "crowdingStrength", kind: gtF32, offset: 680, size: 4, count: 1),
+      # The SPH smoothing radius as a fraction of interactionRadius (684-688).
       # forces-sph.wgsl multiplies the two; the fraction is capped at 1 by its
       # range, so the smoothing radius can never outrun the neighbour sweep,
       # whose cells are sized to the interaction radius (src/grid.nim). Appended
       # for the reason crowding was, rather than joining the SPH block above:
       # every write that exists keeps the offset it targets.
-      GpuField(name: "sphRadiusFraction", kind: gtF32, offset: 364, size: 4, count: 1),
+      GpuField(name: "sphRadiusFraction", kind: gtF32, offset: 684, size: 4, count: 1),
     ],
-    totalSize: 368
+    totalSize: 688
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
@@ -362,7 +362,7 @@ const
     totalSize: 16
   )
 
-  # SpeciesChemistry struct (64 bytes, generated into
+  # SpeciesChemistry struct (96 bytes, generated into
   # web/shaders/modules/species_chemistry.wgsl)
   #
   # Per-species coupling to the field: what a species SECRETES into it (the
@@ -373,20 +373,20 @@ const
   # locations, and a species with zero on both is inert in the chemistry while
   # still obeying every other coupling.
   #
-  # PACKING. Two parallel `array<vec4<f32>, 2>` rather than MAX_SPECIES
+  # PACKING. Two parallel `array<vec4<f32>, 3>` rather than MAX_SPECIES
   # interleaved pairs, because WGSL's uniform address space rounds an array's
-  # element stride up to 16 bytes: `array<vec2<f32>, 8>` would occupy 128 bytes,
-  # not 64, and blow the 64-byte budget. Packing four species per vec4 gives
-  # eight slots per array in exactly 32 bytes each, so both channels fit in 64
-  # with room for MAX_SPECIES up to 8. Shaders index a species the same way
-  # forces.wgsl indexes the attraction matrix: `secretion[i / 4u][i % 4u]`.
+  # element stride up to 16 bytes: `array<vec2<f32>, 12>` would occupy 192
+  # bytes, not 96. Packing four species per vec4 gives twelve slots per array
+  # in 48 bytes each, so both channels fit in 96 with room for MAX_SPECIES up
+  # to 12. Shaders index a species the same way forces.wgsl indexes the
+  # attraction matrix: `secretion[i / 4u][i % 4u]`.
   SpeciesChemistryLayout* = GpuStruct(
     name: "SpeciesChemistry",
     fields: @[
-      GpuField(name: "secretion", kind: gtArray, offset: 0,  size: 32, count: 2, elemKind: gtVec4F32),
-      GpuField(name: "tropism",   kind: gtArray, offset: 32, size: 32, count: 2, elemKind: gtVec4F32),
+      GpuField(name: "secretion", kind: gtArray, offset: 0,  size: 48, count: 3, elemKind: gtVec4F32),
+      GpuField(name: "tropism",   kind: gtArray, offset: 48, size: 48, count: 3, elemKind: gtVec4F32),
     ],
-    totalSize: 64
+    totalSize: 96
   )
 
   # BloomParams struct (16 bytes, generated into web/shaders/modules/bloom_params.wgsl)
@@ -602,7 +602,14 @@ static:
 
   assert SimParamsLayout.fieldOffset("dt") == 0
   assert SimParamsLayout.fieldOffset("attractionMatrix") == 64
-  assert SimParamsLayout.fieldOffset("repulsionEnd") == 320
+  # The matrix run holds exactly MAX_SPECIES^2 floats, and what follows it
+  # starts where that run ends. Stated against MAX_SPECIES rather than as two
+  # literals, so raising the ceiling without resizing the run fails here rather
+  # than in a shader read that WGSL clamps into range.
+  assert SimParamsLayout.fieldByName("attractionMatrix").count * 4 ==
+    MAX_SPECIES * MAX_SPECIES, "attractionMatrix must hold MAX_SPECIES^2 floats"
+  assert SimParamsLayout.fieldOffset("repulsionEnd") ==
+    64 + MAX_SPECIES * MAX_SPECIES * 4
 
   # WGSL's own layout algorithm must assign every SimParams member the exact
   # offset the Nim writer targets, or a uniform write lands on the wrong field.
@@ -611,16 +618,16 @@ static:
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
         "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
-    assert SimParamsLayout.totalSize == 368, "SimParams writes 368 bytes"
-    assert SimParamsLayout.wgslUniformSize == 368, "SimParams allocates 368 bytes"
+    assert SimParamsLayout.totalSize == 688, "SimParams writes 688 bytes"
+    assert SimParamsLayout.wgslUniformSize == 688, "SimParams allocates 688 bytes"
 
 # =============================================================================
 # SIMPARAMS FIELD INDICES (for type-safe buffer writes)
 # =============================================================================
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
 # emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
-# _END=79, ... SIM_MOUSE_RANGE=85, SIM_CROWDING_STRENGTH=90,
-# SIM_SPH_RADIUS_FRACTION=91, and SIM_PARAMS_F32_COUNT=92, so
+# _END=159, ... SIM_MOUSE_RANGE=165, SIM_CROWDING_STRENGTH=170,
+# SIM_SPH_RADIUS_FRACTION=171, and SIM_PARAMS_F32_COUNT=172, so
 # webgpu_compute.nim hand-writes no magic number.
 
 genFieldIndices(SimParamsLayout, "SIM")
@@ -727,31 +734,31 @@ static:
 # =============================================================================
 # SPECIESCHEMISTRY FIELD INDICES (per-species field coupling)
 # =============================================================================
-# CHEM_SECRETION_START=0 / _END=7, CHEM_TROPISM_START=8 / _END=15,
-# CHEM_PARAMS_F32_COUNT=16. Both arrays are contiguous f32 runs, so species i
+# CHEM_SECRETION_START=0 / _END=11, CHEM_TROPISM_START=12 / _END=23,
+# CHEM_PARAMS_F32_COUNT=24. Both arrays are contiguous f32 runs, so species i
 # writes at CHEM_SECRETION_START + i and CHEM_TROPISM_START + i — the same
 # arithmetic the shader's `[i / 4u][i % 4u]` performs on the vec4 side.
 
 genFieldIndices(SpeciesChemistryLayout, "CHEM")
 
-const CHEMISTRY_SPECIES_SLOTS* = 8
-  ## Species slots each chemistry channel holds: two vec4s of four. The
+const CHEMISTRY_SPECIES_SLOTS* = 12
+  ## Species slots each chemistry channel holds: three vec4s of four. The
   ## assertion below ties this to the packing rather than leaving it a literal.
 
 static:
   # Offset agreement rides the layout sweep above; the size, the slot count, and
   # what must fit in it are this struct's own.
-  assert SpeciesChemistryLayout.totalSize == 64, "SpeciesChemistry must be 64 bytes"
-  assert SpeciesChemistryLayout.wgslUniformSize == 64, "SpeciesChemistry allocates 64 bytes"
+  assert SpeciesChemistryLayout.totalSize == 96, "SpeciesChemistry must be 96 bytes"
+  assert SpeciesChemistryLayout.wgslUniformSize == 96, "SpeciesChemistry allocates 96 bytes"
   # Both channels hold the same number of slots, and MAX_SPECIES must fit in
-  # them. Raising MAX_SPECIES past 8 means widening the arrays (and the struct
-  # past 64 bytes), not silently dropping the species that do not fit.
+  # them. Raising MAX_SPECIES past the slot count means widening the arrays
+  # (and the struct), not silently dropping the species that do not fit.
   assert SpeciesChemistryLayout.fieldByName("secretion").count * 4 ==
     CHEMISTRY_SPECIES_SLOTS
   assert SpeciesChemistryLayout.fieldByName("tropism").count * 4 ==
     CHEMISTRY_SPECIES_SLOTS
   assert MAX_SPECIES <= CHEMISTRY_SPECIES_SLOTS,
-    "SpeciesChemistry holds 8 species slots; MAX_SPECIES exceeds them"
+    "SpeciesChemistry's species slots cannot hold MAX_SPECIES"
 
 # =============================================================================
 # BLOOMPARAMS / TONEMAPPARAMS FIELD INDICES (HDR bloom, webgpu_render.nim)

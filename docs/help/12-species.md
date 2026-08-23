@@ -14,7 +14,7 @@ those rules.
 - `crowdingStrength` — how much a dense crowd weakens its own attraction.
   Repulsion never weakens, so crowding loosens clumps without letting them
   overlap. Dormant while the species force is off.
-- `ruleTemperature` — how wild a freshly randomized rule set runs. It acts
+- `ruleWildness` — how wild a freshly randomized rule set runs. It acts
   when you press New Rules, so the world answers at the next roll of the
   dice rather than immediately.
 

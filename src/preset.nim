@@ -46,11 +46,15 @@ export config_ranges
 # SECTION 1: SCHEMA VERSION
 # ==============================================================================
 
-const CURRENT_SCHEMA_VERSION* = 3
+const CURRENT_SCHEMA_VERSION* = 4
   ## The schema version this build writes and fully understands.
   ## `validate` rejects any JSON claiming a higher version. Bumps add a
   ## branch to `migrate` that upgrades a node one version forward;
   ## `CURRENT_SCHEMA_VERSION` moves up alongside it.
+  ##
+  ## v4 widens the species ceiling from 8 to 12, by the same mechanism v3
+  ## used: the flattened attraction matrix restrides on load, chemistry and
+  ## palette extend by per-slot repair.
   ##
   ## v3 widens the species ceiling from 6 to 8: the flattened attraction
   ## matrix restrides on load (see `migrate`), while chemistry and palette
@@ -71,25 +75,25 @@ const CURRENT_SCHEMA_VERSION* = 3
 # SECTION 2: SHAPE
 # ==============================================================================
 
-const MAX_SPECIES* = 8
+const MAX_SPECIES* = 12
   ## Mirrors memory_layout.MAX_SPECIES. Not imported directly: memory_layout
   ## is a cross-language contract file (the WGSL twin generates from it),
   ## and this module intentionally carries no dependency on it or on any
   ## other src/ module, to stay a leaf the storage/UI layer can build on
   ## without pulling in FFI-bearing code transitively.
 
-const MATRIX_LEN* = MAX_SPECIES * MAX_SPECIES ## 64: the flattened 8x8 attraction matrix.
+const MATRIX_LEN* = MAX_SPECIES * MAX_SPECIES ## 144: the flattened 12x12 attraction matrix.
 
 const CHEMISTRY_STRIDE* = 2
   ## (secretion, tropism) per species slot. Mirrors config.nim's
   ## SPECIES_CHEMISTRY_STRIDE, as a literal for the same
   ## dependency-restriction reason MAX_SPECIES is one.
 
-const CHEMISTRY_LEN* = MAX_SPECIES * CHEMISTRY_STRIDE ## 16: eight slots, two values each.
+const CHEMISTRY_LEN* = MAX_SPECIES * CHEMISTRY_STRIDE ## 24: twelve slots, two values each.
 
 type
   PaletteColor* = array[3, float] ## Interleaved RGB, each channel in [0, 1].
-  Matrix* = array[MATRIX_LEN, float] ## Row-major 8x8 attraction matrix, values in [-1, 1].
+  Matrix* = array[MATRIX_LEN, float] ## Row-major 12x12 attraction matrix, values in [-1, 1].
   Palette* = array[MAX_SPECIES, PaletteColor] ## One color per species slot.
   Chemistry* = array[CHEMISTRY_LEN, float]
     ## Interleaved (secretion, tropism) per species slot.
@@ -107,7 +111,7 @@ type
     forceStrength*: float
     crowdingStrength*: float
     friction*: float
-    ruleTemperature*: float
+    ruleWildness*: float
     timeScale*: float
     particleSize*: int
     trails*: bool
@@ -215,7 +219,7 @@ func defaultSettings*(): PresetSettings =
     # that never mentions one restores none.
     crowdingStrength: 0.0,
     friction: 0.05,
-    ruleTemperature: 0.3,
+    ruleWildness: 0.3,
     timeScale: 0.5,
     particleSize: 3,
     trails: false,
@@ -371,8 +375,8 @@ proc validateSettings(node: JsonNode): PresetSettings =
     CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX)
   result.friction = clampFloat(
     field(node, "friction").getFloat(defaults.friction), FRICTION_MIN, FRICTION_MAX)
-  result.ruleTemperature = clampFloat(
-    field(node, "ruleTemperature").getFloat(defaults.ruleTemperature), RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX)
+  result.ruleWildness = clampFloat(
+    field(node, "ruleWildness").getFloat(defaults.ruleWildness), RULE_WILDNESS_MIN, RULE_WILDNESS_MAX)
   result.timeScale = clampFloat(
     field(node, "timeScale").getFloat(defaults.timeScale), TIME_SCALE_MIN, TIME_SCALE_MAX)
   result.particleSize = clampInt(
@@ -541,8 +545,15 @@ const LEGACY_MODE_COUPLINGS: array[3, (string, LegacyCouplings)] = [
 const OLD_MAX_SPECIES* = 6
   ## The species ceiling every schemaVersion <= 2 file was written against —
   ## the stride its flattened attraction matrix uses. The v3 branch of
-  ## `migrate` remaps that stride onto MAX_SPECIES; tests/test_preset.nim
+  ## `migrate` remaps that stride onto V3_MAX_SPECIES; tests/test_preset.nim
   ## pins the remap.
+
+const V3_MAX_SPECIES* = 8
+  ## The ceiling a schemaVersion 3 file was written against, and the target of
+  ## the v2 -> v3 restride. Each restride step names both its own strides, so
+  ## the ladder composes: a v2 matrix goes 6 -> 8 -> MAX_SPECIES, one step at a
+  ## time. A step reaching straight for MAX_SPECIES would leave the next step
+  ## reading an already-wide array at the narrow stride.
 
 const V1_FIELD_FORCE_SCALE* = 0.25
   ## What a v1 field force multiplies by to mean the same thing here.
@@ -563,6 +574,27 @@ proc legacyCouplingsFor(modeName: string): LegacyCouplings =
   for (modeId, couplings) in LEGACY_MODE_COUPLINGS:
     if modeId == modeName: return couplings
   LegacyCouplings(keepForces: true, keepFluid: false, keepChemistry: true)
+
+proc restrideMatrix(node: JsonNode; oldStride, newStride: int) =
+  ## Re-lay a flattened row-major attraction matrix from `oldStride` onto
+  ## `newStride`, in place on `node["matrix"]`. Old flat index i (row
+  ## i div oldStride, col i mod oldStride) keeps its row and column; every slot
+  ## in a new row or column stays 0 (neutral). Without the remap, elemAt's
+  ## nil-safe reads would scramble the matrix silently: at stride 6 read as 8,
+  ## old index 6 (row 1, col 0) lands at row 0, col 6.
+  ##
+  ## No-ops on a node carrying no matrix, or one carrying something other than
+  ## an array, leaving the ordinary validation path to repair it.
+  let oldMatrix = field(node, "matrix")
+  if oldMatrix == nil or oldMatrix.kind != JArray:
+    return
+  var restrided = newSeq[JsonNode](newStride * newStride)
+  for slot in 0 ..< restrided.len:
+    restrided[slot] = %0.0
+  for oldIndex in 0 ..< min(oldMatrix.len, oldStride * oldStride):
+    let newIndex = (oldIndex div oldStride) * newStride + (oldIndex mod oldStride)
+    restrided[newIndex] = oldMatrix[oldIndex]
+  node["matrix"] = %restrided
 
 proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
   ## Upgrades a preset JSON node from `fromVersion` to CURRENT_SCHEMA_VERSION.
@@ -613,22 +645,14 @@ proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
       settings["sphRadiusFraction"] = %1.0
   if fromVersion < 3:
     # v2 -> v3: the species ceiling grew from 6 to 8, so the flattened
-    # row-major matrix restrides — old index i (row i div 6, col i mod 6)
-    # keeps its row and column, and every slot in a new row or column stays
-    # 0 (neutral). Without the remap, elemAt's nil-safe reads would scramble
-    # the matrix silently: old index 6 (row 1, col 0) lands at row 0, col 6.
-    # Chemistry and palette are indexed per species slot, so their new slots
-    # repair with defaults through the ordinary validation path.
-    let oldMatrix = field(result, "matrix")
-    if oldMatrix != nil and oldMatrix.kind == JArray:
-      var restrided = newSeq[JsonNode](MATRIX_LEN)
-      for slot in 0 ..< MATRIX_LEN:
-        restrided[slot] = %0.0
-      for oldIndex in 0 ..< min(oldMatrix.len, OLD_MAX_SPECIES * OLD_MAX_SPECIES):
-        let newIndex = (oldIndex div OLD_MAX_SPECIES) * MAX_SPECIES +
-          (oldIndex mod OLD_MAX_SPECIES)
-        restrided[newIndex] = oldMatrix[oldIndex]
-      result["matrix"] = %restrided
+    # row-major matrix restrides. Chemistry and palette are indexed per species
+    # slot, so their new slots repair with defaults through the ordinary
+    # validation path.
+    restrideMatrix(result, OLD_MAX_SPECIES, V3_MAX_SPECIES)
+  if fromVersion < 4:
+    # v3 -> v4: the ceiling grew from 8 to MAX_SPECIES, by the same mechanism,
+    # and chemistry and palette extend the same way.
+    restrideMatrix(result, V3_MAX_SPECIES, MAX_SPECIES)
 
 proc validate*(node: JsonNode): PresetLoadResult =
   ## Validates and normalizes an already-parsed JSON node into a `Preset`.
@@ -698,7 +722,7 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["forceStrength"] = %settings.forceStrength
   result["crowdingStrength"] = %settings.crowdingStrength
   result["friction"] = %settings.friction
-  result["ruleTemperature"] = %settings.ruleTemperature
+  result["ruleWildness"] = %settings.ruleWildness
   result["timeScale"] = %settings.timeScale
   result["particleSize"] = %settings.particleSize
   result["trails"] = %settings.trails

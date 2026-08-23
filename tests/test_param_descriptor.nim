@@ -56,7 +56,7 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       # it scales the attractive half by the receiving particle's local density,
       # and zero is the force law without it.
       "crowdingStrength",
-      "friction", "timeScale", "ruleTemperature", "maxVelocity",
+      "friction", "timeScale", "ruleWildness", "maxVelocity",
       "particleSize", "trailLength",
       "glowIntensity", "velocityGlowScale", "glowRadiusScale", "glowFalloff",
       "glowWarmth",
@@ -213,7 +213,7 @@ suite "Descriptors Agree With The Range Authority":
     ("crowdingStrength", CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX),
     ("friction", FRICTION_MIN, FRICTION_MAX),
     ("timeScale", TIME_SCALE_MIN, TIME_SCALE_MAX),
-    ("ruleTemperature", RULE_TEMPERATURE_MIN, RULE_TEMPERATURE_MAX),
+    ("ruleWildness", RULE_WILDNESS_MIN, RULE_WILDNESS_MAX),
     ("maxVelocity", MAX_VELOCITY_MIN, MAX_VELOCITY_MAX),
     # Render and glow
     ("particleSize", PARTICLE_SIZE_MIN.float, PARTICLE_SIZE_MAX.float),
@@ -279,7 +279,7 @@ suite "Descriptors Agree With The Default Authority":
     ("crowdingStrength", simDefaults.crowdingStrength),
     ("friction", simDefaults.friction),
     ("timeScale", simDefaults.timeScale),
-    ("ruleTemperature", simDefaults.ruleTemperature),
+    ("ruleWildness", simDefaults.ruleWildness),
     ("maxVelocity", simDefaults.maxVelocity),
     ("repulsionEnd", simDefaults.repulsionEnd),
     ("attractionPeak", simDefaults.attractionPeak),

@@ -32,7 +32,7 @@ type
     forceStrength* {.exportc.}: float
     crowdingStrength* {.exportc.}: float
     friction* {.exportc.}: float
-    ruleTemperature* {.exportc.}: float
+    ruleWildness* {.exportc.}: float
     timeScale* {.exportc.}: float
     particleSize* {.exportc.}: int
     trails* {.exportc.}: bool
@@ -161,7 +161,7 @@ proc createConfig(): ConfigObject =
   result.forceStrength = sim.forceStrength
   result.crowdingStrength = sim.crowdingStrength
   result.friction = sim.friction
-  result.ruleTemperature = sim.ruleTemperature
+  result.ruleWildness = sim.ruleWildness
   result.timeScale = sim.timeScale
   result.maxVelocity = sim.maxVelocity
   result.repulsionEnd = sim.repulsionEnd

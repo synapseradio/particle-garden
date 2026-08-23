@@ -206,6 +206,7 @@ const PlaceholderSources = [
   "src/bloom_core.nim",
   "src/colormap_core.nim",
   "src/camera_core.nim",
+  "src/memory_layout.nim",
 ]
   ## The Nim modules whose constants feed {{PLACEHOLDER}} substitution
   ## (shader_config.getPlaceholderMap and the pure modules it draws from).
