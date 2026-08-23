@@ -148,7 +148,7 @@ const
   RefPaletteCount = 8
     ## Species count for the palette-distance probes.
   RefRuleSamples = 16
-    ## Accepted draws the rule-temperature probe averages over.
+    ## Accepted draws the wildness probe averages over.
 
 func forceMultiplierProbe(value: float; ctx: ProbeContext): float =
   ## forceStrength: the shipped attraction-zone force at a fixed separation,
