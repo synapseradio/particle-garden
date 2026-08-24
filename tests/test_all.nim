@@ -17,6 +17,7 @@ import test_sim_config
 import test_sph_core
 import test_shader_manifest
 import test_field_core
+import test_force_budget
 import test_bloom_core
 import test_colormap_core
 import test_glow_core
@@ -58,6 +59,7 @@ static:
   discard test_sph_core.SPH_CORE_TESTS_LOADED
   discard test_shader_manifest.SHADER_MANIFEST_TESTS_LOADED
   discard test_field_core.FIELD_CORE_TESTS_LOADED
+  discard test_force_budget.FORCE_BUDGET_TESTS_LOADED
   discard test_bloom_core.BLOOM_CORE_TESTS_LOADED
   discard test_colormap_core.COLORMAP_CORE_TESTS_LOADED
   discard test_glow_core.GLOW_CORE_TESTS_LOADED
