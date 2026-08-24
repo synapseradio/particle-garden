@@ -9,6 +9,8 @@ import ../src/ui/api/param_descriptor
 import ../src/ui/api/slider_curve
 import ../src/config_ranges
 import ../src/field_core  # SPECIES_CHEMISTRY_STRIDE and the chemistry defaults
+import ../src/physics_core  # FRAME_DT_REFERENCE
+import ../src/sph_core  # SPH_CEILING_REFERENCE_FRAME_SECONDS
 import ../src/ui/state/simulation_state
 import ../src/ui/state/render_state
 import ../src/palette
@@ -762,3 +764,23 @@ suite "The Effective Value Is Bounded Without The Stored One Moving":
       sim.sphSubsteps = substeps
       checkpoint("substeps " & $substeps)
       check effectiveSimulation(sim).sphStiffness == sim.sphStiffness
+
+suite "The Reference Frame Is The One The Ceilings Were Measured At":
+  # Two modules name the frame the shipped constants were measured against, and
+  # they have to mean the same frame. sph_core states the frame its stability
+  # ceiling was bisected at; physics_core states the dt a shipped frame carries.
+  # The second is the first scaled by the shipped Time Scale, and a change to
+  # either default that broke the relation would silently move every ceiling
+  # derived from it.
+
+  test "FRAME_DT_REFERENCE is the ceiling's reference frame at the shipped timeScale":
+    check abs(FRAME_DT_REFERENCE -
+      initSimulationState().timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS) < 1e-12
+
+suite "The Field's Reference Clock Is The Shipped One":
+  # field_core counts its steps at a stated Time Scale and cannot import the
+  # state record to read it. A default that moved without this constant would
+  # silently change how fast the pattern runs at the shipped settings.
+
+  test "RD_REFERENCE_TIME_SCALE is the shipped timeScale default":
+    check RD_REFERENCE_TIME_SCALE == initSimulationState().timeScale

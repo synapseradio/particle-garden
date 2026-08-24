@@ -116,6 +116,12 @@ const
     ## this reference so those measurements stay valid when the substep count
     ## moves. Re-measuring the deposit constants at a new step count is the
     ## only reason to change this number.
+  RD_REFERENCE_TIME_SCALE* = 0.5
+    ## The Time Scale RD_STEPS_PER_FRAME counts steps at — the shipped default
+    ## in ui/state/simulation_state.nim, which tests/test_field_core.nim ties
+    ## this to. Stated here because field_core is pure and cannot import the
+    ## state record.
+
   RD_DEPOSIT_FRAME_SCALE* =
     float(1 + RD_STEPS_PER_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
     ## Multiplier the resolve fold applies to each frame's capped deposit so
@@ -174,6 +180,41 @@ const
     ## difference): mean inhibitor gradient 0.0364 per cell, peak 0.0868. At 30
     ## against the original grid that is roughly 1.5 velocity units per frame
     ## against a maxVelocity of 50.
+
+func rdStepsForTimeScale*(timeScale, referenceTimeScale: float): int =
+  ## Field steps a rendered frame runs at this Time Scale.
+  ##
+  ## The chemistry lives in field steps rather than seconds — RD_DELTA_T is a
+  ## step, and the stability boundary binds it, not the count — so the clock
+  ## reaches the pattern only by changing how many steps a frame runs.
+  ##
+  ## ODD, always: the frame performs 1 + steps ping-pong swaps and an even total
+  ## leaves the live field on the texture nothing reads. Floored at 1 so a slow
+  ## clock still advances the pattern rather than freezing it.
+  ##
+  ## Cost is 1 + steps full-field passes, so it grows with the clock.
+  let raw = float(RD_STEPS_PER_FRAME) * timeScale / referenceTimeScale
+  max(1, 2 * int(round((raw - 1.0) / 2.0)) + 1)
+
+func depositFrameScale*(steps: int): float =
+  ## The per-frame deposit fold at a given field-step count.
+  ##
+  ## Deposits fold once per rendered frame while the chemistry runs `steps`
+  ## times, so the rate per FIELD STEP is what the ignition measurements in this
+  ## module were taken against. Scaling the fold by the step count is what holds
+  ## that rate fixed, so buying pattern speed with Time Scale does not also
+  ## change what it takes to ignite.
+  float(1 + steps) / float(RD_DEPOSIT_STEP_REFERENCE)
+
+func frameScaledFieldForce*(fieldForceScale, frameFactor: float): float =
+  ## The field-force scale a substep writes into FieldParams: the slider's value
+  ## carrying the frame it acts over.
+  ##
+  ## Composed here rather than in field-force.wgsl because the shader has no dt
+  ## to read — FieldParams holds eight floats and none of them is a timestep,
+  ## and adding one would move a binding. frameFactor is physics_core.frameFactor
+  ## of the substep's dt, so n substeps sum to what one whole frame delivers.
+  fieldForceScale * frameFactor
 # ==============================================================================
 # HOW BIG THE PATTERN DRAWS
 # ==============================================================================

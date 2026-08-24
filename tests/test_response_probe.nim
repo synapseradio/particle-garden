@@ -22,6 +22,8 @@ import ../src/config_ranges
 import ../src/ui/api/param_descriptor
 import ../src/ui/api/response_probe
 import ../src/ui/api/slider_curve
+from ../src/physics_core import FRAME_DT_REFERENCE, frameFactor
+from ../src/field_core import RD_REFERENCE_TIME_SCALE
 
 let descriptors = buildParamDescriptors()
 let registry = probeRegistry()
@@ -256,3 +258,29 @@ suite "The Measured Table Is The Deliverable":
       "docs" / "control-legibility-report.md"
     writeFile(reportPath, markdown & "\n" & PreCalibrationTable)
     check fileExists(reportPath)
+
+suite "The Time Scale Probe Reports An Impulse":
+  # The probe used to call its number a distance travelled in one frame.
+  # integrate.wgsl advances pos += vel with no dt, so no frame duration enters
+  # that product and nothing in the simulation computes it. What Time Scale
+  # really buys is the impulse a given acceleration delivers over a frame, and
+  # that is what physics_core.frameFactor measures in multiples of the
+  # reference frame.
+
+  let timeScaleProbeFn = probeRegistry()["motion.frameTravel"].fn
+  let ctx = defaultProbeContext()
+
+  proc frameDtAt(timeScale: float): float =
+    ## The dt a frame carries at this Time Scale: app.nim scales the frame's
+    ## seconds by it, so the reference Time Scale yields the reference frame.
+    FRAME_DT_REFERENCE * timeScale / RD_REFERENCE_TIME_SCALE
+
+  test "the probe tracks the frame factor of the frame that Time Scale buys":
+    let atReference = timeScaleProbeFn(RD_REFERENCE_TIME_SCALE, ctx)
+    for timeScale in [0.1, 0.25, RD_REFERENCE_TIME_SCALE, 1.0, 2.5, 5.0]:
+      checkpoint("timeScale " & $timeScale)
+      check abs(timeScaleProbeFn(timeScale, ctx) -
+        atReference * frameFactor(frameDtAt(timeScale))) < 1e-9
+
+  test "a stopped clock delivers no impulse":
+    check timeScaleProbeFn(0.0, ctx) == 0.0

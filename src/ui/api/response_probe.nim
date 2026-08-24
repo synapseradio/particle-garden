@@ -120,7 +120,12 @@ const
     ## Density over rest density where pressure probes read the equation of
     ## state — the working compression, well under the 2.0 Tait clamp.
   RefFrameSpeed = 30.0
-    ## Reference speed in px/frame for the travel and friction probes.
+    ## Reference speed in px/frame for the friction probe.
+  RefAccel = RefFrameSpeed / FRAME_DT_REFERENCE
+    ## Reference acceleration in px per frame per second, for the Time Scale
+    ## probe. Derived from the speed above so the two probes describe one
+    ## reference motion: over the reference frame this acceleration delivers
+    ## exactly RefFrameSpeed.
   RefCapProbeSpeed = MAX_VELOCITY_MAX * 3.0
     ## A speed far above every reachable cap, so the soft cap always acts.
     ## Derived from the range it must outrun.
@@ -192,9 +197,14 @@ func maxVelocityProbe(value: float; ctx: ProbeContext): float =
   postStepSpeed(RefCapProbeSpeed.float32, 1.0'f32, value.float32).float
 
 func timeScaleProbe(value: float; ctx: ProbeContext): float =
-  ## timeScale: how far a reference speed travels in one rendered frame.
-  ## app.nim multiplies the frame's dt by timeScale before anything integrates.
-  RefFrameSpeed * value
+  ## timeScale: the velocity impulse a reference acceleration delivers in one
+  ## rendered frame. app.nim multiplies the frame's seconds by timeScale, and
+  ## every force pass that carries dt multiplies its acceleration by the result,
+  ## so this is the quantity the slider actually moves.
+  ##
+  ## Not a travel distance: integrate.wgsl advances pos += vel with no dt, so no
+  ## frame duration multiplies a position anywhere in the simulation.
+  RefAccel * value * FRAME_DT_REFERENCE
 
 func ruleWildnessProbe(value: float; ctx: ProbeContext): float =
   ## ruleWildness: the mean magnitude of accepted rule draws at sigma =
@@ -310,7 +320,7 @@ func sphViscosityProbe(value: float; ctx: ProbeContext): float =
   ## and the XSPH epsilon into one symmetric diffusion coefficient, so the
   ## mirror's XSPH summand carries it with epsilon = viscosity + the constant.
   xsphVelocityCorrection(0.0, RefVelocityGap, RefNeighborWeight,
-    value + SPH_XSPH_EPSILON)
+    value + SPH_XSPH_EPSILON, frameFactor(FRAME_DT_REFERENCE))
 
 func sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
   ## sphRadiusFraction: the stable stiffness ceiling the fraction buys — the

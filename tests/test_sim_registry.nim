@@ -315,10 +315,89 @@ suite "Profiler Slot Constants":
       PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE]
     check toHashSet(slots).len == slots.len
 
-  test "every frame's compute passes hold distinct profiler slots":
+  test "PROFILER_SLOT_NONE indexes no query slot":
+    # It marks the absence of a slot, so it must not collide with a real one.
+    check PROFILER_SLOT_NONE notin [PROFILER_SLOT_GRID_BUILD,
+      PROFILER_SLOT_PHYSICS, PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE]
+
+  test "every frame's timestamped compute passes hold distinct profiler slots":
+    # Passes carrying PROFILER_SLOT_NONE write no timestamps, so any number of
+    # them may share it; what cannot repeat is a slot that indexes the query set.
     for couplings in ALL_COUPLINGS:
       var seenSlots: HashSet[int]
       for node in buildFrame(couplings):
-        if node.kind == fnkComputePass:
+        if node.kind == fnkComputePass and
+            node.profilerSlot != PROFILER_SLOT_NONE:
           check node.profilerSlot notin seenSlots
           seenSlots.incl node.profilerSlot
+
+suite "The Field Chemistry Runs Once Per Rendered Frame":
+  # The executor encodes this description once per substep, so before cadences
+  # existed a fluid world multiplied the chemistry: three substeps meant three
+  # times the pattern evolution and three deposit folds per rendered frame,
+  # which made Fluid Strength a hidden control on how fast the pattern moves.
+  # The chemistry now carries a per-frame cadence; the field force does not,
+  # because it contributes a velocity delta that every substep integrates.
+
+  proc nodesWithCadence(couplings: WorldCouplings;
+      cadence: FrameNodeCadence): seq[string] =
+    for node in buildFrame(couplings):
+      if node.cadence == cadence:
+        case node.kind
+        of fnkComputePass:
+          for step in node.dispatches:
+            result.add step.pipelineKey
+        of fnkClearBuffer: result.add "clear:" & $node.clearTarget
+        of fnkCopyBuffer: result.add "copy:" & $node.copySource
+
+  test "the chemistry chain and the alive census run once per frame":
+    for couplings in ALL_COUPLINGS:
+      let oncePerFrame = nodesWithCadence(couplings, fncOncePerFrame)
+      check "fieldResolve" in oncePerFrame
+      check "rdStepToFront" in oncePerFrame
+      check "clear:sbFieldAlive" in oncePerFrame
+
+  test "the field force runs every substep":
+    for couplings in ALL_COUPLINGS:
+      if dispatchesPipeline(couplings, "fieldForce"):
+        check "fieldForce" in nodesWithCadence(couplings, fncEverySubstep)
+
+  test "the deposit fold runs once per frame wherever it runs at all":
+    for couplings in ALL_COUPLINGS:
+      if dispatchesPipeline(couplings, "fieldDeposit"):
+        check "fieldDeposit" in nodesWithCadence(couplings, fncOncePerFrame)
+
+  test "every delta clear and the grid build run every substep":
+    # These reset what a substep accumulates and rebuild what it reads, so a
+    # substep that skipped them would integrate the previous substep's deltas.
+    for couplings in ALL_COUPLINGS:
+      let everySubstep = nodesWithCadence(couplings, fncEverySubstep)
+      for key in ["clear:sbVelocityDelta", "clear:sbDensityDelta",
+          "clear:sbSphDensityDelta", "clear:sbCrowdDensityDelta",
+          "clear:sbGridCounts", "binCount", "forces", "integrate"]:
+        check key in everySubstep
+
+  test "the ping-pong chain closes inside the per-frame group":
+    # fieldResolve is itself a swap, so the frame performs 1 + RD_STEPS_PER_FRAME
+    # of them and must land the live field back on the front texture. Splitting
+    # the field force out of this group must not have taken a swap with it.
+    for couplings in ALL_COUPLINGS:
+      let oncePerFrame = nodesWithCadence(couplings, fncOncePerFrame)
+      var swaps = 0
+      for key in oncePerFrame:
+        if key in ["fieldResolve", "rdStepToFront", "rdStepToTrail"]:
+          swaps.inc
+      check swaps == 1 + RD_STEPS_PER_FRAME
+      # An even total returns the live field to the texture it started on,
+      # which is the one the renderer, the field force and the next frame's
+      # resolve all read. field_core asserts RD_STEPS_PER_FRAME odd for it.
+      check swaps mod 2 == 0
+
+  test "no compute pass mixes two cadences":
+    # A pass is the unit the executor skips, so two cadences inside one node
+    # could only be honoured by skipping both or neither.
+    for couplings in ALL_COUPLINGS:
+      for node in buildFrame(couplings):
+        if node.kind == fnkComputePass and node.cadence == fncOncePerFrame:
+          for step in node.dispatches:
+            check step.pipelineKey != "fieldForce"

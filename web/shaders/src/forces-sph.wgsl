@@ -265,13 +265,17 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
         // Per-pair velocity delta for THIS particle: pressure repels along -dir
         // (away from other, scaled by dt like every force), plus the velocity
-        // blend (a direct velocity correction, not scaled by dt).
+        // blend. The blend carries the frame as a multiple of the frame the
+        // stability bound was measured at, so both halves of what fluidStrength
+        // multiplies answer to Time Scale the same way; at the reference frame
+        // the factor is 1 and the blend is what it always was.
         // The one site fluidStrength multiplies. Both terms are summed here, so
         // everything this pass does to a velocity passes through it.
+        let frameFactor = params.dt * {{TUNABLE_INV_FRAME_DT_REFERENCE}};
         let pairDeltaVelocityX = fluidStrength *
-          ((-pressureAccel * directionX) * params.dt + velocitySmoothCoeff * velocityDiffX);
+          ((-pressureAccel * directionX) * params.dt + velocitySmoothCoeff * velocityDiffX * frameFactor);
         let pairDeltaVelocityY = fluidStrength *
-          ((-pressureAccel * directionY) * params.dt + velocitySmoothCoeff * velocityDiffY);
+          ((-pressureAccel * directionY) * params.dt + velocitySmoothCoeff * velocityDiffY * frameFactor);
 
         deltaVelocityThisX += pairDeltaVelocityX;
         deltaVelocityThisY += pairDeltaVelocityY;

@@ -112,19 +112,24 @@ func flooredTaitPressure*(density, restDensity, stiffness, gamma: float):
   taitPressure(max(density, restDensity), restDensity, stiffness, gamma)
 
 func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
-    epsilon: float): float =
+    epsilon, frameFactor: float): float =
   ## One neighbor's contribution to the XSPH velocity-smoothing term, evaluated
   ## per velocity axis. The full XSPH correction is
   ##     ε Σⱼ (mⱼ/ρⱼ) (vⱼ - vᵢ) Wᵢⱼ,
-  ## and this returns one summand along one axis: ε · w · (vⱼ - vᵢ), where w is
-  ## the normalized neighbor weight (mⱼ/ρⱼ)·Wᵢⱼ.
+  ## and this returns one summand along one axis: ε · w · (vⱼ - vᵢ) · f, where w
+  ## is the normalized neighbor weight (mⱼ/ρⱼ)·Wᵢⱼ and f the frame factor.
   ##
-  ## w is clamped to [0, 1] so that a single neighbor pair can never move the
-  ## velocity by more than ε times the velocity gap |vⱼ - vᵢ| — the bound that
-  ## keeps the smoothing from overshooting. The caller sums the per-neighbor
-  ## corrections to form the full term.
+  ## frameFactor is physics_core.frameFactor of the substep's dt. It is a
+  ## required argument because the pressure term this sums with already carries
+  ## dt, so a caller that omitted the frame would silently give one half of the
+  ## fluid a different response to Time Scale than the other.
+  ##
+  ## w is clamped to [0, 1] so that at the reference frame a single neighbor
+  ## pair can never move the velocity by more than ε times the velocity gap
+  ## |vⱼ - vᵢ| — the bound that keeps the smoothing from overshooting. The
+  ## caller sums the per-neighbor corrections to form the full term.
   let weight = max(0.0, min(1.0, neighborWeight))
-  epsilon * weight * (velocityNeighbor - velocitySelf)
+  epsilon * weight * (velocityNeighbor - velocitySelf) * frameFactor
 
 const
   SPH_STABILITY_COEFFICIENT* = 0.0025

@@ -9,7 +9,7 @@ rendered frame encodes. `tests/test_force_budget.nim` writes this file.
 
 | what | value |
 |---|---|
-| commit | c3875f3b8913 |
+| commit | 39b01c667a98 |
 | seed | 0x9E3779B9, a fixed LCG |
 | world | 3840 x 2160 px, toroidal |
 | particles | 16000 |
@@ -24,7 +24,7 @@ rendered frame encodes. `tests/test_force_budget.nim` writes this file.
 | field horizon | 250 frames of field alone, then 120 settling and 20 measured |
 | settling tolerance | 0.05 relative drift across the window |
 | species agreement tolerance | 1e-4 relative, against an all-pairs reference |
-| runtime | 0.041 s per frame at 16000 particles |
+| runtime | 0.042 s per frame at 16000 particles |
 
 The field runs on a periodic patch of the shipped grid, 128 by 128 cells at the shipped 1.875 px per cell, holding
 the 111 particles the reference number density
@@ -165,14 +165,18 @@ Shared axis, every coupling at full scale.
 
 | timeScale | species mean | fluid mean | field mean |
 |---|---|---|---|
-| 0.10 | 1.126e-02 | 1.035e-02 | 7.620e-02 |
-| 0.50 | 5.311e-02 | 4.785e-02 | 1.228e-01 |
-| 5.00 | 5.003e-01 | 4.989e-01 | 9.114e-01 |
+| 0.10 | 1.126e-02 | 1.035e-02 | 1.779e-02 |
+| 0.50 | 5.311e-02 | 4.785e-02 | 8.910e-02 |
+| 5.00 | 5.003e-01 | 4.989e-01 | 1.911e+00 |
 
 `params.dt` is a gain rather than a timestep: `integrate.wgsl` advances position
 by the velocity itself with no dt. The species force multiplies by dt once and
-so scales with this axis. The field force never multiplies by dt and so does
-not.
+so scales with this axis. The field force reaches the axis by two routes at
+once. `frameScaledFieldForce` multiplies its gain by the frame's dt as a
+multiple of `FRAME_DT_REFERENCE`, and `rdStepsForTimeScale` sets how many
+reaction-diffusion steps a frame runs, so the pattern the force reads evolves at
+a rate this axis sets too. The two compound, which is why the column climbs
+faster than the axis above the reference.
 
 ## sphSubsteps
 
@@ -182,12 +186,15 @@ acts, because `webgpu_compute` encodes one substep per frame otherwise.
 | sphSubsteps | species mean | fluid mean | field mean |
 |---|---|---|---|
 | 1 | 5.340e-02 | 5.382e-02 | 1.030e-01 |
-| 3 | 5.315e-02 | 4.755e-02 | 1.370e-01 |
+| 3 | 5.315e-02 | 4.755e-02 | 8.594e-02 |
 
-The whole frame description repeats once per substep, so the reaction-diffusion
-chain, the deposit fold and the field force all run sphSubsteps times. The
-species force divides dt by the substep count and runs that many times, so its
-total over a frame is left where it was.
+The chemistry carries `fncOncePerFrame`, so the deposit fold and the
+reaction-diffusion chain run once however many substeps the frame encodes, and
+the field the force reads is the same field at either substep count. The species
+force and the field force divide dt by the substep count and run that many
+times, so what each sums over a frame is left where it was. That leaves one
+route for this axis to reach either column: particles move between substeps and
+therefore sample their neighbors and the field from different places.
 
 ## Number density
 
@@ -197,20 +204,22 @@ world is held and the count varies.
 
 | density | species mean | fluid mean | field mean |
 |---|---|---|---|
-| 0.5x | 3.832e-02 | 3.072e-02 | 1.228e-01 |
-| 1.0x | 5.311e-02 | 4.785e-02 | 1.228e-01 |
-| 2.0x | 7.483e-02 | 7.363e-02 | 1.228e-01 |
+| 0.5x | 3.832e-02 | 3.072e-02 | 8.910e-02 |
+| 1.0x | 5.311e-02 | 4.785e-02 | 8.910e-02 |
+| 2.0x | 7.483e-02 | 7.363e-02 | 8.910e-02 |
 
 ## Interaction radius
 
-Shared axis, every coupling at full scale. The field force reads no radius, so
-its column is flat by construction rather than by measurement.
+Shared axis, every coupling at full scale. No term of the field force reads the
+interaction radius. Its column still moves along this axis, because a wider
+radius changes where the species force carries the particles, and a particle
+elsewhere reads a different part of the pattern.
 
 | interactionRadius | species mean | fluid mean | field mean |
 |---|---|---|---|
-| 10 | 4.699e-03 | 2.025e-03 | 7.622e-02 |
-| 50 | 5.311e-02 | 4.785e-02 | 1.228e-01 |
-| 150 | 1.596e-01 | 1.582e-01 | 1.713e-01 |
+| 10 | 4.699e-03 | 2.025e-03 | 4.007e-02 |
+| 50 | 5.311e-02 | 4.785e-02 | 8.910e-02 |
+| 150 | 1.596e-01 | 1.582e-01 | 1.404e-01 |
 
 ## The octave band
 

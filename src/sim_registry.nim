@@ -151,9 +151,19 @@ type
     fnkCopyBuffer
     fnkComputePass
 
+  FrameNodeCadence* = enum
+    ## How often the executor encodes a node inside one rendered frame.
+    fncEverySubstep  ## Once per substep, which is what substepping is for.
+    fncOncePerFrame  ## Once per rendered frame, however many substeps run.
+
   FrameNode* = object
     ## One step of a frame: an encoder-level buffer operation or a compute
     ## pass grouping dispatches under a label and a profiler slot.
+    ##
+    ## A node is the unit the executor skips, so a node holds exactly one
+    ## cadence: work that must run per substep and work that must not cannot
+    ## share one.
+    cadence*: FrameNodeCadence
     case kind*: FrameNodeKind
     of fnkClearBuffer:
       clearTarget*: SimBuffer
@@ -180,6 +190,10 @@ const
     ## Mirrors gpu_profiler.passField — the Gray-Scott field pass. Distinct
     ## from PROFILER_SLOT_GRID_BUILD because both passes run every frame, so
     ## one slot could only report their sum.
+  PROFILER_SLOT_NONE* = -1
+    ## A pass that writes no timestamps. gpu_profiler holds one query slot per
+    ## pass, so two passes sharing a slot in one encoder would overwrite each
+    ## other's query; a pass with no slot of its own carries this instead.
   PROFILER_SLOT_INTEGRATE* = 6
     ## Mirrors gpu_profiler.passIntegrate. integrate sits outside the physics
     ## pass because it must run after the field passes and the field passes
@@ -187,23 +201,32 @@ const
     ## app.nim adds this slot into the reported physics time, so the number the
     ## stats show covers forces and integrate together.
 
-func clearBufferNode*(target: SimBuffer): FrameNode =
-  FrameNode(kind: fnkClearBuffer, clearTarget: target)
+func clearBufferNode*(target: SimBuffer;
+    cadence: FrameNodeCadence = fncEverySubstep): FrameNode =
+  FrameNode(kind: fnkClearBuffer, clearTarget: target, cadence: cadence)
 
-func copyBufferNode*(source, dest: SimBuffer): FrameNode =
-  FrameNode(kind: fnkCopyBuffer, copySource: source, copyDest: dest)
+func copyBufferNode*(source, dest: SimBuffer;
+    cadence: FrameNodeCadence = fncEverySubstep): FrameNode =
+  FrameNode(kind: fnkCopyBuffer, copySource: source, copyDest: dest,
+    cadence: cadence)
 
 func computePassNode*(label: string, profilerSlot: int,
-    dispatches: seq[Dispatch]): FrameNode =
+    dispatches: seq[Dispatch];
+    cadence: FrameNodeCadence = fncEverySubstep): FrameNode =
   FrameNode(kind: fnkComputePass, label: label, profilerSlot: profilerSlot,
-    dispatches: dispatches)
+    dispatches: dispatches, cadence: cadence)
 
 func dispatch*(pipelineKey: string, size: DispatchSize): Dispatch =
   Dispatch(pipelineKey: pipelineKey, size: size)
 
-func buildFrame*(couplings: WorldCouplings): FrameDescription =
+func buildFrame*(couplings: WorldCouplings;
+    rdSteps: int = RD_STEPS_PER_FRAME): FrameDescription =
   ## The full GPU frame this world runs: everything world-intrinsic, plus each
   ## coupling whose strength is not zero.
+  ##
+  ## rdSteps is how many Gray-Scott steps the chemistry runs this frame, which
+  ## Time Scale sets through field_core.rdStepsForTimeScale. It must be odd for
+  ## the ping-pong chain to close, which that function guarantees.
   ##
   ## READ THIS AS A UNION, NEVER AS A TABLE OF WORLDS. The intrinsic sequence is
   ## always present and always in this order; each `acts(...)` guard inserts one
@@ -236,7 +259,9 @@ func buildFrame*(couplings: WorldCouplings): FrameDescription =
     clearBufferNode(sbDensityDelta),
     clearBufferNode(sbSphDensityDelta),
     clearBufferNode(sbCrowdDensityDelta),
-    clearBufferNode(sbFieldAlive),
+    # The census counts the field the chemistry leaves, so it resets on the
+    # chemistry's cadence rather than the substep's.
+    clearBufferNode(sbFieldAlive, fncOncePerFrame),
     # gridCounts must start at zero for bin-count's atomic increments.
     clearBufferNode(sbGridCounts),
   ]
@@ -274,34 +299,48 @@ func buildFrame*(couplings: WorldCouplings): FrameDescription =
     fieldDispatches.add dispatch("fieldDeposit", dsParticleWorkgroups)
   fieldDispatches.add dispatch("fieldResolve", dsFieldWorkgroups)
 
-  # RD_STEPS_PER_FRAME Gray-Scott substeps, alternating which of the two
+  # rdSteps Gray-Scott substeps, alternating which of the two
   # field-texture copies is read from vs. written to each substep (the ping-pong
   # pattern a storage texture needs since a shader cannot read and write the
   # same texture binding in one dispatch).
   #
   # THE CHAIN MUST CLOSE. fieldResolve above is itself a ping-pong stage — it
   # reads the front texture and writes the trailing one — so the frame performs
-  # 1 + RD_STEPS_PER_FRAME swaps in total. The substeps therefore start on the
+  # 1 + rdSteps swaps in total. The substeps therefore start on the
   # texture resolve just wrote (the trail, hence ToFront first) and must end back
   # on the front, which is what the renderer, fieldForce, and the next frame's
-  # resolve all read. That closure is why field_core statically asserts
-  # RD_STEPS_PER_FRAME is odd: an even count leaves the live field on the
-  # trailing texture where nothing looks for it, silently discarding the last
-  # substep every single frame.
+  # resolve all read. That closure is why the count must be odd: an even count
+  # leaves the live field on the trailing texture where nothing looks for it,
+  # silently discarding the last substep every single frame. field_core asserts
+  # it of RD_STEPS_PER_FRAME and guarantees it of every count
+  # rdStepsForTimeScale returns.
   #
   # Both stages are unguarded, and the parity argument is why that matters
   # beyond the field being intrinsic: skipping fieldResolve at zero deposit
   # would remove one swap and land the live field on the wrong texture.
-  for stepIndex in 0 ..< RD_STEPS_PER_FRAME:
+  for stepIndex in 0 ..< rdSteps:
     if stepIndex mod 2 == 0:
       fieldDispatches.add dispatch("rdStepToFront", dsFieldWorkgroups)
     else:
       fieldDispatches.add dispatch("rdStepToTrail", dsFieldWorkgroups)
 
-  if acts(couplings.fieldForce):
-    fieldDispatches.add dispatch("fieldForce", dsParticleWorkgroups)
+  # The chemistry evolves once per rendered frame. The executor encodes this
+  # description once per substep, so without the cadence a fluid world ran the
+  # pattern forward sphSubsteps times per frame and folded the deposit that many
+  # times, which made Fluid Strength a second, undeclared control on how fast the
+  # pattern moves.
   result.add computePassNode(
-    "Field (RD)", PROFILER_SLOT_FIELD, fieldDispatches)
+    "Field (RD)", PROFILER_SLOT_FIELD, fieldDispatches, fncOncePerFrame)
+
+  # The field force writes a velocity delta, and every substep clears that buffer
+  # and integrates what it holds, so this runs per substep like every other
+  # contributor. Its own node because a node carries one cadence; its own
+  # dispatch is cheap, and the frame scale webgpu_compute writes into
+  # FieldParams already divides a frame's worth of push across the substeps.
+  if acts(couplings.fieldForce):
+    result.add computePassNode("Field Force", PROFILER_SLOT_NONE, @[
+      dispatch("fieldForce", dsParticleWorkgroups),
+    ])
 
   # integrate always closes the frame: it is the one pass that reads the
   # summed deltas and moves particles, so every contributor must already have

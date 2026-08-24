@@ -13,6 +13,7 @@ import ../src/sph_core
 import ../src/shader_config
 
 from ../src/memory_layout import MAX_PARTICLES
+from ../src/physics_core import FRAME_DT_REFERENCE, frameFactor
 # The stability harness below runs the fluid at the shipped defaults, so it
 # reads them from the default authority rather than restating any of them.
 from ../src/ui/state/simulation_state import initSimulationState
@@ -31,6 +32,11 @@ const SPH_CORE_TESTS_LOADED* = true
 # tolerance (1e-3) since it is a Riemann approximation, not an exact identity.
 const EPSILON = 1e-9
 const INTEGRAL_TOLERANCE = 1e-3
+
+let atReferenceFrame = frameFactor(FRAME_DT_REFERENCE)
+  ## Every kernel and pressure number in this suite was measured on a frame
+  ## worth FRAME_DT_REFERENCE, so the XSPH calls that are not about the frame
+  ## pass this and read exactly what they read before the frame reached them.
 
 proc integratePoly6OverDisc(smoothingRadius: float; steps: int): float =
   ## Numerically integrate poly6Weight2d(r, h) * 2*pi*r dr over [0, h] with the
@@ -156,10 +162,11 @@ suite "The Smoothing Radius Is A Fraction Of The Interaction Radius":
         check normalizedGradientWeight(distance, scaled) ==
           normalizedGradientWeight(distance, interactionRadius)
         check xsphVelocityCorrection(3.0, 11.0,
-            normalizedDensityWeight(distance, scaled), SPH_XSPH_EPSILON) ==
+            normalizedDensityWeight(distance, scaled), SPH_XSPH_EPSILON,
+            atReferenceFrame) ==
           xsphVelocityCorrection(3.0, 11.0,
             normalizedDensityWeight(distance, interactionRadius),
-            SPH_XSPH_EPSILON)
+            SPH_XSPH_EPSILON, atReferenceFrame)
 
   test "kernel normalization holds across the fraction range":
     # CONTRACT: the poly6 constant is derived from h rather than precomputed
@@ -267,17 +274,22 @@ suite "XSPH Velocity Correction Is Bounded By Epsilon Times The Velocity Gap":
         for neighborWeight in [-0.5, 0.0, 0.3, 1.0, 2.0]:
           for epsilon in [0.0, SPH_XSPH_EPSILON, 1.0]:
             let correction = xsphVelocityCorrection(
-              velocitySelf, velocityNeighbor, neighborWeight, epsilon)
+              velocitySelf, velocityNeighbor, neighborWeight, epsilon,
+              atReferenceFrame)
             let velocityGap = abs(velocityNeighbor - velocitySelf)
             check abs(correction) <= epsilon * velocityGap + EPSILON
 
   test "the correction points toward the neighbor velocity":
-    check xsphVelocityCorrection(5.0, 10.0, 0.5, SPH_XSPH_EPSILON) > 0.0
-    check xsphVelocityCorrection(5.0, 0.0, 0.5, SPH_XSPH_EPSILON) < 0.0
+    check xsphVelocityCorrection(5.0, 10.0, 0.5, SPH_XSPH_EPSILON,
+      atReferenceFrame) > 0.0
+    check xsphVelocityCorrection(5.0, 0.0, 0.5, SPH_XSPH_EPSILON,
+      atReferenceFrame) < 0.0
 
   test "a zero weight or zero epsilon yields no correction":
-    check xsphVelocityCorrection(5.0, 10.0, 0.0, SPH_XSPH_EPSILON) == 0.0
-    check xsphVelocityCorrection(5.0, 10.0, 0.5, 0.0) == 0.0
+    check xsphVelocityCorrection(5.0, 10.0, 0.0, SPH_XSPH_EPSILON,
+      atReferenceFrame) == 0.0
+    check xsphVelocityCorrection(5.0, 10.0, 0.5, 0.0, atReferenceFrame) == 0.0
+    check xsphVelocityCorrection(5.0, 10.0, 0.5, SPH_XSPH_EPSILON, 0.0) == 0.0
 
 
 suite "SPH Tuning Constants Are In Physical Range":
@@ -802,3 +814,45 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
         checkpoint("fraction " & $fraction & ", substeps " & $substeps)
         check ceiling > previous
         previous = ceiling
+
+suite "XSPH Smoothing Answers To The Frame":
+  # The pressure term already multiplies by params.dt, so Time Scale reaches it.
+  # The velocity blend did not, which left half of what fluidStrength multiplies
+  # deaf to the clock. These hold the blend to the same response, and hold the
+  # reference frame itself unmoved so no shipped number shifts.
+
+  test "the correction is unchanged at the reference frame":
+    check xsphVelocityCorrection(3.0, 11.0, 0.4, SPH_XSPH_EPSILON,
+        frameFactor(FRAME_DT_REFERENCE)) ==
+      SPH_XSPH_EPSILON * 0.4 * (11.0 - 3.0)
+
+  test "the correction is proportional to the frame factor":
+    let atReference = xsphVelocityCorrection(3.0, 11.0, 0.4, SPH_XSPH_EPSILON, 1.0)
+    for factor in [0.0, 0.25, 1.0, 2.5, 10.0]:
+      check abs(xsphVelocityCorrection(3.0, 11.0, 0.4, SPH_XSPH_EPSILON, factor) -
+        atReference * factor) < 1e-12
+
+  test "a frame split into substeps blends by the same total":
+    # The pass runs once per substep, so n substeps of dt/n must deliver what
+    # one step of dt delivers, exactly as the pressure term already does.
+    for substeps in [1, 2, 3]:
+      let dt = 2.0 * FRAME_DT_REFERENCE
+      let perSubstep = xsphVelocityCorrection(3.0, 11.0, 0.4, SPH_XSPH_EPSILON,
+        frameFactor(dt / substeps.float))
+      check abs(perSubstep * substeps.float -
+        xsphVelocityCorrection(3.0, 11.0, 0.4, SPH_XSPH_EPSILON,
+          frameFactor(dt))) < 1e-12
+
+  test "one pair still cannot overshoot the velocity gap at the reference frame":
+    # The bound that keeps the smoothing from overshooting. It is stated at the
+    # reference frame because that is where it was measured; above it the blend
+    # strengthens with the clock, the way the pressure term already does.
+    for velocitySelf in [-10.0, 0.0, 3.5, 20.0]:
+      for velocityNeighbor in [-20.0, 0.0, 7.0, 15.0]:
+        for neighborWeight in [-0.5, 0.0, 0.3, 1.0, 2.0]:
+          for epsilon in [0.0, SPH_XSPH_EPSILON, 1.0]:
+            let correction = xsphVelocityCorrection(velocitySelf,
+              velocityNeighbor, neighborWeight, epsilon,
+              frameFactor(FRAME_DT_REFERENCE))
+            check abs(correction) <=
+              epsilon * abs(velocityNeighbor - velocitySelf) + EPSILON

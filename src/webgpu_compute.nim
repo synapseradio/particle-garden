@@ -36,6 +36,7 @@ import sim_registry
 import shader_manifest
 import sph_core
 import field_core
+from physics_core import frameFactor
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -88,6 +89,9 @@ var isPipelineReady* {.exportc.}: bool = false
 # crosses zero, never per frame — see sim_registry.nim.
 var activeFrame: FrameDescription = @[]
 var activeCouplings*: WorldCouplings
+var activeRdSteps = 0
+  ## Field steps the active description encodes. Zero until the first build, so
+  ## the first setCouplings always builds.
   ## Zero until app.nim's subscription delivers the live strengths, which it
   ## does before the frame loop starts. This module sits below the typed state
   ## in the import order and reads the couplings only through setCouplings.
@@ -149,11 +153,17 @@ proc setCouplings*(couplings: WorldCouplings) =
   ## ignites where colonies deposit, which is what makes the pattern a record of
   ## the particles rather than a backdrop they sit on. Seeding is only ever a
   ## deliberate user action (requestFieldSeed).
+  ## Time Scale rebuilds too: it sets how many Gray-Scott steps a frame runs,
+  ## and the step count is part of the description rather than a uniform.
+  let rdSteps = rdStepsForTimeScale(config.CONFIG.timeScale,
+    RD_REFERENCE_TIME_SCALE)
   let rebuild = activeFrame.len == 0 or
-    not sameFrameShape(activeCouplings, couplings)
+    not sameFrameShape(activeCouplings, couplings) or
+    rdSteps != activeRdSteps
   activeCouplings = couplings
+  activeRdSteps = rdSteps
   if rebuild:
-    activeFrame = buildFrame(couplings)
+    activeFrame = buildFrame(couplings, rdSteps)
 
 proc jsArrayLength*(arr: JsObject): int {.importjs: "#.length".}
 proc jsArrayFilter*(arr: JsObject, predicate: proc(item: JsObject): bool): JsObject {.importjs: "#.filter(#)".}
@@ -776,8 +786,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   fieldParamsData[FIELD_DIFFUSION_A] = float32(RD_DIFFUSION_A)
   fieldParamsData[FIELD_DIFFUSION_B] = float32(RD_DIFFUSION_B)
   fieldParamsData[FIELD_DELTA_T] = float32(RD_DELTA_T)
-  fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(config.CONFIG.rdDeposit)
-  fieldParamsData[FIELD_FORCE_SCALE] = float32(config.CONFIG.rdFieldForce)
+  # field-resolve.wgsl multiplies the deposit by the RD_DEPOSIT_FRAME_SCALE the
+  # bundler substituted, which is pinned to the shipped step count. Time Scale
+  # moves the live count, so the ratio here restores the product: the deposit
+  # rate per FIELD STEP is what every ignition constant was measured against,
+  # and holding it fixed is what keeps Time Scale a speed control rather than a
+  # second control on what it takes to ignite.
+  fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(config.CONFIG.rdDeposit *
+    depositFrameScale(activeRdSteps) / RD_DEPOSIT_FRAME_SCALE)
+  fieldParamsData[FIELD_FORCE_SCALE] =
+    float32(frameScaledFieldForce(config.CONFIG.rdFieldForce,
+      frameFactor(substepDt)))
   fieldParamsData[FIELD_SEED_NONCE] = float32(fieldSeedNonce)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["fieldParams"]), 0, fieldParamsData)
 
@@ -878,6 +897,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     # the first substep so multiple substeps never double-write the same query.
     let attachProfiling = (substep == 0)
     for node in activeFrame:
+      if node.cadence == fncOncePerFrame and substep > 0:
+        continue
       case node.kind
       of fnkClearBuffer:
         commandEncoder.clearBuffer(gpuBufferFor(node.clearTarget), 0,
@@ -890,7 +911,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       of fnkComputePass:
         let passDesc = createJsObject()
         passDesc["label"] = (node.label & " Compute Pass").cstring.toJs
-        if attachProfiling:
+        if attachProfiling and node.profilerSlot != PROFILER_SLOT_NONE:
           gpu_profiler.attachTimestamps(passDesc, node.profilerSlot)
         let computePass = commandEncoder.beginComputePass(passDesc)
         for dispatchStep in node.dispatches:

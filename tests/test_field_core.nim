@@ -11,7 +11,7 @@ import ../src/field_core
 import ../src/config_ranges
 # The wrap integrate.wgsl performs, taken from the suite's own tested oracle
 # rather than reimplemented beside it.
-from ../src/physics_core import wrapPosition
+from ../src/physics_core import wrapPosition, FRAME_DT_REFERENCE, frameFactor
 
 const FIELD_CORE_TESTS_LOADED* = true
 
@@ -1682,3 +1682,80 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
     # finite rather than the scenario being too gentle to break anything.
     let worst = heldMouseWorst(bounded = false, frames = 120)
     check worst > 1.0e6 or worst.classify in {fcNan, fcInf, fcNegInf}
+
+suite "The Field Force Answers To The Frame":
+  # field-force.wgsl reads a scale out of FieldParams and multiplies the
+  # inhibitor gradient by it. Nothing in that chain carries dt, so Time Scale
+  # never reached the field. Composing the frame into the scale on the CPU is
+  # what gives it the same response the species force already has, and it keeps
+  # FieldParams at the eight floats its binding declares.
+
+  test "the scale is unchanged at the reference frame":
+    check frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE,
+      frameFactor(FRAME_DT_REFERENCE)) == RD_DEFAULT_FIELD_FORCE
+
+  test "the scale is proportional to the frame factor":
+    for factor in [0.0, 0.25, 1.0, 2.5, 10.0]:
+      check abs(frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE, factor) -
+        RD_DEFAULT_FIELD_FORCE * factor) < 1e-12
+
+  test "a frame split into substeps delivers the same total":
+    # The field force runs once per substep, so the substeps must sum to what
+    # one whole frame delivers rather than multiplying it by the substep count.
+    for substeps in [1, 2, 3]:
+      let dt = 2.0 * FRAME_DT_REFERENCE
+      check abs(frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE,
+          frameFactor(dt / substeps.float)) * substeps.float -
+        frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE, frameFactor(dt))) < 1e-12
+
+  test "a silent field stays silent at every frame":
+    for factor in [0.0, 1.0, 10.0]:
+      check frameScaledFieldForce(0.0, factor) == 0.0
+
+suite "Time Scale Sets How Fast The Pattern Runs":
+  # The chemistry lives in field steps, not seconds, so the clock reaches it
+  # only through how many steps a frame runs. Time Scale therefore buys pattern
+  # speed by buying steps.
+
+  test "the shipped Time Scale runs the shipped step count":
+    check rdStepsForTimeScale(RD_REFERENCE_TIME_SCALE,
+      RD_REFERENCE_TIME_SCALE) == RD_STEPS_PER_FRAME
+
+  test "the step count is always odd":
+    # The ping-pong chain closes on an even total of 1 + steps swaps, so an even
+    # step count would leave the live field on the texture nothing reads.
+    for hundredths in 1 .. 1000:
+      let steps = rdStepsForTimeScale(hundredths.float / 100.0,
+        RD_REFERENCE_TIME_SCALE)
+      checkpoint("timeScale " & $(hundredths.float / 100.0))
+      check steps mod 2 == 1
+
+  test "the step count never falls below one":
+    for timeScale in [0.0, 1e-9, 0.01, 0.1]:
+      check rdStepsForTimeScale(timeScale, RD_REFERENCE_TIME_SCALE) >= 1
+
+  test "the step count rises with the clock and never falls":
+    var previous = 0
+    for hundredths in 1 .. 1000:
+      let steps = rdStepsForTimeScale(hundredths.float / 100.0,
+        RD_REFERENCE_TIME_SCALE)
+      check steps >= previous
+      previous = steps
+
+  test "the step count grows about linearly above the reference":
+    # Cost is 1 + steps full-field passes, so this is the price of the speed.
+    for multiple in [2.0, 4.0, 10.0]:
+      let steps = rdStepsForTimeScale(multiple * RD_REFERENCE_TIME_SCALE,
+        RD_REFERENCE_TIME_SCALE).float
+      check abs(steps - multiple * RD_STEPS_PER_FRAME.float) <= 1.0
+
+  test "the deposit rate per field step is held across the step count":
+    # RD_DEPOSIT_STEP_REFERENCE is the step count every deposit constant in this
+    # module was measured at. Buying pattern speed must not also change what it
+    # takes to ignite, so the per-frame fold is renormalized by the step count.
+    for steps in [1, 3, 7, 15, 71]:
+      let perFieldStep = depositFrameScale(steps) / float(1 + steps)
+      check abs(perFieldStep - 1.0 / float(RD_DEPOSIT_STEP_REFERENCE)) < 1e-12
+
+  test "the shipped constant is the shipped step count's scale":
+    check depositFrameScale(RD_STEPS_PER_FRAME) == RD_DEPOSIT_FRAME_SCALE

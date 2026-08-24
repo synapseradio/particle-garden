@@ -212,6 +212,8 @@ from glow_core import GlowTuning
 # the render-side colour arrays are sized from.
 from memory_layout import MAX_PARTICLES, MAX_SPECIES
 
+from physics_core import FRAME_DT_REFERENCE
+
 func glowTuning*(): GlowTuning =
   ## The glow curve constants in the shape glow_core's mirror takes them. The
   ## values are the ones getPlaceholderMap emits as the {{TUNABLE_GLOW_*}}
@@ -308,6 +310,13 @@ proc getPlaceholderMap*(): Table[string, string] =
   # Sixteen places render the 2^-16 default exactly.
   result["TUNABLE_INV_FIXED_POINT_SCALE"] =
     fmt"{1.0 / activeConfig.tuning.fixedPointScale:.16f}"
+
+  # forces-sph.wgsl multiplies params.dt by this to recover frameFactor, so the
+  # reciprocal is emitted rather than the reference frame itself. Derived from
+  # physics_core for the same reason the inverse above is derived: a shader-side
+  # literal would drift from the constant the Nim mirrors measure against.
+  result["TUNABLE_INV_FRAME_DT_REFERENCE"] =
+    fmt"{1.0 / FRAME_DT_REFERENCE:.6f}"
 
   # Glow curve constants (consumed by glow.wgsl). Two decimal places keep
   # 0.15/0.05 exact while remaining unambiguous WGSL f32 literals.

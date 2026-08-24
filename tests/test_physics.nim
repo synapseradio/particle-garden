@@ -512,3 +512,27 @@ suite "Post-Step Speed Mirror":
 
   test "no speed escapes the hard cap":
     check postStepSpeed(1.0e6'f32, 1.0'f32, 60.0'f32) <= 60.0'f32
+
+suite "Frame Reference":
+  # params.dt is a gain, not a timestep: integrate.wgsl advances position by the
+  # velocity itself. frameFactor turns a frame's dt into a multiple of the frame
+  # the shipped constants were measured at, so a layer that carries no dt can be
+  # given the same response to Time Scale as one that does.
+
+  test "frameFactor returns 1 at the reference frame":
+    check abs(frameFactor(FRAME_DT_REFERENCE) - 1.0) < 1e-12
+
+  test "frameFactor scales linearly with dt":
+    check abs(frameFactor(2.0 * FRAME_DT_REFERENCE) - 2.0) < 1e-12
+    check abs(frameFactor(0.25 * FRAME_DT_REFERENCE) - 0.25) < 1e-12
+
+  test "a frame split into substeps carries the same factor in total":
+    # What makes the field force safe to scale inside the substep loop: n
+    # substeps of dt/n must deliver what one step of dt delivers.
+    for substeps in [1, 2, 3, 5, 8]:
+      let dt = 3.7 * FRAME_DT_REFERENCE
+      check abs(frameFactor(dt / substeps.float) * substeps.float -
+        frameFactor(dt)) < 1e-12
+
+  test "frameFactor is zero at a stopped clock":
+    check frameFactor(0.0) == 0.0

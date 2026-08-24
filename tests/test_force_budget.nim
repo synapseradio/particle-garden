@@ -532,8 +532,9 @@ proc fieldSubstep(sourceA, sourceB: FieldGrid; targetA, targetB: var FieldGrid;
       targetA[y * FIELD_PATCH_CELLS + x] = a
       targetB[y * FIELD_PATCH_CELLS + x] = b
 
-proc fieldAdvance(fieldA, fieldB, scratchA, scratchB: var FieldGrid) =
-  for index in 0 ..< RD_STEPS_PER_FRAME:
+proc fieldAdvance(fieldA, fieldB, scratchA, scratchB: var FieldGrid;
+    rdSteps: int) =
+  for index in 0 ..< rdSteps:
     if index mod 2 == 0: fieldSubstep(fieldA, fieldB, scratchA, scratchB,
       shipped.rdFeed, shipped.rdKill)
     else: fieldSubstep(scratchA, scratchB, fieldA, fieldB,
@@ -549,8 +550,9 @@ func fieldCellOf(position: float): int =
 
 proc depositInto(fieldB: var FieldGrid; particles: seq[SceneParticle];
     deposit: float) =
-  ## field-deposit.wgsl's normalized splat, folded once per substep by
-  ## field-resolve.wgsl at RD_DEPOSIT_FRAME_SCALE.
+  ## field-deposit.wgsl's normalized splat, folded once per rendered frame by
+  ## field-resolve.wgsl. The caller passes the deposit webgpu_compute writes,
+  ## which carries the step count's renormalization.
   if deposit == 0.0: return
   let normalization = depositSplatNormalization(RD_DEPOSIT_SPLAT_RADIUS)
   let extent = int(RD_DEPOSIT_SPLAT_RADIUS)
@@ -614,7 +616,7 @@ proc settledField(): tuple[a, b: FieldGrid] =
   var scratchA = newSeq[float](fieldA.len)
   var scratchB = newSeq[float](fieldB.len)
   for _ in 0 ..< FIELD_SETTLE_FRAMES:
-    fieldAdvance(fieldA, fieldB, scratchA, scratchB)
+    fieldAdvance(fieldA, fieldB, scratchA, scratchB, RD_STEPS_PER_FRAME)
   (a: fieldA, b: fieldB)
 
 let settledFieldPair = settledField()
@@ -622,8 +624,13 @@ let settledFieldPair = settledField()
 proc runFieldScene(base: SceneConfig; settleFrames, windowFrames: int):
     tuple[field, species: Budget, secondsPerFrame: float] =
   ## The patch carrying its particles: deposit, reaction-diffusion, field force
-  ## and species force, in the order sim_registry.buildFrame encodes them, all
-  ## repeated cfg.substeps times per rendered frame.
+  ## and species force, in the order sim_registry.buildFrame encodes them.
+  ##
+  ## The chemistry and the deposit fold carry fncOncePerFrame, so they run once
+  ## however many substeps the frame encodes; the field force and the species
+  ## force carry fncEverySubstep and run inside the loop. Time Scale sets the
+  ## step count through rdStepsForTimeScale, and the deposit is renormalized by
+  ## depositFrameScale so the rate per field step is what webgpu_compute writes.
   initFieldWrap()
   let cfg = fieldPatchConfig(base)
   let matrix = referenceMatrix(referenceSpeciesCount)
@@ -634,6 +641,7 @@ proc runFieldScene(base: SceneConfig; settleFrames, windowFrames: int):
   var scratchB = newSeq[float](fieldB.len)
   let substepDt = substepDtOf(cfg)
   let substeps = effectiveSubsteps(cfg)
+  let rdSteps = rdStepsForTimeScale(cfg.timeScale, RD_REFERENCE_TIME_SCALE)
   let tropism = RD_DEFAULT_TROPISM
   var fieldAccumulator = BudgetAccumulator()
   var speciesAccumulator = BudgetAccumulator()
@@ -644,13 +652,15 @@ proc runFieldScene(base: SceneConfig; settleFrames, windowFrames: int):
     var fieldY = newSeq[float](particles.len)
     var speciesX = newSeq[float](particles.len)
     var speciesY = newSeq[float](particles.len)
+    depositInto(fieldB, particles,
+      cfg.deposit * depositFrameScale(rdSteps) / RD_DEPOSIT_FRAME_SCALE)
+    fieldAdvance(fieldA, fieldB, scratchA, scratchB, rdSteps)
     for _ in 0 ..< substeps:
-      depositInto(fieldB, particles, cfg.deposit)
-      fieldAdvance(fieldA, fieldB, scratchA, scratchB)
       let sweep = forceSweep(cfg, particles, matrix, substepDt)
       for index in 0 ..< particles.len:
         let impulse = fieldForceOn(fieldB, particles[index],
-          cfg.fieldForceScale, tropism)
+          frameScaledFieldForce(cfg.fieldForceScale, frameFactor(substepDt)),
+          tropism)
         fieldX[index] += impulse.x
         fieldY[index] += impulse.y
         speciesX[index] += sweep.speciesX[index]
@@ -1271,8 +1281,12 @@ Shared axis, every coupling at full scale.
 """ & sharedSweepTable(timeScaleSweep, "timeScale") & """
 `params.dt` is a gain rather than a timestep: `integrate.wgsl` advances position
 by the velocity itself with no dt. The species force multiplies by dt once and
-so scales with this axis. The field force never multiplies by dt and so does
-not.
+so scales with this axis. The field force reaches the axis by two routes at
+once. `frameScaledFieldForce` multiplies its gain by the frame's dt as a
+multiple of `FRAME_DT_REFERENCE`, and `rdStepsForTimeScale` sets how many
+reaction-diffusion steps a frame runs, so the pattern the force reads evolves at
+a rate this axis sets too. The two compound, which is why the column climbs
+faster than the axis above the reference.
 
 ## sphSubsteps
 
@@ -1280,10 +1294,13 @@ Shared axis, every coupling at full scale. The axis bites only where the fluid
 acts, because `webgpu_compute` encodes one substep per frame otherwise.
 
 """ & sharedSweepTable(substepSweep, "sphSubsteps") & """
-The whole frame description repeats once per substep, so the reaction-diffusion
-chain, the deposit fold and the field force all run sphSubsteps times. The
-species force divides dt by the substep count and runs that many times, so its
-total over a frame is left where it was.
+The chemistry carries `fncOncePerFrame`, so the deposit fold and the
+reaction-diffusion chain run once however many substeps the frame encodes, and
+the field the force reads is the same field at either substep count. The species
+force and the field force divide dt by the substep count and run that many
+times, so what each sums over a frame is left where it was. That leaves one
+route for this axis to reach either column: particles move between substeps and
+therefore sample their neighbors and the field from different places.
 
 ## Number density
 
@@ -1294,8 +1311,10 @@ world is held and the count varies.
 """ & sharedSweepTable(densitySweep, "density") & """
 ## Interaction radius
 
-Shared axis, every coupling at full scale. The field force reads no radius, so
-its column is flat by construction rather than by measurement.
+Shared axis, every coupling at full scale. No term of the field force reads the
+interaction radius. Its column still moves along this axis, because a wider
+radius changes where the species force carries the particles, and a particle
+elsewhere reads a different part of the pattern.
 
 """ & sharedSweepTable(radiusSweep, "interactionRadius") & """
 ## The octave band

@@ -21,6 +21,21 @@ const
   INV_07* = 1.0f / 0.7f  # Inverse of attraction envelope width
   MIN_DIST_SQ* = 4.0f    # Minimum distance squared (2.0^2) to avoid division issues
 
+  FRAME_DT_REFERENCE* = 1.0 / 120.0
+    ## The dt a shipped frame carries: a 60 Hz frame at the default timeScale of
+    ## 0.5. Every force constant in this codebase was measured against a frame
+    ## worth this much, so it is the unit frameFactor reports multiples of.
+
+func frameFactor*(dt: float): float =
+  ## A frame's dt as a multiple of the reference frame.
+  ##
+  ## integrate.wgsl advances position by the velocity itself, so params.dt acts
+  ## as a gain rather than a timestep. A layer that never multiplies by dt is
+  ## therefore deaf to Time Scale; multiplying it by this restores the response
+  ## the layers that do carry dt already have, without changing anything at the
+  ## reference frame.
+  dt / FRAME_DT_REFERENCE
+
 func calculateForce*(normalizedDistance, attr, fMul, invD: float32): float32 =
   ## Calculate force magnitude between two particles.
   ##

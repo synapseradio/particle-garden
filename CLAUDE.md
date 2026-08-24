@@ -55,7 +55,7 @@ the same diff, or the pair silently drifts.
 | `physics_core.nim` | `forces.wgsl` (force curve, toroidal wrapping, density) |
 | `grid_core.nim` | `bin-count` / `prefix-sum-*` / `bin-scatter.wgsl` |
 | `sph_core.nim` | `forces-sph.wgsl` (kernels, Tait pressure, XSPH) |
-| `field_core.nim` | `rd-step.wgsl`, `field-seed.wgsl`, `field-deposit.wgsl` |
+| `field_core.nim` | `rd-step.wgsl`, `field-seed.wgsl`, `field-deposit.wgsl`, and the frame-scaled force `field-force.wgsl` reads |
 | `bloom_core.nim` | `blur.wgsl` (kernel weights substituted from here) |
 | `colormap_core.nim` | `colormap.wgsl`, and `fade.wgsl`'s field drift scale |
 | `camera_core.nim` | `camera_transform.wgsl`, mirrored by `render`, `glow` and `fade` |

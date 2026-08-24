@@ -14,6 +14,12 @@
 // descends the gradient (away from its own deposits, spreading the species
 // across the pattern), positive climbs it.
 //
+// fieldForceScale arrives with the substep's frame already folded in
+// (src/field_core.nim's frameScaledFieldForce, written by webgpu_compute):
+// nothing here carries dt, and FieldParams holds no timestep to read, so the
+// frame reaches this pass through the scale or not at all. At the reference
+// frame the factor is 1 and the value is the slider's own.
+//
 // THE TWO SIGNS ARE NOT SYMMETRIC. Climbing a self-deposited gradient closes a
 // positive feedback loop — the deposit raises the peak, the peak steepens the
 // gradient, the gradient pulls harder — which is the Keller-Segel chemotactic
