@@ -295,32 +295,77 @@ review-enforced.
 - **WHEN** a module under `web/shaders/modules/` is edited
 - **THEN** every source shader naming that module in its own `//! import` list is rebundled
 
-### Requirement: WGSL validity is established on the device, not by the build
+### Requirement: WGSL validity is established on the device, except where a source lint can reach it
 
-The bundle step SHALL be a text transformation only — import inlining and placeholder substitution —
-and MUST NOT be treated as a check that the resulting WGSL compiles. No build stage invokes a WGSL
-compiler or validator (`justfile`), so a bundled shader that is syntactically invalid, declares a
-binding the pipeline does not provide, or names an entry point that does not exist passes the build
-intact.
+The bundle step SHALL remain a text transformation — import inlining and placeholder substitution —
+and MUST NOT be treated as a general check that the resulting WGSL compiles. No build stage invokes
+a WGSL compiler, so a bundled shader that names an entry point that does not exist, or misuses a
+type, still passes the build intact and fails on the device.
+
+**Two narrow classes are caught at build time, and the bundler SHALL fail on them.** First, a struct
+constructor written with named fields — `Camera(centerX: x, zoom: z)` — is a WGSL parse error, since
+WGSL constructors are positional only. `namedFieldConstructorLines` (`src/wgsl_lint.nim:45-105`) is
+a pure function over shader source that detects it, `tools/wgsl_bundle.nim:177-185` calls it, and
+the build quits naming the shader and the line. Second, each bundled shader's declared `@binding(N)`
+set SHALL match the `ExpectedShaderBindings` manifest (`src/wgsl_lint.nim:149`): the bundler fails
+on a mismatch, and on a shader absent from the table, because silence is not a pass
+(`tools/wgsl_bundle.nim:187-201`). The manifest holds the declared set per shader; which resource
+the pipeline places at each binding stays checkable only in a running app.
+
+The constructor class earns build-time enforcement where the general case cannot, for two reasons.
+It is detectable by inspection of the text alone, needing no compiler. And it is a mistake this
+codebase invites specifically: the structs being constructed are GENERATED from Nim objects where
+that exact syntax is correct, so the habit transfers and the result builds green.
+
+The constructor lint SHALL stay narrow deliberately. It flags only a callee beginning with an
+uppercase letter, because every struct type here is PascalCase and every WGSL builtin is
+lowerCamel — a false positive would block every build, which is a worse failure than the one being
+prevented. Its known blind spot, a constructor whose fields begin on the line after the callee, is
+recorded as a test (`tests/test_wgsl_lint.nim:28-34`) so nobody rediscovers it by shipping a black
+screen.
 
 Compute shaders SHALL be checked on the device immediately after module creation:
 `validateShaderCompilation` reads `getCompilationInfo()` and raises with the offending line numbers
-when any message is an error (`src/webgpu_compute.nim:171-188`, called at `:527`), and pipeline
-creation is wrapped in a validation error scope that raises on failure (`:534-552`). Both are runtime
-failures during pipeline init.
+when any message is an error (`src/webgpu_compute.nim:174-196`, called at `:521`), and pipeline
+creation is wrapped in a validation error scope that raises on failure
+(`src/webgpu_compute.nim:524-542`). Both are runtime failures during pipeline init.
 
 Render shaders SHALL be compiled through `createShaderModule` without an explicit
-`getCompilationInfo` check (`src/webgpu_render.nim:211`, `:330`, `:408`, `:495`, `:623`, `:735`,
-`:814`), so their errors surface through the device's own error reporting rather than a raised
-exception naming the shader.
+`getCompilationInfo` check, so their errors surface through the device's own error reporting instead
+of a raised exception naming the shader.
 
-Enforced by: `src/webgpu_compute.nim:171-188` and `:534-552` (runtime, compute path). For render
-shaders and for build-time WGSL validity there is no enforcement point — **review-enforced**, with
-the working application as the check.
+Enforced by: `src/wgsl_lint.nim` with `tests/test_wgsl_lint.nim` (build-time, these two classes
+only); `src/webgpu_compute.nim` (runtime, compute path). For render shaders and for every other
+class of build-time WGSL validity there is no automated gate. That class is **agent-checkable**: run
+`just be`, wait for the canvas to draw, and read the browser console the native wrapper surfaces; an
+invalid render shader shows up as a blank or corrupt canvas with a device error message naming the
+module. A WGSL validator invoked in the `shaders` stage would close it.
+
+#### Scenario: A named-field struct constructor fails the build
+
+- **WHEN** any shader under `web/shaders/src/` or `web/shaders/modules/` constructs a struct with
+  named fields and the shader step runs
+- **THEN** the build fails, naming the shader and the offending line, and no bundled output is
+  written for it
+
+#### Scenario: A shader added later is covered without anyone remembering
+
+- **WHEN** a new shader source file is added
+- **THEN** the lint's own test reads the shader directories directly, so the new file is checked with
+  no test edit, and a companion assertion on the file count fails if those directories cannot be
+  found — so the check cannot pass vacuously from the wrong working directory
+  (`tests/test_wgsl_lint.nim:79-98`)
+
+#### Scenario: A binding drift fails the bundle
+
+- **WHEN** a shader's declared binding set disagrees with the `ExpectedShaderBindings` manifest, or
+  a shader bundles with no manifest entry at all
+- **THEN** the build quits naming the shader and both sets, and no bundled output ships for it
 
 #### Scenario: A bundled compute shader has a WGSL syntax error
 
-- **WHEN** a source shader contains invalid WGSL and the full build runs
+- **WHEN** a source shader contains invalid WGSL of a class neither lint reaches, and the full build
+  runs
 - **THEN** the build succeeds and both test suites pass, and the failure appears at pipeline init as
   a raised `Shader compilation failed for "<label>"` carrying the line numbers
 

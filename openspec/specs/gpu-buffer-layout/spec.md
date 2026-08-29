@@ -215,10 +215,13 @@ simultaneously storage-capable, sampled and filterable (`src/webgpu_init.nim:112
 of that constraint.
 
 Channel meaning MUST be uniform across every pass: `.r` is the activator, `.g` is the inhibitor. The
-two remaining channels carry no meaning — every pass that writes the field stores the literal pair
-`0.0, 1.0` into them (`web/shaders/src/field-seed.wgsl:100-101`,
-`web/shaders/src/field-resolve.wgsl:77`, `web/shaders/src/rd-step.wgsl:105`), and every reader takes
-only `.xy` (`web/shaders/src/field-composite.wgsl:50`, `web/shaders/src/rd-step.wgsl:64`).
+two remaining channels are reserved rather than unused. `field-seed.wgsl` establishes them from the
+named constants `RESERVED_CHANNEL_B_INITIAL` and `RESERVED_CHANNEL_A_INITIAL`
+(`web/shaders/src/field-seed.wgsl:46-47,107-108`), and every later writer carries the pair through
+unchanged: `rd-step.wgsl` stores `centerFull.z, centerFull.w` and `field-resolve.wgsl` stores
+`current.z, current.w`. A pass writing literals there would erase the channels once per substep. The
+Gray-Scott reader takes only `.xy`, which is what leaves the reserved pair free for a second reaction
+to claim. See "Reserved field-texture channels are preserved" for the guarantee this rests on.
 
 The deposit buffer SHALL hold one fixed-point `i32` per field cell, indexed as `cellY * FIELD_W +
 cellX`, sized `FIELD_W * FIELD_H * 4` bytes (`src/webgpu_init.nim:209-212`) and indexed identically in
@@ -239,5 +242,245 @@ test compares them. `src/field_core.nim` supplies `FIELD_W`/`FIELD_H` to both si
 #### Scenario: A pass writes the field
 
 - **WHEN** the seed, resolve, or reaction pass stores a texel
-- **THEN** it writes activator into `.r` and inhibitor into `.g`, and readers MUST take only those two
-  channels
+- **THEN** it writes activator into `.r` and inhibitor into `.g`, carries `.b` and `.a` through
+  unchanged rather than storing literals into them, and the Gray-Scott reader takes only `.r` and `.g`
+
+### Requirement: SpeciesChemistry uniform layout
+
+Per-species chemistry SHALL live in a `SpeciesChemistryLayout` (`src/gpu_types.nim:383-390`) — two
+parallel `array<vec4<f32>, 3>` channels, secretion then tropism, 48 bytes each and 96 bytes in
+total — declared in `gpu_types.nim` under the same compile-time offset validation and generated WGSL
+struct module as every other layout.
+
+Parallel vec4 arrays carry the two channels because WGSL's uniform address space rounds an array's
+element stride up to 16 bytes: `array<vec2<f32>, 12>` of interleaved pairs would occupy 192 bytes.
+Packing four species per vec4 gives twelve slots per channel, which is what `MAX_SPECIES` at 12
+(`src/memory_layout.nim:38`) needs. Shaders index a species as `secretion[i / 4u][i % 4u]`, the way
+`forces.wgsl` indexes the attraction matrix.
+
+`CHEMISTRY_SPECIES_SLOTS` (`src/gpu_types.nim:744`) ties the slot count to the packing, and the
+static block at `src/gpu_types.nim:748-761` asserts the 96-byte size, that both channels hold that
+many slots, and that `MAX_SPECIES` fits in them. Raising `MAX_SPECIES` past the slot count means
+widening the arrays and the struct, never silently dropping the species that do not fit.
+
+`FieldParamsLayout` SHALL remain 32 bytes; its static assertions (`src/gpu_types.nim:714-718`)
+continue to reject a ninth field.
+
+Enforced by: the static assertions above, and `tests/test_gpu_types.nim` suite "Generated
+SpeciesChemistry Layout (Per-Species Field Coupling)" (`:366-415`), which pins 24 floats and 96
+bytes, that the generated `CHEM_` indices bracket two contiguous channels, that every species slot
+the ceiling allows is addressable in both channels, and that FieldParams stays closed while
+chemistry grows beside it.
+
+#### Scenario: Chemistry layout validates like the others
+
+- **WHEN** the `SpeciesChemistryLayout` table changes
+- **THEN** the WGSL-computed-offset assertions and the generated indices update from that one table,
+  and a change that breaks the packing fails the compile
+
+#### Scenario: FieldParams stays closed
+
+- **WHEN** a change attempts to grow `FieldParamsLayout` past 32 bytes
+- **THEN** its static assertions fail the build
+
+#### Scenario: MAX_SPECIES outgrows the chemistry slots
+
+- **WHEN** `MAX_SPECIES` is raised above `CHEMISTRY_SPECIES_SLOTS`
+- **THEN** the static assertion at `src/gpu_types.nim:760` fails the compile, naming the struct that
+  must widen with it
+
+### Requirement: Camera uniform layout
+
+The camera SHALL be a `CameraLayout` uniform (`src/gpu_types.nim:287-300`) — `centerX`, `centerY`,
+`zoom`, `worldWidth`, `worldHeight` plus three pad words, 32 bytes — declared in `gpu_types.nim`
+under the standard compile-time validation, written every frame, and consumed by the render, glow,
+fade, tonemap, field-composite and overlay shaders.
+
+The world extent rides the camera, so every consumer reads one number for how big the world is. A
+pass wanting a second view binds a second record of this layout: `fade.wgsl` takes this frame's
+camera at `@binding(4)` and the previous frame's at `@binding(5)`, and spells those fields out
+nowhere else.
+
+Enforced by: the offset-agreement sweep and the size assertions at `src/gpu_types.nim:684-703`, and
+`tests/test_gpu_types.nim` suite "The Camera Uniform Carries The World It Looks At" (`:238-284`),
+which pins 8 floats and 32 bytes, the generated `CAMERA_` index order, that the world extent sits in
+the camera and in neither pass's params, and that the previous frame's view is a Camera record and
+not a set of FadeParams fields.
+
+#### Scenario: Camera layout validates like the others
+
+- **WHEN** the `CameraLayout` table changes
+- **THEN** the offset-agreement assertions and generated indices update from that one table
+
+#### Scenario: The world extent is restated elsewhere
+
+- **WHEN** a pass's own params struct regains a world-width or world-height member
+- **THEN** `just test` fails, because two structs holding one number are two chances to disagree
+  about how big the world is inside a single frame
+
+### Requirement: Reaction parameters have their own uniform
+
+Reaction selection SHALL live in a `ReactionParamsLayout` — `{ reactionKind, pad0, pad1, pad2 }`,
+16 bytes (`src/gpu_types.nim:354-363`) — bound to the reaction pass at
+`web/shaders/src/rd-step.wgsl:51`, and SHALL NOT extend `FieldParamsLayout`.
+
+This uniform exists so that adding a second reaction is a new case in one shader, leaving
+bind-group layouts, entry counts and the shader manifest untouched. It reserves the structural slot
+and nothing more: a reaction's parameters grow this struct in the same change that reads them, never
+as reserved members ahead of a consumer.
+
+Enforced by: the static assertions at `src/gpu_types.nim:728-732` and `tests/test_gpu_types.nim`
+suite "Generated ReactionParams Layout (Reaction Identity)" (`:335-365`), which pins 4 floats and 16
+bytes, the generated `REACTION_` index order, and that FieldParams stays closed at 32 bytes beside
+it.
+
+#### Scenario: Gray-Scott reads only the kind
+
+- **WHEN** `reactionKind` holds its Gray-Scott value
+- **THEN** the field evolves identically whatever the pad words hold, because no reaction parameter
+  lives in this struct until a reaction reads it
+
+#### Scenario: A reaction parameter is reserved ahead of its consumer
+
+- **WHEN** a member is appended to `ReactionParamsLayout` with no shader reading it
+- **THEN** the size assertions at `src/gpu_types.nim:731-732` fail the compile
+
+### Requirement: Reserved field-texture channels are preserved
+
+Every pass that advances the field SHALL carry through the two channels beyond activator and
+inhibitor, and SHALL NOT overwrite them with literals, so a multi-channel reaction can occupy them
+with no format change. `rd-step.wgsl:108-112` and `field-resolve.wgsl:59,95` carry them.
+
+`field-seed.wgsl` is the one deliberate exception. It is the scatter-spores reset, binds its target
+write-only with no source to carry anything from, and ESTABLISHES the channels instead, writing the
+named `RESERVED_CHANNEL_B_INITIAL` and `RESERVED_CHANNEL_A_INITIAL` constants
+(`web/shaders/src/field-seed.wgsl:46-47`, written at `:108`), so a reaction adding state has one
+place to set its initial condition.
+
+Those channels are already allocated at no additional cost: the ping-pong textures are
+`rgba16float` because WebGPU does not permit `rg16float` as a write-only storage texture
+(`src/webgpu_init.nim:102-107`, `web/shaders/src/field-resolve.wgsl:38-39,84-85`).
+
+Enforced by: the named constants, which put the initial condition in one place. That every
+advancing pass carries the channels through is **agent-checkable**: run `just be` with chemistry
+active and inspect the field passes' `textureStore` calls against a captured frame; a pass writing
+literals shows up as reserved state resetting every substep. A source lint over the field passes'
+`textureStore` arguments, in the class `src/wgsl_lint.nim` already holds, would close it.
+
+#### Scenario: Channels survive a full frame
+
+- **WHEN** the field advances through resolve and every reaction substep
+- **THEN** the reserved channels arrive at the renderer holding what was written into them
+
+#### Scenario: The seed establishes rather than carries
+
+- **WHEN** the scatter-spores seed runs
+- **THEN** it writes the named reserved-channel constants, because it binds its target write-only
+  and has no source to carry anything from
+
+### Requirement: The deposit buffer's single channel is a recorded decision
+
+The deposit buffer SHALL carry one `i32` per cell, the inhibitor deposit, so a cell index is the
+buffer index directly on the writing and the resolving side alike. The addressing is shared through
+`fieldCellIndex` in `web/shaders/modules/field_grid.wgsl:45`, called by
+`web/shaders/src/field-deposit.wgsl:107` and `web/shaders/src/field-resolve.wgsl:65`, so the two
+sides cannot disagree.
+
+The shader header SHALL record the decision and every site a second channel would touch
+(`web/shaders/src/field-deposit.wgsl:17-24`): `webgpu_init.createFieldResources`,
+`webgpu_compute.byteLengthFor`, and `field-resolve.wgsl`. Signed secretion into the inhibitor
+channel already gives both roles the ecology needs — positive builds structure, negative erodes it —
+so the change is made when a coupling needs the channel, and not before.
+
+Enforced by: the shared `fieldCellIndex`, which makes an addressing disagreement unrepresentable.
+That the header's site list stays complete is **agent-checkable**: read
+`web/shaders/src/field-deposit.wgsl:17-24` and confirm each named site still exists and still
+strides one channel; a violation is a named site that no longer exists, or an allocation site the
+list omits.
+
+#### Scenario: Adding a deposit channel
+
+- **WHEN** a coupling comes to need a second deposit channel
+- **THEN** the header's record enumerates every site the change touches, so the edit follows a
+  recorded list instead of an index audit
+
+#### Scenario: The two sides disagree about addressing
+
+- **WHEN** either shader computes a deposit index without `fieldCellIndex`
+- **THEN** the two sides can drift, which is why both call the shared function and neither writes
+  the arithmetic out
+
+### Requirement: The kernel-density accumulator holds the whole particle budget
+
+The SPH kernel-density accumulator SHALL encode at a fixed-point scale derived from `MAX_PARTICLES`
+(`sphDensityFixedPointScale`, `src/sph_core.nim:183-213`), separate from the `FIXED_POINT_SCALE` the
+velocity deltas use, such that the largest density the world can produce encodes without saturating.
+
+That largest density is exactly `MAX_PARTICLES`. `forces-sph.wgsl` divides each neighbour's poly6
+weight by the self-weight, so a neighbour contributes at most 1.0 and the accumulated value counts
+neighbours; nothing bounds how many particles share a smoothing radius. Sharing the velocity scale
+would cap the accumulator at 32768, which the particle ceiling passes, and an `i32` past its maximum
+wraps NEGATIVE — a density the equation of state reads as maximal expansion and answers with force
+in the wrong direction.
+
+The scale SHALL be a power of two leaving at least `SPH_DENSITY_HEADROOM` of the signed range free
+(`src/sph_core.nim:22-26`), derived in `src/sph_core.nim` and substituted into the shaders instead
+of written as a literal. Headroom carries this in place of a check, because the total is formed by
+`atomicAdd` across threads: no contribution sees the running total, so no contribution can test it
+before adding.
+
+Saturating the encode is not an acceptable alternative. The particle ceiling is a setting the slider
+offers, so the density it produces has to encode as itself.
+
+Enforced by: `tests/test_sph_core.nim` suite "The Full Particle Budget Encodes Without Saturating"
+(`:319-355`), which pins that the whole budget in one smoothing radius encodes as itself, that the
+scale keeps the stated headroom, that it is a power of two, that it follows the budget instead of a
+literal, and that one particle's own weight stays far above the accumulator's resolution.
+
+#### Scenario: The whole budget encodes as itself
+
+- **WHEN** every particle the count slider allows sits inside one smoothing radius
+- **THEN** the encoded density stays inside the signed 32-bit range and decodes to what was written
+
+#### Scenario: Raising the particle ceiling carries the encoding with it
+
+- **WHEN** `MAX_PARTICLES` changes
+- **THEN** the density scale re-derives from it, and no other constant needs editing for the new
+  ceiling to encode
+
+#### Scenario: A decoder reading the wrong scale
+
+- **WHEN** a pass decodes the density accumulator with the velocity scale's inverse
+- **THEN** the value is wrong by the ratio between the two scales instead of absent, which is why
+  each scale has exactly one encoder and one decoder and the module says so
+
+### Requirement: Crowding and scale parameters ride SimParams
+
+The crowding strength and the SPH radius fraction SHALL be members of the `SimParamsLayout` table in
+`src/gpu_types.nim:190-201`, at offsets 680 and 684, reaching the shaders that read them
+(`web/shaders/src/forces.wgsl:132,229` and `web/shaders/src/forces-sph.wgsl:115`) through the
+generated struct module and the generated write indices, with the written and allocated size
+assertions updated in the same edit.
+
+Neither value reaches a shader by any second route, and neither gets a uniform of its own. They are
+ordinary simulation parameters in the struct the force passes already bind. Both were appended
+instead of placed inside the force-model or SPH blocks, so every write that exists keeps the offset
+it targets.
+
+Enforced by: `tests/test_gpu_types.nim` suite "Generated SIM_ Indices Match The SimParams Byte
+Layout" (`:124-168`), which pins each `SIM_` index against its field's byte offset, that
+`SIM_PARAMS_F32_COUNT` covers the whole 688-byte struct, and that the crowding and radius-fraction
+slots close the struct in order.
+
+#### Scenario: The members are added through the table
+
+- **WHEN** the two fields are appended to `SimParamsLayout`
+- **THEN** their write indices, the struct's element count, the buffer allocation size, and the
+  generated WGSL struct all follow from that one table edit, and the size assertions pin the new
+  totals
+
+#### Scenario: A shader reads a member the table does not declare
+
+- **WHEN** a shader references a SimParams member absent from the table
+- **THEN** shader-module creation fails on the device against the generated struct, because the
+  bundler lints constructors and binding sets and compiles no WGSL
