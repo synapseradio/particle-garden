@@ -440,8 +440,8 @@ static:
   for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
       RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN]:
     doAssert strengthFloor == 0.0,
-      "a coupling strength's range excludes zero; design D13 requires that " &
-      "every coupling can be turned off through its own slider"
+      "a coupling strength's range excludes zero; every coupling can be " &
+      "turned off through its own slider"
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
   doAssert MATRIX_MIN_VALUE == -MATRIX_MAX_VALUE,

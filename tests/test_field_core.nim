@@ -509,11 +509,6 @@ proc runChemotaxis(tropism: float, deposit = RD_DEPOSIT_MAX,
 
 
 suite "Gray-Scott Fixed-Point Structure":
-  # Why this suite exists: the whole one-world design rests on the claim that
-  # the shipped climate CANNOT produce a pattern from the uniform state, so any
-  # pattern the user sees was nucleated by particles. That claim is analytic,
-  # and these tests make it executable rather than a paragraph in a design doc.
-
   test "the nontrivial fixed points exist exactly where F >= 4*(F+k)^2":
     # CONTRACT: substituting the second fixed-point equation U*V = F+k into the
     # first, F*(1-U) = U*V^2, yields (F+k)*V^2 - F*V + F*(F+k) = 0. Its

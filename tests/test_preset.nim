@@ -442,9 +442,6 @@ suite "A Legacy Preset Loads As The World It Described":
     let rd = validate(v1Preset("reaction-diffusion"))
     check rd.preset.settings.forceStrength == 0.0
     check rd.preset.settings.rdDeposit == 0.02
-    # Rescaled, not carried over: the v1 file's 30 was written against a field
-    # grid ten times coarser, where it meant the same motion through the pattern
-    # that 3 means here. See preset.V1_FIELD_FORCE_SCALE.
     check rd.preset.settings.rdFieldForce == 30.0 * V1_FIELD_FORCE_SCALE
 
   test "a legacy sph preset arrives with its fluid acting":
