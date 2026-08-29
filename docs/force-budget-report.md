@@ -9,7 +9,7 @@ rendered frame encodes. `tests/test_force_budget.nim` writes this file.
 
 | what | value |
 |---|---|
-| commit | 39b01c667a98 |
+| commit | 735bc0904fe0 |
 | seed | 0x9E3779B9, a fixed LCG |
 | world | 3840 x 2160 px, toroidal |
 | particles | 16000 |
@@ -24,7 +24,7 @@ rendered frame encodes. `tests/test_force_budget.nim` writes this file.
 | field horizon | 250 frames of field alone, then 120 settling and 20 measured |
 | settling tolerance | 0.05 relative drift across the window |
 | species agreement tolerance | 1e-4 relative, against an all-pairs reference |
-| runtime | 0.042 s per frame at 16000 particles |
+| runtime | 0.007 s per frame at 16000 particles |
 
 The field runs on a periodic patch of the shipped grid, 128 by 128 cells at the shipped 1.875 px per cell, holding
 the 111 particles the reference number density
