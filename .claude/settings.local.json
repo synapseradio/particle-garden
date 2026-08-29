@@ -83,5 +83,6 @@
   "sandbox": {
     "enabled": false,
     "autoAllowBashIfSandboxed": false
-  }
+  },
+  "outputStyle": "Concise"
 }
