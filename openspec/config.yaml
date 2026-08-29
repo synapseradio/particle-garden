@@ -41,11 +41,16 @@ rules:
     - Mark user-visible behavior removals with **BREAKING**
     - Name the measurement gate for any change whose feasibility is unproven
   specs:
-    - Every requirement cites the code, test, or build step that enforces or will enforce it
-    - A requirement with no enforcement point is labelled "review-enforced" or "aspirational" explicitly
+    - Every requirement cites the code, test, or build step that enforces it
+    - Verification belongs to an agent, which can launch the app, drive it, and watch it play
+      out. A requirement with no automated gate is labelled "agent-checkable" and names the
+      procedure that detects a violation
+    - Label "human-observable" only where an agent cannot make the observation. It gates
+      nothing - not a sync, not an archive, not a task
+    - Label "unenforced" where nothing detects a violation, and say what would close that
     - Evergreen prose - no "currently", no migration narration, no dates
     - One capability per spec; split a spec that describes two independently changing things
-    - Do not restate CLAUDE.md prose unless the requirement adds something a test or reviewer can check
+    - Do not restate CLAUDE.md prose unless the requirement adds something an agent can check
   design:
     - Distinguish proven properties from designed-but-unexercised ones, with evidence for each
     - Record rejected alternatives for each decision, with the reason
@@ -55,3 +60,7 @@ rules:
     - Each task names the exact files it touches
     - Order groups so measurement gates precede the work they gate
     - Lead each group with the tests that must fail first
+    - A verification task names the agent procedure and the observation that settles it; a
+      task needing a person says why and blocks nothing
+    - No task governs its own change's sync, archive, or spec lifecycle. That flow runs
+      outside the change, and a task holding the gate from inside deadlocks it
