@@ -28,7 +28,9 @@
       "Bash(rm /tmp_baseline_test_output.txt)",
       "Bash(echo \"exit: $?\")",
       "Bash(grep -c \"\\\\[OK\\\\]\" /tmp_check.log)",
-      "Bash(rm -f /tmp_check.log)"
+      "Bash(rm -f /tmp_check.log)",
+      "Bash(openspec instructions *)",
+      "mcp__linkup__linkup-search"
     ]
   },
   "skillOverrides": {
