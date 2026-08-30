@@ -1,11 +1,13 @@
 ## How to read this list
 
 Ids are stable and never renumbered. Every group ends with `just happen` and `just check` green;
-a group whose gate stays red is not done. Groups run in order: group 1 builds the motion the rest
-of the change wires up, and group 5 measures the two constants group 1 ships provisionally.
+a group whose gate stays red is not done. Group 3 is the one exception, since the descriptor it adds
+is unreachable until group 4 places it in the panel, so the two groups close as one. Groups run in
+order: group 1 builds the motion the rest of the change wires up, and group 5 measures the two
+constants group 1 ships provisionally.
 
 Reds named as "expected red" are the failing tests that must be watched failing before the code
-that closes them is written.
+that closes them is written. A commit waits for the suite to be green, whatever the group boundary.
 
 ---
 
@@ -76,28 +78,29 @@ nor exemption, `tests/test_help_content.nim` for a descriptor its group's file d
 `tests/test_panel_reachability.nim` for a descriptor the panel never places. Watch all three, then
 close them one at a time.
 
-- [ ] 3.1 Add the `cameraDriftSpeed` descriptor to `buildParamDescriptors()` with every field from
+- [x] 3.1 Add the `cameraDriftSpeed` descriptor to `buildParamDescriptors()` with every field from
   design.md D7. Files: `src/ui/api/param_descriptor.nim`. Verify: the three expected reds above,
   each naming `cameraDriftSpeed`.
-- [ ] 3.2 Add the `camera.driftFrameTravel` probe and its `probeRegistry()` entry at
+- [x] 3.2 Add the `camera.driftFrameTravel` probe and its `probeRegistry()` entry at
   `pbClosedForm`, calling the pan-step function from `src/camera_drift.nim` at
   `FRAME_DT_REFERENCE`. Files: `src/ui/api/response_probe.nim`. Verify: the
   `tests/test_response_probe.nim` red clears, and the track-metric sweep reports span, live fraction
   and cliff inside `SPAN_MIN`, `LIVE_FRACTION_MIN` and `CLIFF_MAX`.
-- [ ] 3.3 Add the `cameraDriftOff` predicate to `dormancyRegistry()`, reading
+- [x] 3.3 Add the `cameraDriftOff` predicate to `dormancyRegistry()`, reading
   `renderFields: @["cameraDrift"]`, with the line `the camera holds still`. Files:
   `src/ui/api/dormancy.nim`. Verify: `tests/test_dormancy.nim` resolves the carried id and finds the
   field it names.
-- [ ] 3.4 Add the control line and the behaviour prose to `docs/help/60-camera.md`: a
+- [x] 3.4 Add the control line and the behaviour prose to `docs/help/60-camera.md`: a
   `` - `cameraDriftSpeed` — … `` list line naming the unit, plus prose covering the Drift toggle,
   that a camera-moving gesture pauses the drift and it resumes shortly after, that it resumes from
   where the gesture left the view, and that a preset carries the motion but never the position.
   Files: `docs/help/60-camera.md`. Verify: the `tests/test_help_content.nim` red clears in both
   directions.
 
-Gate: `just happen` and `just check` green, with `tests/test_panel_reachability.nim` still red on
-`cameraDriftSpeed` (group 4 places the control). Record that red as the measurement it is, and do
-not suppress it.
+Gate: `just happen` green, and `tests/test_panel_reachability.nim` red on `cameraDriftSpeed` until
+group 4 places the control. That red is the expected red group 4 closes, so groups 3 and 4 close
+together: the commit carrying either one waits until 4.6 places the control and `just check` is
+green over both.
 
 ## 4. The frame loop, the boundary, and the panel
 
@@ -107,26 +110,26 @@ found and non-empty on the pattern `tests/test_panel_reachability.nim:44-47` use
 every camera write in them goes through the stamping wrapper and not through `cameraSetter`
 directly. It fails on the wrapper not existing.
 
-- [ ] 4.1 Add the source-reading assertion described above to `tests/test_camera_drift.nim`. Files:
+- [x] 4.1 Add the source-reading assertion described above to `tests/test_camera_drift.nim`. Files:
   `tests/test_camera_drift.nim`. Verify: red, naming the absent wrapper.
-- [ ] 4.2 Add the touch stamp and the stamping wrapper to `src/canvas_input.nim` beside the camera
+- [x] 4.2 Add the touch stamp and the stamping wrapper to `src/canvas_input.nim` beside the camera
   hooks at `:40-46`, and route the five existing user-facing camera writes through it: the pan drag
   at `:175`, the wheel zoom at `:245`, the wheel pan at `:249`, and the key handler at `:280`. Leave
   `cameraSetter` itself as the unstamped path, which is what the drift uses. Files:
   `src/canvas_input.nim`. Verify: task 4.1's assertion passes.
-- [ ] 4.3 Route the Zoom slider's camera write through the same wrapper: the `psCamera` arm at
+- [x] 4.3 Route the Zoom slider's camera write through the same wrapper: the `psCamera` arm at
   `src/web_api.nim:614-632`. Files: `src/web_api.nim`. Verify: task 4.1's assertion covers this file
   and passes.
-- [ ] 4.4 Add `getCameraDrift` and `setCameraDrift` to the served object beside the existing toggle
+- [x] 4.4 Add `getCameraDrift` and `setCameraDrift` to the served object beside the existing toggle
   pairs, with a `setCameraDriftImpl` beside `setClimateDriftImpl` at `src/web_api.nim:385` writing
   through `updateRender`. Files: `src/web_api.nim`. Verify: `just happen` builds, and the panel
   task below consumes them.
-- [ ] 4.5 Advance the drift in the frame loop beside the two weathers at `src/app.nim:257-269`, on
+- [x] 4.5 Advance the drift in the frame loop beside the two weathers at `src/app.nim:257-269`, on
   `cappedDt`, before `await physics(dt)`, gated on `config.CONFIG.cameraDrift`, reading and writing
   the camera through `webgpu_render.camera` / `setCamera`. Hold the `DriftState` as a module-level
   var beside `climatePhase` and `forceWeatherPhase`. Files: `src/app.nim`. Verify: `just happen`
   builds and the app launches.
-- [ ] 4.6 Place the two controls in the panel: a Drift checkbox and
+- [x] 4.6 Place the two controls in the panel: a Drift checkbox and
   `<ParamSlider ctrl={props.ctrl} id="cameraDriftSpeed" />` inside `CameraSection`
   (`web-ui/src/components/Panel.tsx:30-38`), and a `cameraDrift` signal beside `climateDrift` in
   `web-ui/src/state.ts:36-38` with its setter in the returned controller. Files:
