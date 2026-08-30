@@ -166,6 +166,14 @@ against the unmodified W1 n=128000 run. Same world, same trajectory, one less at
 The buffer, its binding and `integrate.wgsl` all stay as they are, so no binding manifest moves
 and `wgsl_lint` has nothing to react to.
 
+The variant keeps one `atomicLoad` on `crowdDensityDeltaFixed`, guarding a branch the cleared
+buffer never takes. Dawn derives the bind group layout from static usage, so a binding that is
+declared and never referenced leaves the layout and bind group creation fails with "In entries[7],
+binding index 7 not present in the bind group layout", which stops the Forces pass and yields a run
+with no profile entries at all. `wgsl_lint` reads declarations and passes either way, and `just
+happen` succeeds either way, so the static gates do not reach this. One load per invocation stands
+against the removed traffic of one `atomicAdd` per neighbour plus one per particle.
+
 Rejected, a compile-time flag in the shader bundler for the same effect: a permanent knob in
 `tools/wgsl_bundle.nim` to answer one question once.
 Rejected, leave the number open: it is the one cost this change exists to find, and the
