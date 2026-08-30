@@ -64,7 +64,6 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_preset_store_core.nim` | Preset name normalization, storage keys, apply-order contract | Native |
 | `test_sph_core.nim` | SPH math: 2D smoothing kernels, Tait equation, XSPH term | Native |
 | `test_field_core.nim` | Gray-Scott step, the 9-point Laplacian, the field seed, what ignites the pattern, the species chemistry coupling, the chemotactic-collapse bound, and that a regime's deposit floor preserves its morphology | Native |
-| `test_force_budget.nim` | How much velocity each of the three force layers hands the integrator, before friction and before the soft cap, swept across every axis that moves it; writes `docs/force-budget-report.md` | Native |
 | `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
 | `test_colormap_core.nim` | Reaction-diffusion field colormap ramps, and the coverage the field claims as light | Native |
 | `test_glow_core.nim` | The particle halo: radius composition, Gaussian falloff, the warm shift, and the display-clamped alpha integral a response probe reads | Native |
@@ -76,7 +75,7 @@ test "computeMemoryOffsets adds padding correctly":
 
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, descriptor group arithmetic, notch geometry and snapping, and the panel controller's handling of what the simulation pushes at it; `just check` runs both.
 
-Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_force_budget`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, and `test_trail_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in the root `CLAUDE.md`.
+Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, and `test_trail_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in the root `CLAUDE.md`.
 
 ### Test Architecture
 
@@ -109,7 +108,6 @@ test_all.nim (runner)
     ├── test_preset_store_core.nim → ui/presets/preset_store_core.nim (keys, order)
     ├── test_sph_core.nim       → sph_core.nim (kernels, Tait, XSPH)
     ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian, seeding)
-    ├── test_force_budget.nim   → physics_core + sph_core + field_core (per-layer velocity budget)
     ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
     ├── test_colormap_core.nim  → colormap_core.nim (field colormap ramps, coverage)
     ├── test_glow_core.nim      → glow_core.nim (halo radius, falloff, warmth, alpha integral)

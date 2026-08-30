@@ -1455,6 +1455,13 @@ suite "The Field Draws A Small Pattern On Square Cells":
     # response to the pattern fixed as the knob turns.
     check RD_DEFAULT_FIELD_FORCE * FIELD_PATTERN_SHRINK.float == 30.0
     check RD_FIELD_FORCE_MAX == RD_DEFAULT_FIELD_FORCE * 5.0
+    # HAZARD: a field seeded with RD_SEED_BLOB_RADIUS (24 cells) alone does not
+    # ignite. Measured on the shipped 2048x1152 grid, RD_SEED_BLOB_COUNT=48,
+    # feed=0.030, kill=0.062, no particle deposit: starts at 1.776% of cells
+    # above FIELD_ALIVE_THRESHOLD, falls to zero live cells by frame 50 of 200.
+    # Particle deposit (RD_DEFAULT_DEPOSIT) folds chemical into the field each
+    # frame through a route this measurement excludes, so it does not settle
+    # whether the shipped world ignites.
     check RD_SEED_BLOB_RADIUS / FIELD_PATTERN_SHRINK.float == 6.0
 
   test "the shrink comes from the cell size and not from the chemistry":
