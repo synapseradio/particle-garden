@@ -50,18 +50,18 @@ Gate: `just happen` and `just check` green.
 `tests/test_preset.nim:96-99` then reports `preset key "cameraDrift" names no field of either state
 record`. That is the expected red, and it is what proves the walk covers the new keys.
 
-- [ ] 2.1 Add `cameraDrift: bool` and `cameraDriftSpeed: float` to `PresetSettings` in
+- [x] 2.1 Add `cameraDrift: bool` and `cameraDriftSpeed: float` to `PresetSettings` in
   `src/preset.nim`, with `defaultSettings()` carrying `false` and `CAMERA_DRIFT_DEFAULT_SPEED`, plus
   their `parsePreset` reads and their JSON writes. Files: `src/preset.nim`. Verify: `just test` red
   at `tests/test_preset.nim` with the "names no field" checkpoint.
-- [ ] 2.2 Add `cameraDrift: bool` and `cameraDriftSpeed: float` to `RenderState` in
+- [x] 2.2 Add `cameraDrift: bool` and `cameraDriftSpeed: float` to `RenderState` in
   `src/ui/state/render_state.nim`, with `initRenderState()` carrying `false` and
   `CAMERA_DRIFT_DEFAULT_SPEED`. Files: `src/ui/state/render_state.nim`. Verify: task 2.1's red
   clears; `just happen` now red at `nim js` with the mirror-gate message from `src/web_api.nim:100`,
   which is the next expected red.
-- [ ] 2.3 Add the two matching `ConfigObject` fields and their `createConfig` copies. Files:
+- [x] 2.3 Add the two matching `ConfigObject` fields and their `createConfig` copies. Files:
   `src/config.nim`. Verify: the mirror-gate red from 2.2 clears and `just happen` completes.
-- [ ] 2.4 Snapshot and restore the two fields in the preset path: the `settings.` assignments beside
+- [x] 2.4 Snapshot and restore the two fields in the preset path: the `settings.` assignments beside
   `src/web_api.nim:916` and the restore beside `:1018`. Files: `src/web_api.nim`. Verify: a preset
   round trip in `tests/test_preset.nim` carries both values, and add the assertion if no existing
   case covers a render-store boolean.

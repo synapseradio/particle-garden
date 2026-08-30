@@ -9,6 +9,7 @@ import ../src/preset
 import ../src/colormap_core  # the authority preset.nim mirrors fieldOpacity from
 import ../src/field_core     # and the chemistry defaults it mirrors
 import ../src/climate_core   # and the climate speed default
+import ../src/camera_drift   # and the camera drift speed default
 import ../src/ui/api/param_descriptor
 import ../src/ui/state/simulation_state
 import ../src/ui/state/render_state
@@ -41,6 +42,7 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check defaults.rdFieldForce == RD_DEFAULT_FIELD_FORCE
     check defaults.climateSpeed == CLIMATE_DEFAULT_SPEED
     check defaults.forceWeatherSpeed == FORCE_WEATHER_DEFAULT_SPEED
+    check defaults.cameraDriftSpeed == CAMERA_DRIFT_DEFAULT_SPEED
 
   test "the default chemistry equals the per-species defaults it mirrors":
     let chemistry = defaultChemistry()
@@ -200,6 +202,8 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.saturation = 1.3
     customPreset.settings.contrast = 1.2
     customPreset.settings.temperature = -0.4
+    customPreset.settings.cameraDrift = true
+    customPreset.settings.cameraDriftSpeed = 1.75
     for matrixIndex in 0 ..< MATRIX_LEN:
       customPreset.matrix[matrixIndex] =
         (if matrixIndex mod 2 == 0: 0.05 else: -0.05)
@@ -231,6 +235,32 @@ suite "Preset Round-Trip Contract":
     ## selection among worlds. A `mode` key on the wire is a world type under a
     ## label, and every reader then has to decide what it means.
     check not toJson(defaultPreset()).hasKey("mode")
+
+suite "The Camera Drift Survives A Preset":
+  test "a saved camera drift round-trips its switch and its speed":
+    var saved = defaultPreset()
+    saved.settings.cameraDrift = true
+    saved.settings.cameraDriftSpeed = 2.5
+    let loaded = parsePreset(toJsonString(saved))
+    check loaded.isOk
+    check loaded.preset.settings.cameraDrift
+    check loaded.preset.settings.cameraDriftSpeed == 2.5
+
+  test "a saved preset carries no camera position":
+    # The preset restores whether the view moves, and never where it is
+    # standing to look.
+    let node = toJson(defaultPreset())["settings"]
+    for key in ["cameraZoom", "cameraCenterX", "cameraCenterY"]:
+      check not node.hasKey(key)
+
+  test "a drift speed outside the slider's range clamps instead of rejecting":
+    var node = toJson(defaultPreset())
+    node["settings"]["cameraDriftSpeed"] = %99.0
+    check validate(node).preset.settings.cameraDriftSpeed ==
+      CAMERA_DRIFT_SPEED_MAX
+    node["settings"]["cameraDriftSpeed"] = %0.0
+    check validate(node).preset.settings.cameraDriftSpeed ==
+      CAMERA_DRIFT_SPEED_MIN
 
 suite "The Force Weather Survives A Preset":
   test "a saved force weather round-trips its switch and its speed":

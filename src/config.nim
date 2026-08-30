@@ -70,6 +70,8 @@ type
     climateSpeed* {.exportc.}: float
     forceWeather* {.exportc.}: bool
     forceWeatherSpeed* {.exportc.}: float
+    cameraDrift* {.exportc.}: bool
+    cameraDriftSpeed* {.exportc.}: float
 
   MemoryLayoutObject* = ref object of JsObject
     ## AoS memory layout offsets for particle buffers.
@@ -199,6 +201,8 @@ proc createConfig(): ConfigObject =
   result.temperature = visual.temperature
   result.colormapIndex = visual.colormapIndex
   result.fieldOpacity = visual.fieldOpacity
+  result.cameraDrift = visual.cameraDrift
+  result.cameraDriftSpeed = visual.cameraDriftSpeed
 
 var CONFIG* {.exportc.}: ConfigObject = createConfig()
 

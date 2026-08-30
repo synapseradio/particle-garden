@@ -141,6 +141,10 @@ type
     climateSpeed*: float
     forceWeather*: bool
     forceWeatherSpeed*: float
+    cameraDrift*: bool
+      ## Whether the view moves itself. A preset carries the motion and not the
+      ## camera's position, which stays where the viewer left it.
+    cameraDriftSpeed*: float
     bloomEnabled*: bool
     bloomIntensity*: float
     exposure*: float
@@ -263,6 +267,9 @@ func defaultSettings*(): PresetSettings =
     climateSpeed: 0.25,
     forceWeather: false,
     forceWeatherSpeed: 0.5,
+    # Mirrors render_state's camera drift defaults.
+    cameraDrift: false,
+    cameraDriftSpeed: 0.25,
     # Mirrors bloom_core.BLOOM_DEFAULT_* as literals rather than an import,
     # for the same dependency-restriction reason as the sph/rd defaults above.
     bloomEnabled: false,
@@ -445,6 +452,10 @@ proc validateSettings(node: JsonNode): PresetSettings =
   result.forceWeatherSpeed = clampFloat(
     field(node, "forceWeatherSpeed").getFloat(defaults.forceWeatherSpeed),
     FORCE_WEATHER_SPEED_MIN, FORCE_WEATHER_SPEED_MAX)
+  result.cameraDrift = field(node, "cameraDrift").getBool(defaults.cameraDrift)
+  result.cameraDriftSpeed = clampFloat(
+    field(node, "cameraDriftSpeed").getFloat(defaults.cameraDriftSpeed),
+    CAMERA_DRIFT_SPEED_MIN, CAMERA_DRIFT_SPEED_MAX)
   result.bloomEnabled = field(node, "bloomEnabled").getBool(defaults.bloomEnabled)
   result.bloomIntensity = clampFloat(
     field(node, "bloomIntensity").getFloat(defaults.bloomIntensity), BLOOM_INTENSITY_MIN, BLOOM_INTENSITY_MAX)
@@ -752,6 +763,8 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["climateSpeed"] = %settings.climateSpeed
   result["forceWeather"] = %settings.forceWeather
   result["forceWeatherSpeed"] = %settings.forceWeatherSpeed
+  result["cameraDrift"] = %settings.cameraDrift
+  result["cameraDriftSpeed"] = %settings.cameraDriftSpeed
   result["bloomEnabled"] = %settings.bloomEnabled
   result["bloomIntensity"] = %settings.bloomIntensity
   result["exposure"] = %settings.exposure

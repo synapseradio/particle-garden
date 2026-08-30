@@ -917,6 +917,8 @@ when defined(js):
     settings.climateSpeed = CONFIG.climateSpeed
     settings.forceWeather = CONFIG.forceWeather
     settings.forceWeatherSpeed = CONFIG.forceWeatherSpeed
+    settings.cameraDrift = CONFIG.cameraDrift
+    settings.cameraDriftSpeed = CONFIG.cameraDriftSpeed
 
     var matrixSnapshot: Matrix
     for matrixIdx in 0 ..< preset.MATRIX_LEN:
@@ -1034,6 +1036,8 @@ when defined(js):
           renderState.contrast = settings.contrast
           renderState.temperature = settings.temperature
           renderState.fieldOpacity = settings.fieldOpacity
+          renderState.cameraDrift = settings.cameraDrift
+          renderState.cameraDriftSpeed = settings.cameraDriftSpeed
         )
         setForceModelImpl(settings.forceModel)
         setTrailsImpl(settings.trails)

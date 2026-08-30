@@ -11,6 +11,7 @@
 
 import ../../bloom_core
 import ../../colormap_core
+import ../../camera_drift  # CAMERA_DRIFT_DEFAULT_SPEED, the drift-rate authority
 
 type
   RenderState* = object
@@ -37,6 +38,11 @@ type
     # both the HDR tonemap and the bloom-off field-composite floor.
     colormapIndex*: int
     fieldOpacity*: float
+    # The camera drift. Read by the frame loop, never by a shader, the way
+    # climateSpeed sits in SimulationState.
+    cameraDrift*: bool         ## Whether the view moves itself.
+    cameraDriftSpeed*: float   ## View widths the camera travels per minute;
+                               ## range in config_ranges.
 
 const TRAIL_LENGTH_WHEN_ENABLED* = 25.0
   ## The length the Trails toggle lifts a zero-length trail to.
@@ -85,5 +91,7 @@ func initRenderState*(): RenderState =
     contrast: BLOOM_DEFAULT_CONTRAST,
     temperature: BLOOM_DEFAULT_TEMPERATURE,
     colormapIndex: COLORMAP_DEFAULT_INDEX,
-    fieldOpacity: FIELD_OPACITY_DEFAULT
+    fieldOpacity: FIELD_OPACITY_DEFAULT,
+    cameraDrift: false,
+    cameraDriftSpeed: CAMERA_DRIFT_DEFAULT_SPEED
   )
