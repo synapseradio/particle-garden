@@ -8,14 +8,14 @@ reasoned-not-observed reinit consequence.
 
 ## 1. Watch the defect fail, before any source change
 
-- [ ] 1.1 Build and start the app (`just happen`, then run the binary per `docs/` run instructions),
+- [x] 1.1 Build and start the app (`just happen`, then run the binary per `docs/` run instructions),
       navigate to `?n=40000&seed=1` (any count away from the 16000 default), wait for
       `gardenAPI.isReady()`, then call `gardenAPI.setParam("friction", gardenAPI.getParam("friction"))`
       (any id other than `particleCount` — value unchanged, since only the write path matters).
       Confirm `gardenAPI.getParam("particleCount")` now answers `16000`, not `40000`. This is the
       expected red: Consequence A from `proposal.md`, reproduced live rather than only cited from
       `scratchpad/main/perf-harness/runs/w0-128k.json`.
-- [ ] 1.2 From the same session, call `gardenAPI.resetParticles()` and read the next
+- [x] 1.2 From the same session, call `gardenAPI.resetParticles()` and read the next
       `gardenAPI.onStats` sample's `particleCount`. Confirm it reports `16000`. This is Consequence
       B, previously reasoned from `src/app.nim:98, 138-139` but never observed; record whether it
       reproduces as reasoned before changing any code.
