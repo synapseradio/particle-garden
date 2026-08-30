@@ -20,6 +20,10 @@ import buffers
 # conversion the physics params below go through.
 import camera_core
 
+# The camera's self-motion (pure, depends on camera_core): the per-frame
+# advance the loop applies to the live camera.
+import camera_drift
+
 # Shader tuning constants (pure): the mouse-range base the per-frame
 # zoom-scaled radius divides.
 import shader_config
@@ -88,6 +92,10 @@ var forceWeatherPhase {.exportc.}: float = 0
   ## climatePhase so each weather holds its own place: sharing one would drag
   ## the forces to wherever the climate had wandered the moment someone switched
   ## the force weather on.
+var cameraDriftState {.exportc.}: DriftState = initDriftState()
+  ## What one frame of camera drift hands the next: the quiet clock and the
+  ## breath it is moving through. Loop bookkeeping like the two phases above,
+  ## and it holds no camera position, so nothing here duplicates the view.
 
 # Per-frame timing staging; folded into runtimeState via withTiming each frame
 var currentTiming* = initTimingState()
@@ -267,6 +275,19 @@ proc loop(now: float): Future[void] {.async.} =
       forceWeatherPhase, config.CONFIG.forceWeatherSpeed, cappedDt)
     web_api.setForceWeatherFromSimulation(
       tourAt(FORCE_WEATHER_TOUR, forceWeatherPhase))
+
+  # The camera's own weather, on the same wall clock as the two above. The
+  # touch stamp is taken every frame, drifting or not, so a gesture from before
+  # the toggle went on does not cost the quiet interval after it.
+  let cameraTouched = canvas_input.takeCameraTouch()
+  if config.CONFIG.cameraDrift:
+    # Ahead of physics, which reads the live camera to place the cursor in the
+    # world and to shrink the mouse influence by zoom.
+    let advanced = driftAdvance(cameraDriftState, webgpu_render.camera(),
+      config.CONFIG.cameraDriftSpeed, cappedDt, cameraTouched,
+      float32(config.WORLD_W), float32(config.WORLD_H))
+    cameraDriftState = advanced.state
+    webgpu_render.setCamera(advanced.camera)
 
   await physics(dt)
 
