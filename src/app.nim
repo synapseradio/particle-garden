@@ -345,10 +345,7 @@ proc loop(now: float): Future[void] {.async.} =
 proc init(): Future[void] {.async, exportc.} =
   ## Requires WebGPU; there is no fallback path.
 
-  # Optional ?n=<count> URL override for profiling runs at a chosen scale.
-  # Routed through updateSimulation (not a direct CONFIG write) so the next
-  # unrelated setParam mirrors this count back in rather than clobbering it
-  # with SimulationState's untouched boot default.
+  # Optional ?n=<count> URL override for profiling runs at a chosen scale
   let requestedCount = urlParamInt("n", config.CONFIG.particleCount)
   let clampedCount = clamp(requestedCount, 1000, config.MAX_PARTICLES)
   web_api.updateSimulation(proc(simState: var SimulationState) =
