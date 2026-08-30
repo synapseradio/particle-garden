@@ -337,21 +337,18 @@ const
   CAMERA_ZOOM_NOTCH_CREATURE* = CAMERA_ZOOM_MAX
     ## Close enough to watch one particle, and the near end of the zoom range.
   # Camera drift. View widths the camera travels per minute while the drift
-  # toggle is on. The rest of the drift's constants sit beside the drift maths
-  # in camera_drift.nim, the way the tour defaults sit in climate_core.
+  # toggle is on.
   CAMERA_DRIFT_SPEED_MIN* = 0.05
-    ## One view width every twenty minutes — about 70 px a minute in the
-    ## 1400x900 window main.nim opens. Motion found by leaving the room and
-    ## coming back, never by watching. Not zero, for CLIMATE_SPEED_MIN's
-    ## reason: the toggle is what stops the drift.
+    ## One view width every twenty minutes, about 70 px a minute in the
+    ## 1400x900 window main.nim opens: motion found by leaving the room and
+    ## coming back, never by watching.
   CAMERA_DRIFT_SPEED_MAX* = 4.0
     ## One view width every fifteen seconds, about 93 px a second. BOUNDED BY
-    ## LEGIBILITY, not by the mechanism: the fade pass reprojects the trail
-    ## between consecutive cameras, which only breaks down where consecutive
-    ## frames stop overlapping, near 36 view widths a minute.
+    ## LEGIBILITY. The mechanical ceiling sits far above: the fade pass
+    ## reprojects the trail between consecutive cameras and breaks down only
+    ## where consecutive frames stop overlapping, near 36 view widths a minute.
   CAMERA_DRIFT_SPEED_NOTCH_SCREEN* = 1.0
-    ## One view width a minute, which is the unit's own definition. A literal
-    ## rather than an alias of a bound, on CAMERA_ZOOM_NOTCH_WORLD's reasoning.
+    ## One view width a minute, the unit's own definition.
   # Per-species field chemistry. Not sliders on a single CONFIG field — one
   # value per species, edited in the chemistry grid — but clamped through the
   # same range authority as everything else.
@@ -528,8 +525,6 @@ static:
   # reachability rule covers them.
   for zoomNotch in [CAMERA_ZOOM_NOTCH_WORLD, CAMERA_ZOOM_NOTCH_CREATURE]:
     doAssert zoomNotch >= CAMERA_ZOOM_MIN and zoomNotch <= CAMERA_ZOOM_MAX
-  # The drift speed is a non-empty range with its floor above zero, and its
-  # notch is a position that slider can reach.
   doAssert CAMERA_DRIFT_SPEED_MIN < CAMERA_DRIFT_SPEED_MAX
   doAssert CAMERA_DRIFT_SPEED_MIN > 0.0,
     "the drift toggle stops the drift; a speed slider that could stop it too " &
