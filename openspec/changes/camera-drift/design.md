@@ -285,7 +285,7 @@ pixels: `px/s = 1400 * speed / 60`.
 | `CAMERA_DRIFT_BREATHS_PER_WIDTH` | 0.5 | One full breath every two view widths travelled: eight minutes at the default speed, thirty seconds at the ceiling |
 | `CAMERA_DRIFT_RESUME_SECONDS` | 12.0 | Provisional. D2 names the observation that fixes it |
 | `CAMERA_DRIFT_MAX_PAN_STEP` | 0.002 | The largest fraction of a view width one advance may move, at `CAMERA_DRIFT_SPEED_MAX` and a 1/60 s frame. The path reaches 0.00111 there. A ceiling the sweep holds the path to, on `CLIMATE_MAX_STEP`'s terms: raising the speed ceiling past what the flow can carry goes red in the sweep instead of making the view jump |
-| `CAMERA_DRIFT_MAX_ZOOM_STEP` | 0.01 | The largest zoom change one advance may make, over every band the clamp produces, at the speed ceiling and a 1/60 s frame. The widest band is `[4, 8]`, where `d(zoom)/d(phase)` peaks near 12.3 and the per-frame phase step is 0.000556, giving 0.0069 |
+| `CAMERA_DRIFT_MAX_ZOOM_STEP` | 0.01 | The largest zoom change one advance may make, over every band the clamp produces, at the speed ceiling and a 1/60 s frame. The widest band is `[4, 8]`, where the per-frame phase step is 0.000556. The figure calculated here was 0.0069 from a peak `d(zoom)/d(phase)` of 12.3; the sweep in `tests/test_camera_drift.nim` measures the worst step at **0.00724**, the peak sitting nearer 13. The ceiling carries the measured number |
 
 `CAMERA_DRIFT_SPEED_MIN < CAMERA_DRIFT_SPEED_MAX`, the default inside the range, and the notch
 inside the range, all assert statically beside the existing camera zoom assertions at

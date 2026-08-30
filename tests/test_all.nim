@@ -28,6 +28,7 @@ import test_dormancy
 import test_help_content
 import test_overlay_core
 import test_camera_core
+import test_camera_drift
 import test_climate_core
 import test_camera_input
 import test_wgsl_lint
@@ -69,6 +70,7 @@ static:
   discard test_help_content.HELP_CONTENT_TESTS_LOADED
   discard test_overlay_core.OVERLAY_CORE_TESTS_LOADED
   discard test_camera_core.CAMERA_CORE_TESTS_LOADED
+  discard test_camera_drift.CAMERA_DRIFT_TESTS_LOADED
   discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
   discard test_camera_input.CAMERA_INPUT_TESTS_LOADED
   discard test_wgsl_lint.WGSL_LINT_TESTS_LOADED

@@ -15,7 +15,7 @@ that closes them is written.
 `src/camera_drift.nim` that does not exist either, and watch `just test` fail to compile before
 writing the module.
 
-- [ ] 1.1 Write `tests/test_camera_drift.nim`, covering the six properties the spec names: the
+- [x] 1.1 Write `tests/test_camera_drift.nim`, covering the six properties the spec names: the
   named speed delivers that travel over sixty simulated seconds at two different frame rates; a
   zero-second advance changes nothing; the shipped heading slope admits no rational approximation
   within the tested denominator bound, and the smallest closure error found is recorded in a
@@ -26,19 +26,19 @@ writing the module.
   clamp produces, exceeds neither `CAMERA_DRIFT_MAX_PAN_STEP` nor `CAMERA_DRIFT_MAX_ZOOM_STEP`.
   Files: `tests/test_camera_drift.nim`. Verify: `nim c -r tests/test_camera_drift.nim` fails to
   compile on the missing module.
-- [ ] 1.2 Add `CAMERA_DRIFT_SPEED_MIN`, `CAMERA_DRIFT_SPEED_MAX` and
+- [x] 1.2 Add `CAMERA_DRIFT_SPEED_MIN`, `CAMERA_DRIFT_SPEED_MAX` and
   `CAMERA_DRIFT_SPEED_NOTCH_SCREEN` to `src/config_ranges.nim` with the conditions from design.md
   D9 written beside each, and extend the static block at `:419` with non-emptiness, the notch inside
   the range, and `CAMERA_ZOOM_MAX / CAMERA_DRIFT_ZOOM_FACTOR >= CAMERA_ZOOM_MIN`. Files:
   `src/config_ranges.nim`. Verify: `nim c -r tests/test_camera_core.nim` still compiles, which
   exercises the static block.
-- [ ] 1.3 Write `src/camera_drift.nim`: the remaining constants from design.md D9, the `DriftState`
+- [x] 1.3 Write `src/camera_drift.nim`: the remaining constants from design.md D9, the `DriftState`
   record, the per-frame advance taking elapsed seconds and returning a new state and camera, the
   band derivation, the raised-cosine breath and its closed-form inverse, and the touch clock. Pure,
   importing only `std/math`, `camera_core` and `config_ranges`, with every exported function a
   `func`, since `src/ui/api/response_probe.nim` calls one of them under `noSideEffect`. Files:
   `src/camera_drift.nim`. Verify: task 1.1's suite passes.
-- [ ] 1.4 Register the suite: add `import test_camera_drift` and the matching
+- [x] 1.4 Register the suite: add `import test_camera_drift` and the matching
   `discard test_camera_drift.CAMERA_DRIFT_TESTS_LOADED` line to `tests/test_all.nim`. Files:
   `tests/test_all.nim`. Verify: `just test` runs the new suite, visible in its output.
 
