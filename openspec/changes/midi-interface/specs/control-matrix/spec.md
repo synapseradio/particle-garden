@@ -37,13 +37,14 @@ id as opaque and checks no grammar.
 
 ### Requirement: A row admits only legal combinations of source and target
 
-A row SHALL carry exactly one of four kinds and only the fields that kind uses: `Modulate` with a
+A row SHALL carry exactly one of five kinds and only the fields that kind uses: `Modulate` with a
 parameter id, a depth in [-1, 1] and a slew; `Write` with a parameter id, a jump flag and a rank;
-`Fire` with an action id and an ordinal; `Touch` with grid columns, grid rows, and a base note.
-The row type SHALL admit no action or gesture field on a `Modulate` row, so modulating an action
-fails the Nim compile.
+`Fire` with an action id and an ordinal; `Touch` with grid columns, grid rows, and a base note;
+`Tour` with a tour id, a boolean descriptor id gating the advance, a descriptor id scaling it, and
+a rank. The row type SHALL admit no action or gesture field on a `Modulate` row, so modulating an
+action fails the Nim compile.
 
-Validation SHALL hold four relations against the source declarations and the descriptor table:
+Validation SHALL hold five relations against the source declarations and the descriptor table:
 
 - a `Modulate` or `Write` row names a source declared `continuous` and a parameter id the descriptor
   table serves
@@ -54,9 +55,11 @@ Validation SHALL hold four relations against the source declarations and the des
   (`src/web_api.nim:767-780`)
 - a `Modulate` target names a parameter of the simulation or render record store, while a `Write`
   target may name any id `setParam` routes (`src/web_api.nim:585-639`)
+- a `Tour` row names a tour id the tour registry carries, a boolean descriptor gating its advance,
+  and a speed descriptor whose range excludes negative values
 
 Enforcement: the row kinds are typed, so a field belonging to another kind fails the Nim compile.
-`tests/test_control_matrix.nim` holds the four relations against the live descriptor table.
+`tests/test_control_matrix.nim` holds the five relations against the live descriptor table.
 
 #### Scenario: A continuous target driven from an event source is refused
 - **WHEN** a `Modulate` or `Write` row names a source declared `event`
@@ -106,22 +109,28 @@ queue order.
 - **THEN** a `Fire` row selecting ordinal zero matches it and a one-cell `Touch` grid resolves its
   only cell
 
-### Requirement: The flush runs once per frame between the weathers and physics
+### Requirement: The flush is the frame's only parameter writer
 
 The matrix SHALL drain staged values and events exactly once per frame, called from the frame loop
-after the weather writes and before `physics` (`src/app.nim:257-271`), so within a frame a hand on
-hardware lands after ambient drift. Families SHALL neither call the flush nor observe its result.
+before `physics` (`src/app.nim:271`). It SHALL be the only per-frame writer of parameters, so no
+branch in the frame loop writes a parameter beside it. Families SHALL neither call the flush nor
+observe its result.
 
-A frame in which no source delivered and no excursion is live SHALL write nothing and leave the
-CONFIG mirror alone.
+Ordering within a frame SHALL be rank and not call order, so a hand on hardware lands after
+ambient drift because a `Write` row outranks a `Tour` row on the same parameter.
+
+A frame in which no source delivered, no excursion is live, and no `Tour` row is running SHALL
+write nothing and leave the CONFIG mirror alone.
 
 Enforcement: the call site in `src/app.nim`'s frame loop is build-verified and review-enforced,
 alongside the import-order constraint that file already carries (`src/app.nim:8-11`).
-`tests/test_control_matrix.nim` covers what one flush consumes and produces from staged input.
+`tests/test_control_matrix.nim` covers what one flush consumes and produces from staged input. A
+native test asserts `src/app.nim` holds no parameter write outside the flush call, following the
+source-sweep pattern at `tests/test_no_modes.nim:34`.
 
 #### Scenario: The hand lands after the drift
-- **WHEN** a weather and an engaged `Write` row both move one parameter in one frame
-- **THEN** the frame runs the row's value
+- **WHEN** a running `Tour` row and an engaged `Write` row both target one parameter in one frame
+- **THEN** the frame runs the row's value, because the `Write` row's rank is higher
 
 #### Scenario: A queued event fires once
 - **WHEN** an event is staged between two frames
@@ -252,42 +261,62 @@ position step, and disengagement across a slider move, a preset apply, and anoth
 - **WHEN** a row carries jump and its source moves
 - **THEN** the parameter takes the row's value without any crossing
 
-### Requirement: An engaged Write row suspends a weather on its parameter
+### Requirement: A Tour row advances a phase on the wall clock and writes a whole point
 
-While a `Write` row holds engagement on a parameter a weather tours, that weather's per-frame write
-SHALL skip that parameter and SHALL keep writing its other axes. On disengagement the axis SHALL
-return to the weather, which lands the tour's current point on the next frame.
+A `Tour` row SHALL advance its own phase by the frame's capped wall-clock delta scaled by its speed
+descriptor, and SHALL write every axis of its tour from the point that phase names. It SHALL
+advance only while its gating boolean descriptor reads true. Advance SHALL follow the wall clock
+and not the simulation clock, so a tour named in minutes takes that many minutes whatever
+`timeScale` holds (`src/app.nim:244-247`).
 
-Enforcement: review-enforced and build-verified at the flush site, which serves both writers, so
-neither pure core learns of the other. `tests/test_control_matrix.nim` covers which ids a flush
-reports as suspended for a given set of engaged rows.
+Each `Tour` row SHALL own its phase, so one tour's position does not move when another is switched
+on (`src/app.nim:263-264`).
 
-#### Scenario: The hand holds the parameter alone
-- **WHEN** a weather is running and a `Write` row is engaged on one of its axes
-- **THEN** that parameter answers only the row while the engagement holds
+A single advance SHALL move no axis further than that axis's declared step ceiling, the bound
+`CLIMATE_MAX_STEPS` and `FORCE_WEATHER_MAX_STEPS` already carry (`src/climate_core.nim:135`,
+`:183`).
 
-#### Scenario: The rest of the tour keeps moving
-- **WHEN** one axis of a running weather is suspended
-- **THEN** its other axes continue to drift
+Enforcement: `tests/test_climate_core.nim` already sweeps the tour advance against the per-axis
+ceilings, and that sweep covers rows through the registered tour. `tests/test_control_matrix.nim`
+covers phase independence across two rows and the gate's effect on advance.
 
-#### Scenario: The weather resumes where its tour stands
-- **WHEN** an engaged row disengages from a suspended axis
-- **THEN** the next frame writes that axis from the tour's current point rather than from where the
-  row left it
+#### Scenario: The tour writes its axes together
+- **WHEN** a running `Tour` row advances one frame
+- **THEN** every axis of its tour takes the value the new phase names, in one batched write
 
-### Requirement: Colliding Write rows apply in ascending rank
+#### Scenario: The gate stops the advance
+- **WHEN** a `Tour` row's gating descriptor reads false
+- **THEN** its phase does not move and it writes no parameter
 
-A `Write` row SHALL carry a user-visible rank ordering it against other `Write` rows targeting the
-same parameter. Within a frame, engaged rows with fresh values SHALL apply in ascending rank, so the
-highest rank lands last and owns the frame. Rank SHALL order rows without regard to which family
-their sources come from, and the matrix SHALL keep no winner state between frames.
+#### Scenario: Two tours keep separate positions
+- **WHEN** one `Tour` row is switched on while another is already running
+- **THEN** the running row's phase is unchanged by the switch
 
-Enforcement: `tests/test_control_matrix.nim` covers apply order for colliding rows and the absence of
-carried-over ownership.
+#### Scenario: A contested axis leaves the others alone
+- **WHEN** a `Write` row outranks a running `Tour` row on one of its axes
+- **THEN** that axis takes the row's value and the tour's other axes take the tour's
+
+### Requirement: Colliding writers apply in ascending rank
+
+A `Write` row and a `Tour` row SHALL each carry a user-visible rank ordering it against every other
+writer targeting the same parameter. Within a frame, writers with fresh values SHALL apply in
+ascending rank, so the highest rank lands last and owns the frame. Rank SHALL order writers without
+regard to which family their sources come from or which kind they are, and the matrix SHALL keep no
+winner state between frames.
+
+The shipped matrix SHALL rank `Tour` rows below `Write` rows, so a hand on a control lands after
+ambient drift on the same parameter.
+
+Enforcement: `tests/test_control_matrix.nim` covers apply order for colliding writers of both kinds
+and the absence of carried-over ownership.
 
 #### Scenario: The higher rank owns the frame
 - **WHEN** two engaged `Write` rows deliver fresh values for one parameter in one frame
 - **THEN** the parameter holds the higher-ranked row's value when the flush returns
+
+#### Scenario: A tour yields to a hand by rank
+- **WHEN** a running `Tour` row and an engaged `Write` row target one parameter in one frame
+- **THEN** the parameter holds the `Write` row's value, and no suspension state is kept
 
 #### Scenario: A quiet frame carries no ownership forward
 - **WHEN** the higher-ranked row delivers nothing in the next frame and the lower-ranked row does

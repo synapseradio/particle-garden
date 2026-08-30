@@ -27,11 +27,18 @@ and invoked per row afterwards:
 
 This group gates every measurement group after it. Nothing is timed until 1.4 passes.
 
+The harness answers three unproven gates, not one. `midi-interface` and `audio-interface` each
+carry a measurement gate asking whether a permission-prompting Web API resolves inside the browser
+webui launches, and both reduce to a `Runtime.evaluate` call through the same CDP client this group
+builds. Task 1.6 answers them while the client is in hand, so neither sibling change opens with an
+unproven transport.
+
 - [ ] 1.1 Confirm the pre-state that makes this change necessary: `grep -c 'particle-life\|reaction-diffusion' docs/perf-report.md` returns a nonzero count while `grep -rn 'mode=' src/app.nim` finds no mode parameter. Touches no file. No test fails first here. This group produces a measurement instrument, and the suite has nothing to say about it.
 - [ ] 1.2 Write `scratchpad/main/perf-harness/coop_server.py`: a `ThreadingHTTPServer` over a `SimpleHTTPRequestHandler` rooted at the directory named in `argv[2]`, listening on `argv[1]`, adding `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` to every response. Verify by starting it on 8891 against `web` and confirming `curl -sI http://127.0.0.1:8891/index.html` prints both headers with a 200.
 - [ ] 1.3 Write `scratchpad/main/perf-harness/run.ts` implementing steps 2 through 4 of RUN, using bun's built-in `WebSocket` against the target `webSocketDebuggerUrl` read from `http://127.0.0.1:<port>/json/list`. It installs no dependency. Verify by running it with `--duration 20 --run smoke --n 16000` and confirming `scratchpad/main/perf-harness/runs/smoke.json` exists and holds at least one `[gpu-profile]` entry.
 - [ ] 1.4 **Gate.** Run `bun scratchpad/main/perf-harness/run.ts --run gate --n 16000 --duration 60 --set fluidStrength=0.5`. The observation that settles it: the script's read-back of `fluidStrength` returns `0.5`, and at least one `[gpu-profile]` entry in `runs/gate.json` carries a physics figure above zero, which is what shows the adapter granted `timestamp-query` and the profiler is live (`src/gpu_profiler.nim:2-3,60-62`). A zero-everywhere trace means the profiler is inactive and no configuration below is measurable. Stop the change and report that instead of recording zeros.
-- [ ] 1.5 Confirm the working tree is unchanged outside `scratchpad/`: `git status --porcelain` names no path under `src/`, `web/`, `web-ui/`, `tests/`, or `docs/`. Then `just happen` and `just check` green.
+- [ ] 1.5 **The two sibling gates**, answered from the client 1.3 built. Launch the app's own server and window (`./main`, port 8089, `src/main.nim:19,62-85`) rather than the headless harness server, since what is under test is the browser webui selects and the permission UI inside that window. Attach over CDP and evaluate each of `typeof navigator.requestMIDIAccess === 'function'` and `typeof navigator.mediaDevices?.getUserMedia === 'function'`, then call each one and record whether the promise resolves, rejects, or hangs on a prompt nobody can answer. Record the browser's `navigator.userAgent` beside the results. The observation that settles each: a resolved promise means the sibling change's transport is buildable as its proposal assumes, and a rejection or a hang means that change opens by reporting unavailability through its affordance instead. Write both results to `scratchpad/main/perf-harness/runs/web-api-gates.json`. This task times nothing and gates no measurement group below. A failure here stops neither this change nor any task in it.
+- [ ] 1.6 Confirm the working tree is unchanged outside `scratchpad/`: `git status --porcelain` names no path under `src/`, `web/`, `web-ui/`, `tests/`, or `docs/`. Then `just happen` and `just check` green.
 
 ## 2. The intrinsic floor and the shipped world
 

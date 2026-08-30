@@ -175,12 +175,11 @@ combined cost of the neighbour sweep, not the atomics' share of it.
 
 ### D6: Rewrite `docs/perf-report.md` in place
 
-The two sibling reports in `docs/` are each one file rewritten over itself
-(`docs/control-legibility-report.md:2`, `docs/force-budget-report.md:5`), and neither keeps a
-superseded copy. A second performance file marked superseded would be the only artifact of its
-kind in that tree, and would keep the three dead mode ids on disk, which is the condition this
-change exists to end. `git log --follow -- docs/perf-report.md` keeps the old content
-reachable.
+The sibling report `docs/control-legibility-report.md` is one file rewritten over itself
+(`docs/control-legibility-report.md:2`), and keeps no superseded copy. A second performance file
+marked superseded would be the only artifact of its kind in that tree, and would keep the three
+dead mode ids on disk, which is the condition this change exists to end. `git log --follow --
+docs/perf-report.md` keeps the old content reachable.
 
 ## Risks / Trade-offs
 

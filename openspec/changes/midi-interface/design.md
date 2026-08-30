@@ -51,7 +51,7 @@ Row-kind legality is typed. Source legality is validated against a registry.
 
 ```nim
 type
-  RowKind* = enum rkModulate, rkWrite, rkFire, rkTouch
+  RowKind* = enum rkModulate, rkWrite, rkFire, rkTouch, rkTour
   ControlRow* = object
     sourceId*: string          ## resolved against the source registry
     case kind*: RowKind
@@ -69,15 +69,53 @@ type
     of rkTouch:
       gridCols*, gridRows*: int  ## pad grid laid over the visible view
       baseNote*: int
+    of rkTour:
+      tourId*: string          ## resolved against the tour registry
+      runningParamId*: string  ## the boolean descriptor gating the advance
+      tourSpeedParamId*: string  ## the descriptor scaling the advance
+      tourRank*: int           ## collision order against Write rows on one id
 ```
 
-A source id is an opaque string a family mints and prefixes with its family id, for example `midi:cc:1:74` or `midi:notes:1`. Each family registers its sources with a declared kind, continuous or event. Validation holds four relations: a Modulate or Write row names a continuous source and a served descriptor id, a Fire or Touch row names an event source, an action id is one the boundary serves, and `particleCount` and `speciesCount` are rejected as Modulate and Write targets because their effects ride the release side effect a matrix write never produces (`src/web_api.nim:767-780`). Modulate targets are further restricted to the two record stores, `psSimulation` and `psRender`, whose field walks the overlay in D4 reuses. Write targets may name anything `setParam` serves.
+Nim forbids one field name in two branches of an object variant, so the tour's precedence
+field is `tourRank` and the write's stays `rank`. Arbitration reads whichever the row's kind
+carries.
+
+A source id is an opaque string a family mints and prefixes with its family id, for example `midi:cc:1:74` or `midi:notes:1`. Each family registers its sources with a declared kind, continuous or event. Validation holds five relations: a Modulate or Write row names a continuous source and a served descriptor id, a Fire or Touch row names an event source, an action id is one the boundary serves, `particleCount` and `speciesCount` are rejected as Modulate and Write targets because their effects ride the release side effect a matrix write never produces (`src/web_api.nim:767-780`), and a Tour row names a registered tour id, a boolean descriptor, and a descriptor whose range excludes negative speed. Modulate targets are further restricted to the two record stores, `psSimulation` and `psRender`, whose field walks the overlay in D4 reuses. Write targets may name anything `setParam` serves.
 
 Validation separates malformed from unresolved. A structurally malformed row drops at decode (D8). A well-formed row whose source id matches no current declaration keeps its place, sits inert at flush, and shows as unresolved in the editor, since families may declare sources lazily and a stored mapping must survive a session where its device or sibling family is absent. For a continuous row this inertness equals its behavior before first delivery, so nothing downstream branches on it.
 
 Rejected: a typed source variant enumerating families (`MidiCC(channel, cc) | Feature(id)`). It makes source legality compile-checked, and it makes the audio family a matrix edit, which the sibling proposal promises not to need. The registry is the smart constructor guarding what the type no longer can: rows only exist validated, and a source id no declaration covers surfaces as an unresolved row rather than a silent drop.
 
-Rejected: separate row lists per kind (four arrays). The editor, persistence, rank, and learn all speak in one ordered list of rows. Four lists move the invariant into every consumer.
+Rejected: separate row lists per kind (five arrays). The editor, persistence, rank, and learn all speak in one ordered list of rows. Five lists move the invariant into every consumer.
+
+Rejected: expressing a tour as N Modulate rows, one per axis. A waypoint table names settled
+configurations, so the axes advance together and the correlation between them is the content. N
+independent rows sharing a source would reproduce the correlation only while every depth and curve
+stayed in agreement, and nothing would hold them in agreement. The tour registry keeps the whole
+point in one place, which is where `climate_core` already keeps it (`src/climate_core.nim:107-133`,
+`:165-176`).
+
+### D2a. The tour registry and the clock family
+
+A tour is a phase-to-point function plus the parameter ids its axes write. `climate_core` already
+holds both halves for the two shipped weathers: `CLIMATE_PARAM_IDS` and `FORCE_WEATHER_PARAM_IDS`
+name the axes (`src/climate_core.nim:89`, `:154`), and `tourAt` maps a phase to a whole point over
+`RD_CLIMATE_TOUR` and `FORCE_WEATHER_TOUR`. Registration hands the matrix `(tourId, axisParamIds,
+pointAt(phase), maxStepPerAxis)`, where the per-axis step ceilings are the ones
+`CLIMATE_MAX_STEPS` and `FORCE_WEATHER_MAX_STEPS` already declare.
+
+A tour advances on wall-clock seconds, so the clock is its source. One `clock` family registers a
+single continuous source, `clock:frame`, carrying the frame's capped wall-clock delta
+(`cappedDt`, `src/app.nim:240`). Wall-clock advance is what the weathers do today and the comment
+at `src/app.nim:244-247` states why: one tour of the regimes a minute means a minute, whatever
+`timeScale` is doing to the simulation.
+
+Phase is row state, not row data. Each Tour row owns its phase, which is what keeps one weather's
+position independent of the other's, the property `src/app.nim:263-264` calls out.
+
+A tour whose point is not a waypoint table registers the same way. Registration needs `pointAt` as
+a pure function of phase over the declared axes, plus a per-axis step ceiling, and the matrix reads
+nothing else about how the point gets computed.
 
 ### D3. Source normalization
 
@@ -113,9 +151,21 @@ A Write row turns its source value into a value via `valueAt(descriptor, sourceV
 
 Soft takeover engages per row. The row tracks its previous source travel against the parameter's current travel, `positionOf(descriptor, storedValue)`. It engages when the incoming travel crosses the current travel or lands within one `positionStep` of it, and it disengages when the parameter moves by more than one `positionStep` from the row's last written travel, which covers the slider, a preset, and another row. `jump: true` is permanently engaged.
 
-An engaged Write row suspends the weather on its parameter. While any Write row holds engagement on an id a weather tours, that weather's per-frame write skips the id and its other axes continue, and disengagement restores the axis, which snaps to the tour's current point on the next frame. The suspension lives in `web_api` beside the flush, which already serves both writers, so neither pure core learns of the other.
+Rank: within a frame, every writer with a fresh value for one parameter applies in ascending rank,
+so the highest rank lands last and owns the frame. Tour rows and engaged Write rows rank in one
+order, because a Tour row is a writer and carries `tourRank` for exactly this. No winner state is
+kept.
 
-Rank: within a frame, engaged Write rows with fresh values apply in ascending rank, so the highest rank lands last and owns the frame. No winner state is kept.
+Tour rows ship below Write rows in rank, so a hand on a knob lands after ambient drift on the same
+parameter, which is the ordering `src/app.nim:257-271` gives the weathers today. A Tour row keeps
+writing its other axes whatever happens on this one, because rank is settled per parameter and an
+axis nobody contests has one writer. When the Write row disengages, the tour's next frame writes
+that axis from its own phase, which advanced throughout.
+
+Rejected: suspending a tour on a parameter a Write row holds. That was a second arbitration
+mechanism beside rank, with its own engagement state and its own restore behavior, and it existed
+because tours sat outside the matrix. One writer list settled by rank produces the same observable
+result: while the Write row is engaged and outranks the tour, the parameter answers the row.
 
 Rejected: mapping the row's travel with the live ceiling as `boundMax`. A knob at full travel would then store the ceiling value, so raising the ceiling input later would leave the parameter low where a slider at full travel rises with it, and takeover would compare travel in a coordinate the panel never uses.
 
@@ -125,7 +175,7 @@ Rejected: electing a single winning row and masking the rest. It adds an ownersh
 
 ### D6. Flush order and coalescing
 
-`midi_input` stages between frames: a latest-value table for continuous sources, an ordered queue for events. `web_api.flushMatrix()` drains both, once per frame, called from the loop after the weather writes and before `physics` (`src/app.nim:257-271`), so within a frame a hand on hardware lands after ambient drift.
+`midi_input` stages between frames: a latest-value table for continuous sources, an ordered queue for events. `web_api.flushMatrix()` drains both, once per frame, called from the loop before `physics` (`src/app.nim:271`). It is the only per-frame parameter writer, so the two `if` branches at `src/app.nim:257-269` go, and the loop calls the flush where they stood. Ordering within a frame is rank, not call order, so a hand on hardware lands after ambient drift because a Write row outranks a Tour row on the same parameter.
 
 Continuous coalescing is the staging table itself: a sweep collapses to the latest value per source. Events preserve arrival order, with one exception: multiple program changes for the same regime target in one frame collapse to the latest. Touch events funnel into the one blast slot `InputState` holds, latest wins, matching a second tap replacing the first.
 
@@ -151,7 +201,9 @@ Identifiers avoid the word mode (`learnArmed`, `armLearn`). The forbidden-vocabu
 
 ### D10. The widened push
 
-The push keeps its semantics, current values on every push so the panel never tracks which feature writes which id (`src/web_api.nim:817-819`), and widens its id set: `params` carries the two weather tables union every Write row target in the active matrix, rebuilt on matrix edit. The panel side already applies arbitrary ids by comparison (`web-ui/src/state.ts:108-113`).
+The push keeps its semantics, current values on every push so the panel never tracks which feature writes which id (`src/web_api.nim:817-819`), and derives its id set from the matrix: `params` carries every parameter a Write row or a Tour row targets in the active matrix, rebuilt on matrix edit. The two enumerated weather loops at `src/web_api.nim:822-828` go, because the tours that fed them are rows and their axes arrive through the same derivation. The panel side already applies arbitrary ids by comparison (`web-ui/src/state.ts:108-113`).
+
+This is what the proposal means by the id set becoming the parameters written outside the panel. The set is derived from row targets, so it stays truthful under a user-editable matrix without anyone maintaining a second list.
 
 A new `excursions` record rides beside `ceilings`: signed travel offset per parameter id under a live excursion, empty when none. The panel shades the span from the handle's base by the offset, through the pattern the derived ceilings use (`web-ui/src/components/ParamSlider.tsx:55-68`, `web-ui/src/state.ts:118-119`).
 
@@ -174,7 +226,8 @@ A MIDI help file joins `docs/help/` in the numbered sequence (for example `70-mi
 ### D13. Test plan
 
 - `tests/test_midi_core.nim`: byte-triple parsing, malformed input rejected at the boundary, normalization to [0, 1], channel extraction into source ids.
-- `tests/test_control_matrix.nim`: the four validation relations of D2, arbitration summing and clamping in travel space against real descriptors, rank ordering, takeover engagement and disengagement across crossing, preset apply, and weather movement, slew convergence, schema round-trip, the drop-and-clamp decode stance, and the shipped defaults surviving validation.
+- `tests/test_control_matrix.nim`: the five validation relations of D2, arbitration summing and clamping in travel space against real descriptors, rank ordering across Write and Tour rows on one parameter, takeover engagement and disengagement across crossing, preset apply, and tour movement, slew convergence, Tour phase independence and the gate's effect on advance, schema round-trip, the drop-and-clamp decode stance, and the shipped defaults surviving validation.
+- `tests/test_climate_core.nim`: unchanged in what it asserts, and the gate that the two weathers kept their behaviour across the absorption.
 - Static gates: the shipped matrix validates at compile time against the descriptor table and the MIDI source declarations, alongside the existing curve-floor and mirror gates.
 - `tests/test_help_content.nim`: the D12 relation.
 - The suite watches each new gate fail once before its green counts (principle 4).
@@ -190,7 +243,7 @@ What a source family provides to exist. This section is self-standing for the au
 
 **Event delivery.** The family calls `emitSourceEvent(sourceId, magnitude, ordinal)` with `magnitude` in [0, 1] and `ordinal` locating the event inside the source's own space, zero where the source has no such space. Events queue in arrival order and drain at the next flush. Fire rows select on the ordinal, and Touch rows index their grid with it.
 
-**Flush.** `web_api.flushMatrix()` runs once per frame from the frame loop, after the weather writes and before physics. Families never call it and never observe it. Everything downstream of delivery, arbitration, takeover, excursions, writes, gestures, shading, and the widened push, is matrix-side.
+**Flush.** `web_api.flushMatrix()` runs once per frame from the frame loop, before physics, and is the frame's only parameter writer. Families never call it and never observe it. Everything downstream of delivery, arbitration, takeover, excursions, writes, gestures, shading, and the widened push, is matrix-side.
 
 **Learn.** Armed learn binds on the first qualifying delivery through the same two entry points. A family needs no learn awareness.
 
@@ -202,7 +255,8 @@ What a source family provides to exist. This section is self-standing for the au
 - [Registry-validated sources are checked later than a typed variant would be] → the static gate on the shipped matrix and the validation tests hold the seam, and an id no declaration covers shows as an unresolved row in the editor rather than failing silently at dispatch.
 - [Per-frame modulated mirror cost] → bounded by the weathers' proven per-frame write, and zero when no excursion is live.
 - [Shading lag at the push cadence] → informational only, stated in the contract, revisited with a measurement when audio arrives.
-- [A Write row and a weather sharing an id would fight across frames] → an engaged Write row suspends the weather on that id (D5), so the hand holds the parameter alone while engaged and the weather resumes on disengage.
+- [A Write row and a Tour row sharing a parameter would fight across frames] → both are writers in one list settled by rank (D5), and the shipped matrix ranks tours below writes, so the hand lands last while it is engaged.
+- [Absorbing the two weathers changes a mechanism the app already ships] → behaviour is held fixed by `tests/test_climate_core.nim`, which asserts the tour advance and the per-axis step ceilings without reference to how the frame loop calls it.
 
 ## Migration Plan
 
@@ -211,3 +265,4 @@ Either change may land first: this design introduces the matrix, and if audio-in
 ## Open Questions
 
 1. **Multiple MIDI inputs.** All connected inputs merge into one stream, distinguished only by channel. Whether a device filter or per-device source ids matter is deferrable: source ids are opaque strings, so a later `midi:<device>:cc:1:74` grammar extends without schema change.
+2. **A row kind for a self-mover that integrates from live state.** No row kind carries one. A Tour row writes `pointAt(phase)`, a pure function of phase, and clamps each axis against `maxStepPerAxis` (D2a), so it expresses no read-modify-write. Camera drift is the known instance: it reads the camera each frame and adds a displacement, holding no absolute path, and a per-axis step ceiling would clamp the seam crossing the toroidal camera depends on (`openspec/changes/camera-drift/design.md:47-80`, D1). It therefore stays outside the matrix, advancing from a branch in the frame loop. Whether a fifth row kind carrying an integrator earns its place stays open.

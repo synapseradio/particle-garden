@@ -131,12 +131,11 @@ None.
 
 ## Impact
 
-- `docs/perf-report.md`, rewritten in place. The old content goes; no superseded copy stays. The two sibling
-  reports in `docs/` are single files regenerated over themselves
-  (`docs/control-legibility-report.md:2` states edits there are overwritten;
-  `docs/force-budget-report.md:5` names the test that writes it), so a second, superseded
-  performance file would be the only artifact of its kind in that directory. `git log --follow`
-  keeps the old content reachable.
+- `docs/perf-report.md`, rewritten in place. The old content goes; no superseded copy stays. The
+  sibling report `docs/control-legibility-report.md` is a single file regenerated over itself
+  (`docs/control-legibility-report.md:2` states edits there are overwritten), so a second,
+  superseded performance file would be the only artifact of its kind in that directory. `git log
+  --follow` keeps the old content reachable.
 - `scratchpad/main/`, holding the server and CDP harness scripts.
 - `web/shaders/src/forces.wgsl`, edited and reverted within one task group, verified clean by
   `git status --porcelain`.

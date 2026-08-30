@@ -36,11 +36,13 @@ failure or an undefined value. The cadence's ownership is review-enforced.
 ### Requirement: The stats sample reports every parameter written outside the panel
 
 The `params` record SHALL carry the current value of every parameter id a writer outside the panel
-can move: the two weather axis tables (`src/web_api.nim:824-829`) and every `Write` row target in the
-active mapping, recomputed when the mapping changes. Values SHALL be sent on every push whether or
-not anything moved them, so the panel reports what the simulation holds without tracking which writer
-moved which id (`src/web_api.nim:811-819`). The record SHALL carry ids and values alone, naming no
-writer, so a panel that applies whatever arrives stays correct under a user-editable id set.
+can move, derived from the active mapping: every `Write` row target and every axis of every `Tour`
+row's registered tour, recomputed when the mapping changes. The two enumerated weather loops
+(`src/web_api.nim:822-828`) go, because the tours that fed them are rows and their axes arrive
+through the same derivation. Values SHALL be sent on every push whether or not anything moved them,
+so the panel reports what the simulation holds without tracking which writer moved which id
+(`src/web_api.nim:811-819`). The record SHALL carry ids and values alone, naming no writer, so a
+panel that applies whatever arrives stays correct under a user-editable id set.
 
 Enforcement: the build for the record's declared type (`web-ui/src/garden-api.ts:141`) and the
 panel's comparison loop (`web-ui/src/state.ts:107-113`). The id set is review-enforced and
@@ -55,8 +57,13 @@ build-verified, since `web_api.nim` compiles only on the JS backend and no nativ
 
 #### Scenario: Editing the mapping edits the reported set
 - **WHEN** a `Write` row's target changes
-- **THEN** the next push carries the new target's id, and drops any id neither a weather axis nor a
-  row names
+- **THEN** the next push carries the new target's id, and drops any id no row in the active mapping
+  names
+
+#### Scenario: A tour's axes report without being enumerated
+- **WHEN** a `Tour` row is present in the active mapping
+- **THEN** the push carries every axis of its registered tour, with no axis list written at the
+  boundary
 
 #### Scenario: A quiet parameter still reports
 - **WHEN** nothing has written a reported id since the previous push

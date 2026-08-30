@@ -28,7 +28,18 @@ camera drift.
   camera as touched, and the drift stays still until a quiet interval has passed. It resumes
   from the camera the user left, never from a remembered position of its own.
 - New pure module `src/camera_drift.nim` holds the motion, natively tested at
-  `tests/test_camera_drift.nim`, on the terms every other `*_core` module is tested on.
+  `tests/test_camera_drift.nim`, on the terms every other `*_core` module is tested on. It exposes
+  a displacement over elapsed wall-clock seconds, applied to the camera it is handed.
+- **The drift advances from a branch in the frame loop, beside the two weathers at
+  `src/app.nim:257-269`.** It integrates from the live camera and holds no absolute path. D1 in
+  design.md records that decision with its grounds. `sibling change midi-interface` registers a
+  tour by handing its control matrix `(tourId, axisParamIds, pointAt(phase), maxStepPerAxis)`
+  (`openspec/changes/midi-interface/design.md:98-105`). `pointAt` is a pure function of phase, so a
+  Tour row writes a whole point and reads nothing from live state, and `maxStepPerAxis` clamps each
+  axis's travel per frame, which would clamp a seam crossing in `cameraCenterX` exactly where the
+  toroidal camera is meant to wrap. A read-modify-write integrator fits neither. Whether the matrix
+  grows a row kind that carries one belongs to `midi-interface` and is recorded there as an open
+  question. This change does not wait on it.
 - `src/config_ranges.nim` gains the drift-speed bounds under the existing static assertion
   block at `:419`.
 - `docs/help/60-camera.md` gains the control line and the yield-and-resume behaviour, which
@@ -61,7 +72,9 @@ None.
   The mirror gate at `src/web_api.nim:100-128` fails the `nim js` build without them.
 - `src/preset.nim`: the two `PresetSettings` fields, their defaults, their read and their write.
   `tests/test_preset.nim:59-101` holds every preset default to the state field that owns it.
-- `src/app.nim`: the drift advance beside the two weathers at `:257-269`.
+- `src/app.nim`: the drift advance, a branch beside the two weathers at `:257-269`, gated on
+  `cameraDrift`, running on `cappedDt` before physics. Its `DriftState` lives as a module-level var
+  beside `climatePhase` and `forceWeatherPhase`.
 - `src/canvas_input.nim`: the touched stamp, set by one wrapper every user-facing camera writer
   goes through.
 - `src/web_api.nim`: `getCameraDrift` / `setCameraDrift` beside the existing toggle pairs at
