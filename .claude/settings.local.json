@@ -30,7 +30,8 @@
       "Bash(grep -c \"\\\\[OK\\\\]\" /tmp_check.log)",
       "Bash(rm -f /tmp_check.log)",
       "Bash(openspec instructions *)",
-      "mcp__linkup__linkup-search"
+      "mcp__linkup__linkup-search",
+      "Read(//Users/nick/projects/.worktrees/synapseradio/particle-garden/camera-drift/web-ui/**)"
     ]
   },
   "skillOverrides": {
@@ -80,9 +81,9 @@
     "waypoint": "off",
     "what-if": "off"
   },
+  "outputStyle": "Concise",
   "sandbox": {
     "enabled": false,
     "autoAllowBashIfSandboxed": false
-  },
-  "outputStyle": "Concise"
+  }
 }

@@ -1,0 +1,29 @@
+Particle Garden - how to run it on Windows
+==========================================
+
+1. Extract this zip first. Right-click it, choose Extract All, then Extract.
+   Running the app from inside the zip window does not work.
+
+2. Double-click particle_garden.exe.
+
+3. A blue box may say "Windows protected your PC". This appears because the
+   app has no paid signing certificate. Click More info, then click Run anyway.
+
+4. A small black window opens, and then a browser window with the garden in
+   it. Keep the black window open. Closing it stops the app.
+
+Nothing is installed, and nothing needs administrator rights. To remove the
+app, delete the folder you extracted.
+
+
+If no browser window appears
+----------------------------
+Install Microsoft Edge or Google Chrome. The app needs one of them to draw.
+
+If it says the address is already in use
+----------------------------------------
+Close whatever else is using port 8089, then start the app again.
+
+
+The same steps, with pictures of the buttons, are at
+https://github.com/synapseradio/particle-garden#windows

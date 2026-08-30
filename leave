@@ -467,7 +467,10 @@ function main() {
   color_init
 
   if [ "$(uname -s)" != 'Darwin' ]; then
-    script_exit "Particle Garden's installer only knows macOS, and so does leave." 4
+    local refusal
+    refusal="Particle Garden's installer only knows macOS, and so does leave. Nothing it undoes was installed here."
+    refusal="${refusal}\nThe ready-to-run app for this machine is at https://github.com/synapseradio/particle-garden/releases"
+    script_exit "${refusal}" 4
   fi
 
   # rm -rf of the process CWD would leave every later subshell — and the

@@ -110,7 +110,8 @@ jobs:
         shell: pwsh
         run: |
           Rename-Item -Path "main.exe" -NewName "particle_garden.exe"
-          Compress-Archive -Path "particle_garden.exe" -DestinationPath "${{ matrix.artifact }}"
+          Copy-Item -Path "docs/how-to-run-windows.txt" -Destination "HOW-TO-RUN.txt"
+          Compress-Archive -Path "particle_garden.exe","HOW-TO-RUN.txt" -DestinationPath "${{ matrix.artifact }}"
 
       # Linux: Create tarball
       - name: Package Linux
@@ -118,7 +119,8 @@ jobs:
         run: |
           mv main particle_garden
           chmod +x particle_garden
-          tar -czvf "${{ matrix.artifact }}" particle_garden
+          cp docs/how-to-run-linux.txt HOW-TO-RUN.txt
+          tar -czvf "${{ matrix.artifact }}" particle_garden HOW-TO-RUN.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

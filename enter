@@ -970,7 +970,11 @@ function resolve_clone_dir() {
 
 function preflight() {
   if [ "$(uname -s)" != 'Darwin' ]; then
-    script_exit "Particle Garden's installer only knows macOS. On Linux or Windows, see the Build from Source notes in README.md." 4
+    local refusal
+    refusal="Particle Garden's installer only knows macOS. On Windows or Linux you do not need it:"
+    refusal="${refusal}\ndownload the ready-to-run app from https://github.com/synapseradio/particle-garden/releases"
+    refusal="${refusal}\nand follow the steps at https://github.com/synapseradio/particle-garden#windows"
+    script_exit "${refusal}" 4
   fi
 
   if [ "${EUID}" -eq 0 ]; then

@@ -1,0 +1,3 @@
+# Notepad on older Windows renders LF-only text as one long line, and this file
+# is read on a machine that has just unzipped the release.
+docs/how-to-run-windows.txt text eol=crlf

@@ -24,8 +24,8 @@ Pre-built binaries on [Releases](https://github.com/synapseradio/particle-garden
 | Platform | File | Notes |
 |----------|------|-------|
 | **macOS** | `particle-garden-macos.zip` | [See Gatekeeper note](#macos-gatekeeper) |
-| **Windows** | `particle-garden-windows.zip` | Extract and run `particle_garden.exe` |
-| **Linux** | `particle-garden-linux.tar.gz` | Extract, `chmod +x`, run |
+| **Windows** | `particle-garden-windows.zip` | [How to run it](#windows) |
+| **Linux** | `particle-garden-linux.tar.gz` | [How to run it](#linux) |
 
 ### macOS Gatekeeper
 
@@ -35,6 +35,30 @@ To fix, open Terminal and run:
 ```bash
 xattr -dr com.apple.quarantine ~/Downloads/Particle\ Garden.app
 ```
+
+### Windows
+
+No installer, no terminal. Download the zip, extract it, run the app.
+
+1. Download `particle-garden-windows.zip` from [Releases](https://github.com/synapseradio/particle-garden/releases).
+2. Find it in your Downloads folder, right-click it, choose **Extract All**, then **Extract**.
+3. Double-click `particle_garden.exe`.
+4. A blue box may say **"Windows protected your PC"**. This appears because the app has no paid signing certificate. Click **More info**, then click **Run anyway**.
+5. A small black window opens, and then a browser window with the garden in it. Keep the black window open. Closing it stops the app.
+
+If no browser window appears, install Microsoft Edge or Google Chrome. The app needs one of them to draw.
+
+If it says the address is already in use, close whatever else is using port 8089.
+
+### Linux
+
+1. Download `particle-garden-linux.tar.gz` from [Releases](https://github.com/synapseradio/particle-garden/releases).
+2. Right-click it in your file manager and choose **Extract Here**.
+3. Right-click `particle_garden`, open **Properties**, then **Permissions**, and turn on **Allow executing file as program**. In a terminal this is `chmod +x particle_garden`.
+4. Double-click it, or run `./particle_garden`.
+5. Chrome, Chromium or Edge must be installed. The app needs one of them to draw.
+
+If it says the address is already in use, close whatever else is using port 8089.
 
 ---
 

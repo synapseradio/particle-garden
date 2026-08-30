@@ -230,6 +230,7 @@ count_action() {
   run "${E}" --yes --no-run
   [ "${status}" -eq 4 ]
   assert_output --partial 'only knows macOS'
+  assert_output --partial 'https://github.com/synapseradio/particle-garden/releases'
   refute_called_with xcode-select '(^| )--install'
 }
 

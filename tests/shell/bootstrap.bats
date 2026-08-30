@@ -80,6 +80,7 @@ setup() {
   run "${G}" --yes
   [ "${status}" -eq 4 ]
   assert_output --partial 'only knows macOS'
+  assert_output --partial 'https://github.com/synapseradio/particle-garden/releases'
 }
 
 # bats test_tags=bootstrap

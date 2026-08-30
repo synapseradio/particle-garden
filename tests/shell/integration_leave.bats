@@ -256,4 +256,6 @@ standard_artifacts() {
   mock_tool uname
   run "${L}" --yes
   [ "${status}" -eq 4 ]
+  assert_output --partial 'only knows macOS'
+  assert_output --partial 'https://github.com/synapseradio/particle-garden/releases'
 }

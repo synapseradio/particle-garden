@@ -199,7 +199,10 @@ function main() {
   parse_params "$@"
 
   if [ "$(uname -s)" != 'Darwin' ]; then
-    printf "Particle Garden's installer only knows macOS. On Linux or Windows, see the Build from Source notes in README.md.\n" >&2
+    printf '%s\n' \
+      "Particle Garden's installer only knows macOS. On Windows or Linux you do not need it:" \
+      'download the ready-to-run app from https://github.com/synapseradio/particle-garden/releases' \
+      'and follow the steps at https://github.com/synapseradio/particle-garden#windows' >&2
     exit 4
   fi
 
