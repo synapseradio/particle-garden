@@ -225,7 +225,7 @@ every launch.
 | `notches` | `default` spliced at position 0 by `withDefaultNotch`, then `a screen a minute` at `CAMERA_DRIFT_SPEED_NOTCH_SCREEN` = 1.0 | 1.0 is the unit's definition, the same kind of claim `CAMERA_ZOOM_NOTCH_WORLD` carries |
 | `curve` | `cLinear` | `cLog` needs a measured remedy, per the module's own note at `:80-91`. The floor is above zero, so switching later needs no range change |
 | `probe` | `camera.driftFrameTravel` | D8 |
-| `horizon`, `horizonReview` | `rhSettling`, `true` | matches `climateSpeed` and `forceWeatherSpeed`: the rate changes at once and reading a rate change takes a moment, and no stepping mirror executes the claim |
+| `horizon`, `horizonReview` | `rhInstant`, `false` | the field declares when the world answers, and `src/camera_drift.nim:65-69` scales the next frame's travel by the new speed with nothing smoothing it. `tests/test_dormancy.nim:188-191` holds every `psRender` id to `rhInstant`, and D5 routes this one there. The second or so a viewer needs to read the new rate is not what the field measures (`src/ui/api/param_descriptor.nim:97-102`) |
 | `dormantWhen` | `cameraDriftOff` | D8 |
 | `bound` | `bConstant` | no ceiling derives from another parameter |
 | `arity` | `paScalar` | one camera |

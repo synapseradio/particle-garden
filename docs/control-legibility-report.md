@@ -59,6 +59,7 @@ Span, live fraction, and cliff per declared slice, at the calibrated thresholds 
 | secretion | default | 2.0000 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | tropism | default | 1.5000 | 1.000 | 0.007 | none | 0.00-1.00 | pass |
 | cameraZoom | default | 0.8750 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
+| cameraDriftSpeed | default | 0.9875 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
 
 ## Calibration: where each threshold sits
 

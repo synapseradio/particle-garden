@@ -36,6 +36,9 @@ export function createPanelController(api: GardenAPI) {
   const [climateDrift, setClimateDriftSignal] = createSignal(
     api.getClimateDrift(),
   );
+  const [cameraDrift, setCameraDriftSignal] = createSignal(
+    api.getCameraDrift(),
+  );
   const [forceWeather, setForceWeatherSignal] = createSignal(
     api.getForceWeather(),
   );
@@ -88,6 +91,7 @@ export function createPanelController(api: GardenAPI) {
     setColormapSignal(api.getColormap());
     setRdRegimeSignal(api.getRdRegime());
     setClimateDriftSignal(api.getClimateDrift());
+    setCameraDriftSignal(api.getCameraDrift());
     setForceWeatherSignal(api.getForceWeather());
     setPaletteSchemeSignal(api.getPaletteScheme());
     setPaletteCustomSignal(api.isPaletteCustom());
@@ -143,6 +147,7 @@ export function createPanelController(api: GardenAPI) {
     colormap,
     rdRegime,
     climateDrift,
+    cameraDrift,
     forceWeather,
     paletteScheme,
     paletteCustom,
@@ -216,6 +221,12 @@ export function createPanelController(api: GardenAPI) {
     setClimateDrift(enabled: boolean) {
       api.setClimateDrift(enabled);
       setClimateDriftSignal(api.getClimateDrift());
+    },
+    setCameraDrift(enabled: boolean) {
+      api.setCameraDrift(enabled);
+      setCameraDriftSignal(api.getCameraDrift());
+      // The toggle is what the speed slider goes dormant behind.
+      refreshDormancy();
     },
     setForceWeather(enabled: boolean) {
       api.setForceWeather(enabled);

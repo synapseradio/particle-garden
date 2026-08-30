@@ -193,6 +193,10 @@ export interface GardenAPI {
   setTrails(enabled: boolean): void;
   getBloom(): boolean;
   setBloom(enabled: boolean): void;
+  // The camera's self-motion. Its speed is an ordinary descriptor; only the
+  // toggle needs a pair of its own.
+  getCameraDrift(): boolean;
+  setCameraDrift(enabled: boolean): void;
 
   getForceModel(): number;
   setForceModel(model: number): void;

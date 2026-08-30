@@ -21,10 +21,11 @@ import { PresetsSection } from "./PresetsSection";
 import { StatsPanel } from "./StatsPanel";
 
 // The camera is the one parameter something outside the panel writes on its
-// own: the wheel zooms at the cursor and the zero key reframes the world, both
-// from the Nim side, which has no way to push at the panel. Read once on mount
-// and poll from there. Section unmounts its content while closed, so the timer
-// lives exactly as long as the slider it feeds.
+// own: the wheel zooms at the cursor, the zero key reframes the world, and the
+// drift breathes the zoom every frame, all from the Nim side, which has no way
+// to push at the panel. Read once on mount and poll from there. Section
+// unmounts its content while closed, so the timer lives exactly as long as the
+// slider it feeds.
 const CAMERA_POLL_MS = 250;
 
 function CameraSection(props: { ctrl: PanelController }) {
@@ -34,7 +35,28 @@ function CameraSection(props: { ctrl: PanelController }) {
     CAMERA_POLL_MS,
   );
   onCleanup(() => clearInterval(timer));
-  return <ParamSlider ctrl={props.ctrl} id="cameraZoom" />;
+  return (
+    <>
+      <ParamSlider ctrl={props.ctrl} id="cameraZoom" />
+      <div class="control-group">
+        <label class="toggle-label">
+          <input
+            type="checkbox"
+            checked={props.ctrl.cameraDrift()}
+            onChange={(event) =>
+              props.ctrl.setCameraDrift(event.currentTarget.checked)
+            }
+          />
+          Drift
+          <span class="param-hint">
+            {" "}
+            — the camera tours the world on its own
+          </span>
+        </label>
+      </div>
+      <ParamSlider ctrl={props.ctrl} id="cameraDriftSpeed" />
+    </>
+  );
 }
 
 export function Panel(props: { ctrl: PanelController }) {

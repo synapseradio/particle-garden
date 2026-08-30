@@ -91,6 +91,8 @@ function fakeGarden() {
     setTrails: () => {},
     getBloom: () => false,
     setBloom: () => {},
+    getCameraDrift: () => false,
+    setCameraDrift: () => {},
     getForceModel: () => 0,
     setForceModel: () => {},
     paletteSchemes: () => [],

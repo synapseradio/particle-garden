@@ -45,6 +45,9 @@ func evalDepositOff(values: Table[string, float]): bool =
 func evalTropismOff(values: Table[string, float]): bool =
   values["rdFieldForce"] == 0.0
 
+func evalCameraDriftOff(values: Table[string, float]): bool =
+  values["cameraDrift"] == 0.0
+
 func evalFieldUnlit(values: Table[string, float]): bool =
   values["fieldAliveCells"] == 0.0
 
@@ -74,6 +77,9 @@ proc dormancyRegistry*(): Table[string, DormancyPredicate] =
     "tropismOff": DormancyPredicate(id: "tropismOff",
       line: "the field pushes nothing",
       simFields: @["rdFieldForce"], eval: evalTropismOff),
+    "cameraDriftOff": DormancyPredicate(id: "cameraDriftOff",
+      line: "the camera holds still",
+      renderFields: @["cameraDrift"], eval: evalCameraDriftOff),
     "fieldUnlit": DormancyPredicate(id: "fieldUnlit",
       line: "the field is dark",
       statsFields: @["fieldAliveCells"], eval: evalFieldUnlit),

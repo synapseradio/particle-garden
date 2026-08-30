@@ -29,6 +29,7 @@ import ../../bloom_core
 import ../../colormap_core
 import ../../climate_core
 import ../../camera_core
+import ../../camera_drift
 import ../../glow_core
 import ../../trail_core
 import ../../palette
@@ -589,6 +590,11 @@ func cameraApparentScale(zoom: float): float =
 func cameraZoomProbe(value: float; ctx: ProbeContext): float =
   cameraApparentScale(value)
 
+func cameraDriftSpeedProbe(value: float; ctx: ProbeContext): float =
+  ## View widths per reference frame, zoom independent, so no context slice
+  ## fixes a camera for it.
+  driftPanStep(value, FRAME_DT_REFERENCE)
+
 func visibleRadiusProbe(value: float; ctx: ProbeContext): float =
   ## particleSize: the COMPOSED on-screen radius in pixels, through
   ## camera_core's chain at the density multiplier's floor on this slice's
@@ -690,6 +696,8 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
     "palette.meanLuminance": ProbeSpec(
       fn: paletteLightnessProbe, budget: pbClosedForm),
     "camera.apparentScale": ProbeSpec(fn: cameraZoomProbe,
+      budget: pbClosedForm),
+    "camera.driftFrameTravel": ProbeSpec(fn: cameraDriftSpeedProbe,
       budget: pbClosedForm),
   }.toTable
 

@@ -714,6 +714,14 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         notch(CAMERA_ZOOM_NOTCH_WORLD, "world"),
         notch(CAMERA_ZOOM_NOTCH_CREATURE, "creature"),
       ]),
+    floatParam("cameraDriftSpeed", "Drift Speed", "camera",
+      CAMERA_DRIFT_SPEED_MIN, CAMERA_DRIFT_SPEED_MAX, visual.cameraDriftSpeed,
+      2, psRender,
+      hint = "view widths the camera travels per minute, while Drift is on",
+      notches = @[
+        notch(CAMERA_DRIFT_SPEED_NOTCH_SCREEN, "a screen a minute"),
+      ], probe = "camera.driftFrameTravel",
+      dormantWhen = "cameraDriftOff").withDefaultNotch(0),
   ]
 
 func clampParamValue*(descriptor: ParamDescriptor; value: float): float =

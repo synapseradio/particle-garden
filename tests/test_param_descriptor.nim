@@ -83,6 +83,9 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       # rather than to CONFIG, which is also why it never reaches the preset
       # schema.
       "cameraZoom",
+      # cameraDriftSpeed says how the view behaves, so it routes psRender into
+      # CONFIG and the preset schema carries it.
+      "cameraDriftSpeed",
       # The per-species chemistry columns. They hold one value per SPECIES
       # rather than one for the world, which is a cardinality the descriptor
       # carries, not a reason for a second table: every rule below — range
