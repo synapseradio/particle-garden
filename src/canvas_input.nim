@@ -45,6 +45,21 @@ var cameraSetter*: proc(next: Camera) = nil
 proc cameraHooksReady(): bool =
   not cameraGetter.isNil and not cameraSetter.isNil
 
+var cameraTouched = false
+
+proc setCameraFromUser*(next: Camera) =
+  ## The camera write every user-facing path takes: a drag, a wheel, a key, the
+  ## Zoom slider. It stamps the camera as touched so the drift yields; a writer
+  ## that is not the user takes cameraSetter and leaves the stamp alone.
+  cameraTouched = true
+  cameraSetter(next)
+
+proc takeCameraTouch*(): bool =
+  ## Whether a user-facing camera write landed since the last read, clearing
+  ## the stamp. One reader only, the frame loop.
+  result = cameraTouched
+  cameraTouched = false
+
 var panSession = initPanSession()
   ## Whether a middle-button drag is moving the camera. Camera state rather
   ## than physics input, so it lives beside the camera hooks instead of in
@@ -172,7 +187,7 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     let moved = panMoved(panSession, eventData.clientX, eventData.clientY)
     panSession = moved.session
     if panSession.active and cameraHooksReady():
-      cameraSetter(grabPanned(cameraGetter(), moved.dx, moved.dy,
+      setCameraFromUser(grabPanned(cameraGetter(), moved.dx, moved.dy,
         float32(config.WORLD_W), float32(config.WORLD_H),
         float32(canvasEl.width), float32(canvasEl.height)))
   )
@@ -242,11 +257,11 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
       clipY: 1.0 - (float(event.offsetY) / height) * 2.0)
     case wheelGesture(wheelData)
     of wgZoom:
-      cameraSetter(handleWheel(cameraGetter(), wheelData,
+      setCameraFromUser(handleWheel(cameraGetter(), wheelData,
         float32(config.WORLD_W), float32(config.WORLD_H),
         float32(CAMERA_ZOOM_MIN), float32(CAMERA_ZOOM_MAX)))
     of wgPan:
-      cameraSetter(handleWheelPan(cameraGetter(), wheelData,
+      setCameraFromUser(handleWheelPan(cameraGetter(), wheelData,
         float32(config.WORLD_W), float32(config.WORLD_H),
         float32(width), float32(height)))
   )
@@ -277,7 +292,7 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
     # Only swallow the event once it is known to be a camera binding, so
     # ordinary typing elsewhere in the panel is untouched.
     preventDefault(cast[Event](event))
-    cameraSetter(handleCameraKey(cameraGetter(), action,
+    setCameraFromUser(handleCameraKey(cameraGetter(), action,
       float32(config.WORLD_W), float32(config.WORLD_H),
       float32(CAMERA_ZOOM_MIN), float32(CAMERA_ZOOM_MAX)))
   )

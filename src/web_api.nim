@@ -386,6 +386,10 @@ when defined(js):
     updateSimulation(proc(simState: var SimulationState) =
       simState.climateDrift = enabled)
 
+  proc setCameraDriftImpl(enabled: bool) =
+    updateRender(proc(renderState: var RenderState) =
+      renderState.cameraDrift = enabled)
+
   proc setForceWeatherImpl(enabled: bool) =
     updateSimulation(proc(simState: var SimulationState) =
       simState.forceWeather = enabled)
@@ -626,7 +630,7 @@ when defined(js):
         let current = canvas_input.cameraGetter()
         # Anchored at the view CENTRE, like the +/- keys and unlike the wheel.
         # A slider has no cursor position to zoom toward.
-        canvas_input.cameraSetter(current.zoomedAt(
+        canvas_input.setCameraFromUser(current.zoomedAt(
           clampZoom(value.float32, CAMERA_ZOOM_MIN.float32,
             CAMERA_ZOOM_MAX.float32),
           0.0'f32, 0.0'f32,
@@ -1170,6 +1174,9 @@ when defined(js):
     result["setTrails"] = toJs(proc(enabled: bool) = setTrailsImpl(enabled))
     result["getBloom"] = toJs(proc(): bool = CONFIG.bloomEnabled)
     result["setBloom"] = toJs(proc(enabled: bool) = setBloomImpl(enabled))
+    result["getCameraDrift"] = toJs(proc(): bool = CONFIG.cameraDrift)
+    result["setCameraDrift"] = toJs(proc(enabled: bool) =
+      setCameraDriftImpl(enabled))
 
     # There is no world-selection surface here, and none is needed: what a
     # world does is the strengths it runs, and the panel asks for each by name

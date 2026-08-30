@@ -1,11 +1,16 @@
 # Behavioral tests for src/camera_drift.nim: the pan flow, the zoom breath and
 # the touch clock behind a camera that moves itself.
 #
-# Every measurement here reads the camera the advance RETURNS, never the
-# formula that produced it, so a pan whose direction or scaling is wrong fails
-# a check that a tautology over the step function would pass.
+# Every measurement of the drift maths here reads the camera the advance
+# RETURNS, never the formula that produced it, so a pan whose direction or
+# scaling is wrong fails a check that a tautology over the step function would
+# pass.
+#
+# The last suite reads source instead. The touch stamp is a discipline no type
+# carries: a camera writer that calls the setter directly gets no stamp and
+# fights the drift, and only the call sites say which path each writer took.
 
-import std/[unittest, math]
+import std/[unittest, math, os, strutils]
 import ../src/camera_drift
 import ../src/camera_core
 import ../src/config_ranges
@@ -265,6 +270,55 @@ suite "A Camera-Moving Input Yields The Drift":
     checkpoint("motion resumed after " & $elapsed & " s")
     check elapsed >= CAMERA_DRIFT_RESUME_SECONDS
 
+
+const
+  INPUT_FILE = "src" / "canvas_input.nim"
+  API_FILE = "src" / "web_api.nim"
+  STAMPING_WRAPPER = "setCameraFromUser"
+  PLAIN_SETTER = "cameraSetter"
+
+func callSites(source, callee: string): int =
+  ## How often `source` calls `callee`. Matched on the open parenthesis, so a
+  ## declaration, a nil check and the hook assignment app.nim makes are not
+  ## counted as writes.
+  source.count(callee & "(")
+
+suite "Every User-Facing Camera Write Is Stamped":
+  test "the source files this suite reads are where it says they are":
+    # Without this the sweeps below pass vacuously from the wrong working
+    # directory, which would make them silently worthless.
+    check fileExists(INPUT_FILE)
+    check readFile(INPUT_FILE).len > 0
+    check fileExists(API_FILE)
+    check readFile(API_FILE).len > 0
+
+  test "the input handlers reach the camera only through the wrapper":
+    # The defect this pins: a handler calling the plain setter moves the view
+    # without stamping it, so the drift keeps advancing through the gesture and
+    # grabPanned's cancellation breaks under the pointer.
+    let source = readFile(INPUT_FILE)
+    require source.len > 0
+    checkpoint("direct " & PLAIN_SETTER & " calls in " & INPUT_FILE & ": " &
+      $callSites(source, PLAIN_SETTER))
+    check callSites(source, PLAIN_SETTER) == 1
+    check callSites(source, STAMPING_WRAPPER) >= 4
+
+  test "the Zoom slider reaches the camera only through the wrapper":
+    # The same defect from the panel's side: a slider write that skips the
+    # stamp leaves the handle moving under the drag it is being dragged by.
+    let source = readFile(API_FILE)
+    require source.len > 0
+    checkpoint("direct " & PLAIN_SETTER & " calls in " & API_FILE & ": " &
+      $callSites(source, PLAIN_SETTER))
+    check callSites(source, PLAIN_SETTER) == 0
+    check callSites(source, STAMPING_WRAPPER) >= 1
+
+  test "the call counter can find a call and can miss an absent one":
+    # THE NON-VACUOUS CHECK. A counter answering zero for everything would
+    # satisfy the API sweep above for the wrong reason.
+    check callSites("  cameraSetter(next)\n", PLAIN_SETTER) == 1
+    check callSites("  var cameraSetter*: proc(next: Camera)\n",
+      PLAIN_SETTER) == 0
 
 suite "The Drift Speed Range Carries Its Default And Its Notch":
   test "the default is inside the range and below the ceiling":
