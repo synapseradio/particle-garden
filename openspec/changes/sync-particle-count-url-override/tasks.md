@@ -22,17 +22,17 @@ reasoned-not-observed reinit consequence.
 
 ## 2. Route the override through the single write path
 
-- [ ] 2.1 In `src/app.nim`, replace the direct assignment at `:328-329`
+- [x] 2.1 In `src/app.nim`, replace the direct assignment at `:328-329`
       (`config.CONFIG.particleCount = clamp(requestedCount, 1000, config.MAX_PARTICLES)`) with a
       call to `web_api.updateSimulation` that writes the same clamped value into
       `simState.particleCount`, per `design.md` - Decisions. Keep the existing
       `clamp(requestedCount, 1000, config.MAX_PARTICLES)` floor-and-ceiling call; `updateSimulation`
       does not know the override's own `1000` floor.
       Files: `src/app.nim`.
-- [ ] 2.2 Confirm the call compiles with `web_api`'s existing export surface (`updateSimulation*`,
+- [x] 2.2 Confirm the call compiles with `web_api`'s existing export surface (`updateSimulation*`,
       `SimulationState` re-exported through `ui/state/sim_config`) and add no new import path beyond
       what `app.nim` already carries for `web_api`. Files: `src/app.nim`.
-- [ ] 2.3 `just happen` builds clean.
+- [x] 2.3 `just happen` builds clean.
 
 ## 3. Confirm the fix, and close the reinit consequence
 
