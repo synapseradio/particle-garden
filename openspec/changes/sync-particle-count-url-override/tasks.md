@@ -36,16 +36,16 @@ reasoned-not-observed reinit consequence.
 
 ## 3. Confirm the fix, and close the reinit consequence
 
-- [ ] 3.1 Repeat task 1.1 against the rebuilt app: load `?n=40000&seed=1`, call `setParam` for any
+- [x] 3.1 Repeat task 1.1 against the rebuilt app: load `?n=40000&seed=1`, call `setParam` for any
       non-`particleCount` id, then confirm `gardenAPI.getParam("particleCount")` answers `40000`.
       Consequence A closed.
-- [ ] 3.2 Repeat task 1.2 against the rebuilt app: from the same session, call
+- [x] 3.2 Repeat task 1.2 against the rebuilt app: from the same session, call
       `gardenAPI.resetParticles()` and confirm the next `onStats` sample reports `particleCount:
       40000`. Consequence B closed and now observed, not only reasoned.
-- [ ] 3.3 Repeat 3.1-3.2 with the trigger swapped to a species-count commit
+- [x] 3.3 Repeat 3.1-3.2 with the trigger swapped to a species-count commit
       (`gardenAPI.setParam("speciesCount", <n>)` then `gardenAPI.commitParam("speciesCount")`,
       per `src/web_api.nim:398-405`) in place of `resetParticles()`, confirming the particle count
       still reads `40000` after that reinit path too.
-- [ ] 3.4 `just check` passes, including `tests/test_response_probe.nim`'s "the exemptions are
+- [x] 3.4 `just check` passes, including `tests/test_response_probe.nim`'s "the exemptions are
       exactly the three declared ones" assertion (`:72-83`), confirming this change left
       `particleCount`'s probe exemption untouched.
