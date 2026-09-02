@@ -12,11 +12,11 @@
     "@babel/core": "8.0.1",
     "@babel/preset-typescript": "8.0.1",
     "@dschz/bun-plugin-solid": "1.0.4",
-    "babel-preset-solid": "1.9.12",
-    "solid-js": "1.9.14"
+    "babel-preset-solid": "1.9.15",
+    "solid-js": "1.9.15"
   },
   "devDependencies": {
-    "@types/bun": "1.3.14",
-    "typescript": "7"
+    "@types/bun": "1.4.0",
+    "typescript": "7.0.2"
   }
 }
