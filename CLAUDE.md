@@ -35,6 +35,11 @@ beside a constant, one or two lines satisfy it.
 - The shell suite needs `bats-support`, `bats-assert` and `bats-file` on the machine, or every assertion dies as `assert_output: command not found` and `just check` goes red on a clean tree. Install with `brew tap bats-core/bats-core`, then `brew trust --formula bats-core/bats-core/{bats-support,bats-assert,bats-file}` (homebrew refuses to load formulae from an untrusted tap, and the suite's own error message omits this step), then `brew install bats-support bats-assert bats-file`.
 - When subagents carry the work, tests run once at the end by the integrator, and never per subagent.
 - Generated outputs (`web/app.js`, `web/ui-bundle.*`, top-level `web/shaders/*.wgsl`) are never edited by hand.
+- `./main` serves the page over plain HTTP at `http://127.0.0.1:8089` with COOP/COEP headers and
+  opens a webui window at that URL. The page loads only `app.js` and `ui-bundle.js` and calls
+  nothing over the webui bridge, so any WebGPU-capable Chromium tab at that address runs the same
+  app. To drive it from an agent, launch `./main` in the background, poll the port, and point a
+  browser tool (Browser MCP, Playwright) at the URL. Stop it by killing the port's listener.
 
 ## Help
 

@@ -4,13 +4,15 @@
 # and can be tested in isolation without buffer access.
 #
 # Used by:
+#   - src/grid.nim (computeGridDims sizes the grid the frame dispatches)
 #   - tests/test_grid.nim (native test compilation)
 #
-# This is a reference oracle, like physics_core: the grid the simulation
-# actually builds lives in the WGSL bin-count/prefix-sum/bin-scatter passes,
-# which no native test can execute. These functions mirror that arithmetic in
-# a form the native suite can check, so the shader math has something to be
-# wrong against. Nothing in src/ imports this module, and that is expected.
+# Everything past computeGridDims is a reference oracle, like physics_core:
+# the grid the simulation actually builds lives in the WGSL
+# bin-count/prefix-sum/bin-scatter passes, which no native test can execute.
+# Those functions mirror that arithmetic in a form the native suite can check,
+# so the shader math has something to be wrong against, and nothing in src/
+# calls them.
 #
 # ==============================================================================
 

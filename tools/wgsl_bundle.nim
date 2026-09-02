@@ -112,7 +112,7 @@ proc substitutePlaceholders(code: string, shaderName: string): string =
   result = code
 
   # Shader-specific workgroup size
-  let workgroupKey = "WORKGROUP_SIZE_" & shaderName.toUpperAscii.replace("-", "_")
+  let workgroupKey = workgroupKeyFor(shaderName)
   if workgroupKey in PLACEHOLDERS:
     result = result.replace("{{WORKGROUP_SIZE}}", PLACEHOLDERS[workgroupKey])
 

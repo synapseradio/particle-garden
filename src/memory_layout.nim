@@ -187,9 +187,4 @@ static:
   # {{MAX_SPECIES}} array size render.wgsl and glow.wgsl declare their colour
   # uniforms at, both from this value; the attraction matrix and both chemistry
   # channels are sized from src/gpu_types.nim's layout tables, which assert
-  # against it. A live copy remains at
-  # src/ui/state/matrix_state.MATRIX_SIZE, the species count served across the
-  # API boundary as matrixStride; tests/test_memory_layout.nim asserts the two
-  # agree. The assertion lives in the test rather than here because matrix_state
-  # reaches this module already (matrix_state -> config_ranges -> memory_layout),
-  # so importing matrix_state from here would cycle.
+  # against it.

@@ -15,25 +15,23 @@ import ../../config_ranges
 # SECTION 1: CONSTANTS
 # ==============================================================================
 #
-# The served value band lives with every other range in config_ranges
-# (MATRIX_MIN_VALUE/MATRIX_MAX_VALUE, step, display precision); this module
-# reads it like every other consumer.
-
-const
-  MATRIX_SIZE* = 12                   ## Maximum species count
+# The served value band and the species ceiling (the matrix stride) live with
+# every other range in config_ranges (MATRIX_MIN_VALUE/MATRIX_MAX_VALUE, step,
+# display precision, SPECIES_COUNT_MAX); this module reads them like every
+# other consumer.
 
 func matrixIndex*(row, col: int): int =
   ## Row = species feeling the force
   ## Col = species exerting the force
-  row * MATRIX_SIZE + col
+  row * SPECIES_COUNT_MAX + col
 
 func matrixCoords*(index: int): tuple[row, col: int] =
-  (row: index div MATRIX_SIZE, col: index mod MATRIX_SIZE)
+  (row: index div SPECIES_COUNT_MAX, col: index mod SPECIES_COUNT_MAX)
 
 func isValidIndex*(row, col, speciesCount: int): bool =
   row >= 0 and row < speciesCount and
   col >= 0 and col < speciesCount and
-  speciesCount <= MATRIX_SIZE
+  speciesCount <= SPECIES_COUNT_MAX
 
 func clampMatrixValue*(value: float): float =
   max(MATRIX_MIN_VALUE, min(MATRIX_MAX_VALUE, value))

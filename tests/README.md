@@ -39,6 +39,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `coupling_space.nim` | Shared fixture: `ALL_COUPLINGS`, every combination of the four coupling booleans (forces, fluid, deposit, fieldForce). Declares no suite, so it needs no `test_all.nim` entry; the modules that sweep the space import it | Native |
 | `test_build_flags.nim` | The compiler flag list in `justfile` equals the one in `particle_garden.nimble`, so a warning fatal through one entry point cannot be silent through the other | Native |
 | `test_camera_drift.nim` | The self-moving camera: pan flow, zoom breath, touch clock, each read off the camera the advance returns, plus a source sweep that every camera writer stamps the touch | Native |
+| `test_agreements.nim` | The gates over `src/agreements.nim`: every site's path exists and its anchor occurs, every entry names two sites and a holder its file contains, every entry below Derived says why; each predicate watched failing; every emitted placeholder is read by a shader; source sweeps that collapsed copies stay collapsed; `docs/agreements.md` names no entry | Native |
 | `test_meta_vacuity.nim` | A gate over the suite itself: every test block that reads the filesystem asserts something positive about what it read, so a sweep over an empty subject cannot pass as coverage | Native |
 | `test_memory_layout.nim` | Memory layout constants, alignment, AoS structure, `align4` | Native |
 | `test_grid.nim` | Pure grid algorithms (cell indexing, prefix sums, offset validation) | Native |

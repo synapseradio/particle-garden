@@ -32,6 +32,7 @@ One home per fact.
 | Weather tours and their step ceilings | `src/climate_core.nim` |
 | The self-moving view | `src/camera_drift.nim` |
 | Per-capability requirements, each citing its gate | `openspec/specs/` |
+| The inventory of facts stated at two sites, each with its tier | `src/agreements.nim`, explained in [agreements.md](agreements.md) |
 | Shader sources and shared modules | `web/shaders/src/`, `web/shaders/modules/`, bundled by `tools/wgsl_bundle.nim` |
 
 ## Guarantees
@@ -47,7 +48,8 @@ One home per fact.
 | Every coupling strength's range reaches zero, so each coupling turns off through its own slider | Build-asserted | A static loop over the four floors at the bottom of `src/config_ranges.nim`; crowding, which shapes the force law instead of gating a pass, is asserted beside it | |
 | WGSL struct modules match the Nim layout tables | Derived | `tools/wgsl_bundle.nim` generates every module from `src/gpu_types.nim`, whose offsets are static-asserted | |
 | A shader constant equals its config value | Derived where it travels by `{{PLACEHOLDER}}` from `src/shader_config.nim` | The bundler fails on an unresolved placeholder | |
-| The blast radius in `forces.wgsl` equals `shader_config.blastRangeSq` | Unenforced | The shader spells `40000.0` and `200.0`; `TUNABLE_BLAST_RANGE_SQ` is emitted and read by nobody | The shader reading the placeholder, and a test that every emitted key is consumed |
+| The blast radius in `forces.wgsl` equals `shader_config.blastRangeSq` | Derived | The shader reads `{{TUNABLE_BLAST_RANGE_SQ}}` and `{{TUNABLE_BLAST_RANGE}}`, both emitted from the one field | |
+| Every key `getPlaceholderMap` emits is read by a shader source | Test-held | `tests/test_agreements.nim`, enumerating the map against `web/shaders/src/` and `web/shaders/modules/` | |
 
 ## Reference oracles
 
@@ -85,10 +87,8 @@ A fact stated at two sites.
 
 | Fact | Sites | Tier | Raised by |
 |---|---|---|---|
-| Species ceiling | `memory_layout.MAX_SPECIES`, `matrix_state.MATRIX_SIZE` | Test-held (`tests/test_memory_layout.nim`) | `matrix_state` reading `SPECIES_COUNT_MAX` |
 | Species ceiling, preset copy | `memory_layout.MAX_SPECIES`, `preset.MAX_SPECIES` | Build-asserted (`doAssert` in `src/preset.nim`) | Stays: `preset` is a leaf that imports no other `src/` module |
 | Chemistry stride | `field_core.SPECIES_CHEMISTRY_STRIDE`, `preset.CHEMISTRY_STRIDE` | Unenforced | A native test relating the two |
-| Grid dimensions | `src/grid.nim` cell size and extent, `grid_core.computeGridDims` | Unenforced | `grid.nim` calling the oracle |
 | Bind-group entry counts | `wgsl_lint.ExpectedShaderBindings`, `EXPECTED_BIND_GROUP_ENTRIES_*` in `webgpu_compute.nim` and `webgpu_render.nim` | Unenforced across the pair | One side derived from the other |
 | State record field lists | `snapshotPreset`, `applyPresetImpl`, `createConfig`, and the three walkers in `preset.nim` | Unenforced for the three in JS-only modules; one round-trip test covers `preset.nim` | A pure module compiled on both backends, held by the round-trip |
 

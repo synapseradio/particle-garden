@@ -10,8 +10,8 @@
 # ==============================================================================
 
 from std/jsffi import JsObject
-import bindings/js_interop
 import config
+import grid_core
 
 type
   GridDimensions* = ref object of JsObject
@@ -34,15 +34,8 @@ proc computeGridDimensions*(canvasWidth: int, canvasHeight: int): GridDimensions
   ## This decouples physics resolution from display resolution.
   ## The canvas parameters are ignored but kept for API compatibility.
 
-  # Classic spatial hash: cellSize tracks the interaction radius so a 3x3
-  # stencil covers every interaction, no LOD artifacts. Floored at 16 below
-  # that (INTERACTION_RADIUS_MIN is 10).
-  cellSize = max(CONFIG.interactionRadius, 16)
-
-  gridW = jsFloor(config.WORLD_W / cellSize.float)
-  gridH = jsFloor(config.WORLD_H / cellSize.float)
-  gridW = int(jsMax(1.0, jsMin(gridW.float, MAX_GRID.float)))
-  gridH = int(jsMax(1.0, jsMin(gridH.float, MAX_GRID.float)))
+  (gridW, gridH, cellSize) = grid_core.computeGridDims(
+    int(config.WORLD_W), int(config.WORLD_H), CONFIG.interactionRadius)
 
   result = GridDimensions()
   result.gridW = gridW

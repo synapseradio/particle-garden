@@ -1282,7 +1282,7 @@ when defined(js):
       spec["step"] = toJs(MATRIX_VALUE_STEP)
       spec["precision"] = toJs(MATRIX_VALUE_PRECISION)
       spec)
-    result["matrixStride"] = toJs(proc(): int = MATRIX_SIZE)
+    result["matrixStride"] = toJs(proc(): int = SPECIES_COUNT_MAX)
     result["speciesColor"] = toJs(proc(index: int): cstring =
       var channels = newSeq[float](config.MAX_SPECIES * 3)
       for channelIndex in 0 ..< channels.len:

@@ -54,6 +54,15 @@ suite "Tunable Constants Stay In Physical Range":
     let inverse = parseFloat(placeholders["TUNABLE_INV_FIXED_POINT_SCALE"])
     check abs(scale * inverse - 1.0) < 1e-9
 
+  test "the emitted blast radius is the root of the emitted square":
+    # forces.wgsl reads both; deriving the radius here keeps the pair one number.
+    let placeholders = getPlaceholderMap()
+    let radius = parseFloat(placeholders["TUNABLE_BLAST_RANGE"])
+    let square = parseFloat(placeholders["TUNABLE_BLAST_RANGE_SQ"])
+    check abs(radius * radius - square) < 1e-6
+    check "." in placeholders["TUNABLE_BLAST_RANGE"]
+    check "." in placeholders["TUNABLE_BLAST_RANGE_SQ"]
+
   test "getTunableFloat returns 0.0 for an unknown constant name":
     # Documents the fall-through: an unknown name yields 0.0, which callers must
     # not feed into a division. Pinned so the fall-through cannot change silently.

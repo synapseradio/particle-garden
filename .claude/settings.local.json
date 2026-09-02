@@ -31,7 +31,10 @@
       "Bash(rm -f /tmp_check.log)",
       "Bash(openspec instructions *)",
       "mcp__linkup__linkup-search",
-      "Read(//Users/nick/projects/.worktrees/synapseradio/particle-garden/camera-drift/web-ui/**)"
+      "Read(//Users/nick/projects/.worktrees/synapseradio/particle-garden/camera-drift/web-ui/**)",
+      "Bash(mkdir -p scratchpad/run-driver)",
+      "mcp__firecrawl__firecrawl_scrape",
+      "mcp__browsermcp__browser_navigate"
     ]
   },
   "skillOverrides": {

@@ -180,7 +180,7 @@ func getTunableFloat*(name: string): float =
 # =============================================================================
 # This generates the substitution map used by tools/wgsl_bundle.nim
 
-import std/[strformat, tables]
+import std/[math, strformat, strutils, tables]
 # field_core is pure (no FFI); importing it keeps FIELD_W/FIELD_H sourced from
 # the single reaction-diffusion authority rather than re-stated here.
 import field_core
@@ -231,6 +231,13 @@ func glowTuning*(): GlowTuning =
     divisor: activeConfig.tuning.glowDivisor,
     warmthGreen: activeConfig.tuning.glowWarmthGreen,
     warmthBlue: activeConfig.tuning.glowWarmthBlue)
+
+func workgroupKeyFor*(shaderName: string): string =
+  ## The placeholder key the bundler resolves a shader's `{{WORKGROUP_SIZE}}`
+  ## through, from the shader's file stem. One home for the naming rule, so
+  ## the consumption test in tests/test_agreements.nim cannot model a rewrite
+  ## the bundler no longer performs.
+  "WORKGROUP_SIZE_" & shaderName.toUpperAscii.replace("-", "_")
 
 proc getPlaceholderMap*(): Table[string, string] =
   result = initTable[string, string]()
@@ -302,6 +309,10 @@ proc getPlaceholderMap*(): Table[string, string] =
   # Tunable constants (formatted as WGSL float literals)
   result["TUNABLE_MIN_DISTANCE_SQ"] = fmt"{activeConfig.tuning.minDistanceSq:.1f}"
   result["TUNABLE_BLAST_RANGE_SQ"] = fmt"{activeConfig.tuning.blastRangeSq:.1f}"
+  # forces.wgsl gates on the square and shapes the falloff by the radius, so
+  # both are emitted from the one stored field: a hand-written radius can drift
+  # from the square it is supposed to be the root of.
+  result["TUNABLE_BLAST_RANGE"] = fmt"{sqrt(activeConfig.tuning.blastRangeSq):.1f}"
   result["TUNABLE_DENSITY_SMOOTH_FACTOR"] = fmt"{activeConfig.tuning.densitySmoothFactor:.2f}"
   result["TUNABLE_FIXED_POINT_SCALE"] = fmt"{activeConfig.tuning.fixedPointScale:.1f}"
   # fixed_point.wgsl multiplies by the reciprocal rather than dividing, so the

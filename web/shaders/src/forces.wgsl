@@ -49,6 +49,8 @@
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};  // Prevents division-by-zero when particles overlap
+const BLAST_RANGE_SQ: f32 = {{TUNABLE_BLAST_RANGE_SQ}};  // Blast influence radius squared
+const BLAST_RANGE: f32 = {{TUNABLE_BLAST_RANGE}};        // Its root, for the linear falloff
 
 // =============================================================================
 // EXPONENTIAL FORCE MODEL
@@ -361,10 +363,9 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     else if (blastOffsetY < -halfWorldHeight) { blastOffsetY += params.worldHeight; }
 
     let blastDistSq = blastOffsetX * blastOffsetX + blastOffsetY * blastOffsetY;
-    let blastRangeSq = 40000.0;  // 200² - blast influence radius squared
-    if (blastDistSq > 0.0 && blastDistSq < blastRangeSq) {
+    if (blastDistSq > 0.0 && blastDistSq < BLAST_RANGE_SQ) {
       let blastDist = sqrt(blastDistSq);
-      let blastForce = params.blastStrength * 3000.0 * (1.0 - blastDist / 200.0) / max(blastDist, 10.0);
+      let blastForce = params.blastStrength * 3000.0 * (1.0 - blastDist / BLAST_RANGE) / max(blastDist, 10.0);
       forceOnThisX += blastOffsetX * blastForce;
       forceOnThisY += blastOffsetY * blastForce;
     }

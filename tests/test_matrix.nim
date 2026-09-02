@@ -20,8 +20,8 @@ suite "Matrix Index - Calculations":
     check matrixIndex(11, 11) == 143
 
   test "matrixCoords inverse of matrixIndex":
-    for row in 0 ..< MATRIX_SIZE:
-      for col in 0 ..< MATRIX_SIZE:
+    for row in 0 ..< SPECIES_COUNT_MAX:
+      for col in 0 ..< SPECIES_COUNT_MAX:
         let idx = matrixIndex(row, col)
         let (gotRow, gotCol) = matrixCoords(idx)
         check gotRow == row

@@ -581,7 +581,7 @@ suite "Preset Clamp Behavior Contract":
     let result = validate(node)
     check result.preset.settings.particleCount == PARTICLE_COUNT_MIN
 
-  test "speciesCount clamps into [2, 8]":
+  test "speciesCount clamps into the served species range":
     let tooLow = validate(%*{"settings": {"speciesCount": 0}})
     let tooHigh = validate(%*{"settings": {"speciesCount": 99}})
     check tooLow.preset.settings.speciesCount == SPECIES_COUNT_MIN

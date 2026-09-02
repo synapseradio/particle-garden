@@ -37,6 +37,15 @@ suite "Grid Dimension Computation":
     check gridW == 38
     check gridH == 21
 
+  test "the shipped world at the default radius yields the grid the frame builds":
+    # 3840 x 2160 world, interaction radius 50: what src/grid.nim computed
+    # before it called this oracle, pinned so the derivation preserves it.
+    let (gridW, gridH, cellSize) = computeGridDims(
+      canvasW = 3840, canvasH = 2160, interactionRadius = 50)
+    check gridW == 76
+    check gridH == 43
+    check cellSize == 50
+
   test "cellSize equals interactionRadius":
     for radius in [25, 50, 100]:
       let (_, _, cellSize) = computeGridDims(1000, 1000, radius)
