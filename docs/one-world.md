@@ -236,8 +236,8 @@ once, and `tests/test_shader_manifest.nim` checks both halves of that.
 **8. `src/main.nim` — serve them.** Every compute shader is fetched over HTTP at
 pipeline-init time and must be registered in the `StaticFiles` table.
 Unregistered means unserved means a failed fetch. Render shaders take a different
-route and are deliberately absent from that table — see CLAUDE.md's shader
-section.
+route and are deliberately absent from that table, as `web/shaders/README.md`
+explains.
 
 **9. `src/webgpu_compute.nim` — bind it.** For each new pipeline add an
 `EXPECTED_BIND_GROUP_ENTRIES_*` constant, a case for its pipeline key in

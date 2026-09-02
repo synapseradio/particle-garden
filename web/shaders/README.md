@@ -24,11 +24,11 @@ For reference material: [WebGPU Fundamentals](https://webgpufundamentals.org) an
 | **Atomic** | Thread-safe operation (like mutex for `++` — prevents race conditions) |
 | **Workgroup** | Batch of 64 threads processed together |
 
-The simulation uses a **five-pass GPU compute pipeline**:
+A frame runs many more passes than this guide walks through (the [Files](#files) section lists them all). The walkthrough follows the species force path, the five passes every frame runs whatever the sliders say:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          GPU COMPUTE PIPELINE                               │
+│                     SPECIES FORCE PATH THROUGH A FRAME                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────┐                                                        │
@@ -87,8 +87,7 @@ The simulation uses a **five-pass GPU compute pipeline**:
 | 4: forces | particlesSorted, cellOffsets | velocityDeltaFixed | Calculate forces |
 | 5: integrate | velocityDeltaFixed, particlesA | particlesA | Apply forces, update positions |
 
-**particlesA** is both input and output — it persists between frames.
-**All other buffers** are scratch space, overwritten every frame.
+**particlesA** is both input and output and persists between frames. The other buffers named here are scratch space, overwritten every frame. Between forces and integrate a frame also runs the fluid pass and the field passes, described under [Files](#files).
 
 ## Files
 
@@ -137,7 +136,7 @@ Each particle is stored as a single 32-byte block containing all its data. This 
 │    4     │  pos.y   │  4    │ Y position (f32)                              │
 │    8     │  vel.x   │  4    │ X velocity (f32)                              │
 │   12     │  vel.y   │  4    │ Y velocity (f32)                              │
-│   16     │  species │  4    │ Species ID (u32, 0-5)                         │
+│   16     │  species │  4    │ Species ID (u32, below MAX_SPECIES)           │
 │   20     │  density │  4    │ Colony density: same-species, smoothed (f32)  │
 │   24     │sphDensity│  4    │ SPH kernel density, fluid-private (f32)       │
 │   28     │crowdDens.│  4    │ Crowd density: species-blind, smoothed (f32)  │
@@ -241,7 +240,7 @@ Implementation:
 **1. No forces computed**
 - Check `cellCounts[]` is non-zero after Pass 1
 - Verify `cellOffsets[]` and `particlesSorted[]` from Pass 2/3
-- Ensure all five passes dispatch in sequence each frame
+- Ensure the grid build, forces, and integrate dispatch in sequence each frame (`src/sim_registry.nim` holds the order)
 
 **2. Particles explode**
 - Check `dt` is reasonable (0.001 - 0.05)
@@ -250,7 +249,7 @@ Implementation:
 
 **3. Uniform density / no attraction**
 - Check attraction matrix has non-zero values
-- Verify species indices are valid (0-5)
+- Verify species indices are below the active species count
 - Ensure `rMax` matches expected interaction radius
 
 ### Validation
@@ -297,7 +296,7 @@ Use hierarchical grid for variable-density simulations.
 ## References
 
 - **Memory Layout:** `src/memory_layout.nim` (single source of truth for buffer offsets)
-- **Particle Struct:** `web/shaders/forces.wgsl` lines 54-64
+- **Particle Struct:** `web/shaders/modules/particle.wgsl`, generated from `src/gpu_types.nim`
 - **WebGPU Spec:** https://www.w3.org/TR/webgpu/
 - **WGSL Spec:** https://www.w3.org/TR/WGSL/
 

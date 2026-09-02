@@ -2,7 +2,9 @@
 
 <img width="1364" height="859" alt="Screenshot 2026-01-07 at 13 06 07" src="https://github.com/user-attachments/assets/9958c1e8-2152-40fb-b2e6-a18c7d3299cc" />
 
-Thousands of particles attract and repel each other based on simple rules. Different species interact differently, creating emergent behaviors — swarms, orbits, symbiosis, predation.  Very zen.
+Particle Garden is an instrument that maps expression into life. Thousands of particles of a few species push and pull each other, ride a fluid, and feed a chemical field that glows where it grows. Every influence has a slider whose range reaches zero, and each move of your hand shows up as forms igniting, spreading, meeting, and changing in step.
+
+Where it is going: an instrument plugged in. Notes and chords seed the world, and life answers in cadence and cascade.
 
 ## Zero-setup install (macOS)
 
@@ -69,7 +71,7 @@ If it says the address is already in use, close whatever else is using port 8089
 
 Three kinds of physics run in the same world at once, each behind its own strength slider: species forces, fluid pressure, and a chemical field. Every strength reaches zero, so "just particle life" or "just fluid" is an ordinary place on the sliders rather than a mode — the panel never changes shape, and every control is always live.
 
-**Species forces.** Six species attract and repel each other according to a 6x6 matrix you can edit directly. This is where swarms, orbits, and predation come from.
+**Species forces.** Up to twelve species, four by default, attract and repel each other according to a matrix you can edit directly.
 
 **Fluid.** Smoothed-particle pressure and viscosity over the same particles. It sloshes.
 

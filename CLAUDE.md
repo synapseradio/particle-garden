@@ -1,69 +1,44 @@
 # Particle Garden
 
-An emergent-life engine: one world where species forces, fluid pressure, and a Gray-Scott
-chemical field run together, each behind a continuous strength whose range includes zero.
-Nim owns the simulation and every number; the SolidJS panel (`web-ui/`) reads them through
-`window.gardenAPI` and restates none. All physics runs in WGSL compute shaders on the GPU.
-The browser is a portability runtime reached through nim's webui bindings — a desktop app,
-not a website.
+Particle Garden is an instrument to map expression into life. It runs one world in which several
+systems of forces act visibly on the same matter at once in competition without the world
+changing kind. User gestures and interaction alter what nature permits, and life answers by
+igniting forms previously unmanifested. Particle Garden aims to be an instrument played visually,
+in harmony with others, seeding the world and revealing life's answer in cadence and cascade.
 
-Read [docs/engineering-principles.md](docs/engineering-principles.md) before designing or
-reviewing anything. Twelve articles, each with its enforcement gate; work is reviewed against them.
+Nim owns every number: ranges, defaults, steps, ceilings, storage keys, the preset schema, and
+the notches a slider draws. The SolidJS panel under `web-ui/` reads them through
+`window.gardenAPI` and restates none. Physics runs in WGSL compute shaders on the GPU. The
+browser is a portability runtime reached through nim's webui bindings, and the binary serves
+everything the page needs.
+
+## Read first
+
+- [docs/engineering-principles.md](docs/engineering-principles.md): twelve articles, each with
+  its enforcement gate. Design and review every change against them.
+- [docs/enforcement.md](docs/enforcement.md): where each fact lives, the tier each guarantee
+  rests on, the landmines, and what would raise each. Credit no guarantee it does not record.
+- [docs/one-world.md](docs/one-world.md) for the couplings model, [tests/README.md](tests/README.md)
+  for the test layout, [web/shaders/README.md](web/shaders/README.md) for the GPU pipeline.
 
 ## Comments
-Concise, local, relevant. A comment states only the constraint the code cannot show — a
-measured condition, a landmine, a why — in as few lines as it takes. No narrative, no
-design history, no presumption about the reader or future work. Where article 8 asks for
-conditions beside a constant, one or two lines of conditions satisfy it.
+
+Concise, local, relevant. A comment states only the constraint the code cannot show, such as a
+measured condition, a landmine, or a why, in as few lines as it takes. No narrative, no design
+history, no presumption about the reader or future work. Where article 8 asks for conditions
+beside a constant, one or two lines satisfy it.
 
 ## Build and test
+
 - `just happen` after every change; `just check` (both suites) before any release; `just be` = deps, build, run.
 - Run the narrowest bats target that covers the change: `bats tests/shell/<file>.bats`, `bats -f '<name>' <file>`, or `bats --filter-tags unit tests/shell`. The whole shell suite runs once, at the end.
 - The shell suite needs `bats-support`, `bats-assert` and `bats-file` on the machine, or every assertion dies as `assert_output: command not found` and `just check` goes red on a clean tree. Install with `brew tap bats-core/bats-core`, then `brew trust --formula bats-core/bats-core/{bats-support,bats-assert,bats-file}` (homebrew refuses to load formulae from an untrusted tap, and the suite's own error message omits this step), then `brew install bats-support bats-assert bats-file`.
-- When subagents carry the work, tests run once at the end by the integrator — never per subagent.
+- When subagents carry the work, tests run once at the end by the integrator, and never per subagent.
 - Generated outputs (`web/app.js`, `web/ui-bundle.*`, top-level `web/shaders/*.wgsl`) are never edited by hand.
-
-## Where authority lives
-
-One home per fact: `config_ranges.nim` (ranges), `memory_layout.nim` (particle buffer),
-`ui/api/param_descriptor.nim` (parameter contract), `preset.nim` (preset schema),
-`sim_registry.nim` (what a frame dispatches), `wgsl_lint.nim` (shader binding manifest),
-`ui/api/response_probe.nim` (probe registry and context slices), `ui/api/slider_curve.nim`
-(slider travel mapping — the panel computes none), `ui/input/binding_table.nim` (every mouse,
-touch, and key binding as data).
-Shader sources live in `web/shaders/src/` and share code from `modules/`, bundled by `tools/wgsl_bundle.nim`.
-
-Parameter dispatch is generated: `web_api.nim` unrolls the state records with `fieldPairs` at
-compile time, so a descriptor id must name a field of its store's record —
-`test_param_descriptor` holds every routed id to one.
 
 ## Help
 
 `docs/help/` documents features, one file per descriptor group, and the app serves the same
 files as its in-app help (`ui/api/help_content.nim` compiles them in; `?` opens the panel).
-Four coverage relations are test-held: every group has a file, every declared group id exists,
-every descriptor is named by its group's file, no file names a non-existent id. A control
-therefore cannot ship undocumented — write the help line with the feature.
-
-## Reference oracles
-
-GPU math the native suite cannot execute keeps a pure Nim mirror. Change a shader and its mirror in
-the same diff, or the pair silently drifts.
-
-| Mirror | Shader it is written against |
-|---|---|
-| `physics_core.nim` | `forces.wgsl` (force curve, toroidal wrapping, density) |
-| `grid_core.nim` | `bin-count` / `prefix-sum-*` / `bin-scatter.wgsl` |
-| `sph_core.nim` | `forces-sph.wgsl` (kernels, Tait pressure, XSPH) |
-| `field_core.nim` | `rd-step.wgsl`, `field-seed.wgsl`, `field-deposit.wgsl`, and the frame-scaled force `field-force.wgsl` reads |
-| `bloom_core.nim` | `blur.wgsl` (kernel weights substituted from here) |
-| `colormap_core.nim` | `colormap.wgsl`, and `fade.wgsl`'s field drift scale |
-| `camera_core.nim` | `camera_transform.wgsl`, mirrored by `render`, `glow` and `fade` |
-| `glow_core.nim` | `glow.wgsl` (halo radius, falloff, warmth, alpha integral) |
-| `trail_core.nim` | `fade.wgsl` (per-frame decay), `render.wgsl`'s motion-blur taper, plus the trail-length mapping the renderer writes |
-
-## Landmines
-- Render bind groups: counts and shader declarations are build-checked, but which resource lands at each binding is not — verify in a running app.
-- Import order in `src/app.nim` is load-bearing on the JS backend; never alphabetize it.
-- nimble exits 0 on task failure; only the just recipes fail loudly.
-- Deeper maps: [docs/one-world.md](docs/one-world.md) (couplings model), [tests/README.md](tests/README.md) (test layout), [web/shaders/README.md](web/shaders/README.md) (GPU pipeline).
+Write the help line with the feature. Which controls a test holds to that rule is recorded in
+[docs/enforcement.md](docs/enforcement.md).

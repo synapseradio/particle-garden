@@ -36,7 +36,10 @@ test "computeMemoryOffsets adds padding correctly":
 | File | Purpose | Compilation |
 |------|---------|-------------|
 | `test_all.nim` | Entry point that imports every test module | Native (`nim c`) |
-| `coupling_space.nim` | Shared fixture: `ALL_COUPLINGS`, every combination of the three coupling booleans. Declares no suite, so it needs no `test_all.nim` entry — the modules that sweep the space import it | Native |
+| `coupling_space.nim` | Shared fixture: `ALL_COUPLINGS`, every combination of the four coupling booleans (forces, fluid, deposit, fieldForce). Declares no suite, so it needs no `test_all.nim` entry; the modules that sweep the space import it | Native |
+| `test_build_flags.nim` | The compiler flag list in `justfile` equals the one in `particle_garden.nimble`, so a warning fatal through one entry point cannot be silent through the other | Native |
+| `test_camera_drift.nim` | The self-moving camera: pan flow, zoom breath, touch clock, each read off the camera the advance returns, plus a source sweep that every camera writer stamps the touch | Native |
+| `test_meta_vacuity.nim` | A gate over the suite itself: every test block that reads the filesystem asserts something positive about what it read, so a sweep over an empty subject cannot pass as coverage | Native |
 | `test_memory_layout.nim` | Memory layout constants, alignment, AoS structure, `align4` | Native |
 | `test_grid.nim` | Pure grid algorithms (cell indexing, prefix sums, offset validation) | Native |
 | `test_physics.nim` | Pure physics math (forces, wrapping, density, neighbor cells) | Native |
@@ -75,7 +78,7 @@ test "computeMemoryOffsets adds padding correctly":
 
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, descriptor group arithmetic, notch geometry and snapping, and the panel controller's handling of what the simulation pushes at it; `just check` runs both.
 
-Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, and `test_trail_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in the root `CLAUDE.md`.
+Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, `test_trail_core`, and `test_overlay_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in `docs/enforcement.md`.
 
 ### Test Architecture
 
@@ -115,6 +118,9 @@ test_all.nim (runner)
     ├── test_camera_core.nim    → camera_core.nim (toroidal camera, reprojection, visible-radius floor)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
     ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
+    ├── test_camera_drift.nim   → camera_drift.nim (self-moving view)
+    ├── test_build_flags.nim    → justfile, particle_garden.nimble (flag lists agree)
+    ├── test_meta_vacuity.nim   → tests/ (every filesystem-reading test asserts a non-empty subject)
     ├── test_no_modes.nim       → src/, web-ui/src/ (guards against a mode concept in source)
     └── test_panel_reachability.nim → Panel.tsx, state.ts (guards that every descriptor
                                       reaches a control, and that the panel derives the

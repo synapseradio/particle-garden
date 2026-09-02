@@ -75,11 +75,13 @@ You can't just open an HTML file. Browsers require COOP/COEP headers to enable S
 
 Particles live in a SharedArrayBuffer — memory shared between JavaScript and GPU. No data transfer between CPU/GPU after initialization.
 
-**GPU pipeline each frame:**
-1. **Spatial sort** — Reorder particles by grid cell for cache-friendly neighbor lookups
-2. **Force calculation** — For each particle, query neighbors, apply attraction/repulsion
-3. **Integration** — Update velocities and positions
-4. **Render** — Draw particles as instanced quads
+**GPU frame.** `sim_registry.buildFrame` composes the frame as data from the four coupling
+strengths, and `webgpu_compute.nim` walks it. The world-intrinsic sequence runs at every setting:
+grid build (bin count, three prefix-sum stages, bin scatter), the species force sweep, field
+resolve and the Gray-Scott substeps, then integrate. A coupling-owned pass (`forces-sph`,
+`field-deposit`, `field-force`) joins the sequence when its strength is above zero. Rendering
+follows in `webgpu_render.nim`. [`docs/one-world.md`](../docs/one-world.md) holds the full order
+and the rule for adding a coupling.
 
 ```
 SharedArrayBuffer
@@ -113,7 +115,7 @@ Runs in Browser (nim js → web/app.js):
 ┌────────────────────────────────────────────────┐
 │  GPU Pipeline                                  │
 │  ├─ webgpu_init.nim    Device + buffer setup   │
-│  ├─ webgpu_compute.nim 5-pass physics pipeline │
+│  ├─ webgpu_compute.nim walks the frame data    │
 │  └─ webgpu_render.nim  Particle rendering      │
 └────────────────────────────────────────────────┘
                     ↓
@@ -130,6 +132,14 @@ Runs in Browser (nim js → web/app.js):
 │                     window.gardenAPI           │
 └────────────────────────────────────────────────┘
 
+World composition and pure cores (compile on both backends, tested natively):
+├─ sim_registry.nim     The frame as data: which passes run, in what order
+├─ shader_manifest.nim  Every compute shader, registered once at init
+├─ config_ranges.nim    Every range, with measured bounds beside their conditions
+├─ climate_core.nim     Weather tours over the named regimes
+├─ camera_drift.nim     The self-moving view
+└─ *_core.nim           Reference oracles mirroring shader math (see docs/enforcement.md)
+
 bindings/           Nim wrappers for browser APIs
 ├─ webgpu.nim       WebGPU types and functions
 ├─ typed_arrays.nim Float32Array, Uint32Array, etc.
@@ -143,7 +153,9 @@ bindings/           Nim wrappers for browser APIs
 | Task | File |
 |------|------|
 | Understand structure | `app.nim` (imports in dependency order) |
-| Change physics | `webgpu_compute.nim` + `web/shaders/` |
+| Change shader math | the shader in `web/shaders/src/` and its mirror `*_core.nim`, same diff |
+| Change what a frame dispatches | `sim_registry.nim` (`docs/one-world.md` lists every step) |
+| Add a coupling | `docs/one-world.md`, "Adding a fifth coupling" |
 | Change the control panel | `web-ui/src/` (Solid/TypeScript) |
 | Change what the panel can reach | `web_api.nim` + `ui/api/param_descriptor.nim` |
 | Adjust particles | `config.nim` (runtime) or `memory_layout.nim` (structure) |
