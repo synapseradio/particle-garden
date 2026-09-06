@@ -3,8 +3,7 @@
 Ids are stable and never renumbered. Every group ends with `just happen` and `just check` green;
 a group whose gate stays red is not done. Group 3 is the one exception, since the descriptor it adds
 is unreachable until group 4 places it in the panel, so the two groups close as one. Groups run in
-order: group 1 builds the motion the rest of the change wires up, and group 5 measures the two
-constants group 1 ships provisionally.
+order: group 1 builds the motion the rest of the change wires up.
 
 Reds named as "expected red" are the failing tests that must be watched failing before the code
 that closes them is written. A commit waits for the suite to be green, whatever the group boundary.
@@ -137,57 +136,3 @@ directly. It fails on the wrapper not existing.
   `tests/test_panel_reachability.nim` red clears.
 
 Gate: `just happen` and `just check` green, with no reds carried forward from group 3.
-
-## 5. Verification in the running app, and the two provisional constants
-
-Each task here names what to launch, what to set, what to capture, and the observation that settles
-it. Launch with `just be` in the background, or run `./main` directly once `just happen` has been
-green. Either one serves `http://127.0.0.1:8089` (`src/main.nim:19`, `:85`) and opens a window at that
-URL (`src/main.nim:96-101`). WebGPU needs Chrome or Edge 113 or newer.
-Drive a WebGPU-capable browser at that URL with the session's browser
-control, evaluate `window.gardenAPI` calls in the page, and capture canvas screenshots for the
-visual observations. Nothing here is a task for a person except 5.6, which says why.
-
-- [ ] 5.1 **The camera moves itself.** Set `gardenAPI.setCameraDrift(true)` and
-  `gardenAPI.setParam("cameraDriftSpeed", 4.0)`. Send no further input. Sample
-  `gardenAPI.getParam("cameraZoom")` every two seconds for one minute. Settles: the samples are not
-  all equal, and consecutive samples differ by less than `CAMERA_DRIFT_MAX_ZOOM_STEP` times the
-  frames between them. All-equal samples, or a jump past that bound, is the violation.
-- [ ] 5.2 **Off means off.** Restart `./main`. Send no input. Sample
-  `gardenAPI.getParam("cameraZoom")` at launch and one minute later. Settles: the two are equal and
-  both are `CAMERA_ZOOM_MIN`.
-- [ ] 5.3 **A drag is not fought.** With drift on at speed 4.0, capture a screenshot, press the
-  middle button at a canvas point, move it a known pixel offset in several steps, and capture again
-  at each step. Settles: the world feature under the press point stays under the pointer through the
-  drag, judged by comparing the captured frames at the pointer location. If the feature slides out
-  from under the pointer, the stamp is not covering the drag path.
-- [ ] 5.4 **Resuming does not jump.** After the drag in 5.3, release and sample
-  `gardenAPI.getParam("cameraZoom")` every second for thirty seconds. Settles: the samples hold
-  constant for the quiet interval, then begin changing, and the first changing sample differs from
-  the last constant one by less than `CAMERA_DRIFT_MAX_ZOOM_STEP` times the frames between samples.
-  A step larger than that is a snap.
-- [ ] 5.5 **Trails survive a moving camera.** Switch trails on, set the drift to 4.0, and capture
-  the canvas every five seconds for a minute, including at least one seam crossing. Settles: no
-  frame shows a hard edge or a band of missing trail at the leading edge of travel or at a world
-  seam. Also read the reported frame time from the stats stream before and after switching drift on
-  at the same particle count, and record both numbers in this task. A frame time that rises is a
-  finding to report, not a blocker.
-- [ ] 5.6 **Does the ceiling still read as drift?** Non-blocking, and it needs a person: whether
-  4.0 view widths a minute reads as weather or as a pan somebody is performing is an aesthetic
-  judgment with no observation an agent can make. Capture a thirty-second screen recording at the
-  ceiling speed and one at the default, attach both to the change, and ask. Nothing in this list
-  waits on the answer. A verdict that the ceiling is too fast lands as an edit to
-  `CAMERA_DRIFT_SPEED_MAX` and its conditions in `src/config_ranges.nim`.
-- [ ] 5.7 **Fix the resume interval.** With drift on, perform a middle-button drag that pauses for
-  four seconds in the middle and then continues, and record whether the drift moved the camera
-  during the pause. Then leave the app untouched and record the elapsed seconds until motion
-  resumes. Settles: the drift makes no advance during a four-second pause inside a gesture, and
-  motion returns within the interval the constant names. Write the measured pause length and the
-  observed resume time into `CAMERA_DRIFT_RESUME_SECONDS`' conditions in `src/camera_drift.nim`, and
-  change the value if either observation contradicts it. Files: `src/camera_drift.nim`.
-- [ ] 5.8 **Record the mechanical headroom on the speed ceiling.** From 5.5's captures at the speed
-  ceiling, state in `CAMERA_DRIFT_SPEED_MAX`'s conditions what the observation showed about trail
-  reprojection at that speed, replacing the calculated headroom figure with the observed one. Files:
-  `src/config_ranges.nim`.
-
-Gate: `just happen` and `just check` green after 5.7 and 5.8 edit the constants.
