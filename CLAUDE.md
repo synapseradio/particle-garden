@@ -38,8 +38,13 @@ beside a constant, one or two lines satisfy it.
 - `./main` serves the page over plain HTTP at `http://127.0.0.1:8089` with COOP/COEP headers and
   opens a webui window at that URL. The page loads only `app.js` and `ui-bundle.js` and calls
   nothing over the webui bridge, so any WebGPU-capable Chromium tab at that address runs the same
-  app. To drive it from an agent, launch `./main` in the background, poll the port, and point a
-  browser tool (Browser MCP, Playwright) at the URL. Stop it by killing the port's listener.
+  app. `./main` exits with code 0 when no browser attaches within webui's default startup wait
+  (`src/main.nim` calls `show` then `wait` and never `setTimeout`), so an agent cannot launch it
+  unattended. Before any in-app verification, confirm the Browser MCP tools are present and
+  connected without errors; if they are not, ask the user to start Chrome and connect Browser MCP,
+  and start nothing until they confirm. Then launch `./main` in the background, poll the port, and
+  drive the page through Browser MCP. Never install Playwright or another browser driver to work
+  around a missing connection. Stop the app by killing the port's listener.
 
 ## Help
 
