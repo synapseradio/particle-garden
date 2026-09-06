@@ -12,6 +12,11 @@ The audio context, the microphone request, and the analyser SHALL all be created
 of the listen control's activation. None of them SHALL be created at launch, on preset load, or on
 any other event: the click is the consent, every session.
 
+The microphone request SHALL ask for `echoCancellation`, `noiseSuppression`, and `autoGainControl`
+each `false`, so the browser's call-tuned processing neither moves the level under the core's own
+normalization nor removes sustained tones. The measurement gate SHALL read the granted track's
+settings back and report which of the three the launched window honored.
+
 Turning listening off SHALL stop the media stream's tracks and close the audio context, so the
 operating system's own microphone indicator goes dark while the affordance reports that listening
 stopped.
@@ -34,6 +39,11 @@ already records for its own wiring (`src/web_api.nim:29-32`).
 #### Scenario: The permission request rides the activation
 - **WHEN** the user activates the listen control
 - **THEN** the audio context is created and the microphone is requested inside that same gesture
+
+#### Scenario: The request asks for raw audio
+- **WHEN** the microphone is requested
+- **THEN** the constraints carry echo cancellation, noise suppression, and automatic gain control
+  each set false, and the gate's report names which the granted track honored
 
 #### Scenario: Stopping releases the microphone
 - **WHEN** the user turns listening off
@@ -248,8 +258,8 @@ descriptor claim is held by `tests/test_param_descriptor.nim`, which walks the w
 A feature's value for a frame SHALL be a function of that frame's arrays, the previous frame's
 spectrum where the definition differences against it, and the normalization state. No attack
 constant, no release constant, and no fixed averaging SHALL be layered on top. The musical smoothing
-is the matrix row's own slew, applied where the user chose it, and the meters therefore show a
-transient as the core computed it.
+is the matrix row's own attack and release, applied where the user chose them, and the meters
+therefore show a transient as the core computed it.
 
 Enforcement: a native test under `just test` asserting that a loud frame followed by a silent frame
 lands the level features at their silent values on that next frame.
@@ -260,8 +270,8 @@ lands the level features at their silent values on that next frame.
   release ramp across frames
 
 #### Scenario: Smoothing is the row's choice
-- **WHEN** a user raises the slew on a row driven by an audio source
-- **THEN** the world's response smooths and the metered value is unchanged
+- **WHEN** a user raises the release constant on a row driven by an audio source
+- **THEN** the world's fall from a hit lengthens and the metered value is unchanged
 
 ### Requirement: Audio registers one source family and delivers before the flush
 
@@ -326,8 +336,8 @@ behavior for a zero-valued or inert row is held by the `control-matrix` capabili
 (`src/ui/api/help_content.nim:46-51`), keyed through `ReservedHelpKeys` because audio ships no
 descriptor group (`src/ui/api/help_content.nim:38-40`). It SHALL cover what the listen control does,
 that captured sound never leaves the application, the permission prompt and how to revisit a
-refusal, the six sources in the room's terms, what the meters show, and what the shipped rows do,
-with an invitation to remap them.
+refusal, the six sources in the room's terms, what the meters show, what the three live rows do, and that
+three more rows wait at zero depth, with an invitation to raise and remap them.
 
 The file SHALL keep the four coverage relations green, including the relation that no help file
 names an id absent from the descriptor table

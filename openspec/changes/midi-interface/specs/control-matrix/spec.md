@@ -38,7 +38,8 @@ id as opaque and checks no grammar.
 ### Requirement: A row admits only legal combinations of source and target
 
 A row SHALL carry exactly one of five kinds and only the fields that kind uses: `Modulate` with a
-parameter id, a depth in [-1, 1] and a slew; `Write` with a parameter id, a jump flag and a rank;
+parameter id, a depth in [-1, 1], an attack constant and a release constant; `Write` with a parameter
+id, a jump flag and a rank;
 `Fire` with an action id and an ordinal; `Touch` with grid columns, grid rows, and a base note;
 `Tour` with a tour id, a boolean descriptor id gating the advance, a descriptor id scaling it, and
 a rank. The row type SHALL admit no action or gesture field on a `Modulate` row, so modulating an
@@ -144,7 +145,7 @@ source-sweep pattern at `tests/test_no_modes.nim:34`.
 
 For each modulated parameter each frame, the base travel SHALL be the stored value's position on the
 track, the offset SHALL be the sum over that parameter's `Modulate` rows of depth times the row's
-slewed source value, and the effective value SHALL be the value at the base plus the offset clamped
+enveloped source value, and the effective value SHALL be the value at the base plus the offset clamped
 into [0, 1], bounded by the live ceiling where the parameter's bound is derived
 (`src/ui/api/slider_curve.nim:42-74`).
 
@@ -153,12 +154,13 @@ Effective values SHALL reach CONFIG through the existing mirror at the one effec
 preset, and the slider's base value therefore all report what the user last wrote while an excursion
 is live.
 
-A depth of zero SHALL be an ordinary value that moves nothing. A row's slew SHALL approach the latest
-source value exponentially over wall-clock time with the row's time constant, and a slew of zero
-SHALL pass the raw value. The matrix SHALL recompute and re-mirror while any excursion is live and
-for the frame after the last one ends, so the return to base lands.
+A depth of zero SHALL be an ordinary value that moves nothing. A row's enveloped value SHALL approach
+the latest source value exponentially over wall-clock time, with the row's attack constant while the
+source sits above the enveloped value and the row's release constant while it sits below, and a
+constant of zero SHALL pass the raw value on its side. The matrix SHALL recompute and re-mirror while
+any excursion is live and for the frame after the last one ends, so the return to base lands.
 
-Enforcement: `tests/test_control_matrix.nim` pins the summing, clamping, and slew arithmetic against
+Enforcement: `tests/test_control_matrix.nim` pins the summing, clamping, and envelope arithmetic against
 real descriptors. Holding the stored record untouched is review-enforced at the mirror site, whose
 own comment states the rule (`src/web_api.nim:136-160`). The preset half is review-enforced and
 requires the snapshot to read stored state for every modulated field, since `snapshotPreset` reads
@@ -186,10 +188,15 @@ difference.
 - **THEN** the effective value is the value at that end, under the live ceiling where the parameter's
   bound is derived
 
-#### Scenario: A slewed row approaches its source value over its time constant
-- **WHEN** a source jumps and its row carries a non-zero slew
-- **THEN** the excursion approaches the new value over that time constant, while a row with zero slew
-  applies it on the next frame
+#### Scenario: A rising source approaches over the attack constant
+- **WHEN** a source jumps up and its row carries a non-zero attack constant
+- **THEN** the excursion approaches the new value over that constant, while a row with a zero attack
+  constant applies it on the next frame
+
+#### Scenario: A falling source approaches over the release constant
+- **WHEN** a source drops and its row carries a zero attack constant and a non-zero release constant
+- **THEN** the excursion falls toward the new value over the release constant, and the preceding rise
+  landed on the frame it arrived
 
 ### Requirement: Write rows write through the path the panel writes through
 
@@ -408,9 +415,13 @@ One user mapping SHALL persist, and mappings SHALL stay out of world presets, si
 point in the world's parameter space while a mapping configures the instrument, the reasoning that
 keeps the camera out (`src/ui/api/param_descriptor.nim:53-59`).
 
+The stored mapping SHALL be exportable as its document text and a document SHALL be applicable
+through the same validate-first decode a load from storage runs, so a mapping handed from one player
+to another meets exactly the drop, clamp, and refusal rules above.
+
 Enforcement: `tests/test_control_matrix.nim` covers round-trip stability, the drop-and-clamp decode
-stance, the newer-version refusal, and unresolved rows loading intact. `tests/test_preset.nim` holds
-the preset schema unchanged.
+stance, the newer-version refusal, unresolved rows loading intact, and an exported document applying
+back to an equal mapping. `tests/test_preset.nim` holds the preset schema unchanged.
 
 #### Scenario: One bad row costs one row
 - **WHEN** a stored document carries a structurally malformed row among valid ones
@@ -432,14 +443,24 @@ the preset schema unchanged.
 - **WHEN** a preset is exported while a user mapping is active
 - **THEN** the preset carries no rows and applying it leaves the mapping untouched
 
+#### Scenario: An exported mapping applies back whole
+- **WHEN** the active mapping is exported and the text is applied
+- **THEN** the resulting mapping equals the one exported, row for row
+
+#### Scenario: A handed-over document meets the decode rules
+- **WHEN** a document from another player is applied
+- **THEN** malformed rows drop, out-of-range fields clamp, a newer version is refused whole, and
+  rows naming sources this session lacks load as unresolved
+
 ### Requirement: The shipped default mapping loads when storage holds nothing usable
 
 A default mapping SHALL ship as a constant and SHALL load when storage is empty or its stored
 document is refused. Its rows lead with the four coupling strengths
 (`src/ui/state/sim_config.nim:43-57`):
 
-- four `Write` rows with soft takeover, `midi:cc:1:1` to `forceStrength`, `midi:cc:1:7` to
-  `fluidStrength`, `midi:cc:1:74` to `rdFieldForce`, and `midi:cc:1:71` to `rdDeposit`
+- four `Write` rows with soft takeover, `midi:cc:1:7` to `forceStrength`, `midi:cc:1:1` to
+  `fluidStrength`, `midi:cc:1:74` to `rdFieldForce`, and `midi:cc:1:71` to `rdDeposit`, so volume
+  and cutoff share their targets with `audio:loudness` and `audio:brightness`
 - six `Fire` rows on `midi:pc:1`, ordinals 0 through 5, selecting the six named regimes in
   `RD_REGIMES` order (`src/config_ranges.nim:268-277`)
 - one `Touch` row laying a 4 by 4 grid on `midi:notes:1` from base note 36
@@ -481,14 +502,18 @@ row: a continuous source's movement for a `Modulate` or `Write` slot, an event f
 `Touch` slot, where a `Fire` slot takes the event's source id and ordinal and a `Touch` slot takes
 the source id and offers the delivered ordinal as its base note.
 
+Arming SHALL capture the set of continuous sources that delivered in the frame before the arm, and
+no source in that set SHALL qualify for that arming, so a family delivering every frame, such as
+audio while listening, and a control streaming without a hand on it never bind by arriving first.
+
 The binding delivery SHALL be suppressed from ordinary matrix effect, so learning a control does not
 also drive whatever that control was mapped to. A completed row SHALL reach the panel and persist
 through the ordinary edit path. Learn SHALL carry no timeout: it stays armed until a qualifying
 source arrives or the user cancels.
 
-Enforcement: `tests/test_control_matrix.nim` covers qualification per slot kind, the suppression of
-the binding delivery, cancel leaving the mapping unchanged, and arming persisting across frames with
-no delivery.
+Enforcement: `tests/test_control_matrix.nim` covers qualification per slot kind, the exclusion of
+sources delivering at arm time, the suppression of the binding delivery, cancel leaving the mapping
+unchanged, and arming persisting across frames with no delivery.
 
 #### Scenario: A knob learns a write slot
 - **WHEN** learn is armed for a `Write` slot and a continuous source moves
@@ -498,6 +523,11 @@ no delivery.
 - **WHEN** learn is armed for a `Fire` slot and an event arrives
 - **THEN** the row binds to that event's source id and ordinal, and the action does not run from that
   delivery
+
+#### Scenario: A source already streaming does not bind
+- **WHEN** a continuous source delivered in the frame before learn was armed and keeps delivering
+- **THEN** learn stays armed past its deliveries, and a source that first delivers after the arm
+  binds
 
 #### Scenario: A knob does not qualify for a gesture slot
 - **WHEN** learn is armed for a `Fire` or `Touch` slot and a continuous source moves

@@ -33,16 +33,21 @@ under `just test`. That no matrix module was edited is review-enforced against t
 ### Requirement: The default matrix ships six audio rows
 
 The shipped default matrix SHALL carry six audio rows, each touching exactly one target, and the six
-targets SHALL be distinct from one another so each source's effect reads alone:
+targets SHALL be distinct from one another so each source's effect reads alone. Three rows SHALL ship
+live and three SHALL ship at zero depth, so the first listen moves only the three whose cause and
+effect share a kind and a clock:
 
 | Source | Kind | Target | Depth |
 |---|---|---|---|
-| `audio:loudness` | Modulate | `forceStrength` | +0.25 |
-| `audio:bass` | Modulate | `fluidStrength` | +0.30 |
-| `audio:mid` | Modulate | `rdDeposit` | +0.20 |
-| `audio:brightness` | Modulate | `rdFieldForce` | +0.25 |
-| `audio:high` | Modulate | `glowIntensity` | +0.25 |
 | `audio:onset` | Touch | a one-cell grid over the visible view | the event's energy as blast strength |
+| `audio:bass` | Modulate | `fluidStrength` | +0.30 |
+| `audio:loudness` | Modulate | `forceStrength` | +0.25 |
+| `audio:high` | Modulate | `glowIntensity` | 0 |
+| `audio:mid` | Modulate | `rdDeposit` | 0 |
+| `audio:brightness` | Modulate | `rdFieldForce` | 0 |
+
+Every Modulate row SHALL ship with a zero attack constant and an 80 ms release constant, starting
+values a test pins.
 
 The four simulation targets are the four couplings the world reads off its own parameters
 (`src/ui/state/sim_config.nim:43-57`). `audio:high` lands on `glowIntensity`, which is in the picture
@@ -71,6 +76,15 @@ pinning each row's source, kind, target, and depth.
 #### Scenario: A shipped row is neutralized without deletion
 - **WHEN** a user sets a shipped audio row's depth to zero
 - **THEN** the row keeps its place in the matrix and displaces nothing
+
+#### Scenario: A first listen moves three targets
+- **WHEN** listening starts with the shipped default matrix and sound arrives
+- **THEN** `fluidStrength`, `forceStrength`, and the blast answer, while `glowIntensity`,
+  `rdDeposit`, and `rdFieldForce` hold their stored values until their rows' depths are raised
+
+#### Scenario: A dormant row is offered in the editor
+- **WHEN** the user opens the mapping editor having never edited it
+- **THEN** the three zero-depth audio rows appear with their targets, ready to raise
 
 #### Scenario: An audio row shares a target with a written value
 - **WHEN** the default matrix also carries a Write row on one of the four coupling strengths

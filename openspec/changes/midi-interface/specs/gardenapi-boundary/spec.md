@@ -169,6 +169,10 @@ serve the storage key the user mapping is written under, and the panel SHALL res
 The mapping key SHALL be distinct from every preset key, so a preset save touches no mapping and a
 mapping save touches no preset.
 
+The boundary SHALL serve the active mapping's document text for export and SHALL accept a document
+text to apply, answering the `{ok, error}` shape the preset apply arm answers
+(`src/web_api.nim:1323-1327`), so the panel moves text and composes no mapping of its own.
+
 Enforcement: `tests/test_control_matrix.nim` pins the schema, its validation, and its defaults. The
 served-key relation is review-enforced and build-verified, matching the preset precedent whose
 distinct keys are pinned by `tests/test_preset_store_core.nim:71-73`.
@@ -180,6 +184,14 @@ distinct keys are pinned by `tests/test_preset_store_core.nim:71-73`.
 #### Scenario: Stored text is validated in Nim
 - **WHEN** the panel reads stored mapping text
 - **THEN** it hands the text to the boundary, which validates it and answers with the mapping to run
+
+#### Scenario: The panel exports what the boundary serves
+- **WHEN** the user asks to export the mapping
+- **THEN** the panel offers the document text the boundary served, unchanged
+
+#### Scenario: An applied document is answered like a preset
+- **WHEN** the panel hands a document text to the boundary to apply
+- **THEN** the boundary answers ok with the mapping to run, or an error naming the refusal
 
 #### Scenario: A preset save leaves the mapping alone
 - **WHEN** a preset is saved

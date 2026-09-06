@@ -55,9 +55,10 @@ never mocked (`openspec/config.yaml`, testing context).
 
 ### Requirement: The declared source set holds the shipped ids and every control that has sent
 
-The shipped mapping's source ids SHALL be declared at wiring time as compile-time constants, so a
-shipped row resolves before any hardware has spoken and the compile-time gate on the shipped mapping
-has a declaration set to check. Every other control SHALL declare the first time it sends a message,
+The shipped mapping's source ids and `midi:clock` SHALL be declared at wiring time as compile-time
+constants, so a shipped row resolves before any hardware has spoken, the compile-time gate on the
+shipped mapping has a declaration set to check, and the beat is offerable in the editor before a
+sequencer is connected. Every other control SHALL declare the first time it sends a message,
 and that arrival SHALL re-register the family with the grown set, replacing the previous declarations
 under the registration rule the `control-matrix` capability states.
 
@@ -85,20 +86,25 @@ Declaration on first message is build-verified and review-enforced with the rest
 ### Requirement: A pure core parses raw MIDI messages and drops what it cannot name
 
 Parsing SHALL live in a module that imports no transport, compiles natively, and is tested natively
-(`src/ui/input/midi_core.nim`, `tests/test_midi_core.nim`). It SHALL turn a raw MIDI byte triple
-into one of four typed messages, control change, note on, note off, and program change, each
-carrying its channel and its numbers. A triple whose status names none of those four SHALL be
+(`src/ui/input/midi_core.nim`, `tests/test_midi_core.nim`). It SHALL turn a raw three-byte channel
+message into one of four typed messages, control change, note on, note off, and program change,
+each carrying its channel and its numbers, and a raw one-byte system real-time message into one of
+four, clock, start, continue, and stop. A message whose status names none of those eight SHALL be
 rejected at that boundary and SHALL produce no delivery.
 
-Enforcement: `tests/test_midi_core.nim` covers parsing and rejection, and the module's native
-compilation holds it free of transport imports.
+Enforcement: `tests/test_midi_core.nim` covers parsing and rejection for both lengths, and the
+module's native compilation holds it free of transport imports.
 
 #### Scenario: A control-change triple parses
 - **WHEN** the core receives the bytes of a control change on channel 1
 - **THEN** it reports a control-change message carrying channel 1, the control number, and the value
 
+#### Scenario: A clock byte parses
+- **WHEN** the core receives the single byte 0xF8
+- **THEN** it reports a clock message
+
 #### Scenario: Bytes naming no consumed message produce nothing
-- **WHEN** the core receives a triple whose status names none of the four messages
+- **WHEN** the core receives a message whose status names none of the eight messages
 - **THEN** it reports no message and nothing reaches the matrix
 
 ### Requirement: MIDI messages normalize into matrix sources
@@ -116,12 +122,16 @@ wire format:
 - a note off delivers nothing, and a note on carrying velocity 0 delivers nothing with it, since the
   MIDI 1.0 specification defines that message as a note off
   (https://musicproductionwiki.com/bible/velocity)
+- a clock pulse delivers as an event on `midi:clock` with magnitude 1.0 and the pulse count modulo
+  24 as its ordinal, so ordinal 0 is the beat; start resets the count so the next pulse is ordinal
+  0, continue leaves the count, and pulses arriving after stop deliver nothing until continue or
+  start; a stream that sends clock with no start counts from its first pulse
 
 Every channel SHALL be listened to, and the channel SHALL live inside the source id, so channel
 selection lives in the mapping and needs no configuration on the device.
 
-Enforcement: `tests/test_midi_core.nim` pins the normalization arithmetic and the channel's place in
-each source id.
+Enforcement: `tests/test_midi_core.nim` pins the normalization arithmetic, the channel's place in
+each source id, and the clock count across start, continue, and stop.
 
 #### Scenario: A control change arrives as travel
 - **WHEN** control 74 on channel 1 sends its maximum wire value
@@ -143,6 +153,15 @@ each source id.
 #### Scenario: A note on at velocity 0 is a note off
 - **WHEN** a note on arrives carrying velocity 0
 - **THEN** no event reaches the matrix, so no `Fire` row runs and no blast is placed
+
+#### Scenario: The beat lands on ordinal zero
+- **WHEN** a start arrives and then 25 clock pulses
+- **THEN** the first and the twenty-fifth pulse deliver events on `midi:clock` with ordinal 0, and
+  the pulses between carry ordinals 1 through 23
+
+#### Scenario: Pulses after stop deliver nothing
+- **WHEN** a stop arrives and clock pulses continue
+- **THEN** no event reaches the matrix until a continue or a start arrives
 
 #### Scenario: Channels stay apart
 - **WHEN** the same control number arrives on two channels

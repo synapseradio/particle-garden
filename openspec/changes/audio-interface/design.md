@@ -32,9 +32,9 @@ Web Audio facts relied on: `fftSize` is the FFT window size in samples, a power 
 
 ### 1. Capture chain and lifecycle
 
-The listen control's click creates the AudioContext, calls `getUserMedia` for audio, and wires MediaStreamAudioSourceNode into an AnalyserNode connected to nothing further. Creating the context inside the gesture satisfies the activation policy in the same click that asks permission. Turning listening off stops the MediaStream tracks and closes the context, so the operating system's microphone indicator goes dark and the affordance's claim of silence is true at the OS level. Listening never starts on launch or on preset load: the click is the consent, every session (docs/engineering-principles.md, article 11).
+The listen control's click creates the AudioContext, calls `getUserMedia` for audio with `echoCancellation`, `noiseSuppression`, and `autoGainControl` each requested `false`, and wires MediaStreamAudioSourceNode into an AnalyserNode connected to nothing further. The three are `MediaTrackConstraints` entries (https://developer.mozilla.org/en-US/docs/Web/API/MediaTrackConstraints), each a preference the browser may decline, and their defaults are the browser's own and change across versions. The browser's gain control would move the level under decision 5's own window, and noise suppression removes the sustained tones a pad or a held note carries. The measurement gate reads the granted track's settings back through `getSettings()` (https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamTrack/getSettings) and reports which of the three the launched window honored, which is the only statement about defaults this design relies on. Creating the context inside the gesture satisfies the activation policy in the same click that asks permission. Turning listening off stops the MediaStream tracks and closes the context, so the operating system's microphone indicator goes dark and the affordance's claim of silence is true at the OS level. Listening never starts on launch or on preset load: the click is the consent, every session (docs/engineering-principles.md, article 11).
 
-Rejected: suspending the context while keeping the stream, which keeps the microphone indicator lit while the app claims not to listen. Rejected: one context created at startup, which arrives suspended and couples an unrelated lifecycle to the affordance.
+Rejected: the browser's default processing, which is tuned for a voice call and competes with the feature core for the signal's level and sustain. Rejected: suspending the context while keeping the stream, which keeps the microphone indicator lit while the app claims not to listen. Rejected: one context created at startup, which arrives suspended and couples an unrelated lifecycle to the affordance.
 
 ### 2. Analyser configuration
 
@@ -44,7 +44,7 @@ Rejected: the analyser's default 0.8 smoothing, which averages in the browser wh
 
 ### 3. What crosses into the feature core
 
-Once per frame, the wiring copies two arrays and hands them to the core with the sample rate and the frame's wall-clock delta: the frequency array (1024 decibel values) and the time-domain array (2048 samples). The delta is what holds decision 4's refractory window and decision 5's adaptation in wall-clock terms at any frame rate, since the same constant counted in frames spans half the seconds at 120 fps that it spans at 60. The sibling design takes the same input for the same reason, computing row slew in the pure matrix from the frame's wall-clock delta (openspec/changes/midi-interface/design.md, D4). The core is the one implementation from arrays to features: it converts decibels to linear magnitude, treats negative infinity as zero, and owns every constant. The wiring in `src/canvas_input.nim` style does nothing but poll, copy, and call.
+Once per frame, the wiring copies two arrays and hands them to the core with the sample rate and the frame's wall-clock delta: the frequency array (1024 decibel values) and the time-domain array (2048 samples). The delta is what holds decision 4's refractory window and decision 5's adaptation in wall-clock terms at any frame rate, since the same constant counted in frames spans half the seconds at 120 fps that it spans at 60. The sibling design takes the same input for the same reason, computing each row's attack and release in the pure matrix from the frame's wall-clock delta (openspec/changes/midi-interface/design.md, D4). The core is the one implementation from arrays to features: it converts decibels to linear magnitude, treats negative infinity as zero, and owns every constant. The wiring in `src/canvas_input.nim` style does nothing but poll, copy, and call.
 
 Rejected: deriving any feature in JavaScript or in the panel, which would put numbers outside Nim's ownership and outside native tests. Rejected: counting the refractory and the adaptation in frames, which ties every audio constant to the display's refresh rate and lets one drum hit double-trigger at 120 fps where it fired once at 60.
 
@@ -65,9 +65,9 @@ Rejected: a fixed dBFS mapping, which bakes one microphone's gain into every num
 
 ### 6. Where smoothing lives
 
-The core emits features conditioned only as their definitions require: the FFT window, the normalization tracking, the flux differencing. No fixed attack or release is layered on top. The matrix row's `slew` is the musical smoothing, applied where the user chose it, and meters show what the core emits so a transient is visible as itself.
+The core emits features conditioned only as their definitions require: the FFT window, the normalization tracking, the flux differencing. No fixed attack or release is layered on top. The matrix row's attack and release constants are the musical smoothing, applied where the user chose them, and meters show what the core emits so a transient is visible as itself. The shipped audio rows start at a zero attack and an 80 ms release, inside the 20 to 100 ms range audio-reactive practice reports (https://kferg.dev/posts/2020/audio-reactive-programming-envelope-followers), so a hit lands on its frame and the world eases off it.
 
-Rejected: a core-side attack and release per feature, which would double-smooth under row slew and hide from the meter exactly what the onset detector needs visible.
+Rejected: a core-side attack and release per feature, which would double-smooth under the row's envelope and hide from the meter exactly what the onset detector needs visible.
 
 ### 7. Frame ordering and the matrix hand-off
 
@@ -99,18 +99,22 @@ One sum type serves the panel: `Disconnected` (never asked or turned off), `Requ
 
 ### 10. Shipped default rows
 
-Six rows, each touching exactly one target so cause reads clearly (couplings verified at `src/ui/state/sim_config.nim:43-57`):
+Six rows, each touching exactly one target so cause reads clearly (couplings verified at `src/ui/state/sim_config.nim:43-57`). Three ship live and three ship authored at zero depth:
 
 | Source | Row | Target | Depth | Why this pairing teaches |
 |---|---|---|---|---|
-| audio:loudness | Modulate | forceStrength | +0.25 | The room's energy animates the species dance, the first coupling a user meets |
-| audio:bass | Modulate | fluidStrength | +0.30 | Bass is felt as pressure, and the fluid is pressure |
-| audio:mid | Modulate | rdDeposit | +0.20 | The music's body feeds the substrate the chemistry grows on |
-| audio:brightness | Modulate | rdFieldForce | +0.25 | Bright timbre makes particles heed the chemical field |
-| audio:high | Modulate | glowIntensity | +0.25 | Sparkle brightens the halo the particles already wear |
 | audio:onset | Touch | blast at the view's center, a one-cell grid with baseNote 0 | energy as strength | A drum hit visibly shoves the world where the eye rests |
+| audio:bass | Modulate | fluidStrength | +0.30 | Bass is felt as pressure, and the fluid is pressure |
+| audio:loudness | Modulate | forceStrength | +0.25 | The room's energy animates the species dance, the first coupling a user meets |
+| audio:high | Modulate | glowIntensity | 0 | Sparkle brightens the halo the particles already wear |
+| audio:mid | Modulate | rdDeposit | 0 | The music's body feeds the substrate the chemistry grows on |
+| audio:brightness | Modulate | rdFieldForce | 0 | Bright timbre makes particles heed the chemical field |
+
+The three live rows are the ones whose cause and effect share a kind and a clock: an impulse to an impulse, pressure to pressure, energy to energy. A mapping reads without explanation when it "has a basis within the physical world" and stays inside one time scale, and a mapping into a structure that accumulates is "rarely perceived" at the scale of the event, showing instead in its cumulative effect (Callear, https://www.seeingsound.co.uk/docs/Audiovisual_Particles.pdf, sections 2.3 and 4.3). The two field rows push a syllable-rate feature into the Gray-Scott field, which accumulates deposit across every frame's substeps (docs/one-world.md, world-intrinsic passes), so they read as texture over a passage and would blur the first three if live from the start. They ship authored, at zero depth, with help inviting the user to raise them once the live three are heard, which is the row the matrix already treats as ordinary: a zero depth keeps its place and moves nothing. The high row joins them so the first listen changes the world and nothing else, and simple correspondences that all fire at once "rapidly cease to be interesting" (Dannenberg, via Callear section 2.2).
 
 `audio:high` lands on the render store rather than a fifth coupling, keeping the one-coupling-per-row teaching, and on `glowIntensity` over `bloomIntensity` because the bloom slider sits dormant while bloom is off (`src/ui/api/param_descriptor.nim:507-509`) where the glow is always in the picture. Steady hiss settles to zero under the adaptive floor, so only high-band content above it sparkles. Depths are starting values pinned by tests and refined against the running world (docs/engineering-principles.md, article 10). Every row's depth has zero in range, the house idiom.
+
+Rejected: six live rows. The climate and force-weather tours keep running while listening, and they are the counterpoint that keeps a mapping from going predictable, which Callear's compositions needed "unmapped elements" to supply. Six audio rows plus two tours moving at once leaves nothing for the eye to attribute.
 
 Rejected for onset's target: a random cell, which reads as noise until the mapping is understood, and the loudest band's spatial position, which the substrate register would earn later but a blast cannot explain today.
 
@@ -129,11 +133,12 @@ The capture chain itself is browser territory, verified by the build and by the 
 
 ### 12. Help
 
-One new help file with the three-line front matter (`src/ui/api/help_content.nim:46-51`), keyed through `ReservedHelpKeys` (`src/ui/api/help_content.nim:38-40`), the mechanism the sibling design's help file uses as well. Content sketch: what the listen control does and that sound never leaves the app, the permission prompt and how to revisit a denial, the six sources described in room terms (loudness as the room's energy, bass as its weight, brightness as its sparkle, onset as its hits), what the meters show, and what the shipped rows do with an invitation to remap them.
+One new help file with the three-line front matter (`src/ui/api/help_content.nim:46-51`), keyed through `ReservedHelpKeys` (`src/ui/api/help_content.nim:38-40`), the mechanism the sibling design's help file uses as well. Content sketch: what the listen control does and that sound never leaves the app, the permission prompt and how to revisit a denial, the six sources described in room terms (loudness as the room's energy, bass as its weight, brightness as its sparkle, onset as its hits), what the meters show, what the three live rows do, and that three more rows wait at zero depth with an invitation to raise and remap them.
 
 ## Risks / Trade-offs
 
 - [Microphone permission inside the webui-launched window is unproven] → the proposal's measurement gate spike runs before capture work, and on refusal the affordance reports unavailability while the core stays fully testable.
+- [The launched window may ignore a `false` on one of the three processing constraints] → the gate spike reads the granted track's settings back; a browser that keeps gain control on leaves decision 5's window adapting under a second adapter, which the 20 dB step test cannot see, so the spike's report decides whether a manual anchor arrives sooner.
 - [Adaptive normalization pumps on strongly dynamic music, quiet passages reading louder over time] → slow ceiling decay bounds the effect, depths ship modest, and a manual pin arrives as a follow-up if the pumping proves audible.
 - [The 42.7 ms analysis window smears events shorter than a frame] → the consumer runs at frame rate, and the click-train test pins what granularity the detector actually achieves.
 - [Slider shading for audio modulation updates on channels owned by the sibling change, at cadences designed there] → the sibling design pins excursion shading to the stats push cadence, roughly 500 ms, and states the limit in its matrix contract, while this change's meters carry the fast view of audio itself.
