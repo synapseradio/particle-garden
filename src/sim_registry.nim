@@ -79,6 +79,11 @@ type
       ## (field-deposit.wgsl).
     fieldForce*: float
       ## How hard the field's gradient steers particles (field-force.wgsl).
+    bodies*: float
+      ## How much of what a body says lands (body-force.wgsl and
+      ## body-integrate.wgsl), scaling the forces particles receive and the
+      ## reaction bodies receive together, so action and reaction cannot be
+      ## scaled apart.
 
 func acts(strength: float): bool =
   ## Whether a coupling contributes at all. The one place the frame compares a

@@ -763,6 +763,21 @@ suite "A Crowd Cannot Drive A Body Unstable":
     # A sweep over an empty lattice passes vacuously; this is the positive
     # claim about the subject that keeps the ones below from being free.
     check sweep.len == 3 * 2 * 3 * 3 * 2 * 2 * 2 * 2
+    # And every axis above runs to the bound the SHIPPED range carries, so the
+    # sweep covers every world the panel can express. config_ranges derives its
+    # bodies bounds from this module, so these are one number each rather than
+    # two held equal; the checks are what keeps that derivation from being
+    # quietly replaced by a literal.
+    check BODIES_STRENGTH_MAX == BODY_STRENGTH_CEILING
+    check BODY_PROXIMITY_MAX == BODY_FORCE_CEILING
+    check BODY_ENCLOSURE_MAX == BODY_FORCE_CEILING
+    check BODY_PROXIMITY_MIN == -BODY_FORCE_CEILING
+    check BODY_ENCLOSURE_MIN == -BODY_FORCE_CEILING
+    check BODY_BAND_MIN == BODY_BAND_FLOOR
+    check BODY_BAND_MAX == BODY_BAND_CEILING
+    check BODY_RADIUS_MIN == BODY_RADIUS_FLOOR
+    check BODY_RADIUS_MAX == BODY_RADIUS_CEILING
+    check BODY_ANISOTROPY_MAX == BODY_ANISOTROPY_CEILING
     var strongest = 0.0
     for run in sweep:
       strongest = max(strongest, run.peakSpeed)

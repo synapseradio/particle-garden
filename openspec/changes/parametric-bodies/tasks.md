@@ -98,39 +98,39 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
 
 ## 3. The numbers and the panel surface
 
-- [ ] 3.1 **Red first.** Add `bodiesStrength` to the coupling-floor loop at
+- [x] 3.1 **Red first.** Add `bodiesStrength` to the coupling-floor loop at
       `src/config_ranges.nim:451-457` before the constant exists. Verify: `just happen` fails at the
       Nim compile on the unknown identifier
-- [ ] 3.2 Add the bodies bounds to `src/config_ranges.nim` following that file's `<NAME>_MIN` /
+- [x] 3.2 Add the bodies bounds to `src/config_ranges.nim` following that file's `<NAME>_MIN` /
       `<NAME>_MAX` convention (`:35`, `:41`, `:55-56`). Seven back a descriptor: strength with a
       floor of zero, radius, band, proximity, enclosure, lifetime, and ignition rate with a floor of
       zero. Three back no descriptor and bound an ignition parameter instead: anisotropy, envelope
       skew, and sustain. Note beside the second group that they are clamped at the ignition entry
       rather than by a slider. Verify: `just happen` is green and the floor loop passes
-- [ ] 3.3 Add the fields and their defaults to `src/ui/state/simulation_state.nim` beside
+- [x] 3.3 Add the fields and their defaults to `src/ui/state/simulation_state.nim` beside
       `forceStrength` (`:21`), `fluidStrength` (`:38`), `rdDeposit` (`:63`) and `rdFieldForce`
       (`:66`). Verify: `just happen` is green
-- [ ] 3.4 **Red first.** Add exactly seven `bodies` descriptors to
+- [x] 3.4 **Red first.** Add exactly seven `bodies` descriptors to
       `src/ui/api/param_descriptor.nim` as `floatParam` entries (`:358-374`) in one `bodies` group —
       `bodiesStrength` first, then `bodyRadius`, `bodyBand`, `bodyProximity`, `bodyEnclosure`,
       `bodyLifetime`, `bodyIgnitionRate` — modelled on the fluid group at `:556-610`, without
       touching `web-ui/src/components/Panel.tsx`. Add no descriptor for anisotropy, envelope skew or
       sustain. Verify: `tests/test_panel_reachability.nim` fails for every new descriptor
-- [ ] 3.5 Add the `groupIds("bodies")` loop to `web-ui/src/components/Panel.tsx`. Verify:
+- [x] 3.5 Add the `groupIds("bodies")` loop to `web-ui/src/components/Panel.tsx`. Verify:
       `tests/test_panel_reachability.nim` passes
-- [ ] 3.6 **Red first.** Write `docs/help/35-bodies.md` with the frontmatter and flat bullet shape of
+- [x] 3.6 **Red first.** Write `docs/help/35-bodies.md` with the frontmatter and flat bullet shape of
       `docs/help/30-fluid.md`, one bullet per descriptor, deliberately omitting one. Verify:
       `tests/test_help_content.nim` fails naming the missing id. Then add the line, and a closing
       paragraph naming **anisotropy**, **envelope skew** and **sustain** in bold as the three a body
       is born with, the convention a help file uses for an id no descriptor resolves. Verify: the
       suite passes and does not treat the bold names as missing descriptors
-- [ ] 3.7 Carry the seven descriptor-backed settings through `src/preset.nim`: the record
+- [x] 3.7 Carry the seven descriptor-backed settings through `src/preset.nim`: the record
       (`:104-155`), `defaultSettings` (`:214-288`), `validateSettings` (`:367` onward) and `toJson`
       (`:728-776`). Serialize none of the three ignition parameters — they have no stored value — and
       add no `LEGACY_MODE_COUPLINGS` row. Extend `tests/test_preset.nim` with the round trip and with
       the assertion that neither a body nor an ignition parameter appears in the serialized form.
       Verify: `tests/test_preset.nim` passes
-- [ ] 3.8 Read the strength in `couplingsOf` (`src/ui/state/sim_config.nim:43-57`) and add `bodies`
+- [x] 3.8 Read the strength in `couplingsOf` (`src/ui/state/sim_config.nim:43-57`) and add `bodies`
       to `WorldCouplings` (`src/sim_registry.nim:67-82`). Verify: `just happen` is green
 - [ ] 3.9 `just happen` builds and `just check` is green
 

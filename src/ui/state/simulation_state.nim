@@ -11,6 +11,7 @@
 
 import ../../field_core
 import ../../climate_core  # CLIMATE_DEFAULT_SPEED, the drift-rate authority
+import ../../config_ranges  # the bodies defaults, derived from body_core
 
 type
   SimulationState* = object
@@ -66,6 +67,29 @@ type
     rdFieldForce*: float      ## Gain converting the sampled field gradient
                               ## into a per-frame velocity impulse. Zero
                               ## leaves particles blind to the field.
+    bodiesStrength*: float    ## How much of what a body says actually lands:
+                              ## multiplies the whole output of both bodies
+                              ## passes, the forces particles receive and the
+                              ## reaction bodies receive. Zero is an ordinary
+                              ## value and skips both passes exactly.
+    bodyRadius*: float        ## The semi-axis a newly ignited body carries
+                              ## along its own x. A body keeps what it was
+                              ## ignited with while this moves on.
+    bodyBand*: float          ## Proximity's reach either side of the surface,
+                              ## and enclosure's ramp. A body's size says where
+                              ## the surface is; this says how far from it the
+                              ## forces reach.
+    bodyProximity*: float     ## Signed pull toward the surface from either
+                              ## side. Negative pushes off it instead.
+    bodyEnclosure*: float     ## Signed hold across the surface: positive keeps
+                              ## particles in, negative keeps them out, zero
+                              ## does neither.
+    bodyLifetime*: float      ## Seconds a body lives, attack through release.
+                              ## Fixed at ignition, which is what lets Nim know
+                              ## when a slot frees without reading the GPU.
+    bodyIgnitionRate*: float  ## Bodies a second the world ignites on its own.
+                              ## Zero means it ignites none and leaves every
+                              ## body to the player.
     climateDrift*: bool       ## Whether the climate wanders on its own. Off by
                               ## default: the weather is something a user turns
                               ## on, never something that moves their sliders
@@ -120,6 +144,16 @@ func initSimulationState*(): SimulationState =
     rdKill: RD_DEFAULT_KILL,
     rdDeposit: RD_DEFAULT_DEPOSIT,
     rdFieldForce: RD_DEFAULT_FIELD_FORCE,
+    # Bodies ship with the coupling acting and the world silent: a body pulls
+    # as soon as a player makes one, and the world makes none until the
+    # ignition rate is raised off its floor.
+    bodiesStrength: BODIES_DEFAULT_STRENGTH,
+    bodyRadius: BODY_DEFAULT_RADIUS,
+    bodyBand: BODY_DEFAULT_BAND,
+    bodyProximity: BODY_DEFAULT_PROXIMITY,
+    bodyEnclosure: BODY_DEFAULT_ENCLOSURE,
+    bodyLifetime: BODY_DEFAULT_LIFETIME,
+    bodyIgnitionRate: BODY_DEFAULT_IGNITION_RATE,
     climateDrift: false,
     climateSpeed: CLIMATE_DEFAULT_SPEED,
     forceWeather: false,

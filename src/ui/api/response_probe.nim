@@ -22,6 +22,8 @@
 import std/[math, tables, strformat]
 
 import ../../config_ranges
+import ../../body_core
+from ../../memory_layout import MAX_BODIES
 import ../../physics_core
 import ../../sph_core
 import ../../field_core
@@ -433,6 +435,104 @@ func climateSpeedProbe(value: float; ctx: ProbeContext): float =
   ## the probe reads the step to keep the zero-speed endpoint finite.
   tourPhaseStep(value, 1.0)
 
+# --- bodies probes --------------------------------------------------------------
+#
+# A body is invisible, so every observable here is a force or a presence — what
+# the crowd is made to do — rather than anything drawn.
+
+const
+  RefBodyOffset = 400.0
+    ## Where the radius probe watches, as a distance from the body's centre.
+    ## Inside the radius range, so the shipped travel sweeps the surface across
+    ## the point instead of moving a surface that never arrives.
+  RefBodyEnvelope = 1.0
+    ## A body at full presence. The envelope is the lifetime's business, and a
+    ## probe reading a fading body would measure that instead of its own axis.
+  RefBodySkew = 0.0
+  RefBodySustain = 1.0
+    ## The neutral shaping: even rise and fall, decay falling to no drop. No
+    ## slider moves either, so no slice does.
+  RefBodySamples = 64
+    ## Samples along each of the two integrated probes below.
+
+func probeBody(radius, band, proximity, enclosure: float): Body =
+  ## A circular body at the world's centre, its own x along the world's, so a
+  ## sample point offset along x lies on the surface normal.
+  let inverses = bodyInverseMasses(radius, 1.0)
+  Body(centerX: BODY_WORLD_W * 0.5, centerY: BODY_WORLD_H * 0.5,
+    radius: radius, anisotropy: 1.0, bandWidth: band,
+    proximity: proximity, enclosure: enclosure,
+    invMass: inverses.invMass, invInertia: inverses.invInertia)
+
+func bodyOutwardForce(body: Body; fromSurface, strength: float): float =
+  ## The force on a particle `fromSurface` px outside the surface along the
+  ## body's own x, signed along the outward normal: positive pushes away.
+  bodyForceAt(body, body.centerX + body.radius + fromSurface, body.centerY,
+    BODY_WORLD_W, BODY_WORLD_H, RefBodyEnvelope, strength).x
+
+func bodiesStrengthProbe(value: float; ctx: ProbeContext): float =
+  ## bodiesStrength: the impulse a particle halfway through the band receives,
+  ## linear in the share under measurement.
+  let body = probeBody(ctx.sim.bodyRadius, ctx.sim.bodyBand,
+    ctx.sim.bodyProximity, ctx.sim.bodyEnclosure)
+  abs(bodyOutwardForce(body, body.bandWidth * 0.5, value))
+
+func bodyRadiusProbe(value: float; ctx: ProbeContext): float =
+  ## bodyRadius: the signed distance from a fixed world point to the surface —
+  ## positive while the point is outside the body, negative once the body has
+  ## grown past it.
+  let body = probeBody(value, ctx.sim.bodyBand, ctx.sim.bodyProximity,
+    ctx.sim.bodyEnclosure)
+  sampleBody(body, body.centerX + RefBodyOffset, body.centerY,
+    BODY_WORLD_W, BODY_WORLD_H).distance
+
+func bodyBandProbe(value: float; ctx: ProbeContext): float =
+  ## bodyBand: the impulse a particle collects crossing outward from the
+  ## surface, over a path fixed at the widest reach the range admits. A wider
+  ## band acts over more of that one path, which is the whole of what this
+  ## control buys.
+  let body = probeBody(ctx.sim.bodyRadius, value, ctx.sim.bodyProximity,
+    ctx.sim.bodyEnclosure)
+  let step = BODY_BAND_MAX / float(RefBodySamples)
+  for i in 0 ..< RefBodySamples:
+    result += abs(bodyOutwardForce(body, (float(i) + 0.5) * step,
+      ctx.sim.bodiesStrength)) * step
+
+func bodyProximityProbe(value: float; ctx: ProbeContext): float =
+  ## bodyProximity: the force halfway through the band, signed along the
+  ## outward normal, so the sign says which way the surface takes a particle.
+  let body = probeBody(ctx.sim.bodyRadius, ctx.sim.bodyBand, value,
+    ctx.sim.bodyEnclosure)
+  bodyOutwardForce(body, body.bandWidth * 0.5, ctx.sim.bodiesStrength)
+
+func bodyEnclosureProbe(value: float; ctx: ProbeContext): float =
+  ## bodyEnclosure: the net hold across the surface — the outward-signed force
+  ## half a band outside plus the one half a band inside. The hold acts on one
+  ## side per sign, so either side alone is dead over half the track; proximity
+  ## acts oppositely on the two sides and cancels in the sum, leaving the hold.
+  let body = probeBody(ctx.sim.bodyRadius, ctx.sim.bodyBand,
+    ctx.sim.bodyProximity, value)
+  # Halved against the radius too, so the inner sample stays inside the body
+  # on a slice where the band is wider than the body is big.
+  let half = min(body.bandWidth, body.radius) * 0.5
+  bodyOutwardForce(body, half, ctx.sim.bodiesStrength) +
+    bodyOutwardForce(body, -half, ctx.sim.bodiesStrength)
+
+func bodyLifetimeProbe(value: float; ctx: ProbeContext): float =
+  ## bodyLifetime: the presence one body delivers over its whole life, the
+  ## envelope integrated in seconds. What a longer life buys is more of this,
+  ## never a louder body.
+  let step = value / float(RefBodySamples)
+  for i in 0 ..< RefBodySamples:
+    result += bodyEnvelope((float(i) + 0.5) * step, value, RefBodySkew,
+      RefBodySustain) * step
+
+func bodyIgnitionRateProbe(value: float; ctx: ProbeContext): float =
+  ## bodyIgnitionRate: bodies standing at once once ignition and expiry
+  ## balance — the rate times the life each one gets, held at the table's size
+  ## because a slot the table has not got cannot be filled.
+  min(value * ctx.sim.bodyLifetime, float(MAX_BODIES))
+
 # --- render-side probes ---------------------------------------------------------
 
 func glowUniformsFor(ctx: ProbeContext): GlowUniforms =
@@ -665,6 +765,20 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
     "field.tropismWeight": ProbeSpec(fn: tropismProbe,
       budget: pbClosedForm),
     "climate.phaseStep": ProbeSpec(fn: climateSpeedProbe,
+      budget: pbClosedForm),
+    "bodies.impulseShare": ProbeSpec(fn: bodiesStrengthProbe,
+      budget: pbClosedForm),
+    "bodies.surfaceOffset": ProbeSpec(fn: bodyRadiusProbe,
+      budget: pbClosedForm),
+    "bodies.crossingImpulse": ProbeSpec(fn: bodyBandProbe,
+      budget: pbClosedForm),
+    "bodies.surfacePull": ProbeSpec(fn: bodyProximityProbe,
+      budget: pbClosedForm),
+    "bodies.netHold": ProbeSpec(fn: bodyEnclosureProbe,
+      budget: pbClosedForm),
+    "bodies.presenceIntegral": ProbeSpec(fn: bodyLifetimeProbe,
+      budget: pbClosedForm),
+    "bodies.standingCount": ProbeSpec(fn: bodyIgnitionRateProbe,
       budget: pbClosedForm),
     "render.trailPersistence": ProbeSpec(fn: trailPersistenceProbe,
       budget: pbClosedForm),

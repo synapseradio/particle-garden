@@ -158,6 +158,13 @@ const
   BODY_ANISOTROPY_FLOOR* = 0.25
   BODY_ANISOTROPY_CEILING* = 4.0
     ## Reciprocal ends, so a body is as elongated one way as the other.
+  BODY_SKEW_EXTENT* = 1.0
+    ## The envelope skew runs from minus this to plus this. It is the unit the
+    ## static assertion below reads: a skew of one moves ENVELOPE_SKEW_SPAN of
+    ## the lifetime from the fall into the rise, and both must stay positive.
+  BODY_SUSTAIN_FLOOR* = 0.0
+  BODY_SUSTAIN_CEILING* = 1.0
+    ## Sustain is a level of the envelope, so its range is the envelope's.
 
   BODY_BAND_FLOOR* =
     BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
@@ -250,10 +257,12 @@ static:
     "a lifetime of zero is a body that never existed, not a quieter one"
   doAssert BODY_ANISOTROPY_FLOOR > 0.0,
     "a zero semi-axis divides by zero in the evaluation"
-  doAssert ENVELOPE_SKEW_SPAN <
+  doAssert BODY_SKEW_EXTENT * ENVELOPE_SKEW_SPAN <
     min(ENVELOPE_PROPORTIONS.attack + ENVELOPE_PROPORTIONS.hold,
       ENVELOPE_PROPORTIONS.decay + ENVELOPE_PROPORTIONS.release),
-    "a skew of one must leave both the rise and the fall a positive duration"
+    "a skew at its extent must leave both the rise and the fall a positive " &
+    "duration"
+  doAssert BODY_SUSTAIN_FLOOR < BODY_SUSTAIN_CEILING
 
 func smoothstepUnit(atFraction: float): float =
   ## The Hermite ease climate_core uses, on an already-normalized fraction:

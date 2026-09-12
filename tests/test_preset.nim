@@ -294,6 +294,84 @@ suite "The Force Weather Survives A Preset":
     check not older.preset.settings.forceWeather
     check older.preset.settings.forceWeatherSpeed == FORCE_WEATHER_DEFAULT_SPEED
 
+suite "The Bodies A Preset Carries Are The Kind, Never The Ones Alive":
+  test "a saved bodies setting round-trips all seven":
+    var saved = defaultPreset()
+    saved.settings.bodiesStrength = 0.75
+    saved.settings.bodyRadius = 420.0
+    saved.settings.bodyBand = 300.0
+    saved.settings.bodyProximity = -4.5
+    saved.settings.bodyEnclosure = 3.5
+    saved.settings.bodyLifetime = 21.0
+    saved.settings.bodyIgnitionRate = 0.5
+    let loaded = parsePreset(toJsonString(saved))
+    check loaded.isOk
+    check loaded.preset.settings == saved.settings
+
+  test "each body value outside its range clamps on the way in":
+    # Same treatment every slider-backed field gets. The band matters most of
+    # the seven: its floor is what stops a fast particle stepping clean over an
+    # enclosing surface, so a hand-edited preset must not be able to go under
+    # it.
+    let tooWide = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {
+        "bodiesStrength": BODIES_STRENGTH_MAX + 1.0,
+        "bodyRadius": BODY_RADIUS_MAX + 1.0,
+        "bodyBand": BODY_BAND_MAX + 1.0,
+        "bodyProximity": BODY_PROXIMITY_MAX + 1.0,
+        "bodyEnclosure": BODY_ENCLOSURE_MAX + 1.0,
+        "bodyLifetime": BODY_LIFETIME_MAX + 1.0,
+        "bodyIgnitionRate": BODY_IGNITION_RATE_MAX + 1.0}})
+    check tooWide.preset.settings.bodiesStrength == BODIES_STRENGTH_MAX
+    check tooWide.preset.settings.bodyRadius == BODY_RADIUS_MAX
+    check tooWide.preset.settings.bodyBand == BODY_BAND_MAX
+    check tooWide.preset.settings.bodyProximity == BODY_PROXIMITY_MAX
+    check tooWide.preset.settings.bodyEnclosure == BODY_ENCLOSURE_MAX
+    check tooWide.preset.settings.bodyLifetime == BODY_LIFETIME_MAX
+    check tooWide.preset.settings.bodyIgnitionRate == BODY_IGNITION_RATE_MAX
+    let tooNarrow = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {
+        "bodiesStrength": BODIES_STRENGTH_MIN - 1.0,
+        "bodyRadius": BODY_RADIUS_MIN - 1.0,
+        "bodyBand": BODY_BAND_MIN - 1.0,
+        "bodyProximity": BODY_PROXIMITY_MIN - 1.0,
+        "bodyEnclosure": BODY_ENCLOSURE_MIN - 1.0,
+        "bodyLifetime": BODY_LIFETIME_MIN - 1.0,
+        "bodyIgnitionRate": BODY_IGNITION_RATE_MIN - 1.0}})
+    check tooNarrow.preset.settings.bodiesStrength == BODIES_STRENGTH_MIN
+    check tooNarrow.preset.settings.bodyRadius == BODY_RADIUS_MIN
+    check tooNarrow.preset.settings.bodyBand == BODY_BAND_MIN
+    check tooNarrow.preset.settings.bodyProximity == BODY_PROXIMITY_MIN
+    check tooNarrow.preset.settings.bodyEnclosure == BODY_ENCLOSURE_MIN
+    check tooNarrow.preset.settings.bodyLifetime == BODY_LIFETIME_MIN
+    check tooNarrow.preset.settings.bodyIgnitionRate == BODY_IGNITION_RATE_MIN
+
+  test "a preset saved before bodies existed loads a world that makes none":
+    # No legacy row zeroes the strength, and none is needed: a strength acts on
+    # bodies, an older world has none, and the ignition rate it loads is the
+    # floor, so nothing makes one until someone does.
+    let older = validate(%*{
+      "schemaVersion": 1, "mode": "particle-life",
+      "settings": {"forceStrength": 1.5}})
+    check older.preset.settings.bodyIgnitionRate == BODY_IGNITION_RATE_MIN
+    check older.preset.settings.bodiesStrength ==
+      defaultSettings().bodiesStrength
+
+  test "a saved preset carries no body and none of the three a body is born with":
+    # A body is an event with a fixed life, not a setting: the preset restores
+    # what KIND of body the next gesture makes and never the ones that were
+    # burning when it was saved. Anisotropy, envelope skew and sustain are the
+    # same case one step in — they are chosen as a body ignites, so there is no
+    # world-level value of them to store.
+    let node = toJson(defaultPreset())
+    check not node.hasKey("bodies")
+    let settings = node["settings"]
+    for key in ["bodies", "bodySlots", "bodyCount", "bodyAnisotropy",
+        "anisotropy", "bodyEnvelopeSkew", "envelopeSkew", "bodySustain",
+        "sustain"]:
+      check not settings.hasKey(key)
 
 suite "Preset Schema Version Contract":
   test "a preset claiming a newer schemaVersion is rejected":

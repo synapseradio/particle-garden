@@ -677,6 +677,66 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX, visual.fieldOpacity,
       2, psRender, probe = "colormap.coverage", dormantWhen = "fieldUnlit"),
 
+    # Bodies. bodiesStrength leads the group because it is the coupling
+    # strength and the six below it say what a body IS: how big, how far its
+    # forces reach, which way they pull, how long it lives, and how often the
+    # world makes one unasked. A body is invisible, so every one of these is
+    # read through the motion it causes rather than through a shape on screen.
+    # The three a body is also born with — anisotropy, envelope skew and
+    # sustain — carry no descriptor: they travel on the ignition gesture and
+    # are clamped there, so no slider can move them mid-life.
+    floatParam("bodiesStrength", "Bodies", "bodies",
+      BODIES_STRENGTH_MIN, BODIES_STRENGTH_MAX, sim.bodiesStrength, 2,
+      psSimulation,
+      hint = "how much of what a body says lands; the six below say what a body is",
+      notches = @[
+        notch(BODIES_STRENGTH_MIN, "no bodies"),
+        notch(BODIES_STRENGTH_MAX, "full"),
+      ], probe = "bodies.impulseShare",
+      horizon = rhSettling, horizonReview = true),
+    # Ahead of the rest of the shape because it sets where the surface is, and
+    # the band, proximity and enclosure below are all measured from that
+    # surface.
+    floatParam("bodyRadius", "Body Size", "bodies",
+      BODY_RADIUS_MIN, BODY_RADIUS_MAX, sim.bodyRadius, 0, psSimulation,
+      hint = "how big the next body is born; a living body keeps the size it was born with",
+      probe = "bodies.surfaceOffset",
+      horizon = rhStructural, horizonReview = true),
+    floatParam("bodyBand", "Body Reach", "bodies",
+      BODY_BAND_MIN, BODY_BAND_MAX, sim.bodyBand, 0, psSimulation,
+      hint = "how far from its surface a body's forces reach",
+      probe = "bodies.crossingImpulse",
+      horizon = rhStructural, horizonReview = true),
+    floatParam("bodyProximity", "Skin Pull", "bodies",
+      BODY_PROXIMITY_MIN, BODY_PROXIMITY_MAX, sim.bodyProximity, 1,
+      psSimulation,
+      hint = "positive gathers particles onto the surface, negative clears them off it",
+      notches = @[
+        notch(0.0, "neither"),
+      ], probe = "bodies.surfacePull",
+      horizon = rhSettling, horizonReview = true),
+    floatParam("bodyEnclosure", "Hold", "bodies",
+      BODY_ENCLOSURE_MIN, BODY_ENCLOSURE_MAX, sim.bodyEnclosure, 1,
+      psSimulation,
+      hint = "positive keeps particles inside, negative keeps them out",
+      notches = @[
+        notch(0.0, "open"),
+      ], probe = "bodies.netHold",
+      horizon = rhSettling, horizonReview = true),
+    floatParam("bodyLifetime", "Body Lifetime", "bodies",
+      BODY_LIFETIME_MIN, BODY_LIFETIME_MAX, sim.bodyLifetime, 1, psSimulation,
+      hint = "seconds the next body lives, fade in through fade out",
+      probe = "bodies.presenceIntegral",
+      horizon = rhStructural, horizonReview = true),
+    floatParam("bodyIgnitionRate", "Wild Bodies", "bodies",
+      BODY_IGNITION_RATE_MIN, BODY_IGNITION_RATE_MAX, sim.bodyIgnitionRate, 2,
+      psSimulation,
+      hint = "bodies a second the world makes on its own; 0 leaves them all to you",
+      notches = @[
+        notch(BODY_IGNITION_RATE_MIN, "yours alone"),
+      ], probe = "bodies.standingCount",
+      horizon = rhStructural, horizonReview = true),
+
     # Species chemistry: what each species does to the field, and what the
     # field does back. One value per species, so these carry paPerSpecies and a
     # slot; the panel renders the pair as grid columns beside the attraction

@@ -225,6 +225,15 @@ export function Panel(props: { ctrl: PanelController }) {
           </For>
         </Section>
 
+        {/* Bodies are invisible: nothing on screen marks where one is, and the
+            crowd's motion around it is the whole of what a player sees. The
+            strength leads the group the way the fluid's does. */}
+        <Section title="Bodies">
+          <For each={groupIds("bodies")}>
+            {(id) => <ParamSlider ctrl={ctrl} id={id} />}
+          </For>
+        </Section>
+
         <Section title="Reaction-Diffusion">
           {/* Regimes first: they are how someone who does not know the
               literature finds the living settings, and the sliders below

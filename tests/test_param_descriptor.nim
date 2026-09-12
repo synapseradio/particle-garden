@@ -76,6 +76,12 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       "sphRadiusFraction",
       "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
       "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
+      # bodiesStrength is the coupling strength; the six below it say what a
+      # body is. The three a body is ALSO born with — anisotropy, envelope
+      # skew, sustain — are absent on purpose: they travel on the ignition
+      # gesture and are clamped there, so no slider can move them mid-life.
+      "bodiesStrength", "bodyRadius", "bodyBand", "bodyProximity",
+      "bodyEnclosure", "bodyLifetime", "bodyIgnitionRate",
       # climateSpeed drives the drifting climate; forceWeatherSpeed drives the
       # force weather, the second waypoint table on the same tour.
       "climateSpeed", "forceWeatherSpeed",
@@ -252,6 +258,14 @@ suite "Descriptors Agree With The Range Authority":
     ("rdDeposit", RD_DEPOSIT_MIN, RD_DEPOSIT_MAX),
     ("rdFieldForce", RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX),
     ("fieldOpacity", FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX),
+    # Bodies
+    ("bodiesStrength", BODIES_STRENGTH_MIN, BODIES_STRENGTH_MAX),
+    ("bodyRadius", BODY_RADIUS_MIN, BODY_RADIUS_MAX),
+    ("bodyBand", BODY_BAND_MIN, BODY_BAND_MAX),
+    ("bodyProximity", BODY_PROXIMITY_MIN, BODY_PROXIMITY_MAX),
+    ("bodyEnclosure", BODY_ENCLOSURE_MIN, BODY_ENCLOSURE_MAX),
+    ("bodyLifetime", BODY_LIFETIME_MIN, BODY_LIFETIME_MAX),
+    ("bodyIgnitionRate", BODY_IGNITION_RATE_MIN, BODY_IGNITION_RATE_MAX),
     # The per-species columns answer to the same authority as every slider.
     # TROPISM_MAX is deliberately not -TROPISM_MIN (config_ranges records the
     # chemotaxis-stability asymmetry), so a symmetric guess here would be wrong.
@@ -299,6 +313,13 @@ suite "Descriptors Agree With The Default Authority":
     ("rdKill", simDefaults.rdKill),
     ("rdDeposit", simDefaults.rdDeposit),
     ("rdFieldForce", simDefaults.rdFieldForce),
+    ("bodiesStrength", simDefaults.bodiesStrength),
+    ("bodyRadius", simDefaults.bodyRadius),
+    ("bodyBand", simDefaults.bodyBand),
+    ("bodyProximity", simDefaults.bodyProximity),
+    ("bodyEnclosure", simDefaults.bodyEnclosure),
+    ("bodyLifetime", simDefaults.bodyLifetime),
+    ("bodyIgnitionRate", simDefaults.bodyIgnitionRate),
     # initRenderState
     ("particleSize", renderDefaults.particleSize.float),
     ("trailLength", renderDefaults.trailLength),
@@ -598,7 +619,8 @@ suite "Notches Mark Only Reachable Positions":
   test "every coupling strength offers a notch at zero":
     # Zero is an ordinary value of a coupling strength, and an unmarked off
     # position hides the setting that isolates what a coupling contributes.
-    for id in ["forceStrength", "fluidStrength", "rdDeposit", "rdFieldForce"]:
+    for id in ["forceStrength", "fluidStrength", "rdDeposit", "rdFieldForce",
+        "bodiesStrength"]:
       let descriptor = byId(id)
       checkpoint("coupling strength " & id)
       check descriptor.minValue == 0.0

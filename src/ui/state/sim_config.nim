@@ -47,13 +47,16 @@ func couplingsOf*(simulation: SimulationState): WorldCouplings =
   ## forceStrength reaches forces.wgsl as `params.forceMultiplier`, fluidStrength
   ## scales forces-sph's whole per-pair contribution, rdDeposit is what
   ## field-deposit lays down, and rdFieldForce is the gain field-force applies.
+  ## bodiesStrength multiplies both bodies passes, the particle's force and the
+  ## body's reaction alike.
   ## So a strength being zero and its pass contributing nothing are the same
   ## statement, which is what lets buildFrame skip on it.
   WorldCouplings(
     forces: simulation.forceStrength,
     fluid: simulation.fluidStrength,
     deposit: simulation.rdDeposit,
-    fieldForce: simulation.rdFieldForce
+    fieldForce: simulation.rdFieldForce,
+    bodies: simulation.bodiesStrength
   )
 
 ## The couplings the executor last acted on. web_api sets it after every write

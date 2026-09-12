@@ -22,6 +22,7 @@ import sph_core
 import field_core
 import bloom_core
 import colormap_core
+import body_core
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -408,6 +409,59 @@ const
     ##
     ## If the finite half of the bracket ever goes red, halve this constant and
     ## record the failing value here. Never widen the test's ceiling instead.
+  # Parametric bodies. Every bound below is body_core's, imported rather than
+  # restated: the overflow assertion on the per-body accumulator and the
+  # stability sweep that warrants the rigid step's constants both read these,
+  # and body_core sits upstream of this file, so a second copy here would be a
+  # bound the assertion could not see.
+  BODIES_STRENGTH_MIN* = 0.0
+    ## Zero is an ordinary value of a coupling strength: at exactly zero the
+    ## frame dispatches neither bodies pass.
+  BODIES_STRENGTH_MAX* = body_core.BODY_STRENGTH_CEILING
+  BODIES_DEFAULT_STRENGTH* = 1.0
+    ## The coupling acts out of the box, and nothing happens until a body
+    ## exists — the ignition rate below is what decides whether the world makes
+    ## one unasked, and it ships at zero.
+  BODY_RADIUS_MIN* = body_core.BODY_RADIUS_FLOOR
+  BODY_RADIUS_MAX* = body_core.BODY_RADIUS_CEILING
+  BODY_DEFAULT_RADIUS* = 240.0
+  BODY_BAND_MIN* = body_core.BODY_BAND_FLOOR
+    ## DERIVED from the particle speed cap and the longest substep
+    ## (src/body_core.nim states the derivation). The band is also a divisor in
+    ## the force law, so a floor above zero is what keeps it finite.
+  BODY_BAND_MAX* = body_core.BODY_BAND_CEILING
+  BODY_DEFAULT_BAND* = 120.0
+  BODY_PROXIMITY_MIN* = -body_core.BODY_FORCE_CEILING
+  BODY_PROXIMITY_MAX* = body_core.BODY_FORCE_CEILING
+    ## Signed and symmetric: positive pulls particles onto the surface,
+    ## negative pushes them off it, and zero is an ordinary value of one
+    ## quantity rather than a second parameter.
+  BODY_DEFAULT_PROXIMITY* = 6.0
+  BODY_ENCLOSURE_MIN* = -body_core.BODY_FORCE_CEILING
+  BODY_ENCLOSURE_MAX* = body_core.BODY_FORCE_CEILING
+    ## Signed on the same terms: positive holds particles in, negative keeps
+    ## them out.
+  BODY_DEFAULT_ENCLOSURE* = 0.0
+  BODY_LIFETIME_MIN* = body_core.BODY_LIFETIME_FLOOR
+  BODY_LIFETIME_MAX* = body_core.BODY_LIFETIME_CEILING
+  BODY_DEFAULT_LIFETIME* = 8.0
+  BODY_IGNITION_RATE_MIN* = 0.0
+    ## Zero means the world ignites none, and that is the shipped default: a
+    ## world does not make shapes nobody asked for.
+  BODY_IGNITION_RATE_MAX* = body_core.BODY_IGNITION_RATE_CEILING
+  BODY_DEFAULT_IGNITION_RATE* = 0.0
+
+  # The three below back NO descriptor and draw no slider. They are a body's
+  # character rather than the world's disposition — fixed when a body ignites,
+  # not adjusted while it lives — so they travel on the ignition call and are
+  # clamped against these bounds inside it, once, for every source at once. A
+  # number without a slider is still a number this file owns.
+  BODY_ANISOTROPY_MIN* = body_core.BODY_ANISOTROPY_FLOOR
+  BODY_ANISOTROPY_MAX* = body_core.BODY_ANISOTROPY_CEILING
+  BODY_ENVELOPE_SKEW_MIN* = -body_core.BODY_SKEW_EXTENT
+  BODY_ENVELOPE_SKEW_MAX* = body_core.BODY_SKEW_EXTENT
+  BODY_SUSTAIN_MIN* = body_core.BODY_SUSTAIN_FLOOR
+  BODY_SUSTAIN_MAX* = body_core.BODY_SUSTAIN_CEILING
   # HDR bloom + colour grade. bloomEnabled is a toggle, not a slider, so
   # it has no range here. Temperature is signed (warm/cool), centred on 0.
   BLOOM_INTENSITY_MIN* = 0.0
@@ -451,10 +505,43 @@ static:
   # Every coupling strength reaches zero. One loop rather than an
   # assertion each, so a fifth coupling with a nonzero floor fails here.
   for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
-      RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN]:
+      RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN, BODIES_STRENGTH_MIN]:
     doAssert strengthFloor == 0.0,
       "a coupling strength's range excludes zero; every coupling can be " &
       "turned off through its own slider"
+  # The bodies ranges are non-empty and every default sits inside its own, the
+  # same guard the RD and bloom pairs carry.
+  doAssert BODIES_STRENGTH_MIN < BODIES_STRENGTH_MAX
+  doAssert BODY_RADIUS_MIN < BODY_RADIUS_MAX
+  doAssert BODY_BAND_MIN < BODY_BAND_MAX
+  doAssert BODY_BAND_MIN > 0.0,
+    "the band divides the distance in the body force law; a zero band " &
+    "divides by zero instead of naming a narrower one"
+  doAssert BODY_PROXIMITY_MIN < BODY_PROXIMITY_MAX
+  doAssert BODY_ENCLOSURE_MIN < BODY_ENCLOSURE_MAX
+  doAssert BODY_PROXIMITY_MIN == -BODY_PROXIMITY_MAX and
+    BODY_ENCLOSURE_MIN == -BODY_ENCLOSURE_MAX,
+    "both body force signs are one quantity, so both ranges straddle zero " &
+    "symmetrically"
+  doAssert BODY_LIFETIME_MIN < BODY_LIFETIME_MAX
+  doAssert BODY_IGNITION_RATE_MIN < BODY_IGNITION_RATE_MAX
+  doAssert BODY_ANISOTROPY_MIN < BODY_ANISOTROPY_MAX
+  doAssert BODY_ENVELOPE_SKEW_MIN < BODY_ENVELOPE_SKEW_MAX
+  doAssert BODY_SUSTAIN_MIN < BODY_SUSTAIN_MAX
+  doAssert BODIES_DEFAULT_STRENGTH >= BODIES_STRENGTH_MIN and
+    BODIES_DEFAULT_STRENGTH <= BODIES_STRENGTH_MAX
+  doAssert BODY_DEFAULT_RADIUS >= BODY_RADIUS_MIN and
+    BODY_DEFAULT_RADIUS <= BODY_RADIUS_MAX
+  doAssert BODY_DEFAULT_BAND >= BODY_BAND_MIN and
+    BODY_DEFAULT_BAND <= BODY_BAND_MAX
+  doAssert BODY_DEFAULT_PROXIMITY >= BODY_PROXIMITY_MIN and
+    BODY_DEFAULT_PROXIMITY <= BODY_PROXIMITY_MAX
+  doAssert BODY_DEFAULT_ENCLOSURE >= BODY_ENCLOSURE_MIN and
+    BODY_DEFAULT_ENCLOSURE <= BODY_ENCLOSURE_MAX
+  doAssert BODY_DEFAULT_LIFETIME >= BODY_LIFETIME_MIN and
+    BODY_DEFAULT_LIFETIME <= BODY_LIFETIME_MAX
+  doAssert BODY_DEFAULT_IGNITION_RATE >= BODY_IGNITION_RATE_MIN and
+    BODY_DEFAULT_IGNITION_RATE <= BODY_IGNITION_RATE_MAX
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
   doAssert MATRIX_MIN_VALUE == -MATRIX_MAX_VALUE,

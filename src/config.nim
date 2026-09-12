@@ -66,6 +66,13 @@ type
     rdKill* {.exportc.}: float
     rdDeposit* {.exportc.}: float
     rdFieldForce* {.exportc.}: float
+    bodiesStrength* {.exportc.}: float
+    bodyRadius* {.exportc.}: float
+    bodyBand* {.exportc.}: float
+    bodyProximity* {.exportc.}: float
+    bodyEnclosure* {.exportc.}: float
+    bodyLifetime* {.exportc.}: float
+    bodyIgnitionRate* {.exportc.}: float
     climateDrift* {.exportc.}: bool
     climateSpeed* {.exportc.}: float
     forceWeather* {.exportc.}: bool
@@ -181,6 +188,13 @@ proc createConfig(): ConfigObject =
   result.rdKill = sim.rdKill
   result.rdDeposit = sim.rdDeposit
   result.rdFieldForce = sim.rdFieldForce
+  result.bodiesStrength = sim.bodiesStrength
+  result.bodyRadius = sim.bodyRadius
+  result.bodyBand = sim.bodyBand
+  result.bodyProximity = sim.bodyProximity
+  result.bodyEnclosure = sim.bodyEnclosure
+  result.bodyLifetime = sim.bodyLifetime
+  result.bodyIgnitionRate = sim.bodyIgnitionRate
   result.climateDrift = sim.climateDrift
   result.climateSpeed = sim.climateSpeed
   result.forceWeather = sim.forceWeather

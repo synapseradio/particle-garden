@@ -137,6 +137,17 @@ type
     rdKill*: float
     rdDeposit*: float
     rdFieldForce*: float
+    bodiesStrength*: float
+    bodyRadius*: float
+    bodyBand*: float
+    bodyProximity*: float
+    bodyEnclosure*: float
+    bodyLifetime*: float
+    bodyIgnitionRate*: float
+      ## The seven a body reads off the world when it ignites. The bodies
+      ## alive at save time are not here and cannot be: a body is an event
+      ## with a fixed life, so a restored preset makes the same KIND of body
+      ## rather than resurrecting the ones that were burning.
     climateDrift*: bool
     climateSpeed*: float
     forceWeather*: bool
@@ -261,6 +272,18 @@ func defaultSettings*(): PresetSettings =
     rdKill: 0.062,
     rdDeposit: 0.02,
     rdFieldForce: 7.5,
+    # Mirrors simulation_state.initSimulationState's bodies defaults as
+    # literals, for the same dependency-restriction reason as the sph/rd
+    # defaults above. The coupling ships acting and the world ships silent, so
+    # a preset that never mentions bodies restores a world whose bodies are all
+    # the player's.
+    bodiesStrength: 1.0,
+    bodyRadius: 240.0,
+    bodyBand: 120.0,
+    bodyProximity: 6.0,
+    bodyEnclosure: 0.0,
+    bodyLifetime: 8.0,
+    bodyIgnitionRate: 0.0,
     # Mirrors simulation_state's climate defaults. Weather is opt-in, so a
     # preset missing these restores a world that moves only when asked.
     climateDrift: false,
@@ -437,6 +460,27 @@ proc validateSettings(node: JsonNode): PresetSettings =
   result.rdFieldForce = clampFloat(
     field(node, "rdFieldForce").getFloat(defaults.rdFieldForce),
     RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX)
+  result.bodiesStrength = clampFloat(
+    field(node, "bodiesStrength").getFloat(defaults.bodiesStrength),
+    BODIES_STRENGTH_MIN, BODIES_STRENGTH_MAX)
+  result.bodyRadius = clampFloat(
+    field(node, "bodyRadius").getFloat(defaults.bodyRadius),
+    BODY_RADIUS_MIN, BODY_RADIUS_MAX)
+  result.bodyBand = clampFloat(
+    field(node, "bodyBand").getFloat(defaults.bodyBand),
+    BODY_BAND_MIN, BODY_BAND_MAX)
+  result.bodyProximity = clampFloat(
+    field(node, "bodyProximity").getFloat(defaults.bodyProximity),
+    BODY_PROXIMITY_MIN, BODY_PROXIMITY_MAX)
+  result.bodyEnclosure = clampFloat(
+    field(node, "bodyEnclosure").getFloat(defaults.bodyEnclosure),
+    BODY_ENCLOSURE_MIN, BODY_ENCLOSURE_MAX)
+  result.bodyLifetime = clampFloat(
+    field(node, "bodyLifetime").getFloat(defaults.bodyLifetime),
+    BODY_LIFETIME_MIN, BODY_LIFETIME_MAX)
+  result.bodyIgnitionRate = clampFloat(
+    field(node, "bodyIgnitionRate").getFloat(defaults.bodyIgnitionRate),
+    BODY_IGNITION_RATE_MIN, BODY_IGNITION_RATE_MAX)
   result.climateDrift = field(node, "climateDrift").getBool(defaults.climateDrift)
   result.climateSpeed = clampFloat(
     field(node, "climateSpeed").getFloat(defaults.climateSpeed),
@@ -759,6 +803,13 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["rdKill"] = %settings.rdKill
   result["rdDeposit"] = %settings.rdDeposit
   result["rdFieldForce"] = %settings.rdFieldForce
+  result["bodiesStrength"] = %settings.bodiesStrength
+  result["bodyRadius"] = %settings.bodyRadius
+  result["bodyBand"] = %settings.bodyBand
+  result["bodyProximity"] = %settings.bodyProximity
+  result["bodyEnclosure"] = %settings.bodyEnclosure
+  result["bodyLifetime"] = %settings.bodyLifetime
+  result["bodyIgnitionRate"] = %settings.bodyIgnitionRate
   result["climateDrift"] = %settings.climateDrift
   result["climateSpeed"] = %settings.climateSpeed
   result["forceWeather"] = %settings.forceWeather
