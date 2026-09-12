@@ -69,6 +69,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_sph_core.nim` | SPH math: 2D smoothing kernels, Tait equation, XSPH term | Native |
 | `test_field_core.nim` | Gray-Scott step, the 9-point Laplacian, the field seed, what ignites the pattern, the species chemistry coupling, the chemotactic-collapse bound, and that a regime's deposit floor preserves its morphology | Native |
 | `test_body_core.nim` | Parametric bodies: the anisotropic-disc signed distance and its toroidal reach, the attack/hold/decay/release envelope, proximity and enclosure, the equal-and-opposite reaction and the rigid step, slot allocation on the clock, the stability sweep warranting the mass/damping/impulse-cap constants, and the tunnel-free band floor | Native |
+| `test_long_range_core.nim` | The long-range mesh oracle: the reference transform against a naive direct transform, the Yukawa kernel and its wavenumber mapping, isotropy in world units on an anisotropic grid, the softening's attenuation at Nyquist, cloud-in-cell weights and their toroidal wrap, the density accumulator's fixed point, and the k-space species mix with its gradient — superposition, a still uniform world, and momentum under a symmetric matrix | Native |
 | `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
 | `test_colormap_core.nim` | Reaction-diffusion field colormap ramps, and the coverage the field claims as light | Native |
 | `test_glow_core.nim` | The particle halo: radius composition, Gaussian falloff, the warm shift, and the display-clamped alpha integral a response probe reads | Native |
@@ -82,6 +83,7 @@ test "computeMemoryOffsets adds padding correctly":
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, descriptor group arithmetic, notch geometry and snapping, and the panel controller's handling of what the simulation pushes at it; `just check` runs both.
 
 Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_body_core`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, `test_trail_core`, and `test_overlay_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in `docs/enforcement.md`.
+Several suites test a **reference oracle** rather than code the simulation calls. `test_physics`, `test_grid`, `test_sph_core`, `test_field_core`, `test_long_range_core`, `test_bloom_core`, `test_colormap_core`, `test_camera_core`, `test_glow_core`, `test_trail_core`, and `test_overlay_core` exercise pure Nim mirrors of math that really runs in WGSL, where no native test can reach it. Most of those subject modules have no importer in `src/`; the exceptions are the ones that also own a number the app writes into a uniform — `camera_core`, `colormap_core` and `trail_core` — where the mirror is the source rather than a second copy. See the reference-oracle table in `docs/enforcement.md`.
 
 ### Test Architecture
 
@@ -115,6 +117,7 @@ test_all.nim (runner)
     ├── test_sph_core.nim       → sph_core.nim (kernels, Tait, XSPH)
     ├── test_field_core.nim     → field_core.nim (Gray-Scott, Laplacian, seeding)
     ├── test_body_core.nim      → body_core.nim (SDF, envelope, forces, rigid step, slots)
+    ├── test_long_range_core.nim → long_range_core.nim (transform, kernel, CIC, k-space mix)
     ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
     ├── test_colormap_core.nim  → colormap_core.nim (field colormap ramps, coverage)
     ├── test_glow_core.nim      → glow_core.nim (halo radius, falloff, warmth, alpha integral)

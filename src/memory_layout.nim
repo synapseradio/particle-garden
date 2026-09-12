@@ -48,6 +48,27 @@ const
     ## hand. Raising it past the bodyIntegrate workgroup size turns the compile
     ## red in shader_config.nim: that pass dispatches one workgroup and a body
     ## beyond its width would never be stepped.
+  LR_GRID_MAX_W* = 512
+    ## The long-range mesh's ALLOCATION ceiling, width. Its own grid, unrelated
+    ## to MAX_GRID above (the neighbour sweep's spatial hash) and to the
+    ## chemistry field's dimensions.
+    ##
+    ## Every long-range buffer is allocated once at
+    ## LR_GRID_MAX_W x LR_GRID_MAX_H x MAX_SPECIES and the shaders index by a
+    ## live size the uniform carries, which is what makes a resize cost no
+    ## buffer recreation and no bind-group rebuild. About 38 MB at this
+    ## ceiling: density 6.3, two complex spectra 12.6 each, potential 6.3.
+    ##
+    ## A power of two because a radix-2 transform cannot run on a line that is
+    ## not one. Raising it costs memory quadratically and costs workgroup
+    ## storage linearly — see LR_FFT_MAX_LINE in src/long_range_core.nim, whose
+    ## assertion against WebGPU's storage guarantee is what bounds it.
+  LR_GRID_MAX_H* = 256
+    ## The long-range mesh's allocation ceiling, height. 512 x 256 over a
+    ## 3840 x 2160 world gives cells 7.5 by 8.4375 world units — NOT square,
+    ## because square would be 512 x 288 and 288 is not a power of two. The
+    ## kernel therefore takes its wavenumbers from the world's extent rather
+    ## than from bin indices (src/long_range_core.nim, lrWavenumber).
 
 # ==============================================================================
 # ==============================================================================
@@ -188,6 +209,14 @@ static:
   assert OFFSETS.sortedIndices >= OFFSETS.particlesSorted + PARTICLES_BUFFER_SIZE
 
   assert PARTICLE_STRIDE == 32, "Particle stride must be 32 bytes for cache alignment"
+
+  # The long-range allocation ceiling. A radix-2 transform has no meaning on a
+  # line that is not a power of two, so this is the shape of the buffer rather
+  # than a preference about it.
+  assert LR_GRID_MAX_W > 0 and (LR_GRID_MAX_W and (LR_GRID_MAX_W - 1)) == 0,
+    "the long-range grid's width ceiling must be a power of two"
+  assert LR_GRID_MAX_H > 0 and (LR_GRID_MAX_H and (LR_GRID_MAX_H - 1)) == 0,
+    "the long-range grid's height ceiling must be a power of two"
 
   assert OFFSETS.totalSize <= WASM_MEMORY_PAGES * 65536, "Total size exceeds allocated memory"
 

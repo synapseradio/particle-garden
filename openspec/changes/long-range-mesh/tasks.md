@@ -36,15 +36,15 @@ summing to zero under a symmetric matrix, and the closed-form CIC weights summin
 
 Everything in this group is native Nim. No shader, no buffer, no panel.
 
-- [ ] 1.1 **Red first.** Write `tests/test_long_range_core.nim` against a module that does not exist
+- [x] 1.1 **Red first.** Write `tests/test_long_range_core.nim` against a module that does not exist
       yet, covering the transform alone: the forward transform of a known line equals a naive DFT
       written in the test file to f32 tolerance; forward then inverse is the identity to f32
       tolerance; a delta function transforms to a constant magnitude across all bins. Register the
       module in `tests/test_all.nim` and in `tests/README.md`. Verify:
       `nim c -r tests/test_long_range_core.nim` fails to compile on the missing import
-- [ ] 1.2 Write `src/long_range_core.nim` with the reference transform of design D4, pure, no FFI, no
+- [x] 1.2 Write `src/long_range_core.nim` with the reference transform of design D4, pure, no FFI, no
       import from GPU-facing code. Verify: the 1.1 assertions pass
-- [ ] 1.3 **Red first.** Extend the suite with the wavenumber mapping and the kernel of design D6 and
+- [x] 1.3 **Red first.** Extend the suite with the wavenumber mapping and the kernel of design D6 and
       D7: the kernel equals `exp(-k²σ²/2) / (k² + 1/λ²) / (W·H)` at every bin; it is exactly zero at
       `k = 0` at both a short and a long reach; the radius at which a point source's potential falls
       to a fixed fraction of its peak increases monotonically across the whole shipped reach range;
@@ -52,27 +52,27 @@ Everything in this group is native Nim. No shader, no buffer, no panel.
       interpolation error on a grid whose cells are not square; the kernel's magnitude at the grid's
       Nyquist wavenumber is below a recorded fraction of its magnitude at the reach's wavenumber.
       Verify: the new tests fail
-- [ ] 1.4 Add the wavenumber mapping, the kernel and the softening constant to
+- [x] 1.4 Add the wavenumber mapping, the kernel and the softening constant to
       `src/long_range_core.nim`, the softening recorded in cells at 1.5 with its condition beside it.
       Verify: 1.3 passes, including the isotropy test, which is the one that catches a kernel indexed
       by bin number instead of physical wavenumber
-- [ ] 1.5 **Red first.** Extend the suite with charge assignment and the fixed point of design D8: the
+- [x] 1.5 **Red first.** Extend the suite with charge assignment and the fixed point of design D8: the
       CIC weights for any position sum to one; assignment wraps on the torus, so a particle one unit
       from a world edge deposits across the seam as it would anywhere; the whole particle budget in
       one cell encodes without saturating and decodes to the particle count; the scale is a power of
       two; the smallest non-zero CIC weight stays above the accumulator's resolution. Verify: the new
       tests fail
-- [ ] 1.6 Add the CIC weights, the toroidal wrap and the fixed-point scale to
+- [x] 1.6 Add the CIC weights, the toroidal wrap and the fixed-point scale to
       `src/long_range_core.nim` with the static assertion `MAX_PARTICLES * scale < high(int32)` beside
       the constant, and add `LR_GRID_MAX_W` and `LR_GRID_MAX_H` to `src/memory_layout.nim` beside
       `MAX_PARTICLES`, `MAX_SPECIES` and `MAX_GRID`, with static assertions that both are powers of
       two. Verify: 1.5 passes, and halving the scale's exponent past the bound turns the compile red
-- [ ] 1.7 **Red first.** Extend the suite with the species mix of design D5 and the properties the
+- [x] 1.7 **Red first.** Extend the suite with the species mix of design D5 and the properties the
       spec names: the potential of a sum of two species' densities equals the sum of their separately
       solved potentials; a uniform density produces zero gradient everywhere at every reach; the
       impulses over a population sum to zero under a symmetric attraction matrix and are not required
       to under an asymmetric one, with the same arrangement in both. Verify: the new tests fail
-- [ ] 1.8 Add the matrix-weighted k-space mix and the gradient sampler to `src/long_range_core.nim`.
+- [x] 1.8 Add the matrix-weighted k-space mix and the gradient sampler to `src/long_range_core.nim`.
       Verify: 1.7 passes
 - [ ] 1.9 `just happen` builds and `just check` is green
 
