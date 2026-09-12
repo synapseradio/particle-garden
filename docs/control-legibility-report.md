@@ -39,6 +39,8 @@ Span, live fraction, and cliff per declared slice, at the calibrated thresholds 
 | sphStiffness | fraction=1.0 substeps=1 | 0.9333 | 1.000 | 0.007 | none | 0.00-1.00 | pass |
 | sphStiffness | fraction=1.0 substeps=3 | 0.9750 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
 | sphViscosity | default | 0.6667 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
+| longRangeStrength | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
+| longRangeReach | default | 0.9850 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
 | rdFeed | waves | 0.3025 | 0.968 | 0.291 | 0.32-0.33 | 0.00-1.00 | joint |
 | rdFeed | mitosis | 0.1305 | 0.873 | 1.364 | 0.00-0.13 | 0.13-1.00 | joint |
 | rdFeed | labyrinth | 0.2270 | 0.984 | 0.784 | 0.00-0.02 | 0.02-1.00 | joint |

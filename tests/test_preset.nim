@@ -373,6 +373,58 @@ suite "The Bodies A Preset Carries Are The Kind, Never The Ones Alive":
         "sustain"]:
       check not settings.hasKey(key)
 
+suite "The Long-Range Mesh Survives A Preset":
+  test "a saved long-range coupling round-trips its strength, reach and mesh size":
+    var saved = defaultPreset()
+    saved.settings.longRangeStrength = 0.62
+    saved.settings.longRangeReach = 1500.0
+    saved.settings.longRangeGridIndex = LONG_RANGE_GRID_INDEX_MIN
+    let loaded = parsePreset(toJsonString(saved))
+    check loaded.isOk
+    check loaded.preset.settings.longRangeStrength == 0.62
+    check loaded.preset.settings.longRangeReach == 1500.0
+    check loaded.preset.settings.longRangeGridIndex ==
+      LONG_RANGE_GRID_INDEX_MIN
+
+  test "a preset carrying none of the three keys loads them at their defaults":
+    # No migration branch earns its keep here: the shipped strength is zero,
+    # which is the world every older preset was already running, so the
+    # defaults alone leave those worlds as they were. The schema version does
+    # not move for the same reason.
+    let defaults = defaultSettings()
+    let older = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {"forceStrength": 1.5}})
+    check older.preset.settings.longRangeStrength ==
+      defaults.longRangeStrength
+    check older.preset.settings.longRangeStrength == 0.0
+    check older.preset.settings.longRangeReach == defaults.longRangeReach
+    check older.preset.settings.longRangeGridIndex ==
+      defaults.longRangeGridIndex
+
+  test "long-range values outside their ranges clamp on the way in":
+    let tooFar = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {
+        "longRangeStrength": LONG_RANGE_STRENGTH_MAX + 5.0,
+        "longRangeReach": LONG_RANGE_REACH_MAX * 10.0,
+        "longRangeGridIndex": LONG_RANGE_GRID_INDEX_MAX + 3}})
+    check tooFar.preset.settings.longRangeStrength == LONG_RANGE_STRENGTH_MAX
+    check tooFar.preset.settings.longRangeReach == LONG_RANGE_REACH_MAX
+    check tooFar.preset.settings.longRangeGridIndex ==
+      LONG_RANGE_GRID_INDEX_MAX
+    let tooNear = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {
+        "longRangeStrength": LONG_RANGE_STRENGTH_MIN - 5.0,
+        "longRangeReach": 0.0,
+        "longRangeGridIndex": LONG_RANGE_GRID_INDEX_MIN - 3}})
+    check tooNear.preset.settings.longRangeStrength == LONG_RANGE_STRENGTH_MIN
+    check tooNear.preset.settings.longRangeReach == LONG_RANGE_REACH_MIN
+    check tooNear.preset.settings.longRangeGridIndex ==
+      LONG_RANGE_GRID_INDEX_MIN
+
+
 suite "Preset Schema Version Contract":
   test "a preset claiming a newer schemaVersion is rejected":
     ## Guessing at unknown future fields risks silently corrupting user intent

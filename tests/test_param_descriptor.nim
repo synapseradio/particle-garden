@@ -82,6 +82,10 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       # gesture and are clamped there, so no slider can move them mid-life.
       "bodiesStrength", "bodyRadius", "bodyBand", "bodyProximity",
       "bodyEnclosure", "bodyLifetime", "bodyIgnitionRate",
+      # The long-range mesh's three: the coupling strength, the screening
+      # length it reaches over, and the position in the declared table of mesh
+      # sizes the solve runs at.
+      "longRangeStrength", "longRangeReach", "longRangeGridIndex",
       # climateSpeed drives the drifting climate; forceWeatherSpeed drives the
       # force weather, the second waypoint table on the same tour.
       "climateSpeed", "forceWeatherSpeed",
@@ -203,11 +207,11 @@ suite "Every Descriptor Is Internally Coherent":
         else:
           check abs(descriptor.step - pow(10.0, -float(descriptor.precision))) < 1e-12
 
-  test "integer parameters are exactly the five integer CONFIG fields":
+  test "integer parameters are exactly the six integer CONFIG fields":
     for descriptor in descriptors:
       let expectInt = descriptor.id in [
         "particleCount", "speciesCount", "interactionRadius", "particleSize",
-        "sphSubsteps"]
+        "sphSubsteps", "longRangeGridIndex"]
       check (descriptor.kind == pkInt) == expectInt
 
 suite "Descriptors Agree With The Range Authority":
@@ -257,6 +261,12 @@ suite "Descriptors Agree With The Range Authority":
     ("rdKill", RD_KILL_MIN, RD_KILL_MAX),
     ("rdDeposit", RD_DEPOSIT_MIN, RD_DEPOSIT_MAX),
     ("rdFieldForce", RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX),
+    # The long-range mesh. The grid index is a position in LR_GRID_SIZES, so
+    # its ceiling is the table's own length and not a number written twice.
+    ("longRangeStrength", LONG_RANGE_STRENGTH_MIN, LONG_RANGE_STRENGTH_MAX),
+    ("longRangeReach", LONG_RANGE_REACH_MIN, LONG_RANGE_REACH_MAX),
+    ("longRangeGridIndex", LONG_RANGE_GRID_INDEX_MIN.float,
+      LONG_RANGE_GRID_INDEX_MAX.float),
     ("fieldOpacity", FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX),
     # Bodies
     ("bodiesStrength", BODIES_STRENGTH_MIN, BODIES_STRENGTH_MAX),
@@ -320,6 +330,9 @@ suite "Descriptors Agree With The Default Authority":
     ("bodyEnclosure", simDefaults.bodyEnclosure),
     ("bodyLifetime", simDefaults.bodyLifetime),
     ("bodyIgnitionRate", simDefaults.bodyIgnitionRate),
+    ("longRangeStrength", simDefaults.longRangeStrength),
+    ("longRangeReach", simDefaults.longRangeReach),
+    ("longRangeGridIndex", simDefaults.longRangeGridIndex.float),
     # initRenderState
     ("particleSize", renderDefaults.particleSize.float),
     ("trailLength", renderDefaults.trailLength),
@@ -476,6 +489,76 @@ suite "Clamping Is The Descriptor's Job":
     check clampParamValue(byId("particleSize"), 2.2) == 2.0
 
 
+suite "The Long-Range Group Is Led By Its Strength":
+  # The fifth coupling reaches the panel as three controls in one group: the
+  # strength saying how much of the coupling acts, and below it the two saying
+  # what kind of reach it has. The grid size is among them because it is the
+  # coupling's cost knob and the only consumer of the live-size seam.
+
+  proc longRangeGroup(): seq[ParamDescriptor] =
+    for descriptor in descriptors:
+      if descriptor.group == "long-range":
+        result.add descriptor
+
+  test "the long-range group holds its three controls with the strength first":
+    # The ordering fluidStrength establishes: the strength leads, because it
+    # decides whether the coupling acts at all, and the two below it only say
+    # what kind of reach it has.
+    let ids = longRangeGroup().mapIt(it.id)
+    if ids != @["longRangeStrength", "longRangeReach", "longRangeGridIndex"]:
+      checkpoint("the long-range group reads " & $ids)
+    check ids == @["longRangeStrength", "longRangeReach", "longRangeGridIndex"]
+
+  test "each long-range control clamps a write outside its range onto the range":
+    # The one clamp on the boundary, applied to the three ids the panel and
+    # every preset write reach them through.
+    for descriptor in longRangeGroup():
+      checkpoint("clamping " & descriptor.id)
+      check clampParamValue(descriptor, descriptor.minValue - 1000.0) ==
+        descriptor.minValue
+      check clampParamValue(descriptor, descriptor.maxValue + 1000.0) ==
+        descriptor.maxValue
+      check clampParamValue(descriptor, descriptor.defaultValue) ==
+        descriptor.defaultValue
+
+  test "the grid selector admits no index outside the declared table":
+    # The seam's own guarantee, from the storage side: a size that is not a
+    # power of two, or larger than the allocation ceiling, is UNREPRESENTABLE
+    # rather than clamped, because the only thing storable is a position in
+    # LR_GRID_SIZES. The range authority owns the table's length; the
+    # descriptor restates none of it.
+    let selector = byId("longRangeGridIndex")
+    check selector.kind == pkInt
+    check selector.minValue == 0.0
+    check selector.maxValue == float(LR_GRID_SIZES.len - 1)
+    check selector.maxValue == LONG_RANGE_GRID_INDEX_MAX.float
+    for outside in [-4.0, -1.0, float(LR_GRID_SIZES.len),
+        float(LR_GRID_SIZES.len) + 7.0]:
+      let landed = clampParamValue(selector, outside)
+      if landed < 0.0 or landed > selector.maxValue:
+        checkpoint("index " & $outside & " stored as " & $landed &
+          ", outside the declared table of " & $LR_GRID_SIZES.len & " sizes")
+      check landed >= 0.0
+      check landed <= selector.maxValue
+
+  test "the reach travels logarithmically against a strictly positive floor":
+    # The curve and the floor are one decision, and this is the first
+    # descriptor to take the non-default curve. The floor above zero is what
+    # the gate at the bottom of param_descriptor permits it against, and it is
+    # also what gives the uniform's inverse squared screening length a finite
+    # value at every reachable position.
+    let reach = byId("longRangeReach")
+    check reach.curve == cLog
+    check reach.minValue > 0.0
+    check reach.maxValue >= LONG_RANGE_REACH_MAX
+
+  test "the strength marks both ends of what the coupling can do":
+    let strength = byId("longRangeStrength")
+    check strength.minValue == 0.0
+    check strength.notches.anyIt(it.value == LONG_RANGE_STRENGTH_MIN)
+    check strength.notches.anyIt(it.value == LONG_RANGE_STRENGTH_MAX)
+
+
 suite "Cardinality Rides On The Descriptor, Not On A Second Table":
   # Secretion and tropism hold one value per SPECIES where a slider holds one
   # for the world. That difference is a member — an arity, plus the slot the
@@ -620,7 +703,7 @@ suite "Notches Mark Only Reachable Positions":
     # Zero is an ordinary value of a coupling strength, and an unmarked off
     # position hides the setting that isolates what a coupling contributes.
     for id in ["forceStrength", "fluidStrength", "rdDeposit", "rdFieldForce",
-        "bodiesStrength"]:
+        "bodiesStrength", "longRangeStrength"]:
       let descriptor = byId(id)
       checkpoint("coupling strength " & id)
       check descriptor.minValue == 0.0

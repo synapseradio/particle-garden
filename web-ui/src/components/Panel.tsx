@@ -234,6 +234,15 @@ export function Panel(props: { ctrl: PanelController }) {
           </For>
         </Section>
 
+        {/* Long Range leads its group for the same reason SPH Fluid does: at
+            zero the mesh never solves, so the reach and the mesh size below it
+            are adjustments to a coupling already turned on. */}
+        <Section title="Long Range">
+          <For each={groupIds("long-range")}>
+            {(id) => <ParamSlider ctrl={ctrl} id={id} />}
+          </For>
+        </Section>
+
         <Section title="Reaction-Diffusion">
           {/* Regimes first: they are how someone who does not know the
               literature finds the living settings, and the sliders below

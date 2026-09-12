@@ -62,6 +62,9 @@ type
     sphRadiusFraction* {.exportc.}: float
     sphViscosity* {.exportc.}: float
     sphSubsteps* {.exportc.}: int
+    longRangeStrength* {.exportc.}: float
+    longRangeReach* {.exportc.}: float
+    longRangeGridIndex* {.exportc.}: int
     rdFeed* {.exportc.}: float
     rdKill* {.exportc.}: float
     rdDeposit* {.exportc.}: float
@@ -184,6 +187,9 @@ proc createConfig(): ConfigObject =
   result.sphRadiusFraction = sim.sphRadiusFraction
   result.sphViscosity = sim.sphViscosity
   result.sphSubsteps = sim.sphSubsteps
+  result.longRangeStrength = sim.longRangeStrength
+  result.longRangeReach = sim.longRangeReach
+  result.longRangeGridIndex = sim.longRangeGridIndex
   result.rdFeed = sim.rdFeed
   result.rdKill = sim.rdKill
   result.rdDeposit = sim.rdDeposit

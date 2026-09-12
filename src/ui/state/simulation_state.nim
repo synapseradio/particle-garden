@@ -11,7 +11,7 @@
 
 import ../../field_core
 import ../../climate_core  # CLIMATE_DEFAULT_SPEED, the drift-rate authority
-import ../../config_ranges  # the bodies defaults, derived from body_core
+import ../../config_ranges  # the bodies defaults and the measured mesh-size default
 
 type
   SimulationState* = object
@@ -59,6 +59,24 @@ type
                               ## 2 halves the effective timestep the stiff
                               ## gamma=7 EOS integrates at; capped by
                               ## SPH_MAX_SUBSTEPS.
+    longRangeStrength*: float ## How much of the long-range mesh's verdict on a
+                              ## particle's velocity lands. It multiplies the
+                              ## force pass alone and nothing earlier in the
+                              ## chain, which is what keeps the density
+                              ## accumulator's overflow bound a function of the
+                              ## particle ceiling rather than of this slider.
+                              ## Zero is an ordinary value and skips all five
+                              ## passes exactly.
+    longRangeReach*: float    ## The screening length lambda, in world units:
+                              ## small confines the force to a neighbourhood,
+                              ## large approaches the unscreened 2D limit, and
+                              ## every value between is a continuous reach. No
+                              ## mode and no kernel selector — the k-space
+                              ## multiply makes the kernel a formula.
+    longRangeGridIndex*: int  ## Which of config_ranges.LR_GRID_SIZES the mesh
+                              ## runs at. The coupling's cost knob, and a
+                              ## position rather than a number so a size the
+                              ## transform cannot run on is unrepresentable.
     rdFeed*: float            ## Gray-Scott feed rate F
     rdKill*: float            ## Gray-Scott kill rate k
     rdDeposit*: float         ## Inhibitor each particle folds into its field
@@ -140,6 +158,15 @@ func initSimulationState*(): SimulationState =
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
+    # The long-range mesh starts silent, like the fluid: the shipped world is
+    # the one every other default was chosen against, and a coupling nobody has
+    # watched act does not arrive switched on.
+    longRangeStrength: 0.0,
+    # Four times the neighbour sweep's maximum reach of 150, so the default
+    # couples across distances the sweep cannot, and a sixth of the world's
+    # width of 3840, so it is a reach rather than the unscreened limit.
+    longRangeReach: 600.0,
+    longRangeGridIndex: LONG_RANGE_GRID_INDEX_DEFAULT,
     rdFeed: RD_DEFAULT_FEED,
     rdKill: RD_DEFAULT_KILL,
     rdDeposit: RD_DEFAULT_DEPOSIT,

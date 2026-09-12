@@ -23,6 +23,7 @@ import field_core
 import bloom_core
 import colormap_core
 import body_core
+import long_range_core
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -59,6 +60,69 @@ const
     ## entire velocity contribution, so a higher value amplifies pressure past
     ## the settings the stability analysis covers. Stiffness is where to
     ## ask for a stiffer fluid, because its ceiling answers.
+  LONG_RANGE_STRENGTH_MIN* = 0.0
+    ## Zero is an ordinary value of a coupling strength, and the shipped
+    ## default: a build carrying the long-range mesh runs the same world as one
+    ## without it until this slider moves.
+  LONG_RANGE_STRENGTH_MAX* = 1.0
+    ## PROVISIONAL, pending an in-app calibration. This is a working bound, not
+    ## a measured one: nothing has yet watched the coupling act. The
+    ## calibration must record two strengths and set this ceiling above the
+    ## second — the strength at which a settled population visibly gathers
+    ## toward the world's densest region within a few seconds, and the strength
+    ## at which the long-range term overwhelms the species force at the
+    ## interaction radius. CROWDING_STRENGTH_MAX above is the worked example of
+    ## the same marking. [?]
+  LONG_RANGE_REACH_MIN* = 60.0
+    ## The screening length lambda, in world units, and STRICTLY POSITIVE for
+    ## two reasons that are not taste. The uniform carries 1/lambda^2
+    ## (long_range_core.lrInverseReachSq), so a reach of zero has no finite
+    ## representation at all. And a reach below the grid's cell size — 7.5 by
+    ## 8.4375 units at the shipped size — names a force the softening has
+    ## already removed, so the floor sits above a few cells rather than at the
+    ## smallest number the slider could hold.
+    ##
+    ## Below the neighbour sweep's maximum reach of 150, deliberately: a floor
+    ## at 150 would make the coupling long-range-only by construction and cost
+    ## the short end of this control's travel.
+  LONG_RANGE_REACH_MAX* = 4000.0
+    ## Above the world's width of 3840, so the unscreened 2D limit — a reach the
+    ## world cannot exhaust — is a slider position rather than an asymptote.
+  LR_GRID_SIZES* = [
+    (w: 256, h: 128),
+    (w: 512, h: 256),
+  ]
+    ## The live sizes the mesh's grid may take, as a selector rather than a
+    ## numeric range: a size that is not a power of two, or larger than the
+    ## allocation ceiling, is unrepresentable here rather than clamped. The
+    ## assertions at the bottom of this file hold every declared size to the
+    ## ceiling in memory_layout and to the line length the transform's
+    ## workgroup array is compiled for.
+    ##
+    ## Both aspects are 2:1, which is what keeps the cell aspect — and so the
+    ## anisotropy the kernel's wavenumber mapping answers to — the same 1.125
+    ## at every position.
+  LONG_RANGE_GRID_INDEX_MIN* = 0
+  LONG_RANGE_GRID_INDEX_MAX* = LR_GRID_SIZES.len - 1
+    ## Derived from the table's length, so a declared size added or removed
+    ## moves the selector's ceiling with it and no second number can disagree.
+  LONG_RANGE_GRID_INDEX_DEFAULT* = 1
+    ## MEASURED: 512 x 256, the second declared position. One batched round trip
+    ## — forward row, forward column, per-bin multiply with the 12 x 12
+    ## asymmetric species mix, inverse column, inverse row — costs 0.417 to
+    ## 0.450 ms of GPU time at 512 x 256 x 12 against the 1.0 ms this coupling
+    ## allots itself out of the settled 128k headroom of 3.75 ms
+    ## (docs/perf-report.md). Conditions: Apple M5 Max, macOS 26.5.2, Chromium
+    ## 152 headless on ANGLE/Metal, with roughly three cores busy with unrelated
+    ## work, so the figure is an upper bound; the span is the observed min-max
+    ## over the last four samples of a 15-second window.
+    ##
+    ## THE FIGURE COVERS THE SOLVE ALONE. The deposit and gradient-force passes
+    ## are excluded from it and are the two per-particle passes in the chain,
+    ## leaving about 0.55 ms of the allotment unmeasured. If the first in-app
+    ## capture of the long-range profiler slot overruns, index 0 is the
+    ## declared 256 x 128 position at about a fifth of the solve's cost, and
+    ## moving this constant is the whole change.
   FRICTION_MIN* = 0.0
   FRICTION_MAX* = 0.5
   MATRIX_MIN_VALUE* = -0.330
@@ -503,9 +567,10 @@ static:
   doAssert CROWDING_STRENGTH_MIN == 0.0,
     "crowding strength zero is today's force law and must stay reachable"
   # Every coupling strength reaches zero. One loop rather than an
-  # assertion each, so a fifth coupling with a nonzero floor fails here.
+  # assertion each, so a new coupling with a nonzero floor fails here.
   for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
-      RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN, BODIES_STRENGTH_MIN]:
+      RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN, BODIES_STRENGTH_MIN,
+      LONG_RANGE_STRENGTH_MIN]:
     doAssert strengthFloor == 0.0,
       "a coupling strength's range excludes zero; every coupling can be " &
       "turned off through its own slider"
@@ -542,6 +607,34 @@ static:
     BODY_DEFAULT_LIFETIME <= BODY_LIFETIME_MAX
   doAssert BODY_DEFAULT_IGNITION_RATE >= BODY_IGNITION_RATE_MIN and
     BODY_DEFAULT_IGNITION_RATE <= BODY_IGNITION_RATE_MAX
+  doAssert LONG_RANGE_STRENGTH_MIN < LONG_RANGE_STRENGTH_MAX
+  doAssert LONG_RANGE_REACH_MIN < LONG_RANGE_REACH_MAX
+  # The reach reaches the uniform as 1/lambda^2, which has no finite value at
+  # zero, and the slider's travel is logarithmic, which has no zero either.
+  doAssert LONG_RANGE_REACH_MIN > 0.0,
+    "a reach of zero has no inverse squared screening length and no position " &
+    "on a logarithmic track"
+  # The declared live sizes, against the allocation ceiling they index inside
+  # and against the line the transform's workgroup array is compiled to hold.
+  # A radix-2 transform has no meaning on a line that is not a power of two, so
+  # these are the shape of the buffer rather than a preference about it.
+  doAssert LR_GRID_SIZES.len > 0
+  doAssert LONG_RANGE_GRID_INDEX_DEFAULT >= LONG_RANGE_GRID_INDEX_MIN and
+    LONG_RANGE_GRID_INDEX_DEFAULT <= LONG_RANGE_GRID_INDEX_MAX
+  for size in LR_GRID_SIZES:
+    doAssert lrIsPowerOfTwo(size.w) and lrIsPowerOfTwo(size.h),
+      "a declared long-range grid size is not a power of two"
+    doAssert size.w <= LR_GRID_MAX_W and size.h <= LR_GRID_MAX_H,
+      "a declared long-range grid size exceeds the allocation ceiling in " &
+      "src/memory_layout.nim"
+    let longestLine = max(size.w, size.h)
+    doAssert longestLine <= LR_FFT_MAX_LINE,
+      "a declared long-range grid has a line longer than the workgroup array " &
+      "the transform is compiled with"
+    doAssert (longestLine div 2) mod LR_FFT_WORKGROUP_SIZE == 0 or
+      (longestLine div 2) < LR_FFT_WORKGROUP_SIZE,
+      "a declared long-range grid's line leaves butterflies the transform's " &
+      "workgroup covers neither one per thread nor by looping"
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
   doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
   doAssert MATRIX_MIN_VALUE == -MATRIX_MAX_VALUE,

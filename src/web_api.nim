@@ -955,6 +955,9 @@ when defined(js):
     settings.sphRadiusFraction = CONFIG.sphRadiusFraction
     settings.sphViscosity = CONFIG.sphViscosity
     settings.sphSubsteps = CONFIG.sphSubsteps
+    settings.longRangeStrength = CONFIG.longRangeStrength
+    settings.longRangeReach = CONFIG.longRangeReach
+    settings.longRangeGridIndex = CONFIG.longRangeGridIndex
     settings.rdFeed = CONFIG.rdFeed
     settings.rdKill = CONFIG.rdKill
     settings.rdDeposit = CONFIG.rdDeposit
@@ -1059,6 +1062,9 @@ when defined(js):
           simState.sphRadiusFraction = settings.sphRadiusFraction
           simState.sphViscosity = settings.sphViscosity
           simState.sphSubsteps = settings.sphSubsteps
+          simState.longRangeStrength = settings.longRangeStrength
+          simState.longRangeReach = settings.longRangeReach
+          simState.longRangeGridIndex = settings.longRangeGridIndex
           simState.rdFeed = settings.rdFeed
           simState.rdKill = settings.rdKill
           simState.rdDeposit = settings.rdDeposit

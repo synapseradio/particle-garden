@@ -133,6 +133,11 @@ type
     sphRadiusFraction*: float
     sphViscosity*: float
     sphSubsteps*: int
+    longRangeStrength*: float
+    longRangeReach*: float
+    longRangeGridIndex*: int
+      ## A position in config_ranges.LR_GRID_SIZES, not a grid size: a preset
+      ## can never carry a mesh the transform cannot run on.
     rdFeed*: float
     rdKill*: float
     rdDeposit*: float
@@ -263,6 +268,14 @@ func defaultSettings*(): PresetSettings =
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
+    # Mirrors simulation_state.initSimulationState's long-range defaults: the
+    # shipped world runs no long-range coupling, so a preset that never
+    # mentions one restores none, and no version branch is needed to keep an
+    # older world as it was. The grid index is the one that reads from
+    # config_ranges, because it indexes a table this module already imports.
+    longRangeStrength: 0.0,
+    longRangeReach: 600.0,
+    longRangeGridIndex: LONG_RANGE_GRID_INDEX_DEFAULT,
     # Mirrors field_core.RD_DEFAULT_FEED/KILL/DEPOSIT/FIELD_FORCE as literals
     # rather than an import: this module's dependencies are intentionally
     # restricted to config_ranges and palette (see file header), the same
@@ -450,6 +463,15 @@ proc validateSettings(node: JsonNode): PresetSettings =
     field(node, "sphViscosity").getFloat(defaults.sphViscosity), SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX)
   result.sphSubsteps = clampInt(
     field(node, "sphSubsteps").getInt(defaults.sphSubsteps), SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX)
+  result.longRangeStrength = clampFloat(
+    field(node, "longRangeStrength").getFloat(defaults.longRangeStrength),
+    LONG_RANGE_STRENGTH_MIN, LONG_RANGE_STRENGTH_MAX)
+  result.longRangeReach = clampFloat(
+    field(node, "longRangeReach").getFloat(defaults.longRangeReach),
+    LONG_RANGE_REACH_MIN, LONG_RANGE_REACH_MAX)
+  result.longRangeGridIndex = clampInt(
+    field(node, "longRangeGridIndex").getInt(defaults.longRangeGridIndex),
+    LONG_RANGE_GRID_INDEX_MIN, LONG_RANGE_GRID_INDEX_MAX)
   result.rdFeed = clampFloat(
     field(node, "rdFeed").getFloat(defaults.rdFeed), RD_FEED_MIN, RD_FEED_MAX)
   result.rdKill = clampFloat(
@@ -799,6 +821,9 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["sphRadiusFraction"] = %settings.sphRadiusFraction
   result["sphViscosity"] = %settings.sphViscosity
   result["sphSubsteps"] = %settings.sphSubsteps
+  result["longRangeStrength"] = %settings.longRangeStrength
+  result["longRangeReach"] = %settings.longRangeReach
+  result["longRangeGridIndex"] = %settings.longRangeGridIndex
   result["rdFeed"] = %settings.rdFeed
   result["rdKill"] = %settings.rdKill
   result["rdDeposit"] = %settings.rdDeposit

@@ -24,6 +24,7 @@ const HelpFileNames* = [
   "21-force-exponential.md",
   "30-fluid.md",
   "35-bodies.md",
+  "35-long-range.md",
   "40-rd.md",
   "41-rd-field.md",
   "42-chemistry.md",

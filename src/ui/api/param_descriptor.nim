@@ -609,6 +609,51 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         "(sph_core.stableStiffnessCeiling)",
       horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
 
+    # Long-range mesh. The strength leads for the reason fluidStrength does:
+    # it says how much of the coupling acts, and the two below it say what kind
+    # of reach it has — how far the force carries, and how finely the mesh that
+    # carries it resolves the world. Both of those dim while the strength is at
+    # zero; the strength itself declares no dormancy, because moving it is the
+    # way back.
+    floatParam("longRangeStrength", "Long Range", "long-range",
+      LONG_RANGE_STRENGTH_MIN, LONG_RANGE_STRENGTH_MAX, sim.longRangeStrength,
+      2, psSimulation,
+      hint = "how much of the mesh's pull reaches the particles; the two " &
+        "below say how far it carries",
+      notches = @[
+        notch(LONG_RANGE_STRENGTH_MIN, "no reach"),
+        notch(LONG_RANGE_STRENGTH_MAX, "full"),
+      ], probe = "longRange.impulseShare",
+      horizon = rhSettling, horizonReview = true),
+    # The one logarithmic control. Its range spans more than an order of
+    # magnitude, so equal travel has to multiply rather than add, and the
+    # curve-floor gate at the bottom of this module permits that only against
+    # the strictly positive floor config_ranges records the reason for.
+    floatParam("longRangeReach", "Reach", "long-range",
+      LONG_RANGE_REACH_MIN, LONG_RANGE_REACH_MAX, sim.longRangeReach, 0,
+      psSimulation,
+      hint = "the distance past which the pull is screened away; small is a " &
+        "neighbourhood, large is the whole world",
+      probe = "longRange.reachInCells", curve = cLog,
+      horizon = rhSettling, horizonReview = true,
+      dormantWhen = "longRangeOff"),
+    # A position in config_ranges.LR_GRID_SIZES, not a size: a grid the
+    # radix-2 transform cannot run on, or one past the allocation ceiling, has
+    # no index and so cannot be written at all.
+    intParam("longRangeGridIndex", "Mesh Size", "long-range",
+      LONG_RANGE_GRID_INDEX_MIN, LONG_RANGE_GRID_INDEX_MAX,
+      sim.longRangeGridIndex, psSimulation,
+      exemption = "a two-position selector over the declared mesh sizes: " &
+        "every step is a doubling of the grid on both axes, so the single " &
+        "movement between the two positions is the whole response and the " &
+        "cliff bar — written for divisible travel — cannot hold. What the " &
+        "positions cost is measured instead, beside " &
+        "LONG_RANGE_GRID_INDEX_DEFAULT in config_ranges, and what they mean " &
+        "for the force is held by the long-range oracle's isotropy and " &
+        "softening suites, which run at both aspect-equal sizes",
+      horizon = rhStructural, horizonReview = true,
+      dormantWhen = "longRangeOff"),
+
     # Reaction-Diffusion section. Feed and kill carry the six named regimes as
     # notches, so the living parts of the plane are positions the user can
     # reach by name instead of by accident. The coordinates live in

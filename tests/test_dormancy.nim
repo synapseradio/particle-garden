@@ -93,7 +93,8 @@ suite "Each Predicate Distinguishes Dormant From Awake":
   test "the strength-family predicates fire at zero and only at zero":
     for (id, fieldName) in [("forceOff", "forceStrength"),
         ("fluidOff", "fluidStrength"), ("depositOff", "rdDeposit"),
-        ("tropismOff", "rdFieldForce")]:
+        ("tropismOff", "rdFieldForce"),
+        ("longRangeOff", "longRangeStrength")]:
       check predicates[id].eval(witness({fieldName: 0.0}))
       check not predicates[id].eval(witness({fieldName: 0.4}))
 

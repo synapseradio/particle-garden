@@ -39,6 +39,9 @@ func evalForceOff(values: Table[string, float]): bool =
 func evalFluidOff(values: Table[string, float]): bool =
   values["fluidStrength"] == 0.0
 
+func evalLongRangeOff(values: Table[string, float]): bool =
+  values["longRangeStrength"] == 0.0
+
 func evalDepositOff(values: Table[string, float]): bool =
   values["rdDeposit"] == 0.0
 
@@ -71,6 +74,9 @@ proc dormancyRegistry*(): Table[string, DormancyPredicate] =
     "fluidOff": DormancyPredicate(id: "fluidOff",
       line: "the world has no fluid",
       simFields: @["fluidStrength"], eval: evalFluidOff),
+    "longRangeOff": DormancyPredicate(id: "longRangeOff",
+      line: "the mesh pulls nothing",
+      simFields: @["longRangeStrength"], eval: evalLongRangeOff),
     "depositOff": DormancyPredicate(id: "depositOff",
       line: "nothing deposits into the field",
       simFields: @["rdDeposit"], eval: evalDepositOff),

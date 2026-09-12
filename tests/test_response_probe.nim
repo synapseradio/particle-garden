@@ -69,18 +69,20 @@ suite "Every Descriptor Is Probed Or Exempted":
           "\" is carried by no descriptor")
       check probeId in carried
 
-  test "the exemptions are exactly the three declared ones, with reasons":
-    # The exempt set is a declaration; a fourth exemption is a decision this
+  test "the exemptions are exactly the four declared ones, with reasons":
+    # The exempt set is a declaration; a fifth exemption is a decision this
     # test makes loud rather than a default anyone can drift into. Two
-    # structural counts, and the substep count whose written reason names
-    # where its ceiling consequence stays measured (sphStiffness's
-    # deriving-box corner slices).
+    # structural counts, the substep count whose written reason names where
+    # its ceiling consequence stays measured (sphStiffness's deriving-box
+    # corner slices), and the mesh selector, whose two positions name a solve
+    # resolution rather than a quantity a sweep can travel.
     var exempted: seq[string]
     for descriptor in descriptors:
       if descriptor.exemption.len > 0:
         exempted.add descriptor.id
         check descriptor.exemption.len > 0
-    check exempted == @["particleCount", "speciesCount", "sphSubsteps"]
+    check exempted == @["particleCount", "speciesCount", "sphSubsteps",
+      "longRangeGridIndex"]
 
 const
   MustPass = ["friction", "fieldOpacity", "exposure", "contrast",

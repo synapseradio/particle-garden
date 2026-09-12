@@ -82,12 +82,12 @@ The coupling becomes visible and storable here, and does nothing. At the end of 
 carries three controls, a preset round-trips them, and the world is unchanged because the strength
 defaults to zero.
 
-- [ ] 2.1 **Red first.** Extend `tests/test_param_descriptor.nim` for the three descriptors:
+- [x] 2.1 **Red first.** Extend `tests/test_param_descriptor.nim` for the three descriptors:
       `longRangeStrength`, `longRangeReach` and `longRangeGridIndex` exist in a `long-range` group led
       by the strength; each clamps a write outside its range onto the range; the grid index clamps
       onto the declared table, so no index outside it is storable. Verify: the new tests fail on the
       missing descriptors
-- [ ] 2.2 Add the ranges to `src/config_ranges.nim`: `LONG_RANGE_STRENGTH_MIN/MAX` at `0.0 .. 1.0`
+- [x] 2.2 Add the ranges to `src/config_ranges.nim`: `LONG_RANGE_STRENGTH_MIN/MAX` at `0.0 .. 1.0`
       with the ceiling marked a working bound and its calibration conditions recorded beside it the
       way `CROWDING_STRENGTH_MAX` is (`:46-54`); `LONG_RANGE_REACH_MIN/MAX` at `60 .. 4000` with the
       strictly-positive floor's reason beside it; the `LR_GRID_SIZES` table of declared power-of-two
@@ -96,21 +96,21 @@ defaults to zero.
       is a power of two no larger than the `memory_layout` ceiling and that its longest line fits the
       256-invocation workgroup the transform compiles against. Verify: setting any floor non-zero or
       any declared size to a non-power-of-two turns the compile red
-- [ ] 2.3 Add the three fields and their defaults to `src/ui/state/simulation_state.nim`
+- [x] 2.3 Add the three fields and their defaults to `src/ui/state/simulation_state.nim`
       (`SimulationState` and `initSimulationState`), strength at `0.0`, reach at `600`, grid index at
       the position naming 512 x 256. Verify: 2.1 passes for existence
-- [ ] 2.4 Add the three descriptors to `src/ui/api/param_descriptor.nim` in a `long-range` group, the
+- [x] 2.4 Add the three descriptors to `src/ui/api/param_descriptor.nim` in a `long-range` group, the
       strength leading, the reach carrying `curve = cLog` — which the curve-floor gate at the bottom
       of that module permits only against the positive floor 2.2 set — and notches on the strength at
       zero and at one. Verify: 2.1 passes in full, and `tests/test_param_descriptor.nim`'s curve-floor
       case stays green
-- [ ] 2.5 Add the `long-range` group to `groupParamIds` in `web-ui/src/components/Panel.tsx`. Verify:
+- [x] 2.5 Add the `long-range` group to `groupParamIds` in `web-ui/src/components/Panel.tsx`. Verify:
       `tests/test_panel_reachability.nim` is green, and was red before this task
-- [ ] 2.6 Write `docs/help/35-long-range.md` with `group: long-range`, naming all three ids in its
+- [x] 2.6 Write `docs/help/35-long-range.md` with `group: long-range`, naming all three ids in its
       `` - `id` `` lines: what the strength does, that reach is a screening length and small is local,
       and that the grid size is the coupling's cost knob. Verify: `tests/test_help_content.nim` is
       green, and was red on the missing group file before this task
-- [ ] 2.7 **Red first, then carry.** Extend `tests/test_preset.nim` with a round trip of the three
+- [x] 2.7 **Red first, then carry.** Extend `tests/test_preset.nim` with a round trip of the three
       settings and with a preset carrying none of the three keys decoding to their defaults through no
       migration branch. Then add the fields to `PresetSettings`, `defaultSettings`, `validateSettings`
       and `toJson` in `src/preset.nim`, adding no schema version and no `LEGACY_MODE_COUPLINGS` row.

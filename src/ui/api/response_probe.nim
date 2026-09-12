@@ -134,6 +134,10 @@ const
     ## Derived from the range it must outrun.
   RefGradient = 0.2
     ## Field gradient magnitude for the tropism probes.
+  RefLongRangeGradient = 0.05
+    ## Potential-gradient magnitude the long-range force pass samples, in world
+    ## units per world unit. A reference like RefGradient above: the strength
+    ## scales it linearly, so only its sign and finiteness affect the verdict.
   RefInhibitor = 0.3
     ## Inhibitor concentration a deposit lands on.
   RefVelocityNorm = 0.5
@@ -283,6 +287,30 @@ func fluidStrengthProbe(value: float; ctx: ProbeContext): float =
   value * flooredTaitPressure(RefCompression * ctx.sim.sphRestDensity,
     ctx.sim.sphRestDensity, ctx.sim.sphStiffness, SPH_DEFAULT_GAMMA) *
     SPH_CEILING_REFERENCE_FRAME_SECONDS
+
+func longRangeStrengthProbe(value: float; ctx: ProbeContext): float =
+  ## longRangeStrength: the one factor the mesh's whole velocity delta passes
+  ## through. lr-force.wgsl multiplies the sampled potential gradient by it and
+  ## nothing earlier in the chain does, so the impulse a particle reads at the
+  ## reference gradient is this strength times that gradient.
+  abs(value * RefLongRangeGradient)
+
+func longRangeReachProbe(value: float; ctx: ProbeContext): float =
+  ## longRangeReach: the reach in CELLS of the live mesh, which is the unit the
+  ## coupling actually resolves it in and the one that says whether the reach
+  ## the slider asks for survives at all — a reach under a cell names a force
+  ## the softening has already removed. It therefore reads the mesh-size
+  ## selector beside it as well as the reach, and a world on the coarser mesh
+  ## resolves the same reach in a quarter of the cells.
+  ##
+  ## Not the k-space response at a fixed wavenumber, which is the closer mirror
+  ## of the kernel and is measured dead over the top 60% of this track: the
+  ## screened response saturates as lambda outruns that wavenumber, and the
+  ## sweep samples the value linearly while this control's travel is
+  ## logarithmic.
+  let index = clamp(ctx.sim.longRangeGridIndex,
+    LONG_RANGE_GRID_INDEX_MIN, LONG_RANGE_GRID_INDEX_MAX)
+  value / (RefWorldW / float(LR_GRID_SIZES[index].w))
 
 func sphRestDensityProbe(value: float; ctx: ProbeContext): float =
   ## sphRestDensity: the pressure available across the neighbourhood
@@ -743,6 +771,10 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
     "matrix.sampleSpread": ProbeSpec(fn: ruleWildnessProbe,
       budget: pbClosedForm),
     "sph.pairShare": ProbeSpec(fn: fluidStrengthProbe,
+      budget: pbClosedForm),
+    "longRange.impulseShare": ProbeSpec(fn: longRangeStrengthProbe,
+      budget: pbClosedForm),
+    "longRange.reachInCells": ProbeSpec(fn: longRangeReachProbe,
       budget: pbClosedForm),
     "sph.reachablePressureBand": ProbeSpec(fn: sphRestDensityProbe,
       budget: pbClosedForm),
