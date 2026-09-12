@@ -249,7 +249,66 @@ debugging port, the profile directory, the serving port, and four flags webui pa
 harness did not: `--app`, `--allow-insecure-localhost`, `--disable-component-update`, and
 `--window-size`. Neither sibling change opens by reporting unavailability.
 
+## The bodies feedback loop: a crowd cannot drive a body unstable
+
+Not a GPU measurement. This is a native sweep over `src/body_core.nim`, the pure mirror the two
+bodies shaders are written against, and it is recorded here because it warrants five shipped
+constants and because the premises that re-run it are the same premises the rows above rest on.
+Re-run it with `nim c -r tests/test_body_core.nim`, suite "A Crowd Cannot Drive A Body Unstable".
+
+| | |
+|---|---|
+| Machine | Apple M5 Max, 128 GB, macOS 26.5.2, arm64 |
+| Nim | 2.2.12 |
+| Whole file | 4.2 s, 44 tests |
+| Coordinates | 864 |
+| Frames per run | 480 rendered frames, each at the longest frame the app can produce |
+
+Every run places a coherent one-sided crowd across an enclosing body's surface, hands each particle
+the impulse the body gives it, hands the body back the negation, and advances both. The crowd is
+carried by 24 weighted samples rather than by 128 000 individuals: the body reads only the sum of
+the reactions, and samples standing together contribute exactly what the particles they stand for
+would if they were together — which is the worst case, since spread out they cancel.
+
+| axis | values swept |
+|---|---|
+| crowd size | 1 000, 32 000, 128 000 (`MAX_PARTICLES`) |
+| `bodiesStrength` | half the ceiling, the ceiling |
+| `bodyProximity` | `-BODY_FORCE_CEILING`, 0, `+BODY_FORCE_CEILING` |
+| `bodyEnclosure` | `-BODY_FORCE_CEILING`, 0, `+BODY_FORCE_CEILING` |
+| `bodyBand` | the derived floor, the ceiling |
+| `bodyRadius` | floor, ceiling |
+| anisotropy | 1, the ceiling |
+| substeps | 1 and `SPH_MAX_SUBSTEPS` |
+
+**Result.** No coordinate diverges. At every one of the 864 the body's speed and angular speed stay
+under the closed-form ceiling `cap * frames * damping^frames / (1 - damping^frames)`, the geometric
+sum of a capped impulse under exponential damping — between 500 and 960 world units a second
+depending on the frame length. The runs that are still gaining when the window closes are
+transients: run four times as long, their half-to-half growth shrinks, which a divergence's would
+not.
+
+**What it warranted.** `BODY_DENSITY` 0.05, `BODY_LINEAR_DAMPING` and `BODY_ANGULAR_DAMPING` 0.96,
+`BODY_MAX_SPEED_CHANGE` 40.0, `BODY_MAX_SPIN_CHANGE` 0.03, all in `src/body_core.nim` with the
+conditions beside them. No user-facing ceiling was lowered; the mechanism carries the bound.
+
+**What it found.** The first run measured the peak body speed moving by a factor of 900 between one
+substep and three at the same coordinate. The cause was reading the accumulated reaction as a force
+rather than as the impulse it is — `body-force.wgsl` has `field-force.wgsl`'s shape, and that pass
+folds the substep's frame into the scale it receives, so a second multiplication by the timestep
+made a frame's effect scale as the square of its length over the substep count.
+
+**Four premises re-run this sweep**, and `tests/test_body_core.nim` holds each against its source
+rather than restating it: the particle budget (`MAX_PARTICLES`), the strength and force ceilings
+(`BODY_STRENGTH_CEILING`, `BODY_FORCE_CEILING`), the force law (`bodyForceAt` and `bodyRigidStep`),
+and the substep count with the longest frame (`SPH_MAX_SUBSTEPS`, `src/app.nim`'s frame-delta cap,
+`TIME_SCALE_MAX`, `FRAME_DT_REFERENCE`).
+
+The bodies passes' own GPU cost is not measured here. It needs a browser and belongs with the first
+in-app run.
+
 ## Evidence
 
 Every run's full trace and stderr log is retained under `scratchpad/main/perf-harness/runs/`, one
-`<id>.json` and one `<id>.log` per row.
+`<id>.json` and one `<id>.log` per row. The bodies sweep keeps no artifact: it is a test, and
+re-running it is cheaper than storing it.

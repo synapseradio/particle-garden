@@ -68,7 +68,7 @@ Everything in this group is native Nim. No shader, no buffer, no panel.
 The proposal's gate. It runs entirely in the native suite over the group 1 mirror, needs no GPU and
 no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing here.
 
-- [ ] 2.1 Write the sweep in `tests/test_body_core.nim` as its own suite, following the precomputed
+- [x] 2.1 Write the sweep in `tests/test_body_core.nim` as its own suite, following the precomputed
       shape `tests/test_field_core.nim:970-1035` uses for the chemotactic-collapse bound: crowd size
       up to `MAX_PARTICLES`, `bodiesStrength` across its range, proximity and enclosure across
       theirs, band width, body area across its range, and substep count from one to the fluid's
@@ -76,22 +76,22 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
       show the trend. A failure SHALL name the axis, the value, and the settling figure that broke
       it, so a red reads as a coordinate rather than as "the sweep failed". Verify: the sweep runs and
       reports a boundary, whether or not the shipped range sits inside it
-- [ ] 2.2 Choose the mass, damping and per-substep impulse-cap constants from 2.1 so the whole shipped
+- [x] 2.2 Choose the mass, damping and per-substep impulse-cap constants from 2.1 so the whole shipped
       range is stable, in that order of preference, and write them into `src/body_core.nim` with the
       measured conditions beside each — including the four premises that re-run the sweep (particle
       budget, strength ceiling, force law, substep count). **Do not lower a user-facing ceiling to fit
       an implementation limit** (`docs/engineering-principles.md:75-82`). Verify: the 2.1 sweep passes
       at the shipped range
-- [ ] 2.3 Derive the band-width floor from the particle speed cap and the largest substep timestep,
+- [x] 2.3 Derive the band-width floor from the particle speed cap and the largest substep timestep,
       state the derivation beside the constant in `src/body_core.nim`, and add the test: a particle at
       the speed cap fired at an enclosing wall, with the band at its narrowest and the timestep at its
       largest, is turned rather than passing through. Verify: the test passes at the derived floor and
       fails at half of it
-- [ ] 2.4 Add the static assertions of design D7 to `src/body_core.nim`: the particle budget times the
+- [x] 2.4 Add the static assertions of design D7 to `src/body_core.nim`: the particle budget times the
       largest admissible per-particle force times `BODY_FIXED_POINT_SCALE` fits `int32`, and the same
       for torque with the world's half-diagonal as the lever arm. Verify: `just happen` is green, and
       temporarily raising a bodies range past the bound turns the compile red
-- [ ] 2.5 Record the sweep in `docs/perf-report.md` under the table shape that file already uses
+- [x] 2.5 Record the sweep in `docs/perf-report.md` under the table shape that file already uses
       (`:86`, `:134`), with the conditions a stranger needs to re-run it. Verify: the entry names the
       machine, the ranges swept, and the four premises
 - [ ] 2.6 `just happen` builds and `just check` is green

@@ -26,6 +26,7 @@
 
 import std/math
 import memory_layout
+import physics_core
 
 type
   Body* = object
@@ -116,36 +117,105 @@ const
     0.5 * sqrt(BODY_WORLD_W * BODY_WORLD_W + BODY_WORLD_H * BODY_WORLD_H)
     ## The longest lever arm a minimum-image displacement can present, and so
     ## the bound the torque accumulator's scale is sized against.
-  BODY_FIXED_POINT_SCALE* = 256.0
+  BODY_PARTICLE_SPEED_CEILING* = 100.0
+    ## The fastest a particle may travel: config_ranges' MAX_VELOCITY_MAX.
+    ## Stated here because this module sits upstream of config_ranges and
+    ## cannot import it; tests/test_body_core.nim holds the two equal.
+  BODY_LARGEST_SUBSTEP_DT* = 0.05 * 5.0
+    ## The longest a substep can be: src/app.nim caps a frame's raw delta at
+    ## 0.05 s and multiplies by timeScale, whose ceiling is config_ranges'
+    ## TIME_SCALE_MAX; one substep takes the whole of it. tests/test_body_core.nim
+    ## holds both factors against their sources.
+  BODY_LARGEST_FRAME_FACTOR* =
+    BODY_LARGEST_SUBSTEP_DT / physics_core.FRAME_DT_REFERENCE
+    ## That substep as a multiple of the reference frame every force constant
+    ## here was measured against. The bodies strength reaches the shader already
+    ## multiplied by this factor at its worst, the way field-force.wgsl receives
+    ## its scale, so it is what the per-particle contribution is bounded by.
+
+  BODY_STRENGTH_CEILING* = 1.0
+    ## One is the whole coupling: this multiplies the entire output of both
+    ## bodies passes, so a value above one would amplify past the range the
+    ## stability sweep covers. Ask for a stronger pull through proximity, whose
+    ## ceiling answers.
+  BODY_FORCE_CEILING* = 10.0
+    ## The largest magnitude proximity or enclosure may carry, as a velocity
+    ## impulse per reference frame. Both are signed and their ranges are
+    ## symmetric about zero, since each sign is an ordinary value of one
+    ## quantity rather than a second parameter.
+  BODY_RADIUS_FLOOR* = 40.0
+  BODY_RADIUS_CEILING* = 800.0
+    ## A body a fifth of the world across at its widest. Above that a body
+    ## stops reading as a shape inside the world and starts reading as the
+    ## world's own boundary.
+  BODY_BAND_CEILING* = 600.0
+  BODY_LIFETIME_FLOOR* = 0.5
+  BODY_LIFETIME_CEILING* = 60.0
+  BODY_IGNITION_RATE_CEILING* = 2.0
+    ## Bodies per second the world may ignite unasked. Its floor is zero and
+    ## that is the shipped default: a world does not make shapes nobody asked
+    ## for until someone asks.
+  BODY_ANISOTROPY_FLOOR* = 0.25
+  BODY_ANISOTROPY_CEILING* = 4.0
+    ## Reciprocal ends, so a body is as elongated one way as the other.
+
+  BODY_BAND_FLOOR* =
+    BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+    ## DERIVED, not chosen: the distance a particle at the speed cap covers in
+    ## the largest substep. A particle crossing an enclosing surface has to land
+    ## inside the band on the substep that carries it across, or it skips the
+    ## ramp entirely and meets the wall at full strength as a step — the corner
+    ## in the force the easing elsewhere in this module exists to prevent. At
+    ## this floor the fastest particle the world admits still lands on the ramp.
+    ## Re-derive when the speed ceiling, the frame cap or the time-scale ceiling
+    ## moves.
+
+  BODY_MAX_FORCE_PER_PARTICLE* =
+    2.0 * BODY_FORCE_CEILING * BODY_STRENGTH_CEILING * BODY_LARGEST_FRAME_FACTOR
+    ## The largest velocity impulse one body may hand one particle in one
+    ## substep. Twice the force ceiling because proximity and enclosure come out
+    ## of one evaluation and can point the same way.
+
+  BODY_FIXED_POINT_SCALE* = 16.0
     ## The per-body force accumulator's own scale, far coarser than
     ## velocityDelta's 65536. One body's word may receive a contribution from
     ## every particle in the world in a single dispatch, where a particle's word
-    ## receives only its own; the static assertion beside the ranges relates the
-    ## budget, the largest contribution the ranges admit, and this scale.
-  BODY_TORQUE_FIXED_SCALE* = 0.125
+    ## receives only its own; the static assertion below relates the budget, the
+    ## largest contribution the bounds admit, and this scale, and is what fixes
+    ## the value here.
+  BODY_TORQUE_FIXED_SCALE* = 1.0 / 128.0
     ## The torque word's scale, coarser again because torque carries a lever arm
-    ## bounded only by the world's half-diagonal. Below one: eight torque units
-    ## to the accumulator's unit. A body's moment of inertia is of order its
-    ## mass times its size squared, so one unit of torque turns it by far less
-    ## than a frame can show, and the resolution that matters is the summed
-    ## crowd's rather than one particle's.
+    ## bounded only by the world's half-diagonal. Below one: 128 torque units to
+    ## the accumulator's unit. A body's moment of inertia is of order its mass
+    ## times its size squared, so one unit of torque turns it by far less than a
+    ## frame can show, and the resolution that matters is the summed crowd's
+    ## rather than one particle's.
   BODY_DENSITY* = 0.05
-    ## A body's mass per unit of its own area, in the units a particle's impulse
-    ## carries — a particle is one mass unit, so this says how many particles a
-    ## body of unit area weighs. Provisional until the stability sweep warrants
-    ## it.
-  BODY_LINEAR_DAMPING* = 0.7
-  BODY_ANGULAR_DAMPING* = 0.7
+    ## A body's mass per unit of its own bounding area, in the units a particle
+    ## impulse carries — a particle is one mass unit, so this says how many
+    ## particles a body of unit area weighs. At the default radius a body weighs
+    ## of order a thousand particles, so a handful of neighbours barely moves it
+    ## and a crowd does. First of the three mechanisms the stability sweep
+    ## reaches for, and the only one that is physics rather than a bound.
+  BODY_LINEAR_DAMPING* = 0.96
+  BODY_ANGULAR_DAMPING* = 0.96
     ## Velocity retained per reference frame, applied as pow(damping, dt) so the
-    ## substep count cannot change how fast a body settles. Provisional until
-    ## the stability sweep warrants them.
-  BODY_MAX_SPEED_CHANGE* = 4.0
+    ## substep count cannot change how fast a body settles. At this retention a
+    ## body coasts to a tenth of its speed over about sixty reference frames —
+    ## half a second of drift after the crowd that pushed it disperses, which is
+    ## what makes a body read as carried rather than as switched off.
+  BODY_MAX_SPEED_CHANGE* = 40.0
     ## The most one reference frame of accumulated impulse may change a body's
-    ## speed by, in world units per frame. Provisional until the stability sweep
-    ## warrants it.
-  BODY_MAX_SPIN_CHANGE* = 0.02
-    ## The same cap on angular speed, in radians per frame. Provisional until
-    ## the stability sweep warrants it.
+    ## speed by, in world units per second. With the damping above it fixes the
+    ## reachable ceiling at cap * frames * d / (1 - d), between five hundred and
+    ## a thousand world units a second depending on the frame length — a body
+    ## crossing the world in four to eight seconds at its fastest and never
+    ## faster however large the crowd. Third mechanism: it bounds what one
+    ## substep may do to one body without bounding what a player may ask for.
+  BODY_MAX_SPIN_CHANGE* = 0.03
+    ## The same cap on angular speed, in radians per second. The same geometric
+    ## sum puts a body's fastest turn near half a radian a second, a slow tumble
+    ## rather than a spin.
 
 static:
   doAssert abs(ENVELOPE_PROPORTIONS.attack + ENVELOPE_PROPORTIONS.hold +
@@ -155,6 +225,31 @@ static:
   doAssert ENVELOPE_PROPORTIONS.attack > 0.0 and
     ENVELOPE_PROPORTIONS.hold > 0.0 and ENVELOPE_PROPORTIONS.decay > 0.0 and
     ENVELOPE_PROPORTIONS.release > 0.0
+  # The body accumulator cannot overflow its fixed-point range. One body's word
+  # may receive a contribution from EVERY particle in the world in a single
+  # dispatch, where velocityDelta's word receives only that particle's own, so
+  # the two scales are not the same number and this is what fixes theirs.
+  # Widening a bodies bound, raising the particle budget, lengthening the
+  # largest frame, or coarsening a scale all land here rather than wrapping
+  # around in the browser — where a wrapped word shows as a body flung across
+  # the world, a bug that looks like physics.
+  doAssert float(MAX_PARTICLES) * BODY_MAX_FORCE_PER_PARTICLE *
+    BODY_FIXED_POINT_SCALE < float(high(int32)),
+    "the body force accumulator overflows int32 under a full crowd; widen " &
+    "BODY_FIXED_POINT_SCALE's headroom or narrow what the bounds admit"
+  # Torque carries a lever arm, bounded by the minimum image and so by the
+  # world's half-diagonal, which is why its word needs a scale of its own.
+  doAssert float(MAX_PARTICLES) * BODY_MAX_FORCE_PER_PARTICLE *
+    BODY_WORLD_HALF_DIAGONAL * BODY_TORQUE_FIXED_SCALE < float(high(int32)),
+    "the body torque accumulator overflows int32 under a full crowd at the " &
+    "world's half-diagonal"
+  doAssert BODY_BAND_FLOOR < BODY_BAND_CEILING
+  doAssert BODY_RADIUS_FLOOR < BODY_RADIUS_CEILING
+  doAssert BODY_LIFETIME_FLOOR > 0.0 and
+    BODY_LIFETIME_FLOOR < BODY_LIFETIME_CEILING,
+    "a lifetime of zero is a body that never existed, not a quieter one"
+  doAssert BODY_ANISOTROPY_FLOOR > 0.0,
+    "a zero semi-axis divides by zero in the evaluation"
   doAssert ENVELOPE_SKEW_SPAN <
     min(ENVELOPE_PROPORTIONS.attack + ENVELOPE_PROPORTIONS.hold,
       ENVELOPE_PROPORTIONS.decay + ENVELOPE_PROPORTIONS.release),
@@ -316,40 +411,64 @@ func decoded*(accumulator: BodyAccumulator): tuple[
    forceY: accumulator.forceY.float / BODY_FIXED_POINT_SCALE,
    torque: accumulator.torque.float / BODY_TORQUE_FIXED_SCALE)
 
-func bodyRigidStep*(body: Body; forceX, forceY, torque, dt,
+func bodyRigidStep*(body: Body; forceX, forceY, torque, dtSeconds,
     worldW, worldH: float): Body =
   ## Semi-implicit Euler: velocity first, then position from the new velocity —
   ## what integrate.wgsl already does for particles, and unconditionally more
   ## forgiving than explicit Euler at the same cost.
   ##
-  ## Damping is exponential in dt, so the substep count decides how finely a
-  ## frame is cut and never how fast a body comes to rest. `dt` is the substep's
-  ## share of a reference frame: one at a single substep, a third at three.
+  ## TWO CLOCKS, and they are not the same one. Position advances over
+  ## `dtSeconds`, the substep's own timestep, exactly as a particle's does.
+  ## Damping and the change caps run on the REFERENCE FRAME, the unit every
+  ## force constant in this repository was measured in, so a body settles over
+  ## the same wall clock whatever the frame rate and however many substeps the
+  ## fluid asks for.
   ##
-  ## The per-substep change caps bound what one substep may do to one body
+  ## THE ACCUMULATED REACTION IS AN IMPULSE, NOT A FORCE, so no timestep
+  ## multiplies it here. body-force.wgsl hands each particle a velocity impulse
+  ## carrying the substep's frame already — the scaling field-force.wgsl
+  ## receives through its own scale — and accumulates that impulse's negation.
+  ## Multiplying by a timestep a second time would make a frame's effect on a
+  ## body scale as the square of the frame length over the substep count, which
+  ## no substep count leaves invariant.
+  ##
+  ## The per-frame change caps bound what one substep may do to one body
   ## without bounding what a player may ask for. They are the third mechanism
   ## the stability sweep reaches for, after the mass and the damping.
   result = body
-  var changeX = forceX * body.invMass * dt
-  var changeY = forceY * body.invMass * dt
-  let allowance = BODY_MAX_SPEED_CHANGE * dt
+  let frames = frameFactor(dtSeconds)
+  var changeX = forceX * body.invMass
+  var changeY = forceY * body.invMass
+  let allowance = BODY_MAX_SPEED_CHANGE * frames
   let asked = sqrt(changeX * changeX + changeY * changeY)
   if asked > allowance:
     changeX = changeX * allowance / asked
     changeY = changeY * allowance / asked
-  let spinAllowance = BODY_MAX_SPIN_CHANGE * dt
-  let changeSpin = clamp(torque * body.invInertia * dt,
+  let spinAllowance = BODY_MAX_SPIN_CHANGE * frames
+  let changeSpin = clamp(torque * body.invInertia,
     -spinAllowance, spinAllowance)
-  result.velX = (body.velX + changeX) * pow(BODY_LINEAR_DAMPING, dt)
-  result.velY = (body.velY + changeY) * pow(BODY_LINEAR_DAMPING, dt)
-  result.angVel = (body.angVel + changeSpin) * pow(BODY_ANGULAR_DAMPING, dt)
-  result.centerX = wrapToTorus(body.centerX + result.velX * dt, worldW)
-  result.centerY = wrapToTorus(body.centerY + result.velY * dt, worldH)
-  result.angle = body.angle + result.angVel * dt
+  result.velX = (body.velX + changeX) * pow(BODY_LINEAR_DAMPING, frames)
+  result.velY = (body.velY + changeY) * pow(BODY_LINEAR_DAMPING, frames)
+  result.angVel =
+    (body.angVel + changeSpin) * pow(BODY_ANGULAR_DAMPING, frames)
+  result.centerX = wrapToTorus(body.centerX + result.velX * dtSeconds, worldW)
+  result.centerY = wrapToTorus(body.centerY + result.velY * dtSeconds, worldH)
+  result.angle = body.angle + result.angVel * dtSeconds
 
 # ==============================================================================
 # IGNITION AND SLOTS
 # ==============================================================================
+
+func bodyInverseMasses*(radius, anisotropy: float): tuple[
+    invMass, invInertia: float] =
+  ## Mass from area, so a big body is hard to push and a small one skitters, and
+  ## the moment of inertia the ellipse's own m(a^2 + b^2)/4. Stored inverted:
+  ## the shader divides nothing.
+  let semiX = radius
+  let semiY = radius * anisotropy
+  let mass = BODY_DENSITY * semiX * semiY
+  let inertia = mass * (semiX * semiX + semiY * semiY) * 0.25
+  (invMass: 1.0 / mass, invInertia: 1.0 / inertia)
 
 func initBodyState*(): BodyState =
   ## Every slot free. A slot with no lifetime has never held a body, which is
@@ -393,13 +512,7 @@ proc igniteBody*(state: var BodyState; atX, atY: float;
   for index, slot in state.slots:
     if slot.slotIsLive(nowSeconds):
       continue
-    let semiX = disposition.radius
-    let semiY = disposition.radius * shaping.anisotropy
-    # Mass from area, so a big body is hard to push and a small one skitters,
-    # and the moment of inertia the ellipse's own m(a^2 + b^2)/4. Stored
-    # inverted: the shader divides nothing.
-    let mass = BODY_DENSITY * semiX * semiY
-    let inertia = mass * (semiX * semiX + semiY * semiY) * 0.25
+    let masses = bodyInverseMasses(disposition.radius, shaping.anisotropy)
     state.slots[index] = BodySlot(
       ignitedAt: nowSeconds,
       lifetime: disposition.lifetime,
@@ -413,7 +526,7 @@ proc igniteBody*(state: var BodyState; atX, atY: float;
         bandWidth: disposition.bandWidth,
         proximity: disposition.proximity,
         enclosure: disposition.enclosure,
-        invMass: 1.0 / mass,
-        invInertia: 1.0 / inertia))
+        invMass: masses.invMass,
+        invInertia: masses.invInertia))
     return true
   false

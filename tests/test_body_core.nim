@@ -7,9 +7,12 @@
 ## circle in closed form, Newton's third law, the lifetime argument itself, and
 ## symmetry.
 
-import std/[unittest, math, os, strutils]
+import std/[unittest, math, os, strutils, strformat]
 import ../src/body_core
 import ../src/memory_layout
+import ../src/physics_core
+import ../src/sph_core
+import ../src/config_ranges
 
 const BODY_CORE_TESTS_LOADED* = true
 
@@ -546,13 +549,16 @@ suite "A Body Is Pushed By The Particles It Pushes":
     check moved.centerX > body.centerX
 
   test "the rigid step wraps a body across the world edge":
+    # The step's timestep is seconds, as a particle's is: a body at 600 world
+    # units a second crosses tens of units in the twentieth of a second this
+    # takes, which is enough to carry it over a seam two units away.
     var body = pushable(1.0, 0.0)
     body.centerX = TEST_WORLD_W - 2.0
-    body.velX = 6.0
-    let moved = bodyRigidStep(body, 0.0, 0.0, 0.0, 1.0, WORLD_W, WORLD_H)
+    body.velX = 600.0
+    let moved = bodyRigidStep(body, 0.0, 0.0, 0.0, 0.05, WORLD_W, WORLD_H)
     check moved.centerX >= 0.0
     check moved.centerX < TEST_WORLD_W
-    check moved.centerX < 10.0
+    check moved.centerX < 100.0
 
   test "exponential damping settles a body in the same time at any substep count":
     # CONTRACT: damping is exponential in dt, so the substep count decides how
@@ -572,6 +578,331 @@ suite "A Body Is Pushed By The Particles It Pushes":
     check abs(coarse.velX) < 40.0
     check abs(coarse.velX) > 0.0
 
+suite "A Crowd Cannot Drive A Body Unstable":
+  # The measurement gate for BODY_DENSITY, the two damping constants and the two
+  # per-substep change caps. Feedback is the part of this capability whose
+  # feasibility a reading of the code cannot settle: up to MAX_PARTICLES
+  # particles may touch one body in one dispatch, each handing back an impulse
+  # and a torque, and the body it moves is the body they are steering toward.
+  #
+  # FOUR PREMISES. Any of these moving re-runs this suite:
+  #   1. the particle budget, memory_layout.MAX_PARTICLES
+  #   2. the strength ceiling, BODY_STRENGTH_CEILING, and the force ceiling
+  #      BODY_FORCE_CEILING the two signed parameters share
+  #   3. the force law in bodyForceAt and the step in bodyRigidStep
+  #   4. the substep count, sph_core's SPH_MAX_SUBSTEPS, and the largest frame
+  #      BODY_LARGEST_FRAME_FACTOR states
+  #
+  # Every run is at the WORST reachable frame: BODY_LARGEST_FRAME_FACTOR
+  # reference frames of impulse per rendered frame, cut into `substeps` pieces.
+  # A shorter frame is strictly gentler on an explicit step, so a bound earned
+  # here covers every frame the app can run.
+
+  const CROWD_SAMPLES = 24
+    ## The crowd is carried by this many weighted samples rather than by
+    ## MAX_PARTICLES individuals: the body reads only the SUM of the reactions,
+    ## and a sample standing for `crowd / CROWD_SAMPLES` particles at one point
+    ## contributes exactly what those particles would if they were together.
+    ## Together is the worst case — spread out they cancel — so the sweep
+    ## measures the coherent crowd and covers the scattered one.
+  const SWEEP_FRAMES = 480
+    ## Rendered frames per run. At the largest frame that is 40 seconds of
+    ## wall clock, long enough that a body under a steady crowd reaches its
+    ## terminal speed several times over and a divergent one has left the world.
+  const SETTLING_TOLERANCE = 2.0
+    ## How much larger the second half's peak may be than the first half's
+    ## before the run counts as still growing. A body under a steady crowd
+    ## reaches a terminal speed and wanders about it, and a chaotic wander
+    ## measured over two half-windows moves by tens of a percent; a loop that is
+    ## actually gaining moves by hundreds of times, which the first run of this
+    ## sweep showed before the impulse cap and the damping were set.
+
+  func reachableCeiling(perFrameCap, frames: float): float =
+    ## ORACLE for the bound tests below: the geometric sum, written out rather
+    ## than taken from the step under test. Every substep takes
+    ## `v <- (v + a) * d` with `a` at most `perFrameCap * frames` and
+    ## `d = damping^frames`, so from rest the speed can never pass
+    ## `a * (d + d^2 + ...)` however long the run and however large the crowd.
+    ## The step's stability is this sum being finite, which it is for every
+    ## damping below one.
+    let retained = pow(BODY_LINEAR_DAMPING, frames)
+    perFrameCap * frames * retained / (1.0 - retained)
+
+  type CrowdRun = object
+    ## One run's coordinate and what it measured, so a red reads as a place in
+    ## the space rather than as "the sweep failed".
+    crowd, strength, proximity, enclosure, band, radius, anisotropy: float
+    substeps: int
+    finite: bool
+    peakSpeed, peakSpin: float
+    earlyPeakSpeed, latePeakSpeed: float
+    earlyPeakSpin, latePeakSpin: float
+
+  func describe(run: CrowdRun): string =
+    &"crowd {run.crowd:.0f}, strength {run.strength:.2f}, " &
+    &"proximity {run.proximity:.1f}, enclosure {run.enclosure:.1f}, " &
+    &"band {run.band:.0f}, radius {run.radius:.0f}, " &
+    &"anisotropy {run.anisotropy:.2f}, substeps {run.substeps} -> " &
+    &"peak speed {run.peakSpeed:.4f} (halves {run.earlyPeakSpeed:.4f} then " &
+    &"{run.latePeakSpeed:.4f}), peak spin {run.peakSpin:.6f} (halves " &
+    &"{run.earlyPeakSpin:.6f} then {run.latePeakSpin:.6f})"
+
+  func settled(run: CrowdRun): bool =
+    ## The comparison carries the accumulator's own resolution as its floor: a
+    ## body whose whole motion is one fixed-point unit of impulse is reporting
+    ## quantization rather than dynamics, and a ratio taken there measures the
+    ## truncation.
+    let masses = bodyInverseMasses(run.radius, run.anisotropy)
+    let speedFloor = masses.invMass / BODY_FIXED_POINT_SCALE
+    let spinFloor = masses.invInertia / BODY_TORQUE_FIXED_SCALE
+    run.finite and
+      run.latePeakSpeed <=
+        run.earlyPeakSpeed * SETTLING_TOLERANCE + speedFloor and
+      run.latePeakSpin <= run.earlyPeakSpin * SETTLING_TOLERANCE + spinFloor
+
+  proc runCrowdPush(crowd, strength, proximity, enclosure, band, radius,
+      anisotropy: float; substeps: int;
+      frames = SWEEP_FRAMES): CrowdRun =
+    ## One body, one coherent crowd pressed against it, the loop closed at the
+    ## frame rate: particles take the impulse, the body takes its negation, both
+    ## move, and the next substep evaluates at the new arrangement.
+    result = CrowdRun(crowd: crowd, strength: strength, proximity: proximity,
+      enclosure: enclosure, band: band, radius: radius, anisotropy: anisotropy,
+      substeps: substeps, finite: true)
+    let masses = bodyInverseMasses(radius, anisotropy)
+    var body = Body(centerX: BODY_WORLD_W * 0.5, centerY: BODY_WORLD_H * 0.5,
+      radius: radius, anisotropy: anisotropy, bandWidth: band,
+      proximity: proximity, enclosure: enclosure,
+      invMass: masses.invMass, invInertia: masses.invInertia)
+    let weight = crowd / CROWD_SAMPLES.float
+    # A wedge off the body's +x side straddling the surface: one-sided, so the
+    # reactions add instead of cancelling, and spanning the band so both force
+    # laws act at once.
+    var px, py, vx, vy: array[CROWD_SAMPLES, float]
+    for sample in 0 ..< CROWD_SAMPLES:
+      let bearing = -0.5 + sample.float / (CROWD_SAMPLES - 1).float
+      let reach = radius - band * 0.9 +
+        1.8 * band * ((sample.float * 0.6180339887) mod 1.0)
+      px[sample] = body.centerX + reach * cos(bearing)
+      py[sample] = body.centerY + reach * sin(bearing)
+    # Two clocks, as the step keeps them: seconds for travel, reference frames
+    # for the impulse the strength carries and for the damping.
+    let substepSeconds = BODY_LARGEST_SUBSTEP_DT / substeps.float
+    let substepFrames = BODY_LARGEST_FRAME_FACTOR / substeps.float
+    var speeds = newSeq[float](frames)
+    var spins = newSeq[float](frames)
+    for frame in 0 ..< frames:
+      for _ in 0 ..< substeps:
+        var accumulator = BodyAccumulator()
+        for sample in 0 ..< CROWD_SAMPLES:
+          let atX = px[sample]
+          let atY = py[sample]
+          let impulse = bodyForceAt(body, atX, atY,
+            BODY_WORLD_W, BODY_WORLD_H, 1.0, strength * substepFrames)
+          # Action and reaction are taken at the SAME point, which is what
+          # body-force.wgsl does by construction: one invocation evaluates the
+          # body once at the particle it holds. Taking the lever arm after the
+          # particle moved would invent a torque on a circle, whose force is
+          # radial and whose torque is therefore exactly zero.
+          accumulator.addBodyReaction(body, atX, atY,
+            BODY_WORLD_W, BODY_WORLD_H, impulse.x * weight, impulse.y * weight)
+          vx[sample] = vx[sample] + impulse.x
+          vy[sample] = vy[sample] + impulse.y
+          # integrate.wgsl's own post-step: friction at its most permissive
+          # setting (retention 1.0, the worst case for stability) and the speed
+          # cap at its ceiling.
+          let speed = sqrt(vx[sample] * vx[sample] + vy[sample] * vy[sample])
+          if speed > 0.0:
+            let capped = float(postStepSpeed(float32(speed), 1.0'f32,
+              float32(BODY_PARTICLE_SPEED_CEILING)))
+            vx[sample] = vx[sample] * capped / speed
+            vy[sample] = vy[sample] * capped / speed
+          px[sample] = wrapToTorus(px[sample] + vx[sample] * substepSeconds,
+            BODY_WORLD_W)
+          py[sample] = wrapToTorus(py[sample] + vy[sample] * substepSeconds,
+            BODY_WORLD_H)
+        let received = accumulator.decoded()
+        body = bodyRigidStep(body, received.forceX, received.forceY,
+          received.torque, substepSeconds, BODY_WORLD_W, BODY_WORLD_H)
+      let speed = sqrt(body.velX * body.velX + body.velY * body.velY)
+      let spin = abs(body.angVel)
+      if classify(speed) in {fcNan, fcInf, fcNegInf} or
+          classify(spin) in {fcNan, fcInf, fcNegInf}:
+        result.finite = false
+        return
+      speeds[frame] = speed
+      spins[frame] = spin
+      result.peakSpeed = max(result.peakSpeed, speed)
+      result.peakSpin = max(result.peakSpin, spin)
+    proc peakOver(values: seq[float]; fromFrame, toFrame: int): float =
+      for frame in fromFrame ..< toFrame:
+        result = max(result, values[frame])
+    result.earlyPeakSpeed = peakOver(speeds, 0, frames div 2)
+    result.latePeakSpeed = peakOver(speeds, frames div 2, frames)
+    result.earlyPeakSpin = peakOver(spins, 0, frames div 2)
+    result.latePeakSpin = peakOver(spins, frames div 2, frames)
+
+  # The lattice, evaluated once for the suite. Each axis runs to the bound the
+  # shipped range will carry, so the sweep covers every world a player can
+  # reach and not one the panel cannot express.
+  let sweep = block:
+    var runs: seq[CrowdRun] = @[]
+    for crowd in [1000.0, MAX_PARTICLES.float * 0.25, MAX_PARTICLES.float]:
+      for strength in [BODY_STRENGTH_CEILING * 0.5, BODY_STRENGTH_CEILING]:
+        for proximity in [-BODY_FORCE_CEILING, 0.0, BODY_FORCE_CEILING]:
+          for enclosure in [-BODY_FORCE_CEILING, 0.0, BODY_FORCE_CEILING]:
+            for band in [BODY_BAND_FLOOR, BODY_BAND_CEILING]:
+              for radius in [BODY_RADIUS_FLOOR, BODY_RADIUS_CEILING]:
+                for anisotropy in [1.0, BODY_ANISOTROPY_CEILING]:
+                  for substeps in [1, 3]:
+                    runs.add runCrowdPush(crowd, strength, proximity,
+                      enclosure, band, radius, anisotropy, substeps)
+    runs
+
+  test "the sweep reaches every corner of the space a player can express":
+    # A sweep over an empty lattice passes vacuously; this is the positive
+    # claim about the subject that keeps the ones below from being free.
+    check sweep.len == 3 * 2 * 3 * 3 * 2 * 2 * 2 * 2
+    var strongest = 0.0
+    for run in sweep:
+      strongest = max(strongest, run.peakSpeed)
+    check strongest > 0.0
+
+  test "no reachable crowd carries a body past the ceiling its cap and damping set":
+    # The stability claim itself, against the closed-form sum rather than
+    # against anything the step computes. Whatever the crowd, whatever the
+    # coordinate, the speed stays under the geometric ceiling; that is what
+    # makes the loop bounded rather than merely slow to diverge.
+    var breached = 0
+    var worst = ""
+    for run in sweep:
+      let speedCeiling = reachableCeiling(BODY_MAX_SPEED_CHANGE,
+        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+      let spinCeiling = reachableCeiling(BODY_MAX_SPIN_CHANGE,
+        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+      # The sum is attained in the limit, so the comparison carries a
+      # relative epsilon rather than testing a float against its own limit.
+      if not run.finite or run.peakSpeed > speedCeiling * 1.000001 or
+          run.peakSpin > spinCeiling * 1.000001:
+        inc breached
+        if worst.len == 0:
+          worst = &"{run.describe} against ceilings {speedCeiling:.4f} / " &
+            &"{spinCeiling:.6f}"
+    if breached > 0:
+      checkpoint(&"{breached} of {sweep.len} runs passed the ceiling; " &
+        &"first: {worst}")
+    check breached == 0
+
+  test "a run still gaining at its end is a transient the clock closes":
+    # The control that separates a slow transient from a divergence: run the
+    # same coordinate four times as long. A transient's half-to-half growth
+    # shrinks as the window widens, because the thing that was still rising has
+    # finished rising; a divergence's does not, because there is nothing for it
+    # to finish. The tolerance below is met by the great majority of the space
+    # outright, and this is what earns the rest.
+    var gaining: seq[CrowdRun] = @[]
+    for run in sweep:
+      if not run.settled:
+        gaining.add run
+    checkpoint(&"{gaining.len} of {sweep.len} runs were still gaining at " &
+      &"{SWEEP_FRAMES} frames")
+    check gaining.len * 10 < sweep.len
+    for run in gaining:
+      let longer = runCrowdPush(run.crowd, run.strength, run.proximity,
+        run.enclosure, run.band, run.radius, run.anisotropy, run.substeps,
+        frames = SWEEP_FRAMES * 4)
+      let ceilingAt = reachableCeiling(BODY_MAX_SPEED_CHANGE,
+        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+      let spinCeilingAt = reachableCeiling(BODY_MAX_SPIN_CHANGE,
+        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+      checkpoint("four times as long: " & longer.describe)
+      check longer.finite
+      check longer.peakSpeed <= ceilingAt * 1.000001
+      check longer.peakSpin <= spinCeilingAt * 1.000001
+      check longer.settled
+
+  test "the substep count moves the reachable ceiling by less than a factor of two":
+    # The ceiling is not perfectly substep-invariant and cannot be: damping is
+    # applied after each substep, so an impulse delivered early in a finely cut
+    # frame is damped more times than the same impulse delivered whole. The
+    # claim is that the difference stays small enough that turning the fluid's
+    # substeps up does not read as restrengthening the bodies coupling.
+    let whole = reachableCeiling(BODY_MAX_SPEED_CHANGE,
+      BODY_LARGEST_FRAME_FACTOR)
+    let cut = reachableCeiling(BODY_MAX_SPEED_CHANGE,
+      BODY_LARGEST_FRAME_FACTOR / float(SPH_MAX_SUBSTEPS))
+    check whole > 0.0
+    check max(whole, cut) / min(whole, cut) < 2.0
+
+suite "An Enclosing Body Cannot Be Tunnelled":
+  # The band floor's warrant. It is a relation, not a choice: the fastest
+  # particle the world admits must land on the enclosure ramp on the substep
+  # that carries it across the surface, or it meets the wall at full strength
+  # as a step in the force.
+  #
+  # NOTE ON WHAT "TUNNELLED" MEANS HERE. Enclosure saturates rather than
+  # vanishing past the band (design D4's `saturate`), so an escaped particle is
+  # always brought back however far it got — escape is not the failure a
+  # narrower band buys. Skipping the ramp is.
+
+  const RADIUS = 400.0
+
+  func wall(band: float): Body =
+    ## A body that holds particles in, at the narrowest band under test.
+    let masses = bodyInverseMasses(RADIUS, 1.0)
+    Body(centerX: BODY_WORLD_W * 0.5, centerY: BODY_WORLD_H * 0.5,
+      radius: RADIUS, anisotropy: 1.0, bandWidth: band, proximity: 0.0,
+      enclosure: BODY_FORCE_CEILING,
+      invMass: masses.invMass, invInertia: masses.invInertia)
+
+  proc crossingDepth(band: float): float =
+    ## How far outside the surface the fastest particle lands on the substep
+    ## that carries it across, as a multiple of the band. Below one it is on
+    ## the ramp; at or above one it has skipped the ramp.
+    let body = wall(band)
+    # A particle a hair inside the surface, travelling straight out at the
+    # speed the range caps it at, over the longest substep the app can run.
+    let startX = body.centerX + RADIUS - 1e-6
+    let landedX = startX +
+      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+    let landed = sampleBody(body, landedX, body.centerY,
+      BODY_WORLD_W, BODY_WORLD_H)
+    landed.distance / band
+
+  test "the band floor is the travel of the fastest particle in the longest substep":
+    # DERIVED, stated as an executable relation rather than as a comment: a
+    # change to the speed ceiling or the frame cap that leaves this constant
+    # behind fails here.
+    check BODY_BAND_FLOOR ==
+      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+    check BODY_BAND_FLOOR > 0.0
+    check BODY_BAND_FLOOR < BODY_BAND_CEILING
+
+  test "the fastest particle crossing an enclosing surface lands on the ramp":
+    # Passes at the derived floor.
+    check crossingDepth(BODY_BAND_FLOOR) < 1.0
+    # And the force it meets there is a fraction of the wall, not the whole of
+    # it: the ramp did its job.
+    let body = wall(BODY_BAND_FLOOR)
+    let landedX = body.centerX + RADIUS - 1e-6 +
+      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+    let met = bodyForceAt(body, landedX, body.centerY,
+      BODY_WORLD_W, BODY_WORLD_H, 1.0, 1.0)
+    check abs(met.x) > 0.0
+    check abs(met.x) < body.enclosure
+
+  test "at half the derived floor the same particle skips the ramp":
+    # Fails at half of it, which is what makes the floor a bound rather than a
+    # preference. At half the band the crossing lands past the ramp's end and
+    # the particle meets the wall at its full strength in one step.
+    check crossingDepth(BODY_BAND_FLOOR * 0.5) >= 1.0
+    let body = wall(BODY_BAND_FLOOR * 0.5)
+    let landedX = body.centerX + RADIUS - 1e-6 +
+      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+    let met = bodyForceAt(body, landedX, body.centerY,
+      BODY_WORLD_W, BODY_WORLD_H, 1.0, 1.0)
+    check abs(abs(met.x) - body.enclosure) < EPSILON_LOOSE
+
 suite "The Body Oracle Names The World It Is Measured In":
   const CONFIG_FILE = "src" / "config.nim"
 
@@ -585,6 +916,33 @@ suite "The Body Oracle Names The World It Is Measured In":
     for line in readFile(CONFIG_FILE).splitLines():
       if line.startsWith("let " & name & "*"):
         return parseFloat(line.rsplit('=', 1)[1].strip())
+
+  proc frameDeltaCap(): float =
+    ## The largest raw frame delta src/app.nim will act on, read from source.
+    ## The oracle cannot import app.nim — it is the JS entry point — so the
+    ## premise is checked against the line that states it rather than assumed.
+    result = -1.0
+    const LOOP_FILE = "src" / "app.nim"
+    if not fileExists(LOOP_FILE): return
+    for line in readFile(LOOP_FILE).splitLines():
+      let trimmed = line.strip()
+      if trimmed.startsWith("let cappedDt = if rawDt >"):
+        return parseFloat(trimmed.split(':', 1)[0].rsplit('>', 1)[1].strip())
+
+  test "the premises the accumulator and the band floor rest on are the app's":
+    # FOUR PREMISES, each held here rather than restated in a comment: the
+    # particle speed ceiling, the longest frame, the substep ceiling, and the
+    # reference frame. Any of them moving re-runs the stability sweep and
+    # re-derives the band floor.
+    check BODY_PARTICLE_SPEED_CEILING == MAX_VELOCITY_MAX
+    check frameDeltaCap() > 0.0
+    check BODY_LARGEST_SUBSTEP_DT == frameDeltaCap() * TIME_SCALE_MAX
+    check BODY_LARGEST_FRAME_FACTOR ==
+      BODY_LARGEST_SUBSTEP_DT / FRAME_DT_REFERENCE
+    # One substep takes the whole frame, which is what makes the substep above
+    # the largest one the executor can produce.
+    check SPH_SUBSTEPS_MIN == 1
+    check SPH_SUBSTEPS_MAX == SPH_MAX_SUBSTEPS
 
   test "the world this suite measures in is the world the app runs":
     check worldExtent("WORLD_W") > 0.0
