@@ -41,7 +41,7 @@ A row SHALL carry exactly one of five kinds and only the fields that kind uses: 
 parameter id, a depth in [-1, 1], an attack constant and a release constant; `Write` with a parameter
 id, a jump flag and a rank;
 `Fire` with an action id and an ordinal; `Touch` with grid columns, grid rows, and a base note;
-`Tour` with a tour id, a boolean descriptor id gating the advance, a descriptor id scaling it, and
+`Tour` with a tour id, a declared gate id gating the advance, a descriptor id scaling it, and
 a rank. The row type SHALL admit no action or gesture field on a `Modulate` row, so modulating an
 action fails the Nim compile.
 
@@ -56,8 +56,9 @@ Validation SHALL hold five relations against the source declarations and the des
   (`src/web_api.nim:767-780`)
 - a `Modulate` target names a parameter of the simulation or render record store, while a `Write`
   target may name any id `setParam` routes (`src/web_api.nim:585-639`)
-- a `Tour` row names a tour id the tour registry carries, a boolean descriptor gating its advance,
-  and a speed descriptor whose range excludes negative values
+- a `Tour` row names a tour id the tour registry carries, a gate id the tour declarations carry
+  (the descriptor table holds no boolean kind, so gates are declared beside the tours), and a
+  speed descriptor whose range excludes negative values
 
 Enforcement: the row kinds are typed, so a field belonging to another kind fails the Nim compile.
 `tests/test_control_matrix.nim` holds the five relations against the live descriptor table.
@@ -272,7 +273,7 @@ position step, and disengagement across a slider move, a preset apply, and anoth
 
 A `Tour` row SHALL advance its own phase by the frame's capped wall-clock delta scaled by its speed
 descriptor, and SHALL write every axis of its tour from the point that phase names. It SHALL
-advance only while its gating boolean descriptor reads true. Advance SHALL follow the wall clock
+advance only while its declared gate reads true. Advance SHALL follow the wall clock
 and not the simulation clock, so a tour named in minutes takes that many minutes whatever
 `timeScale` holds (`src/app.nim:244-247`).
 
