@@ -441,28 +441,11 @@ func decoded*(accumulator: BodyAccumulator): tuple[
 
 func bodyRigidStep*(body: Body; forceX, forceY, torque, dtSeconds,
     worldW, worldH: float): Body =
-  ## Semi-implicit Euler: velocity first, then position from the new velocity —
-  ## what integrate.wgsl already does for particles, and unconditionally more
-  ## forgiving than explicit Euler at the same cost.
-  ##
-  ## TWO CLOCKS, and they are not the same one. Position advances over
-  ## `dtSeconds`, the substep's own timestep, exactly as a particle's does.
-  ## Damping and the change caps run on the REFERENCE FRAME, the unit every
-  ## force constant in this repository was measured in, so a body settles over
-  ## the same wall clock whatever the frame rate and however many substeps the
-  ## fluid asks for.
-  ##
-  ## THE ACCUMULATED REACTION IS AN IMPULSE, NOT A FORCE, so no timestep
-  ## multiplies it here. body-force.wgsl hands each particle a velocity impulse
-  ## carrying the substep's frame already — the scaling field-force.wgsl
-  ## receives through its own scale — and accumulates that impulse's negation.
-  ## Multiplying by a timestep a second time would make a frame's effect on a
-  ## body scale as the square of the frame length over the substep count, which
-  ## no substep count leaves invariant.
-  ##
-  ## The per-frame change caps bound what one substep may do to one body
-  ## without bounding what a player may ask for. They are the third mechanism
-  ## the stability sweep reaches for, after the mass and the damping.
+  ## Semi-implicit Euler: velocity first, then position from the new velocity.
+  ## The accumulated reaction is a velocity impulse that already carries the
+  ## substep's frame, so no timestep multiplies it. Damping and the change caps
+  ## run on the reference-frame count, the unit every force constant here is
+  ## measured in; position advances over `dtSeconds` as a particle's does.
   result = body
   let frames = frameFactor(dtSeconds)
   var changeX = forceX * body.invMass
