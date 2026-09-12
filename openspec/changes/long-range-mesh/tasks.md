@@ -74,7 +74,7 @@ Everything in this group is native Nim. No shader, no buffer, no panel.
       to under an asymmetric one, with the same arrangement in both. Verify: the new tests fail
 - [x] 1.8 Add the matrix-weighted k-space mix and the gradient sampler to `src/long_range_core.nim`.
       Verify: 1.7 passes
-- [ ] 1.9 `just happen` builds and `just check` is green
+- [x] 1.9 `just happen` builds and `just check` is green
 
 ## 2. The numbers, the panel surface, and the preset
 
@@ -115,7 +115,7 @@ defaults to zero.
       migration branch. Then add the fields to `PresetSettings`, `defaultSettings`, `validateSettings`
       and `toJson` in `src/preset.nim`, adding no schema version and no `LEGACY_MODE_COUPLINGS` row.
       Verify: both cases pass and `CURRENT_SCHEMA_VERSION` is unchanged
-- [ ] 2.8 `just happen` builds and `just check` is green
+- [x] 2.8 `just happen` builds and `just check` is green
 
 ## 3. The frame: a fifth strength and a chain that skips as one
 
@@ -151,7 +151,7 @@ default strength of zero means no frame dispatches it yet, so the app keeps runn
       add `LONG_RANGE_SPECS` to `src/shader_manifest.nim` and append it in `allShaderSpecs`, two keys
       sharing `lr-fft-rows.wgsl` at different entry points and two sharing `lr-fft-cols.wgsl`. Verify:
       every key any frame dispatches is registered exactly once
-- [ ] 3.7 `just happen` builds and `just check` is green
+- [x] 3.7 `just happen` builds and `just check` is green
 
 ## 4. Layouts, buffers, and the executor's third dimension
 
@@ -177,7 +177,7 @@ default strength of zero means no frame dispatches it yet, so the app keeps runn
       folding the substep's frame into the force scale the way `frameScaledFieldForce` does
       (`src/field_core.nim`), and mapping the reach to the inverse squared screening length so nothing
       in the shader divides. Verify: `just happen` builds
-- [ ] 4.6 `just happen` builds and `just check` is green
+- [x] 4.6 `just happen` builds and `just check` is green
 
 ## 5. The five passes
 
@@ -212,7 +212,7 @@ held by review — change a shader and its oracle in the same diff or the pair d
       `getExpectedEntryCount`, and bind-group creation ending in `validateBindGroupEntryCount` in
       `src/webgpu_compute.nim`. Verify: `just happen` builds, and a deliberately wrong count in one
       constant is caught by that call rather than by the browser
-- [ ] 5.8 `just happen` builds and `just check` is green
+- [x] 5.8 `just happen` builds and `just check` is green
 
 ## 6. In-app verification, the remaining budget, and the records
 
