@@ -5,7 +5,7 @@
 #
 # CORNERS, NOT SAMPLES. buildFrame asks exactly one question of each strength —
 # is it zero — so the frame space is finite however continuous the strengths
-# are, and these sixteen worlds are all of it. A test needing the values BETWEEN
+# are, and these thirty-two worlds are all of it. A test needing the values BETWEEN
 # the corners is testing physics rather than frame composition, and belongs with
 # the oracle that mirrors that physics (sph_core, field_core, physics_core).
 #
@@ -28,15 +28,16 @@ const ALL_COUPLINGS* = block:
     for fluid in [COUPLING_OFF, COUPLING_ON]:
       for deposit in [COUPLING_OFF, COUPLING_ON]:
         for fieldForce in [COUPLING_OFF, COUPLING_ON]:
-          combinations.add WorldCouplings(forces: forces, fluid: fluid,
-            deposit: deposit, fieldForce: fieldForce)
+          for bodies in [COUPLING_OFF, COUPLING_ON]:
+            combinations.add WorldCouplings(forces: forces, fluid: fluid,
+              deposit: deposit, fieldForce: fieldForce, bodies: bodies)
   combinations
 
 const FULLY_COUPLED* = WorldCouplings(forces: COUPLING_ON, fluid: COUPLING_ON,
-  deposit: COUPLING_ON, fieldForce: COUPLING_ON)
+  deposit: COUPLING_ON, fieldForce: COUPLING_ON, bodies: COUPLING_ON)
   ## Every coupling acting. The world every skip is measured against.
 
 const UNCOUPLED* = WorldCouplings(forces: COUPLING_OFF, fluid: COUPLING_OFF,
-  deposit: COUPLING_OFF, fieldForce: COUPLING_OFF)
+  deposit: COUPLING_OFF, fieldForce: COUPLING_OFF, bodies: COUPLING_OFF)
   ## Every strength at zero. Still a world, still running: what survives here is
   ## the definition of world-intrinsic.

@@ -465,6 +465,37 @@ suite "Nim Owns Ignition And Slots, And Knows Them From The Clock Alone":
     check larger.invMass < body.invMass
     check larger.invInertia < body.invInertia
 
+  # ORACLE: config_ranges' shaping bounds, the same numbers every other source
+  # of an ignition would have to know. They are checked here against what a body
+  # ends up holding, so the entry point is what enforces them.
+  test "shaping past its bounds ignites as the nearest admissible value":
+    var state = initBodyState()
+    check state.igniteBody(10.0, 20.0, disposition(),
+      BodyShaping(anisotropy: BODY_ANISOTROPY_MAX * 4.0,
+        envelopeSkew: BODY_ENVELOPE_SKEW_MAX + 2.0,
+        sustain: BODY_SUSTAIN_MAX + 3.0), 0.0)
+    check state.slots[0].body.anisotropy == BODY_ANISOTROPY_MAX
+    check state.slots[0].envelopeSkew == BODY_ENVELOPE_SKEW_MAX
+    check state.slots[0].sustain == BODY_SUSTAIN_MAX
+    check state.igniteBody(10.0, 20.0, disposition(),
+      BodyShaping(anisotropy: BODY_ANISOTROPY_MIN * 0.01,
+        envelopeSkew: BODY_ENVELOPE_SKEW_MIN - 2.0,
+        sustain: BODY_SUSTAIN_MIN - 3.0), 0.0)
+    check state.slots[1].body.anisotropy == BODY_ANISOTROPY_MIN
+    check state.slots[1].envelopeSkew == BODY_ENVELOPE_SKEW_MIN
+    check state.slots[1].sustain == BODY_SUSTAIN_MIN
+
+  test "the mass a clamped ignition derives is the clamped shape's":
+    # The bound holds ahead of everything ignition computes, so no caller can
+    # reach the derivation with an unclamped shape.
+    var state = initBodyState()
+    check state.igniteBody(0.0, 0.0, disposition(),
+      BodyShaping(anisotropy: BODY_ANISOTROPY_MAX * 4.0, envelopeSkew: 0.0,
+        sustain: 0.5), 0.0)
+    let expected = bodyInverseMasses(disposition().radius, BODY_ANISOTROPY_MAX)
+    check state.slots[0].body.invMass == expected.invMass
+    check state.slots[0].body.invInertia == expected.invInertia
+
 suite "A Body Is Pushed By The Particles It Pushes":
   const WORLD_W = TEST_WORLD_W
   const WORLD_H = TEST_WORLD_H

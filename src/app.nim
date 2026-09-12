@@ -294,6 +294,11 @@ proc loop(now: float): Future[void] {.async.} =
   # dt: the analyser reports what the room is doing right now.
   audio_input.pollAudioFrame(cappedDt)
 
+  # The bodies age on that same wall clock: a lifetime in seconds means seconds
+  # whatever Time Scale says, and capped delta means a stalled frame does not
+  # retire a body nobody watched live.
+  webgpu_compute.advanceBodyClock(cappedDt)
+
   await physics(dt)
 
   # Render using WebGPU - data stays on GPU, no readback needed. Render/glow
@@ -401,6 +406,7 @@ proc init(): Future[void] {.async, exportc.} =
   canvas_input.setResizeParticlesCallback(resizeParticles)
   canvas_input.setResizeCallback(webgpu_render.resize)
   canvas_input.setReseedFieldCallback(webgpu_compute.requestFieldSeed)
+  canvas_input.setIgniteBodyCallback(webgpu_compute.igniteBody)
   # Camera hooks. canvas_input sits a layer below webgpu_render and cannot read
   # the camera directly, so the wheel and key handlers reach it through these.
   # Wired BEFORE setupEvents, so no event can arrive against a nil hook.

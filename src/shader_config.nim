@@ -32,6 +32,7 @@ type
     fieldForce*: int      ## field-force.wgsl: particles per workgroup (1D)
     fieldStepX*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, X
     fieldStepY*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, Y
+    bodyForce*: int       ## body-force.wgsl: particles per workgroup (1D)
     bodyIntegrate*: int   ## body-integrate.wgsl: bodies per workgroup. The pass
                           ## dispatches ONE workgroup, so this is the whole
                           ## table's width and MAX_BODIES may not exceed it —
@@ -96,6 +97,7 @@ const
     fieldForce: 128,      # Per-particle gradient sampling; matches fieldDeposit
     fieldStepX: 16,       # 16x16 = 256 invocations per 2D field tile (warp multiple)
     fieldStepY: 16,       # 512 field dim / 16 = 32 groups per axis (divides exactly)
+    bodyForce: 128,       # Per-particle body evaluation; matches fieldForce
     bodyIntegrate: 64,    # One workgroup covers the whole body table, with room
                           # to double it before the shader has to change
   )
@@ -158,6 +160,7 @@ proc getWorkgroupSize*(name: string): int =
   of "field-force": activeConfig.workgroups.fieldForce
   of "field-step-x": activeConfig.workgroups.fieldStepX
   of "field-step-y": activeConfig.workgroups.fieldStepY
+  of "body-force": activeConfig.workgroups.bodyForce
   of "body-integrate": activeConfig.workgroups.bodyIntegrate
   else: 128  # Safe default
 
@@ -283,6 +286,7 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_FIELD_FORCE"] = $activeConfig.workgroups.fieldForce
   result["WORKGROUP_SIZE_FIELD_X"] = $activeConfig.workgroups.fieldStepX
   result["WORKGROUP_SIZE_FIELD_Y"] = $activeConfig.workgroups.fieldStepY
+  result["WORKGROUP_SIZE_BODY_FORCE"] = $activeConfig.workgroups.bodyForce
   result["FIELD_W"] = $FIELD_W
   result["FIELD_H"] = $FIELD_H
 

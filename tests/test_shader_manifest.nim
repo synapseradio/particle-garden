@@ -39,7 +39,7 @@ suite "Every Dispatched Pipeline Has A Registered Shader Spec":
 
   test "the relation covers every corner of the strength space":
     # Guards against the relation silently testing nothing.
-    check ALL_COUPLINGS.len == 16
+    check ALL_COUPLINGS.len == 32
 
   test "the manifest registers no key twice":
     # A duplicate key would create the same pipeline twice under one dictionary

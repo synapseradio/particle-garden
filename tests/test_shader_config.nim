@@ -20,7 +20,7 @@ const knownShaders = [
   "field-deposit", "field-force",
   # body-integrate dispatches one workgroup over the whole body table, so its
   # width answers to the same warp-multiple contract.
-  "body-integrate",
+  "body-force", "body-integrate",
 ]
 
 suite "Workgroup Sizes Are Valid GPU Dispatch Sizes":

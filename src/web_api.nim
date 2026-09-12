@@ -367,6 +367,12 @@ when defined(js):
     if not canvas_input.onReseedField.isNil:
       canvas_input.onReseedField()
 
+  proc triggerIgnition(atX, atY: float): bool =
+    ## A body at a world point. False before app.nim wires the hook, which is
+    ## the same answer a full table gives: no body was lit.
+    if canvas_input.onIgniteBody.isNil: false
+    else: canvas_input.onIgniteBody(atX, atY)
+
   proc setTrailsImpl(enabled: bool) =
     ## Delegates to render_state.withTrails, which is where the "a toggle must
     ## do something" rule lives and where it is natively tested.
@@ -1341,6 +1347,13 @@ when defined(js):
     # Reaction-diffusion field. Fire-and-forget: the request is synchronous,
     # the seed lands on the next frame, and it is a no-op outside RD.
     result["reseedField"] = toJs(proc() = triggerFieldReseed())
+
+    # Bodies. World coordinates in, and out comes whether a slot was free: the
+    # table is bounded, so a refusal is a fact the caller is told rather than a
+    # silence. The shape a body is born with is the world's to choose, not the
+    # caller's.
+    result["igniteBody"] = toJs(proc(x, y: float): bool =
+      triggerIgnition(x, y))
 
     # Stats
     result["onStats"] = toJs(proc(callback: proc(stats: JsObject)) =

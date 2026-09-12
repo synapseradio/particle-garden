@@ -282,6 +282,9 @@ func buildFrame*(couplings: WorldCouplings;
     # The census counts the field the chemistry leaves, so it resets on the
     # chemistry's cadence rather than the substep's.
     clearBufferNode(sbFieldAlive, fncOncePerFrame),
+    # The bodies' own accumulator. body-integrate reads it without resetting it,
+    # so the frame owns this clear exactly as it owns velocityDelta's.
+    clearBufferNode(sbBodyAccum),
     # gridCounts must start at zero for bin-count's atomic increments.
     clearBufferNode(sbGridCounts),
   ]
@@ -360,6 +363,20 @@ func buildFrame*(couplings: WorldCouplings;
   if acts(couplings.fieldForce):
     result.add computePassNode("Field Force", PROFILER_SLOT_NONE, @[
       dispatch("fieldForce", dsParticleWorkgroups),
+    ])
+
+  # The bodies read particle positions and write velocityDelta, exactly as the
+  # field force does, so where they sit among the contributors is free. Last
+  # among them is the useful place: the body's own step then closes on the same
+  # substep's forces rather than on the previous one's.
+  #
+  # THE SKIP AT ZERO IS EXACT, and rests on one premise: bodies are not drawn.
+  # A body's motion is observable only through forces this strength scales, so
+  # at zero a frozen body and a drifting one are indistinguishable. Drawing a
+  # body would make its step world-intrinsic and this guard wrong.
+  if acts(couplings.bodies):
+    result.add computePassNode("Bodies", PROFILER_SLOT_NONE, @[
+      dispatch("bodyForce", dsParticleWorkgroups),
     ])
 
   # integrate always closes the frame: it is the one pass that reads the

@@ -97,6 +97,12 @@ var onResize* {.exportc.}: proc() = nil
 # import Layer 4's webgpu_compute, where the seed request actually lives.
 var onReseedField* {.exportc.}: proc() = nil
 
+# Set via setIgniteBodyCallback - called with a WORLD point when something asks
+# the world for a body there, and answering whether a slot was free. Same
+# indirection and the same reason as onReseedField: the body table lives in
+# Layer 4's webgpu_compute, which Layer 3 cannot import.
+var onIgniteBody* {.exportc.}: proc(atX, atY: float): bool = nil
+
 # Set via setResizeParticlesCallback - called when the particle COUNT changes
 # and the living population must survive it. Distinct from onInitParticles
 # because the two answer different questions: this one grows or thins a world,
@@ -111,6 +117,9 @@ proc setResizeParticlesCallback*(callback: proc()) {.exportc.} =
 
 proc setReseedFieldCallback*(callback: proc()) {.exportc.} =
   onReseedField = callback
+
+proc setIgniteBodyCallback*(callback: proc(atX, atY: float): bool) {.exportc.} =
+  onIgniteBody = callback
 
 proc setResizeCallback*(callback: proc()) {.exportc.} =
   onResize = callback

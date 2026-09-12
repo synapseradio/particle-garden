@@ -281,6 +281,10 @@ export interface GardenAPI {
 
   reseedField(): void;
 
+  /** Light a body at a world point, with the shape and lifetime the bodies
+   * sliders currently describe. False when every slot is taken. */
+  igniteBody(x: number, y: number): boolean;
+
   onStats(callback: (stats: StatsSample) => void): void;
 
   // Audio. Start and stop are synchronous and return no promise: start leaves

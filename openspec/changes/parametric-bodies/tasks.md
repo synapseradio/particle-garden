@@ -157,34 +157,34 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
 
 At the end of this group a body ignited from the console pulls particles. Bodies do not yet move.
 
-- [ ] 5.1 **Red first.** Extend `tests/coupling_space.nim` with a fifth level over
+- [x] 5.1 **Red first.** Extend `tests/coupling_space.nim` with a fifth level over
       `COUPLING_OFF` / `COUPLING_ON` (`:20-33`) and update the world-count assertion in
       `tests/test_shader_manifest.nim:40-42` from 16 to 32. Verify: the suites fail on the
       unregistered `bodyForce` key
-- [ ] 5.2 Write `web/shaders/src/body-force.wgsl` as one thread per particle, in the shape of
+- [x] 5.2 Write `web/shaders/src/body-force.wgsl` as one thread per particle, in the shape of
       `web/shaders/src/field-force.wgsl`: read `particles[]` in original index space, loop over
       `MAX_BODIES` with an early-out on zero envelope, evaluate the SDF of design D3, apply the two
       forces of design D4 scaled by envelope and `bodiesStrength`, and `atomicAdd` into
       `velocityDeltaFixed`. Accumulate, never store. Verify: `just shaders` bundles it and
       `tests/test_wgsl_lint.nim` passes
-- [ ] 5.3 Register the shader in `src/shader_manifest.nim` (`ShaderSpec` at `:21-30`, appended in
+- [x] 5.3 Register the shader in `src/shader_manifest.nim` (`ShaderSpec` at `:21-30`, appended in
       `allShaderSpecs` at `:97-117`) and serve it from the `StaticFiles` table in `src/main.nim`
       (`:30-54`). Verify: `tests/test_shader_manifest.nim` passes — every dispatched key registered
       exactly once
-- [ ] 5.4 Add the bind group: an `EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE` constant
+- [x] 5.4 Add the bind group: an `EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE` constant
       (`src/webgpu_compute.nim:45-58`), its arm in `getExpectedEntryCount` (`:60-76`), creation in
       `createBindGroups` (`:260` onward) ending in `validateBindGroupEntryCount` (`:204-211`), and
       the binding declaration in `src/wgsl_lint.nim`'s `ExpectedShaderBindings`. Verify:
       `tests/test_wgsl_lint.nim` passes and `getExpectedEntryCount` no longer returns -1 for the key
-- [ ] 5.5 **Red first.** Add the `acts(couplings.bodies)` guard and the `Bodies` node with the
+- [x] 5.5 **Red first.** Add the `acts(couplings.bodies)` guard and the `Bodies` node with the
       `bodyForce` dispatch to `buildFrame` (`src/sim_registry.nim:341-352`), plus `sbBodyAccum`'s
       clear among the per-substep clears (`:258-266`), and add `bodies` to the strip list and the
       skip suite in `tests/test_sim_registry.nim` (`:100-168`). Verify: the registry suite passes and
       stripping the coupling-owned keys from all 32 worlds still leaves the intrinsic sequence
-- [ ] 5.6 Add `bodies` to `sameFrameShape` (`src/webgpu_compute.nim:133-141`). Verify: writing the
+- [x] 5.6 Add `bodies` to `sameFrameShape` (`src/webgpu_compute.nim:133-141`). Verify: writing the
       strength from zero to non-zero rebuilds the frame description; the native suite covers the
       zero-crossing relation
-- [ ] 5.7 Wire the executor: create the three buffers, write `BodyParams` per frame beside the other
+- [x] 5.7 Wire the executor: create the three buffers, write `BodyParams` per frame beside the other
       uniform writes in `runPhysicsFrame` (`src/webgpu_compute.nim:723-764`), and upload the envelope
       array every frame regardless of strength (design D5). Verify: `just happen` is green
 - [ ] 5.8 **Red first.** Extend `tests/test_body_core.nim`: an ignition carrying an anisotropy,

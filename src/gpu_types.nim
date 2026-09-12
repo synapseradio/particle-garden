@@ -843,10 +843,10 @@ static:
 
 genFieldIndices(BodyParamsLayout, "BODY")
 
-const BODY_STRIDE_F32* = BodyLayout.totalSize div 4
-  ## Floats one body occupies in sbBodies. Nim writes a slot as that many
-  ## floats at ignition, so the stride comes from the layout rather than from a
-  ## literal that could drift from it.
+# The body record's own write indices, for the one slot Nim writes at ignition:
+# BODY_SLOT_CENTER_X=0 ... BODY_SLOT_PAD2=15. Generated from the same layout the
+# shaders' struct is generated from, so the write cannot drift from the read.
+genFieldIndices(BodyLayout, "BODY_SLOT")
 
 static:
   # Offset agreement rides the layout sweep above; the sizes are these structs'

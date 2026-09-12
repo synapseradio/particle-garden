@@ -93,6 +93,14 @@ const
     ## keys name their DESTINATION texture; a name saying nothing about which
     ## texture ends up holding the live field is exactly how an
     ## off-by-one-substep parity bug hides in the sequence.
+  BODY_SPECS* = [
+    ShaderSpec(key: "bodyForce", path: "./shaders/body-force.wgsl",
+      label: "Body Force Shader", entryPoint: "applyBodyForce"),
+  ]
+    ## What the bodies do to the particles. It reads particle positions and
+    ## writes the velocity accumulator, exactly as fieldForce does, and needs
+    ## no grid: a body's reach is its own band rather than the neighbour sweep's
+    ## radius.
 
 func allShaderSpecs*(): seq[ShaderSpec] =
   ## Every compute shader the world can dispatch, registered once at init.
@@ -115,3 +123,4 @@ func allShaderSpecs*(): seq[ShaderSpec] =
   result.add FORCES_SPECS
   result.add SPH_SPECS
   result.add FIELD_SPECS
+  result.add BODY_SPECS

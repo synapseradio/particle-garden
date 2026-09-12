@@ -38,6 +38,11 @@ import sph_core
 import field_core
 from physics_core import frameFactor
 from memory_layout import MAX_BODIES
+from body_core import nil
+  # Qualified throughout: gpu_types generates BodyParams' field indices under
+  # the same BODY_ prefix this module's physical constants carry, so
+  # `bodyParamsData[BODY_LINEAR_DAMPING] = body_core.BODY_LINEAR_DAMPING` is
+  # the index on the left and the number on the right.
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -57,6 +62,8 @@ const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particl
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 4      # srcField(sample) + dstField(storage) + deposit + alive-cell census
 const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 4            # srcField(sample) + dstField(storage) + fieldParams + reactionParams
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 6        # gridParams + particles + field(sample) + velocityDelta + fieldParams + speciesChemistry
+# The bodies pass. See body-force.wgsl's binding manifest.
+const EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE* = 6         # gridParams + particles + bodies + envelope + velocityDelta + bodyParams
 
 proc getExpectedEntryCount(passName: cstring): int =
   case $passName
@@ -75,6 +82,7 @@ proc getExpectedEntryCount(passName: cstring): int =
   # bind group (opposite ping-pong orientation) with the same three-entry shape.
   of "rdStepToFront", "rdStepToTrail": result = EXPECTED_BIND_GROUP_ENTRIES_RD_STEP
   of "fieldForce": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE
+  of "bodyForce": result = EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE
   else: result = -1
 
 var shaderModules* {.exportc.}: JsObject = createJsObject()
@@ -120,6 +128,78 @@ let integrationParamsData = newFloat32Array(INTEG_PARAMS_F32_COUNT)
 let integrationParamsUint = newUint32Array(integrationParamsData.buffer)
 let fieldParamsData = newFloat32Array(FIELD_PARAMS_F32_COUNT)
 let chemistryData = newFloat32Array(CHEM_PARAMS_F32_COUNT)
+let bodyParamsData = newFloat32Array(BODY_PARAMS_F32_COUNT)
+let bodyParamsUint = newUint32Array(bodyParamsData.buffer)
+let bodyEnvelopeData = newFloat32Array(MAX_BODIES)
+  ## Not a uniform: the envelope is a storage buffer both bodies passes read,
+  ## refilled here from the slot table every frame.
+
+var bodyState = body_core.initBodyState()
+  ## Everything Nim knows about the bodies. Pose is absent — the GPU owns it —
+  ## so this module writes a slot at ignition and reads the clock for the rest.
+var bodySeconds = 0.0
+  ## The bodies' own clock, in wall-clock seconds, advanced by app.nim's frame
+  ## loop. Wall clock rather than the timeScale-scaled dt, because a lifetime
+  ## slider set to eight seconds means eight seconds however fast the world is
+  ## running; capped delta rather than a timestamp, because a pause or a stall
+  ## must not age a body that nothing was drawing.
+
+proc advanceBodyClock*(seconds: float) =
+  ## Move the bodies' clock forward. Called once per frame with the same capped
+  ## wall-clock delta the weathers run on.
+  bodySeconds += seconds
+
+let bodySlotData = newFloat32Array(BODY_SLOT_PARAMS_F32_COUNT)
+  ## One body record, refilled per ignition. The pads it was allocated with stay
+  ## zero, and so do the four pose slots a new body starts at rest with.
+
+proc writeBodySlot(slot: int) =
+  ## Put one slot's record on the GPU, at that slot's own byte offset. The table
+  ## is never rewritten wholesale: body-integrate owns pose, so Nim's copy of a
+  ## living body's centre is stale from the substep after it ignited.
+  let body = bodyState.slots[slot].body
+  bodySlotData[BODY_SLOT_CENTER_X] = float32(body.centerX)
+  bodySlotData[BODY_SLOT_CENTER_Y] = float32(body.centerY)
+  bodySlotData[BODY_SLOT_VEL_X] = float32(body.velX)
+  bodySlotData[BODY_SLOT_VEL_Y] = float32(body.velY)
+  bodySlotData[BODY_SLOT_ANGLE] = float32(body.angle)
+  bodySlotData[BODY_SLOT_ANG_VEL] = float32(body.angVel)
+  bodySlotData[BODY_SLOT_RADIUS] = float32(body.radius)
+  bodySlotData[BODY_SLOT_ANISOTROPY] = float32(body.anisotropy)
+  bodySlotData[BODY_SLOT_BAND_WIDTH] = float32(body.bandWidth)
+  bodySlotData[BODY_SLOT_PROXIMITY] = float32(body.proximity)
+  bodySlotData[BODY_SLOT_ENCLOSURE] = float32(body.enclosure)
+  bodySlotData[BODY_SLOT_INV_MASS] = float32(body.invMass)
+  bodySlotData[BODY_SLOT_INV_INERTIA] = float32(body.invInertia)
+  # Ordered against the frames already submitted on this queue, so an ignition
+  # between frames lands before the next dispatch rather than racing it.
+  queue.writeBufferTyped(cast[GPUBuffer](gpuBuffers.bodies),
+    slot * BodyLayout.totalSize, bodySlotData)
+
+proc igniteBody*(atX, atY: float): bool =
+  ## Put a body at a world point and report whether a slot was found. The one
+  ## entry every source of an ignition reaches the world through.
+  ##
+  ## The world has nowhere to put a body before its buffers exist, so an
+  ## ignition arriving then is refused rather than held.
+  if not isPipelineReady:
+    return false
+  let disposition = body_core.BodyDisposition(
+    radius: config.CONFIG.bodyRadius,
+    bandWidth: config.CONFIG.bodyBand,
+    proximity: config.CONFIG.bodyProximity,
+    enclosure: config.CONFIG.bodyEnclosure,
+    lifetime: config.CONFIG.bodyLifetime)
+  # A circle with an even envelope holding half way through its decay.
+  let shaping = body_core.BodyShaping(
+    anisotropy: 1.0, envelopeSkew: 0.0, sustain: 0.5)
+  # The allocator answers where before it answers whether, and it is the same
+  # search igniteBody runs, so the index and the record cannot disagree.
+  let slot = body_core.freeSlotIndex(bodyState, bodySeconds)
+  result = body_core.igniteBody(bodyState, atX, atY, disposition, shaping,
+    bodySeconds)
+  if result:
+    writeBodySlot(slot)
 
 proc requestFieldSeed*() =
   ## Ask for the field to be re-seeded on the next frame. Synchronous and
@@ -139,7 +219,8 @@ func sameFrameShape(lhs, rhs: WorldCouplings): bool =
   (lhs.forces == 0.0) == (rhs.forces == 0.0) and
     (lhs.fluid == 0.0) == (rhs.fluid == 0.0) and
     (lhs.deposit == 0.0) == (rhs.deposit == 0.0) and
-    (lhs.fieldForce == 0.0) == (rhs.fieldForce == 0.0)
+    (lhs.fieldForce == 0.0) == (rhs.fieldForce == 0.0) and
+    (lhs.bodies == 0.0) == (rhs.bodies == 0.0)
 
 proc setCouplings*(couplings: WorldCouplings) =
   ## Adopt the world these strengths describe.
@@ -499,6 +580,24 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Field Force Bind Group"
   )
 
+  # Bodies: read the table and its envelope, write the velocity deltas
+  # integrate consumes. No grid beyond the particle count — a body's reach is
+  # its own band, not the neighbour sweep's radius.
+  let bodyForceEntries = createJsArray()
+  discard bodyForceEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
+  discard bodyForceEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
+  discard bodyForceEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.bodies)))
+  discard bodyForceEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.bodyEnvelope)))
+  discard bodyForceEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.velocityDelta)))
+  discard bodyForceEntries.push(createBindGroupEntry(5, uniformBuffers["bodyParams"]))
+  validateBindGroupEntryCount(bodyForceEntries, "bodyForce", "bind group creation")
+  bindGroups["bodyForce"] = await createBindGroupWithValidation(
+    "Body Force",
+    cast[GPUBindGroupLayout](bindGroupLayouts["bodyForce"]),
+    bodyForceEntries,
+    "Body Force Bind Group"
+  )
+
 proc fetch*(path: cstring): Future[JsObject] {.importjs: "fetch(#)".}
 proc ok*(response: JsObject): bool {.importjs: "#.ok".}
 proc statusText*(response: JsObject): cstring {.importjs: "#.statusText".}
@@ -587,6 +686,9 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     uniformBuffers["speciesChemistry"] = device.createBufferLabeled(
       wgslUniformSize(SpeciesChemistryLayout), uniformUsage,
       "Species Chemistry Uniform")
+    # What both bodies passes need that belongs to no single body.
+    uniformBuffers["bodyParams"] = device.createBufferLabeled(
+      wgslUniformSize(BodyParamsLayout), uniformUsage, "Body Parameters Uniform")
 
     # Which reaction rd-step runs. Gray-Scott is the only implemented value, so
     # the contents never vary and the upload belongs here rather than in the
@@ -815,6 +917,39 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       config.SPECIES_CHEMISTRY[base + SPECIES_TROPISM_SLOT]
   queue.writeBufferTyped(
     cast[GPUBuffer](uniformBuffers["speciesChemistry"]), 0, chemistryData)
+
+  # The bodies' two per-frame uploads, both unguarded by the strength. acts() is
+  # the only place a strength is compared to anything, and the envelope is 128
+  # bytes — cheaper than a second site that could disagree with it.
+  #
+  # count is every slot, not the live ones: presence is what a slot says it is,
+  # and a free slot says zero, so the walk needs no second census to skip it.
+  bodyParamsUint[BODY_COUNT] = uint32(MAX_BODIES)
+  bodyParamsData[BODY_STRENGTH] = float32(config.CONFIG.bodiesStrength)
+  bodyParamsData[BODY_WORLD_W] = width
+  bodyParamsData[BODY_WORLD_H] = height
+  # Both clocks: seconds is what a body travels over, frames is what its damping
+  # and its change caps were measured in.
+  bodyParamsData[BODY_DT_SECONDS] = substepDt
+  bodyParamsData[BODY_FRAMES] = float32(frameFactor(substepDt))
+  # The accumulator's scales arrive inverted, so the integrate multiplies where
+  # body_core.decoded divides.
+  bodyParamsData[BODY_FORCE_SCALE] = float32(1.0 / body_core.BODY_FIXED_POINT_SCALE)
+  bodyParamsData[BODY_TORQUE_SCALE] =
+    float32(1.0 / body_core.BODY_TORQUE_FIXED_SCALE)
+  bodyParamsData[BODY_LINEAR_DAMPING] = float32(body_core.BODY_LINEAR_DAMPING)
+  bodyParamsData[BODY_ANGULAR_DAMPING] = float32(body_core.BODY_ANGULAR_DAMPING)
+  bodyParamsData[BODY_MAX_SPEED_CHANGE] =
+    float32(body_core.BODY_MAX_SPEED_CHANGE)
+  bodyParamsData[BODY_MAX_SPIN_CHANGE] = float32(body_core.BODY_MAX_SPIN_CHANGE)
+  queue.writeBufferTyped(
+    cast[GPUBuffer](uniformBuffers["bodyParams"]), 0, bodyParamsData)
+
+  let presences = body_core.envelopeValues(bodyState, bodySeconds)
+  for slot in 0 ..< MAX_BODIES:
+    bodyEnvelopeData[slot] = presences[slot]
+  queue.writeBufferTyped(
+    cast[GPUBuffer](gpuBuffers.bodyEnvelope), 0, bodyEnvelopeData)
 
   if gridW != cachedBindGroupGridW or gridH != cachedBindGroupGridH:
     await createBindGroups(gridW, gridH)

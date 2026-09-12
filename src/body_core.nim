@@ -507,6 +507,15 @@ func envelopeValues*(state: BodyState;
       result[index] = bodyEnvelope(nowSeconds - slot.ignitedAt, slot.lifetime,
         slot.envelopeSkew, slot.sustain)
 
+func freeSlotIndex*(state: BodyState; nowSeconds: float): int =
+  ## Where the next ignition lands, or -1 when the table is full. The allocation
+  ## rule itself, so a caller that needs the index and the ignition that takes it
+  ## cannot answer differently.
+  for index, slot in state.slots:
+    if not slot.slotIsLive(nowSeconds):
+      return index
+  -1
+
 proc igniteBody*(state: var BodyState; atX, atY: float;
     disposition: BodyDisposition; shaping: BodyShaping;
     nowSeconds: float): bool =
@@ -518,24 +527,34 @@ proc igniteBody*(state: var BodyState; atX, atY: float;
   ##
   ## Igniting into an occupied slot is refused rather than overwriting a live
   ## body, and the refusal is the return value.
-  for index, slot in state.slots:
-    if slot.slotIsLive(nowSeconds):
-      continue
-    let masses = bodyInverseMasses(disposition.radius, shaping.anisotropy)
-    state.slots[index] = BodySlot(
-      ignitedAt: nowSeconds,
-      lifetime: disposition.lifetime,
-      envelopeSkew: shaping.envelopeSkew,
-      sustain: shaping.sustain,
-      body: Body(
-        centerX: wrapToTorus(atX, BODY_WORLD_W),
-        centerY: wrapToTorus(atY, BODY_WORLD_H),
-        radius: disposition.radius,
-        anisotropy: shaping.anisotropy,
-        bandWidth: disposition.bandWidth,
-        proximity: disposition.proximity,
-        enclosure: disposition.enclosure,
-        invMass: masses.invMass,
-        invInertia: masses.invInertia))
-    return true
-  false
+  ##
+  ## The shaping is clamped HERE rather than by the caller, so every source
+  ## reaches the same bounds and none of them restates a number. The
+  ## disposition is not: it arrives from descriptors already clamped at the
+  ## boundary that wrote them.
+  let shape = BodyShaping(
+    anisotropy: clamp(shaping.anisotropy, BODY_ANISOTROPY_FLOOR,
+      BODY_ANISOTROPY_CEILING),
+    envelopeSkew: clamp(shaping.envelopeSkew, -BODY_SKEW_EXTENT,
+      BODY_SKEW_EXTENT),
+    sustain: clamp(shaping.sustain, BODY_SUSTAIN_FLOOR, BODY_SUSTAIN_CEILING))
+  let index = state.freeSlotIndex(nowSeconds)
+  if index < 0:
+    return false
+  let masses = bodyInverseMasses(disposition.radius, shape.anisotropy)
+  state.slots[index] = BodySlot(
+    ignitedAt: nowSeconds,
+    lifetime: disposition.lifetime,
+    envelopeSkew: shape.envelopeSkew,
+    sustain: shape.sustain,
+    body: Body(
+      centerX: wrapToTorus(atX, BODY_WORLD_W),
+      centerY: wrapToTorus(atY, BODY_WORLD_H),
+      radius: disposition.radius,
+      anisotropy: shape.anisotropy,
+      bandWidth: disposition.bandWidth,
+      proximity: disposition.proximity,
+      enclosure: disposition.enclosure,
+      invMass: masses.invMass,
+      invInertia: masses.invInertia))
+  true

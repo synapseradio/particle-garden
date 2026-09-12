@@ -119,17 +119,28 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     noFieldForce.fieldForce = COUPLING_OFF
     check not dispatchesPipeline(noFieldForce, "fieldForce")
 
+  test "zero bodies strength skips the bodies pass":
+    # Exact rather than merely cheap, and the argument has one premise: bodies
+    # are not drawn. Everything a body does reaches the world through forces
+    # this strength scales, so at zero a body that moved and a body that did not
+    # are the same world. Drawing one would break the argument, not the code.
+    check dispatchesPipeline(FULLY_COUPLED, "bodyForce")
+    var noBodies = FULLY_COUPLED
+    noBodies.bodies = COUPLING_OFF
+    check not dispatchesPipeline(noBodies, "bodyForce")
+
   test "moving a strength to zero changes nothing else about the world":
     # The test that makes a skip an optimization rather than a mode: zeroing one
     # strength must subtract exactly one pass and leave every other pass in
     # place, in order. A skip that also drops a neighbour's work rebuilds the
     # eight enumerated worlds under a nicer name.
     for skippable in [("fluid", "forcesSph"), ("deposit", "fieldDeposit"),
-        ("fieldForce", "fieldForce")]:
+        ("fieldForce", "fieldForce"), ("bodies", "bodyForce")]:
       var zeroed = FULLY_COUPLED
       case skippable[0]
       of "fluid": zeroed.fluid = COUPLING_OFF
       of "deposit": zeroed.deposit = COUPLING_OFF
+      of "bodies": zeroed.bodies = COUPLING_OFF
       else: zeroed.fieldForce = COUPLING_OFF
       checkpoint("zeroing " & skippable[0])
       check dispatchSequence(zeroed) ==
@@ -155,6 +166,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     barelyOn.fluid = 1e-9
     barelyOn.deposit = 1e-9
     barelyOn.fieldForce = 1e-9
+    barelyOn.bodies = 1e-9
     check dispatchSequence(barelyOn) == dispatchSequence(FULLY_COUPLED)
 
   test "no world enumerates: every frame is the intrinsic sequence plus its couplings":
@@ -163,7 +175,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     # exactly the intrinsic sequence is left, whatever the strengths were.
     for couplings in ALL_COUPLINGS:
       var stripped = dispatchSequence(couplings)
-      for key in ["forcesSph", "fieldDeposit", "fieldForce"]:
+      for key in ["forcesSph", "fieldDeposit", "fieldForce", "bodyForce"]:
         stripped = stripped.without(key)
       check stripped == WORLD_INTRINSIC_SEQUENCE
 
@@ -300,7 +312,7 @@ suite "Field Passes Compose Safely":
       "binCount", "prefixLocal", "prefixBlocks", "prefixFinal", "binScatter",
       "forces", "forcesSph", "integrate",
       "fieldDeposit", "fieldResolve", "rdStepToFront", "rdStepToTrail",
-      "fieldForce"]
+      "fieldForce", "bodyForce"]
     for couplings in ALL_COUPLINGS:
       for key in dispatchSequence(couplings):
         check key in KNOWN

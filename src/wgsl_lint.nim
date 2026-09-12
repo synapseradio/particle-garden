@@ -161,6 +161,7 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   "field-resolve": @[0, 1, 2, 3],  # binding 3 is the one-word alive-cell counter the dormancy signal reads back
   "rd-step": @[0, 1, 2, 3],
   "field-force": @[0, 1, 2, 3, 4, 5],
+  "body-force": @[0, 1, 2, 3, 4, 5],  # binding 3 is the envelope, written from Nim every frame
   # Render shaders (staticRead into app.js by webgpu_render.nim).
   "render": @[0, 1, 2, 3, 4],
   "glow": @[0, 1, 2, 4],  # binding 3 (render's fieldTexture) legally absent — glow never samples the RD field
