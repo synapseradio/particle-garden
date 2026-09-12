@@ -54,6 +54,14 @@ const StaticFiles = {
   # The bodies passes.
   "/shaders/body-force.wgsl": staticRead("../web/shaders/body-force.wgsl"),
   "/shaders/body-integrate.wgsl": staticRead("../web/shaders/body-integrate.wgsl"),
+  # Long-range mesh chain. All five are served even though the shipped world
+  # dispatches none of them: the pipelines are created at init, before any
+  # strength is read.
+  "/shaders/lr-deposit.wgsl": staticRead("../web/shaders/lr-deposit.wgsl"),
+  "/shaders/lr-fft-rows.wgsl": staticRead("../web/shaders/lr-fft-rows.wgsl"),
+  "/shaders/lr-fft-cols.wgsl": staticRead("../web/shaders/lr-fft-cols.wgsl"),
+  "/shaders/lr-kernel.wgsl": staticRead("../web/shaders/lr-kernel.wgsl"),
+  "/shaders/lr-force.wgsl": staticRead("../web/shaders/lr-force.wgsl"),
 }.toTable
 
 proc getMimeType(path: string): string =

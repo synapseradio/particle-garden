@@ -206,10 +206,10 @@ type
     dsLrColWorkgroups
       ## The same, per column: (gridW, 1, speciesCount).
     dsLrBinWorkgroups
-      ## One invocation per bin of the live mesh, species on z:
-      ## (ceil(gridW * gridH / workgroup size), 1, speciesCount). The z index
-      ## is the RECEIVING species; each invocation reads every source species
-      ## at its bin.
+      ## One invocation per bin of the live mesh, no species extent:
+      ## (ceil(gridW * gridH / workgroup size), 1, 1). Unlike the transforms,
+      ## the pass this sizes mixes across species, so one invocation reads
+      ## every source species at its bin and writes every receiver from them.
 
   Dispatch* = object
     ## One setPipeline/setBindGroup/dispatchWorkgroups triple. pipelineKey

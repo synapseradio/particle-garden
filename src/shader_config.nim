@@ -37,6 +37,11 @@ type
                           ## dispatches ONE workgroup, so this is the whole
                           ## table's width and MAX_BODIES may not exceed it —
                           ## asserted below.
+    # Long-range mesh passes. The two transform shaders are absent: their
+    # workgroup is long_range_core's LR_FFT_WORKGROUP_SIZE, which the line the
+    # workgroup-storage assertion is written against belongs to.
+    lrParticle*: int      ## lr-deposit.wgsl / lr-force.wgsl: particles per workgroup (1D)
+    lrKernel*: int        ## lr-kernel.wgsl: mesh bins per workgroup (1D)
 
   TuningConstants* = object
     ## These become {{TUNABLE_*}} placeholders in WGSL.
@@ -100,6 +105,8 @@ const
     bodyForce: 128,       # Per-particle body evaluation; matches fieldForce
     bodyIntegrate: 64,    # One workgroup covers the whole body table, with room
                           # to double it before the shader has to change
+    lrParticle: 128,      # Per-particle deposit and gradient read; matches the physics passes
+    lrKernel: 256,        # One bin per invocation; the mesh sizes all divide 256
   )
 
   PRODUCTION_TUNING* = TuningConstants(
@@ -162,6 +169,8 @@ proc getWorkgroupSize*(name: string): int =
   of "field-step-y": activeConfig.workgroups.fieldStepY
   of "body-force": activeConfig.workgroups.bodyForce
   of "body-integrate": activeConfig.workgroups.bodyIntegrate
+  of "lr-deposit", "lr-force": activeConfig.workgroups.lrParticle
+  of "lr-kernel": activeConfig.workgroups.lrKernel
   else: 128  # Safe default
 
 func getTunableFloat*(name: string): float =
@@ -231,6 +240,12 @@ static:
     "or dispatch more than one"
 
 from physics_core import FRAME_DT_REFERENCE
+# long_range_core is pure; it owns the mesh density accumulator's fixed point
+# and the transform's line length, so the five mesh shaders encode at the scale
+# the native oracle decodes and size their workgroup array from the same
+# ceiling the storage assertion is written against.
+from long_range_core import LR_DENSITY_SCALE, LR_FFT_MAX_LINE,
+  LR_FFT_WORKGROUP_SIZE
 
 func glowTuning*(): GlowTuning =
   ## The glow curve constants in the shape glow_core's mirror takes them. The
@@ -290,6 +305,23 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_BODY_INTEGRATE"] = $activeConfig.workgroups.bodyIntegrate
   result["FIELD_W"] = $FIELD_W
   result["FIELD_H"] = $FIELD_H
+
+  # Long-range mesh passes. The two transform shaders take their workgroup from
+  # long_range_core rather than from the config above, since the line that fits
+  # workgroup storage is asserted there against the same constant.
+  result["WORKGROUP_SIZE_LR_DEPOSIT"] = $activeConfig.workgroups.lrParticle
+  result["WORKGROUP_SIZE_LR_FORCE"] = $activeConfig.workgroups.lrParticle
+  result["WORKGROUP_SIZE_LR_KERNEL"] = $activeConfig.workgroups.lrKernel
+  result["WORKGROUP_SIZE_LR_FFT_ROWS"] = $LR_FFT_WORKGROUP_SIZE
+  result["WORKGROUP_SIZE_LR_FFT_COLS"] = $LR_FFT_WORKGROUP_SIZE
+  # The transform's ping-pong array: 2N complex entries at the longest line the
+  # allocation ceiling allows. WGSL sizes a workgroup array at compile time, so
+  # this is the maximum; the live length comes from the uniform.
+  result["LR_FFT_SHARED"] = $(2 * LR_FFT_MAX_LINE)
+  # The density accumulator's own fixed point, encoded by lr-deposit and undone
+  # by the forward row transform, both from this one constant.
+  result["LR_DENSITY_SCALE"] = fmt"{LR_DENSITY_SCALE.float:.1f}"
+  result["LR_INV_DENSITY_SCALE"] = fmt"{1.0 / LR_DENSITY_SCALE.float:.16f}"
 
   # Field seed geometry (consumed by field-seed.wgsl, which mirrors
   # field_core.rdSeedCell). Sourced from field_core so the natively-tested

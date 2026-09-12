@@ -70,6 +70,16 @@ const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 6        # gridParams + particl
 # The bodies passes. See body-force.wgsl's and body-integrate.wgsl's manifests.
 const EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE* = 7         # gridParams + particles + bodies + envelope + velocityDelta + bodyParams + bodyAccum
 const EXPECTED_BIND_GROUP_ENTRIES_BODY_INTEGRATE* = 4     # bodies + envelope + bodyAccum + bodyParams
+# Long-range mesh passes. Counts are of the bindings each ENTRY POINT uses, not
+# of the bindings its file declares: an "auto" pipeline layout carries only the
+# resources its entry point statically reads, so the two directions of the row
+# transform take different entry lists out of one five-binding file.
+const EXPECTED_BIND_GROUP_ENTRIES_LR_DEPOSIT* = 4         # gridParams + particles + lrDensity + lrParams
+const EXPECTED_BIND_GROUP_ENTRIES_LR_FFT_ROWS* = 3        # dstSpectrum + lrParams + lrDensity
+const EXPECTED_BIND_GROUP_ENTRIES_LR_FFT_ROWS_INV* = 3    # srcSpectrum + lrParams + lrPotential
+const EXPECTED_BIND_GROUP_ENTRIES_LR_FFT_COLS* = 3        # srcSpectrum + dstSpectrum + lrParams
+const EXPECTED_BIND_GROUP_ENTRIES_LR_KERNEL* = 4          # srcSpectrum + dstSpectrum + lrParams + simParams
+const EXPECTED_BIND_GROUP_ENTRIES_LR_FORCE* = 5           # gridParams + particles + lrPotential + velocityDelta + lrParams
 
 proc getExpectedEntryCount(passName: cstring): int =
   case $passName
@@ -90,6 +100,15 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "fieldForce": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE
   of "bodyForce": result = EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE
   of "bodyIntegrate": result = EXPECTED_BIND_GROUP_ENTRIES_BODY_INTEGRATE
+  of "lrDeposit": result = EXPECTED_BIND_GROUP_ENTRIES_LR_DEPOSIT
+  of "lrFftRows": result = EXPECTED_BIND_GROUP_ENTRIES_LR_FFT_ROWS
+  of "lrFftRowsInv": result = EXPECTED_BIND_GROUP_ENTRIES_LR_FFT_ROWS_INV
+  # The two column directions read and write the same pair in the same order,
+  # so their entry lists agree; each still needs its own bind group, since an
+  # "auto" layout is compatible only with the pipeline that produced it.
+  of "lrFftCols", "lrFftColsInv": result = EXPECTED_BIND_GROUP_ENTRIES_LR_FFT_COLS
+  of "lrKernel": result = EXPECTED_BIND_GROUP_ENTRIES_LR_KERNEL
+  of "lrForce": result = EXPECTED_BIND_GROUP_ENTRIES_LR_FORCE
   else: result = -1
 
 var shaderModules* {.exportc.}: JsObject = createJsObject()
@@ -629,6 +648,105 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
     "Body Integrate Bind Group"
   )
 
+  # Long-range mesh chain. The spectra ping-pong across the five dispatches:
+  # density -> A (rows), A -> B (columns), B -> A (kernel mix), A -> B (columns
+  # back), B -> potential (rows back). No pass reads the buffer it writes, so
+  # the whole chain runs inside one compute pass.
+  let lrDepositEntries = createJsArray()
+  discard lrDepositEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
+  discard lrDepositEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
+  discard lrDepositEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.lrDensity)))
+  discard lrDepositEntries.push(createBindGroupEntry(3, uniformBuffers["lrParams"]))
+  validateBindGroupEntryCount(lrDepositEntries, "lrDeposit", "bind group creation")
+  bindGroups["lrDeposit"] = await createBindGroupWithValidation(
+    "Long Range Deposit",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrDeposit"]),
+    lrDepositEntries,
+    "Long Range Deposit Bind Group"
+  )
+
+  # Forward rows: the density is the only input, so binding 0 (srcSpectrum) and
+  # binding 4 (dstPotential) are absent from this entry point's layout.
+  let lrFftRowsEntries = createJsArray()
+  discard lrFftRowsEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.lrSpectrumA)))
+  discard lrFftRowsEntries.push(createBindGroupEntry(2, uniformBuffers["lrParams"]))
+  discard lrFftRowsEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.lrDensity)))
+  validateBindGroupEntryCount(lrFftRowsEntries, "lrFftRows", "bind group creation")
+  bindGroups["lrFftRows"] = await createBindGroupWithValidation(
+    "Long Range FFT Rows",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrFftRows"]),
+    lrFftRowsEntries,
+    "Long Range FFT Rows Bind Group"
+  )
+
+  let lrFftColsEntries = createJsArray()
+  discard lrFftColsEntries.push(createBindGroupEntry(0, cast[JsObject](gpuBuffers.lrSpectrumA)))
+  discard lrFftColsEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.lrSpectrumB)))
+  discard lrFftColsEntries.push(createBindGroupEntry(2, uniformBuffers["lrParams"]))
+  validateBindGroupEntryCount(lrFftColsEntries, "lrFftCols", "bind group creation")
+  bindGroups["lrFftCols"] = await createBindGroupWithValidation(
+    "Long Range FFT Columns",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrFftCols"]),
+    lrFftColsEntries,
+    "Long Range FFT Columns Bind Group"
+  )
+
+  let lrKernelEntries = createJsArray()
+  discard lrKernelEntries.push(createBindGroupEntry(0, cast[JsObject](gpuBuffers.lrSpectrumB)))
+  discard lrKernelEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.lrSpectrumA)))
+  discard lrKernelEntries.push(createBindGroupEntry(2, uniformBuffers["lrParams"]))
+  discard lrKernelEntries.push(createBindGroupEntry(3, uniformBuffers["simParams"]))
+  validateBindGroupEntryCount(lrKernelEntries, "lrKernel", "bind group creation")
+  bindGroups["lrKernel"] = await createBindGroupWithValidation(
+    "Long Range Kernel",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrKernel"]),
+    lrKernelEntries,
+    "Long Range Kernel Bind Group"
+  )
+
+  # The inverse column pass reads and writes the same pair in the same
+  # direction as the forward one, so its entries repeat; the bind group does
+  # not, because each is built against its own pipeline's layout.
+  let lrFftColsInvEntries = createJsArray()
+  discard lrFftColsInvEntries.push(createBindGroupEntry(0, cast[JsObject](gpuBuffers.lrSpectrumA)))
+  discard lrFftColsInvEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.lrSpectrumB)))
+  discard lrFftColsInvEntries.push(createBindGroupEntry(2, uniformBuffers["lrParams"]))
+  validateBindGroupEntryCount(lrFftColsInvEntries, "lrFftColsInv", "bind group creation")
+  bindGroups["lrFftColsInv"] = await createBindGroupWithValidation(
+    "Long Range FFT Columns Inverse",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrFftColsInv"]),
+    lrFftColsInvEntries,
+    "Long Range FFT Columns Inverse Bind Group"
+  )
+
+  # Inverse rows: spectrum in, real potential out, so the density and the
+  # forward pass's destination are absent from this entry point's layout.
+  let lrFftRowsInvEntries = createJsArray()
+  discard lrFftRowsInvEntries.push(createBindGroupEntry(0, cast[JsObject](gpuBuffers.lrSpectrumB)))
+  discard lrFftRowsInvEntries.push(createBindGroupEntry(2, uniformBuffers["lrParams"]))
+  discard lrFftRowsInvEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.lrPotential)))
+  validateBindGroupEntryCount(lrFftRowsInvEntries, "lrFftRowsInv", "bind group creation")
+  bindGroups["lrFftRowsInv"] = await createBindGroupWithValidation(
+    "Long Range FFT Rows Inverse",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrFftRowsInv"]),
+    lrFftRowsInvEntries,
+    "Long Range FFT Rows Inverse Bind Group"
+  )
+
+  let lrForceEntries = createJsArray()
+  discard lrForceEntries.push(createBindGroupEntry(0, uniformBuffers["gridParams"]))
+  discard lrForceEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.particlesA)))
+  discard lrForceEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.lrPotential)))
+  discard lrForceEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.velocityDelta)))
+  discard lrForceEntries.push(createBindGroupEntry(4, uniformBuffers["lrParams"]))
+  validateBindGroupEntryCount(lrForceEntries, "lrForce", "bind group creation")
+  bindGroups["lrForce"] = await createBindGroupWithValidation(
+    "Long Range Force",
+    cast[GPUBindGroupLayout](bindGroupLayouts["lrForce"]),
+    lrForceEntries,
+    "Long Range Force Bind Group"
+  )
+
 proc fetch*(path: cstring): Future[JsObject] {.importjs: "fetch(#)".}
 proc ok*(response: JsObject): bool {.importjs: "#.ok".}
 proc statusText*(response: JsObject): cstring {.importjs: "#.statusText".}
@@ -1096,7 +1214,10 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of dsFieldWorkgroups: (fieldGroupsX, fieldGroupsY, 1)
     of dsLrRowWorkgroups: (lrSize.h, 1, lrSpecies)
     of dsLrColWorkgroups: (lrSize.w, 1, lrSpecies)
-    of dsLrBinWorkgroups: (lrBinGroups, 1, lrSpecies)
+    # No species extent: the kernel pass writes every receiving species from
+    # one invocation, since each receiver's value is a mix over all sources the
+    # invocation already holds.
+    of dsLrBinWorkgroups: (lrBinGroups, 1, 1)
     of dsParticleWorkgroups, dsScanBlocks, dsOne:
       (resolveOneDimensional(size, particleWorkgroups, scanBlocks), 1, 1)
 

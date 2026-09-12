@@ -185,26 +185,26 @@ The chain reaches the GPU here. Each shader is written against the group 1 oracl
 held by review — change a shader and its oracle in the same diff or the pair drifts
 (`docs/enforcement.md:58-64`).
 
-- [ ] 5.1 Write `web/shaders/modules/lr_grid.wgsl`: the live-size indexing, the toroidal wrap, the
+- [x] 5.1 Write `web/shaders/modules/lr_grid.wgsl`: the live-size indexing, the toroidal wrap, the
       row-major cell index over the live width, and the species stride, every one of them reading the
       uniform rather than a compile-time constant. Verify: `just shaders` bundles it with no
       unresolved placeholder
-- [ ] 5.2 Write `web/shaders/src/lr-deposit.wgsl` — four CIC `atomicAdd`s of unit charge per particle
+- [x] 5.2 Write `web/shaders/src/lr-deposit.wgsl` — four CIC `atomicAdd`s of unit charge per particle
       in original index space, wrapped on the torus, mirroring the group 1 weights. Verify: the
       bundler resolves it, and a comment beside the charge states that the strength multiplies in the
       force pass alone
-- [ ] 5.3 Write `web/shaders/src/lr-fft-rows.wgsl` and `web/shaders/src/lr-fft-cols.wgsl`, each with a
+- [x] 5.3 Write `web/shaders/src/lr-fft-rows.wgsl` and `web/shaders/src/lr-fft-cols.wgsl`, each with a
       forward and an inverse entry point, one line per workgroup of 256 invocations, `2N` complex
       values in workgroup storage, one barrier per stage, species on z. Verify: the bundler resolves
       both and the four entry points match the manifest keys from 3.6
-- [ ] 5.4 Write `web/shaders/src/lr-kernel.wgsl` — one thread per bin holding the source spectra in
+- [x] 5.4 Write `web/shaders/src/lr-kernel.wgsl` — one thread per bin holding the source spectra in
       registers while it writes every receiving species, out of place, with the kernel and the
       `1/(W·H)` normalization of design D6 folded into one multiply. Verify: the bundler resolves it
-- [ ] 5.5 Write `web/shaders/src/lr-force.wgsl` — four bilinear samples one cell apart for the central
+- [x] 5.5 Write `web/shaders/src/lr-force.wgsl` — four bilinear samples one cell apart for the central
       difference, scaled by the species' potential and the frame-scaled strength, ending in two
       `atomicAdd`s into `velocityDeltaFixed`. Never a store: the frame cleared the buffer and three
       other passes write it. Verify: the bundler resolves it
-- [ ] 5.6 Register all five in the binding manifest in `src/wgsl_lint.nim` and all five in the
+- [x] 5.6 Register all five in the binding manifest in `src/wgsl_lint.nim` and all five in the
       `StaticFiles` table in `src/main.nim` — unregistered means unserved means a failed fetch at
       pipeline init. Verify: `tests/test_wgsl_lint.nim` is green, the bundled set equalling the
       registered manifest

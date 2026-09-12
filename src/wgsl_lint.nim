@@ -163,6 +163,15 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   "field-force": @[0, 1, 2, 3, 4, 5],
   "body-force": @[0, 1, 2, 3, 4, 5, 6],  # binding 3 is the envelope, written from Nim every frame; 6 is the body's own accumulator
   "body-integrate": @[0, 1, 2, 3],
+  "lr-deposit": @[0, 1, 2, 3],
+  # The two transform shaders share one layout across their forward and inverse
+  # entry points, so the row pass declares the density it reads on the way in
+  # and the potential it writes on the way out together; each direction leaves
+  # one of the two unread.
+  "lr-fft-rows": @[0, 1, 2, 3, 4],
+  "lr-fft-cols": @[0, 1, 2],
+  "lr-kernel": @[0, 1, 2, 3],  # binding 3 is SimParams, where the attraction matrix already lives
+  "lr-force": @[0, 1, 2, 3, 4],
   # Render shaders (staticRead into app.js by webgpu_render.nim).
   "render": @[0, 1, 2, 3, 4],
   "glow": @[0, 1, 2, 4],  # binding 3 (render's fieldTexture) legally absent — glow never samples the RD field
