@@ -62,8 +62,9 @@ const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particl
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_RESOLVE* = 4      # srcField(sample) + dstField(storage) + deposit + alive-cell census
 const EXPECTED_BIND_GROUP_ENTRIES_RD_STEP* = 4            # srcField(sample) + dstField(storage) + fieldParams + reactionParams
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE* = 6        # gridParams + particles + field(sample) + velocityDelta + fieldParams + speciesChemistry
-# The bodies pass. See body-force.wgsl's binding manifest.
-const EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE* = 6         # gridParams + particles + bodies + envelope + velocityDelta + bodyParams
+# The bodies passes. See body-force.wgsl's and body-integrate.wgsl's manifests.
+const EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE* = 7         # gridParams + particles + bodies + envelope + velocityDelta + bodyParams + bodyAccum
+const EXPECTED_BIND_GROUP_ENTRIES_BODY_INTEGRATE* = 4     # bodies + envelope + bodyAccum + bodyParams
 
 proc getExpectedEntryCount(passName: cstring): int =
   case $passName
@@ -83,6 +84,7 @@ proc getExpectedEntryCount(passName: cstring): int =
   of "rdStepToFront", "rdStepToTrail": result = EXPECTED_BIND_GROUP_ENTRIES_RD_STEP
   of "fieldForce": result = EXPECTED_BIND_GROUP_ENTRIES_FIELD_FORCE
   of "bodyForce": result = EXPECTED_BIND_GROUP_ENTRIES_BODY_FORCE
+  of "bodyIntegrate": result = EXPECTED_BIND_GROUP_ENTRIES_BODY_INTEGRATE
   else: result = -1
 
 var shaderModules* {.exportc.}: JsObject = createJsObject()
@@ -590,12 +592,30 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard bodyForceEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.bodyEnvelope)))
   discard bodyForceEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.velocityDelta)))
   discard bodyForceEntries.push(createBindGroupEntry(5, uniformBuffers["bodyParams"]))
+  discard bodyForceEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.bodyAccum)))
   validateBindGroupEntryCount(bodyForceEntries, "bodyForce", "bind group creation")
   bindGroups["bodyForce"] = await createBindGroupWithValidation(
     "Body Force",
     cast[GPUBindGroupLayout](bindGroupLayouts["bodyForce"]),
     bodyForceEntries,
     "Body Force Bind Group"
+  )
+
+  # Body Integrate: one thread per body over the reactions the pass above
+  # accumulated. No particles and no grid — a body's motion is the sum in its
+  # own three words.
+  let bodyIntegrateEntries = createJsArray()
+  discard bodyIntegrateEntries.push(createBindGroupEntry(0, cast[JsObject](gpuBuffers.bodies)))
+  discard bodyIntegrateEntries.push(createBindGroupEntry(1, cast[JsObject](gpuBuffers.bodyEnvelope)))
+  discard bodyIntegrateEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.bodyAccum)))
+  discard bodyIntegrateEntries.push(createBindGroupEntry(3, uniformBuffers["bodyParams"]))
+  validateBindGroupEntryCount(bodyIntegrateEntries, "bodyIntegrate",
+    "bind group creation")
+  bindGroups["bodyIntegrate"] = await createBindGroupWithValidation(
+    "Body Integrate",
+    cast[GPUBindGroupLayout](bindGroupLayouts["bodyIntegrate"]),
+    bodyIntegrateEntries,
+    "Body Integrate Bind Group"
   )
 
 proc fetch*(path: cstring): Future[JsObject] {.importjs: "fetch(#)".}
@@ -932,11 +952,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # and its change caps were measured in.
   bodyParamsData[BODY_DT_SECONDS] = substepDt
   bodyParamsData[BODY_FRAMES] = float32(frameFactor(substepDt))
-  # The accumulator's scales arrive inverted, so the integrate multiplies where
-  # body_core.decoded divides.
-  bodyParamsData[BODY_FORCE_SCALE] = float32(1.0 / body_core.BODY_FIXED_POINT_SCALE)
-  bodyParamsData[BODY_TORQUE_SCALE] =
-    float32(1.0 / body_core.BODY_TORQUE_FIXED_SCALE)
+  # The accumulator's two scales, unchanged: body-force multiplies by them to
+  # encode and body-integrate divides to decode, so each scale reaches both
+  # sides as one number.
+  bodyParamsData[BODY_FORCE_SCALE] = float32(body_core.BODY_FIXED_POINT_SCALE)
+  bodyParamsData[BODY_TORQUE_SCALE] = float32(body_core.BODY_TORQUE_FIXED_SCALE)
   bodyParamsData[BODY_LINEAR_DAMPING] = float32(body_core.BODY_LINEAR_DAMPING)
   bodyParamsData[BODY_ANGULAR_DAMPING] = float32(body_core.BODY_ANGULAR_DAMPING)
   bodyParamsData[BODY_MAX_SPEED_CHANGE] =

@@ -375,8 +375,14 @@ func buildFrame*(couplings: WorldCouplings;
   # at zero a frozen body and a drifting one are indistinguishable. Drawing a
   # body would make its step world-intrinsic and this guard wrong.
   if acts(couplings.bodies):
+    # Two dispatches in ONE node: they share a cadence, and WebGPU orders
+    # dispatches inside a compute pass with the memory barriers the grid build's
+    # four already rest on, so the integrate reads the sum the force pass just
+    # wrote. dsOne covers the whole table, which shader_config's assertion holds
+    # the workgroup wide enough for.
     result.add computePassNode("Bodies", PROFILER_SLOT_NONE, @[
       dispatch("bodyForce", dsParticleWorkgroups),
+      dispatch("bodyIntegrate", dsOne),
     ])
 
   # integrate always closes the frame: it is the one pass that reads the

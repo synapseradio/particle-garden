@@ -96,11 +96,14 @@ const
   BODY_SPECS* = [
     ShaderSpec(key: "bodyForce", path: "./shaders/body-force.wgsl",
       label: "Body Force Shader", entryPoint: "applyBodyForce"),
+    ShaderSpec(key: "bodyIntegrate", path: "./shaders/body-integrate.wgsl",
+      label: "Body Integrate Shader", entryPoint: "integrateBodies"),
   ]
-    ## What the bodies do to the particles. It reads particle positions and
-    ## writes the velocity accumulator, exactly as fieldForce does, and needs
-    ## no grid: a body's reach is its own band rather than the neighbour sweep's
-    ## radius.
+    ## What the bodies do to the particles, and what the particles do back. The
+    ## force pass reads particle positions and writes the velocity accumulator,
+    ## exactly as fieldForce does, and needs no grid: a body's reach is its own
+    ## band rather than the neighbour sweep's radius. The integrate is one
+    ## thread per body over the sum of the reactions the force pass accumulated.
 
 func allShaderSpecs*(): seq[ShaderSpec] =
   ## Every compute shader the world can dispatch, registered once at init.

@@ -131,11 +131,12 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
 
   test "moving a strength to zero changes nothing else about the world":
     # The test that makes a skip an optimization rather than a mode: zeroing one
-    # strength must subtract exactly one pass and leave every other pass in
-    # place, in order. A skip that also drops a neighbour's work rebuilds the
-    # eight enumerated worlds under a nicer name.
-    for skippable in [("fluid", "forcesSph"), ("deposit", "fieldDeposit"),
-        ("fieldForce", "fieldForce"), ("bodies", "bodyForce")]:
+    # strength must subtract that strength's own passes and leave every other
+    # pass in place, in order. A skip that also drops a neighbour's work rebuilds
+    # the eight enumerated worlds under a nicer name.
+    for skippable in [("fluid", @["forcesSph"]), ("deposit", @["fieldDeposit"]),
+        ("fieldForce", @["fieldForce"]),
+        ("bodies", @["bodyForce", "bodyIntegrate"])]:
       var zeroed = FULLY_COUPLED
       case skippable[0]
       of "fluid": zeroed.fluid = COUPLING_OFF
@@ -143,8 +144,10 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
       of "bodies": zeroed.bodies = COUPLING_OFF
       else: zeroed.fieldForce = COUPLING_OFF
       checkpoint("zeroing " & skippable[0])
-      check dispatchSequence(zeroed) ==
-        dispatchSequence(FULLY_COUPLED).without(skippable[1])
+      var remaining = dispatchSequence(FULLY_COUPLED)
+      for key in skippable[1]:
+        remaining = remaining.without(key)
+      check dispatchSequence(zeroed) == remaining
 
   test "force strength never changes the frame":
     # Forces are the asymmetric coupling and this is where that is recorded.
@@ -175,7 +178,8 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     # exactly the intrinsic sequence is left, whatever the strengths were.
     for couplings in ALL_COUPLINGS:
       var stripped = dispatchSequence(couplings)
-      for key in ["forcesSph", "fieldDeposit", "fieldForce", "bodyForce"]:
+      for key in ["forcesSph", "fieldDeposit", "fieldForce", "bodyForce",
+          "bodyIntegrate"]:
         stripped = stripped.without(key)
       check stripped == WORLD_INTRINSIC_SEQUENCE
 
@@ -224,6 +228,47 @@ suite "Delta Buffers Have One Reset Owner":
         if node.kind == fnkClearBuffer and node.clearTarget == sbDensityDelta:
           densityClearedAt = index
       check densityClearedAt >= 0
+
+
+suite "A Body Feels What It Does":
+  test "the bodies node pushes the particles and then moves the body":
+    # Two dispatches in ONE node, in this order: the force pass writes both the
+    # particles' impulses and the body's share of them, and the integrate reads
+    # that share. A node is the unit the executor skips, so passes that cannot
+    # be skipped apart cannot live in two.
+    let frame = buildFrame(FULLY_COUPLED)
+    var bodiesAt = -1
+    for index, node in frame:
+      if node.kind == fnkComputePass and node.label == "Bodies":
+        bodiesAt = index
+    check bodiesAt >= 0
+    var keys: seq[string]
+    var sizes: seq[DispatchSize]
+    for step in frame[bodiesAt].dispatches:
+      keys.add step.pipelineKey
+      sizes.add step.size
+    check keys == @["bodyForce", "bodyIntegrate"]
+    # One thread per body and one workgroup over the whole table, which is what
+    # shader_config's MAX_BODIES assertion holds the workgroup wide enough for.
+    check sizes == @[dsParticleWorkgroups, dsOne]
+
+  test "the body accumulator is cleared once, ahead of the pass that fills it":
+    # Same rule as velocityDelta's, for the same reason: body-integrate reads
+    # this buffer without resetting it, so the frame is its one reset owner.
+    for couplings in ALL_COUPLINGS:
+      let frame = buildFrame(couplings)
+      var clears = 0
+      var clearedAt = -1
+      for index, node in frame:
+        if node.kind == fnkClearBuffer and node.clearTarget == sbBodyAccum:
+          inc clears
+          if clearedAt < 0: clearedAt = index
+      check clears == 1
+      for index, node in frame:
+        if node.kind != fnkComputePass: continue
+        for step in node.dispatches:
+          if step.pipelineKey == "bodyForce":
+            check clearedAt < index
 
 
 suite "The Grid Is Built Once":
@@ -312,7 +357,7 @@ suite "Field Passes Compose Safely":
       "binCount", "prefixLocal", "prefixBlocks", "prefixFinal", "binScatter",
       "forces", "forcesSph", "integrate",
       "fieldDeposit", "fieldResolve", "rdStepToFront", "rdStepToTrail",
-      "fieldForce", "bodyForce"]
+      "fieldForce", "bodyForce", "bodyIntegrate"]
     for couplings in ALL_COUPLINGS:
       for key in dispatchSequence(couplings):
         check key in KNOWN

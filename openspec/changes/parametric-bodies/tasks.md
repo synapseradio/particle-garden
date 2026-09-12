@@ -201,18 +201,18 @@ At the end of this group a body ignited from the console pulls particles. Bodies
 
 Gated on group 2.
 
-- [ ] 6.1 **Red first.** Extend `tests/test_sim_registry.nim` to assert the `Bodies` node carries two
+- [x] 6.1 **Red first.** Extend `tests/test_sim_registry.nim` to assert the `Bodies` node carries two
       dispatches, `bodyForce` then `bodyIntegrate` at `dsOne`, and that `sbBodyAccum` is cleared by a
       frame node ahead of the pass that writes it and never cleared twice (suite at `:171-215`).
       Verify: the tests fail
-- [ ] 6.2 Extend `web/shaders/src/body-force.wgsl` to accumulate the equal and opposite impulse and
+- [x] 6.2 Extend `web/shaders/src/body-force.wgsl` to accumulate the equal and opposite impulse and
       its torque, about the body's center over the toroidal minimum-image displacement, into
       `sbBodyAccum` with `atomicAdd` at the body scales of design D7. Verify: `just shaders` bundles
       and `tests/test_wgsl_lint.nim` passes
-- [ ] 6.3 Write `web/shaders/src/body-integrate.wgsl` as one thread per body, applying the
+- [x] 6.3 Write `web/shaders/src/body-integrate.wgsl` as one thread per body, applying the
       semi-implicit step of design D9 with the group 2 constants, the per-substep impulse cap, and
       the torus wrap. It reads and does not reset the accumulator. Verify: `just shaders` bundles it
-- [ ] 6.4 Register and bind `bodyIntegrate` by the same four steps as 5.3 and 5.4, and add its
+- [x] 6.4 Register and bind `bodyIntegrate` by the same four steps as 5.3 and 5.4, and add its
       dispatch to the `Bodies` node. Verify: 6.1 passes and `tests/test_shader_manifest.nim` still
       finds every dispatched key registered exactly once
 - [ ] 6.5 `just happen` builds and `just check` is green

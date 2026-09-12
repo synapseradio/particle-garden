@@ -25,6 +25,11 @@
 // way field-force receives a scale with the frame already folded in. The other
 // clock, seconds, belongs to travel and is body-integrate's business.
 //
+// TWO ACCUMULATORS, ONE EVALUATION. The impulse goes to the particle and its
+// negation, with the torque it carries about the body's centre, goes to the
+// body's own words in sbBodyAccum. body-integrate reads those without
+// resetting them; the frame owns the clear.
+//
 // INDEXING + OUTPUT:
 // Reads particles[] and writes velocityDeltaFixed[] in ORIGINAL index space
 // (globalId.x) — the space integrate.wgsl reads back. Contributions ACCUMULATE
@@ -46,6 +51,7 @@
 @group(0) @binding(3) var<storage, read> envelope: array<f32>;
 @group(0) @binding(4) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(5) var<uniform> params: BodyParams;
+@group(0) @binding(6) var<storage, read_write> bodyAccum: array<atomic<i32>>;
 
 // The shortest displacement across a torus. A body's reach is not bounded by a
 // grid cell, so this takes the full extent rather than the half-size form
@@ -132,7 +138,22 @@ fn applyBodyForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let actingSide = select(0.0, 1.0, distance * sign(body.enclosure) >= 0.0);
     let holding = -body.enclosure * actingSide * min(spanned, 1.0);
 
-    total = total + normal * (towardSurface + holding) * presence * strength;
+    let contribution = normal * (towardSurface + holding) * presence * strength;
+    total = total + contribution;
+
+    // EQUAL AND OPPOSITE, before any damping or cap: the reaction is the
+    // negation of what the particle just received, so this pass cannot give a
+    // push the body does not feel. The lever arm is the same minimum-image
+    // displacement the force was evaluated over, which is what makes the torque
+    // finite on a torus.
+    let reaction = -contribution;
+    atomicAdd(&bodyAccum[slot * 3u],
+      i32(reaction.x * params.forceScale));
+    atomicAdd(&bodyAccum[slot * 3u + 1u],
+      i32(reaction.y * params.forceScale));
+    atomicAdd(&bodyAccum[slot * 3u + 2u],
+      i32((toPoint.x * reaction.y - toPoint.y * reaction.x) *
+        params.torqueScale));
   }
 
   // ACCUMULATE, never overwrite: three other passes write this buffer and

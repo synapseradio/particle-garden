@@ -287,6 +287,7 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORKGROUP_SIZE_FIELD_X"] = $activeConfig.workgroups.fieldStepX
   result["WORKGROUP_SIZE_FIELD_Y"] = $activeConfig.workgroups.fieldStepY
   result["WORKGROUP_SIZE_BODY_FORCE"] = $activeConfig.workgroups.bodyForce
+  result["WORKGROUP_SIZE_BODY_INTEGRATE"] = $activeConfig.workgroups.bodyIntegrate
   result["FIELD_W"] = $FIELD_W
   result["FIELD_H"] = $FIELD_H
 
