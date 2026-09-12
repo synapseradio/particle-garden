@@ -24,6 +24,17 @@ type
     clientX*: float
     clientY*: float
     button*: MouseButton
+    shiftHeld*: bool
+      ## Shift rather than Ctrl/Cmd or Alt: Ctrl-click is a right-click on
+      ## macOS, Cmd and Ctrl already modify the wheel into a zoom, and Alt-drag
+      ## is a window-manager gesture on several desktops.
+
+  PressOutcome* = object
+    ## What a primary press asks the world for: the input state it leaves, and
+    ## the ignition it requests, at the point it was pressed.
+    state*: InputState
+    ignites*: bool
+    atX*, atY*: float
 
 # ==============================================================================
 # SECTION 2: EVENT HANDLERS (pure state transitions)
@@ -40,6 +51,22 @@ func handleMouseDown*(state: InputState; event: MouseEventData): InputState =
     # The middle button pans the camera (canvas_input, pan_handler) and reaches
     # physics input nowhere.
     discard
+
+func handlePrimaryPress*(state: InputState; event: MouseEventData):
+    PressOutcome =
+  ## A press on the canvas, and the one place the two things a primary press
+  ## can mean are told apart. Held, it lights a body at the point and leaves the
+  ## cursor alone — a press that also attracted would ignite the body into a
+  ## crowd the gesture itself gathered. Unheld, it is the ordinary press.
+  ##
+  ## The point travels through in whatever space it arrived in; canvas_input
+  ## converts the ignition's point to world space at capture, because an
+  ## ignition pins a moment to a world point while the live cursor does not.
+  if event.shiftHeld and event.button == mbLeft:
+    PressOutcome(state: state, ignites: true,
+      atX: event.clientX, atY: event.clientY)
+  else:
+    PressOutcome(state: handleMouseDown(state, event), ignites: false)
 
 func handleMouseUp*(state: InputState; event: MouseEventData): InputState =
   case event.button
@@ -84,5 +111,6 @@ when defined(js):
     MouseEventData(
       clientX: event.clientX.float,
       clientY: event.clientY.float,
-      button: MouseButton(event.button)
+      button: MouseButton(event.button),
+      shiftHeld: event.shiftKey
     )

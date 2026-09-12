@@ -36,6 +36,8 @@ const InputBindings* = [
     description: "attract particles toward the cursor"),
   InputBinding(device: bdMouse, gesture: "Right press / drag",
     description: "repel particles from the cursor"),
+  InputBinding(device: bdMouse, gesture: "Shift + left press",
+    description: "light a body at the cursor"),
   InputBinding(device: bdMouse, gesture: "Double-click",
     description: "fire a blast at the cursor"),
   InputBinding(device: bdMouse, gesture: "Middle-button drag",

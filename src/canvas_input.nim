@@ -153,7 +153,21 @@ proc setupEvents*(canvas: JsObject) {.exportc.} =
       preventDefault(event)
     panSession = panPressed(panSession, eventData.button,
       eventData.clientX, eventData.clientY)
-    currentInput.set(handleMouseDown(currentInput.get(), eventData))
+    let outcome = handlePrimaryPress(currentInput.get(), eventData)
+    currentInput.set(outcome.state)
+    if outcome.ignites:
+      # The press converts to world space HERE, at capture, as the blast
+      # gestures do: a body is pinned to a world point, so a camera move
+      # afterwards must not drag it with the screen. The same zero-size guard
+      # the wheel and dblclick handlers use — a canvas mid-resize has no pixels
+      # to divide by.
+      if float(canvasEl.width) <= 0.0 or float(canvasEl.height) <= 0.0:
+        return
+      let world = pointerWorld(outcome.atX, outcome.atY)
+      if not onIgniteBody.isNil:
+        # A full table refuses, and a refusal is nothing the gesture can do
+        # anything about.
+        discard onIgniteBody(float(world.x), float(world.y))
   )
 
   canvasEl.addEventListener("mouseup", proc(event: MouseEvent) =

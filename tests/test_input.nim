@@ -112,6 +112,63 @@ suite "MouseHandler - Mouse Down":
     check state.mouseRightDown == false
 
 
+suite "MouseHandler - A Held Modifier Lights A Body":
+  # The press point travels through unchanged; canvas_input converts the point
+  # this returns to world space, since an ignition pins a moment to a world
+  # point while the live cursor stays in canvas pixels.
+  test "a modifier-held primary press asks for a body where it was pressed":
+    let event = MouseEventData(clientX: 1280.0, clientY: 720.0, button: mbLeft,
+      shiftHeld: true)
+    let outcome = handlePrimaryPress(initInputState(), event)
+
+    check outcome.ignites == true
+    check outcome.atX == 1280.0
+    check outcome.atY == 720.0
+
+  test "the press that lights a body does not also grab the cursor":
+    # Otherwise the gesture attracts particles toward the point for as long as
+    # the button is held, and the body ignites into a crowd the gesture made.
+    let event = MouseEventData(clientX: 1280.0, clientY: 720.0, button: mbLeft,
+      shiftHeld: true)
+    let outcome = handlePrimaryPress(initInputState(), event)
+
+    check outcome.state.mouseDown == false
+    check outcome.state.mouseRightDown == false
+
+  test "an unmodified primary press still reaches the live cursor":
+    let event = MouseEventData(clientX: 10.0, clientY: 20.0, button: mbLeft)
+    let outcome = handlePrimaryPress(initInputState(), event)
+
+    check outcome.ignites == false
+    check outcome.state == handleMouseDown(initInputState(), event)
+
+  test "a modifier held on a non-primary button lights nothing":
+    # The right button repels; a modifier does not turn it into an ignition.
+    for button in [mbRight, mbMiddle]:
+      let event = MouseEventData(clientX: 10.0, clientY: 20.0, button: button,
+        shiftHeld: true)
+      let outcome = handlePrimaryPress(initInputState(), event)
+      checkpoint($button)
+      check outcome.ignites == false
+      check outcome.state == handleMouseDown(initInputState(), event)
+
+  test "the blast gestures are untouched by the modifier":
+    # Double-click and the two-finger tap still fire blasts, held or not: the
+    # ignition is a new gesture beside them, not a reinterpretation of one.
+    let held = MouseEventData(clientX: 200.0, clientY: 300.0, button: mbLeft,
+      shiftHeld: true)
+    let blasted = handleDoubleClick(initInputState(), held)
+    check blasted.blastX == 200.0
+    check blasted.blastY == 300.0
+    check blasted.blastStrength == 1.0
+
+    let tap = TouchEventData(touches: @[
+      TouchPoint(clientX: 100.0, clientY: 100.0),
+      TouchPoint(clientX: 300.0, clientY: 300.0)])
+    let tapped = handleTwoFingerTap(initInputState(), tap)
+    check tapped.blastStrength == 1.0
+
+
 suite "MouseHandler - Mouse Up":
   test "left button release":
     let initial = initInputState().withMouseDown(true)

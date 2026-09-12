@@ -219,12 +219,12 @@ Gated on group 2.
 
 ## 7. The canvas gesture
 
-- [ ] 7.1 **Red first.** Add the modifier-held primary press to `src/ui/input/binding_table.nim` and
+- [x] 7.1 **Red first.** Add the modifier-held primary press to `src/ui/input/binding_table.nim` and
       its pure handler beside the existing ones in `src/ui/input/mouse_handler.nim`, with tests in
       `tests/test_input.nim`: the gesture resolves to an ignition at the converted world point, an
       unmodified press still reaches the live cursor, and the existing double-click and
       two-finger-tap blast bindings are untouched. Verify: the new tests fail, then pass
-- [ ] 7.2 Wire the listener in `src/canvas_input.nim` beside the double-click handler (`:172-179`),
+- [x] 7.2 Wire the listener in `src/canvas_input.nim` beside the double-click handler (`:172-179`),
       converting to world space at capture through `pointerWorld`. Verify: `just happen` is green and
       the binding appears in the generated gesture reference the help panel serves
       (`openspec/specs/in-app-help/spec.md`, "The gesture and key reference is generated from the
