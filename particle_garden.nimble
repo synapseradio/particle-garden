@@ -21,12 +21,17 @@ const jsFlags = "-d:release " & qualityFlags
 
 const nativeFlags = "-d:release --opt:speed " & qualityFlags
 
+# Mirrors the justfile build-app recipe: bun halves app.js; esm because
+# index.html loads it as type="module".
+const minifyApp = "bun build web/app.unminified.js --minify --target browser --format esm --outfile web/app.js"
+
 # Windows static linking flags - eliminate VCRUNTIME140.dll dependency
 # Uses MinGW static linking to create portable executables
 const windowsStaticFlags = "--passL:-static --passL:-static-libgcc --passL:-static-libstdc++"
 
 task app, "Build the web app":
-  exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
+  exec "nim js " & jsFlags & " --out:web/app.unminified.js src/app.nim"
+  exec minifyApp
 
 task shaders, "Bundle WGSL shaders (resolve imports, substitute config)":
   exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
@@ -35,7 +40,8 @@ task all, "Build everything: app and native":
   echo "Bundling shaders..."
   exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
   echo "Building app..."
-  exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
+  exec "nim js " & jsFlags & " --out:web/app.unminified.js src/app.nim"
+  exec minifyApp
   echo "Building native app..."
   exec "nim c " & nativeFlags & " --out:main src/main.nim"
   echo "Build complete. Run with: ./main"
@@ -48,7 +54,8 @@ task release, "Build optimized release":
   echo "Bundling shaders..."
   exec "nim c -r --path:src " & qualityFlags & " tools/wgsl_bundle.nim"
   echo "Building app..."
-  exec "nim js " & jsFlags & " --out:web/app.js src/app.nim"
+  exec "nim js " & jsFlags & " --out:web/app.unminified.js src/app.nim"
+  exec minifyApp
   echo "Building native app..."
   when defined(windows):
     exec "nim c " & nativeFlags & " " & windowsStaticFlags & " --out:main src/main.nim"

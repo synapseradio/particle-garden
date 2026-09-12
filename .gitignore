@@ -1,6 +1,7 @@
 # Build artifacts
 main
 web/app.js
+web/app.unminified.js
 web/ui-bundle.js
 web/ui-bundle.css
 tools/wgsl_bundle

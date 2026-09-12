@@ -22,9 +22,12 @@ default: happen
 shaders:
     nim c -r --path:src {{quality_flags}} tools/wgsl_bundle.nim
 
-# Compile the Nim frontend: src/app.nim -> web/app.js
+# Compile the Nim frontend: src/app.nim -> web/app.unminified.js, then bun
+# minifies it to web/app.js (roughly half the bytes raw, a third less gzipped).
+# esm because index.html loads app.js as type="module".
 build-app:
-    nim js {{js_flags}} --out:web/app.js src/app.nim
+    nim js {{js_flags}} --out:web/app.unminified.js src/app.nim
+    bun build web/app.unminified.js --minify --target browser --format esm --outfile web/app.js
 
 # Typecheck (tsc --noEmit, TS 7) and bundle the Solid UI -> web/ui-bundle.*
 build-ui:

@@ -94,8 +94,7 @@ when defined(js):
       for targetName, targetField in target.fieldPairs:
         # `when`, never `if`: both names are compile-time literals, so a runtime
         # comparison would emit every non-matching pair as dead code. Measured
-        # at 145 KB of `if (false)` blocks in web/app.js, which main.nim then
-        # embeds by staticRead.
+        # at 145 KB of `if (false)` blocks in nim's JS output before minify.
         when targetField is typeof(sourceValue) and targetName == sourceName:
           targetField = sourceValue
 
