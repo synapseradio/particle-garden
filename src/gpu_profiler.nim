@@ -40,7 +40,13 @@ const
     ## slot — of its own, separate from passPhysics. app.nim adds this back
     ## into the physics figure it reports, so the stat keeps meaning what it
     ## says: total physics time.
-  numPasses* = 7
+  passLongRange* = 7
+    ## The long-range mesh solve (deposit, the four transform dispatches, the
+    ## kernel mix). Its own slot because the solve's cost is what the mesh-size
+    ## control is chosen against, and a slot shared with any other pass could
+    ## only report a sum. The force pass it feeds writes no timestamps: it
+    ## runs per substep, where a slot could hold only the last substep's span.
+  numPasses* = 8
   numQueries = numPasses * 2
 
 proc createJsObject(): JsObject {.importjs: "({})".}

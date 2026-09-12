@@ -56,7 +56,7 @@ suite "Every Generated Layout Agrees With WGSL's Offset Algorithm":
   const generatedLayouts = [
     SimParamsLayout, RenderParamsLayout, FadeParamsLayout, CameraLayout,
     FieldParamsLayout, ReactionParamsLayout, SpeciesChemistryLayout,
-    BloomParamsLayout, TonemapParamsLayout]
+    BloomParamsLayout, TonemapParamsLayout, LrParamsLayout]
 
   test "every layout's declared offsets are the ones WGSL computes":
     for layout in generatedLayouts:
@@ -329,6 +329,48 @@ suite "Generated FieldParams Layout (Reaction-Diffusion)":
     check "feed: f32," in generated
     check "kill: f32," in generated
     check "fieldForceScale: f32," in generated
+    check generated.strip.endsWith("}")
+
+
+suite "Generated LrParams Layout (Long-Range Mesh)":
+  # The one uniform the whole mesh chain reads. It carries the LIVE grid size
+  # rather than a compiled constant, which is what lets the mesh-size control
+  # resize the solve without recreating a buffer or rebuilding a bind group.
+  #
+  # The attraction matrix is deliberately absent: the kernel pass binds
+  # SimParams and reads the matrix already there, so the relationship between
+  # species lives in exactly one place.
+
+  test "LrParamsLayout is 12 slots, 48 bytes written and allocated":
+    check LrParamsLayout.totalSize == 48
+    check wgslUniformSize(LrParamsLayout) == 48
+    check LR_PARAMS_F32_COUNT == 12
+
+  test "the generated LR_ indices reproduce the declared field order":
+    check LR_GRID_W == 0
+    check LR_GRID_H == 1
+    check LR_SPECIES_COUNT == 2
+    check LR_FORCE_SCALE == 3
+    check LR_INV_REACH_SQ == 4
+    check LR_SOFTENING == 5
+    check LR_WORLD_WIDTH == 6
+    check LR_WORLD_HEIGHT == 7
+    check LR_INV_CELLS == 8
+
+  test "the three counts are integers and everything else is a float":
+    # gridW, gridH and speciesCount bound every loop in the chain, so they
+    # arrive as u32 and no shader rounds a float back into an index.
+    for fieldIndex in 0 .. 2:
+      check LrParamsLayout.fields[fieldIndex].kind == gtU32
+    for fieldIndex in 3 .. 8:
+      check LrParamsLayout.fields[fieldIndex].kind == gtF32
+
+  test "toWgslStruct renders LrParams with WGSL scalar types":
+    let generated = toWgslStruct(LrParamsLayout)
+    check generated.startsWith("struct LrParams {")
+    check "gridW: u32," in generated
+    check "invReachSq: f32," in generated
+    check "invCells: f32," in generated
     check generated.strip.endsWith("}")
 
 

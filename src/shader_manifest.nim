@@ -105,6 +105,37 @@ const
     ## band rather than the neighbour sweep's radius. The integrate is one
     ## thread per body over the sum of the reactions the force pass accumulated.
 
+  LONG_RANGE_SPECS* = [
+    ShaderSpec(key: "lrDeposit", path: "./shaders/lr-deposit.wgsl",
+      label: "Long Range Deposit Shader", entryPoint: "depositCharge"),
+    ShaderSpec(key: "lrFftRows", path: "./shaders/lr-fft-rows.wgsl",
+      label: "Long Range Row Transform Shader", entryPoint: "transformRows"),
+    ShaderSpec(key: "lrFftCols", path: "./shaders/lr-fft-cols.wgsl",
+      label: "Long Range Column Transform Shader",
+      entryPoint: "transformCols"),
+    ShaderSpec(key: "lrKernel", path: "./shaders/lr-kernel.wgsl",
+      label: "Long Range Kernel Shader", entryPoint: "mixSpectra"),
+    ShaderSpec(key: "lrFftColsInv", path: "./shaders/lr-fft-cols.wgsl",
+      label: "Long Range Column Transform Shader (Inverse)",
+      entryPoint: "transformColsInverse"),
+    ShaderSpec(key: "lrFftRowsInv", path: "./shaders/lr-fft-rows.wgsl",
+      label: "Long Range Row Transform Shader (Inverse)",
+      entryPoint: "transformRowsInverse"),
+    ShaderSpec(key: "lrForce", path: "./shaders/lr-force.wgsl",
+      label: "Long Range Force Shader", entryPoint: "applyLongRangeForce"),
+  ]
+    ## The long-range mesh: deposit, the forward transform along each axis, the
+    ## matrix-weighted mix in k-space, the inverse back, and the force the
+    ## particles feel. Seven keys over five files.
+    ##
+    ## Each transform file carries two entry points rather than two files
+    ## carrying one each: rows and columns walk different strides and so are
+    ## genuinely different shaders, while forward and inverse along one axis
+    ## differ by a sign and a normalization inside otherwise identical code.
+    ## This is the other arrangement a shared file takes — rdStepToFront and
+    ## rdStepToTrail share a file AND an entry point, differing only in which
+    ## textures their bind groups name.
+
 func allShaderSpecs*(): seq[ShaderSpec] =
   ## Every compute shader the world can dispatch, registered once at init.
   ##
@@ -127,3 +158,4 @@ func allShaderSpecs*(): seq[ShaderSpec] =
   result.add SPH_SPECS
   result.add FIELD_SPECS
   result.add BODY_SPECS
+  result.add LONG_RANGE_SPECS

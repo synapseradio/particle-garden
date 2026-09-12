@@ -362,6 +362,54 @@ const
     totalSize: 16
   )
 
+  # LrParams struct (48 bytes, generated into web/shaders/modules/lr_params.wgsl)
+  #
+  # The long-range mesh's one uniform, read by all five of its shaders.
+  #
+  # THE GRID SIZE IS DATA HERE, NOT A COMPILED CONSTANT. Buffers are allocated
+  # once at the memory_layout ceiling and every pass bounds itself by gridW and
+  # gridH, so changing the mesh size destroys no buffer, creates none, and
+  # rebuilds no bind group. The species stride is the LIVE grid area, so the
+  # used region is compact and the tail of the allocation is never read.
+  #
+  # NO ATTRACTION MATRIX. The kernel pass binds SimParams and reads the matrix
+  # already there; a copy here would be one relationship in two places.
+  #
+  # Three values arrive pre-divided so nothing in the chain divides: invReachSq
+  # is 1/lambda^2, invCells is the inverse transform's 1/(W*H), and forceScale
+  # already carries the substep's frame.
+  LrParamsLayout* = GpuStruct(
+    name: "LrParams",
+    fields: @[
+      GpuField(name: "gridW",        kind: gtU32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "gridH",        kind: gtU32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "speciesCount", kind: gtU32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "forceScale",   kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "invReachSq",   kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "softening",    kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "worldWidth",   kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "worldHeight",  kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "invCells",     kind: gtF32, offset: 32, size: 4, count: 1),
+      GpuField(name: "padding0",     kind: gtU32, offset: 36, size: 4, count: 1),
+      GpuField(name: "padding1",     kind: gtU32, offset: 40, size: 4, count: 1),
+      GpuField(name: "padding2",     kind: gtU32, offset: 44, size: 4, count: 1),
+    ],
+    totalSize: 48,
+    notes: "// Used by: lr-deposit, lr-fft-rows, lr-fft-cols, lr-kernel,\n" &
+      "//          lr-force\n" &
+      "//\n" &
+      "// gridW/gridH are the LIVE mesh size, never the allocation ceiling:\n" &
+      "// every pass returns early past them, and a species' slice starts at\n" &
+      "// species * gridW * gridH.\n" &
+      "//\n" &
+      "// softening is a world-unit width, not a cell count, and one scalar\n" &
+      "// rather than one per axis: the kernel reads |k|, so a per-axis width\n" &
+      "// would make the force anisotropic in world units.\n" &
+      "//\n" &
+      "// The three padding fields carry the struct to a 16-byte uniform-buffer\n" &
+      "// boundary; nothing reads them.\n"
+  )
+
   # SpeciesChemistry struct (96 bytes, generated into
   # web/shaders/modules/species_chemistry.wgsl)
   #
@@ -762,7 +810,7 @@ static:
   # assertions stay beside the struct they size.
   for layout in [RenderParamsLayout, FadeParamsLayout, CameraLayout,
       OverlayParamsLayout, FieldParamsLayout, ReactionParamsLayout,
-      SpeciesChemistryLayout, BodyLayout, BodyParamsLayout]:
+      SpeciesChemistryLayout, BodyLayout, BodyParamsLayout, LrParamsLayout]:
     let computedOffsets = layout.wgslComputedOffsets
     for fieldIndex in 0 ..< layout.fields.len:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
@@ -790,6 +838,20 @@ static:
   # beside the struct they size.
   assert FieldParamsLayout.totalSize == 32, "FieldParams must be 32 bytes"
   assert FieldParamsLayout.wgslUniformSize == 32, "FieldParams allocates 32 bytes"
+
+# =============================================================================
+# LRPARAMS FIELD INDICES (the long-range mesh, webgpu_compute.nim)
+# =============================================================================
+# LR_GRID_W=0, LR_GRID_H=1, LR_SPECIES_COUNT=2, ... LR_INV_CELLS=8,
+# LR_PADDING0..2=9..11, LR_PARAMS_F32_COUNT=12.
+
+genFieldIndices(LrParamsLayout, "LR")
+
+static:
+  # Offset agreement rides the layout sweep above; the size this struct must
+  # hold is its own.
+  assert LrParamsLayout.totalSize == 48, "LrParams must be 48 bytes"
+  assert LrParamsLayout.wgslUniformSize == 48, "LrParams allocates 48 bytes"
 
 # =============================================================================
 # REACTIONPARAMS FIELD INDICES (which reaction the field runs)

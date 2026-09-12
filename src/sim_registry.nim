@@ -53,8 +53,10 @@ import field_core
 #   and integrate. These are what the world IS.
 #
 #   Coupling-owned, skipped at exactly zero. forces-sph's velocity contribution,
-#   the deposit, and field-force. Each is multiplied by its strength across its
-#   entire output.
+#   the deposit, field-force, and the long-range mesh's whole chain. Each is
+#   multiplied by its strength across its entire output — for the chain, that
+#   output is the one velocity delta its last pass writes, which is what lets a
+#   single strength skip six passes ahead of it.
 #
 # Forces are the asymmetric case and the reason this split exists: the
 # force TERM is coupling-owned and `forces` scales it inside the shader, but its
@@ -84,6 +86,26 @@ type
       ## body-integrate.wgsl), scaling the forces particles receive and the
       ## reaction bodies receive together, so action and reaction cannot be
       ## scaled apart.
+    longRange*: float
+      ## How hard the long-range mesh pulls (lr-force.wgsl). It scales the
+      ## whole chain's only output — the velocity delta the force pass
+      ## accumulates — so at zero the solve feeding it is skipped too.
+
+func sameFrameShape*(lhs, rhs: WorldCouplings): bool =
+  ## Whether two coupling vectors compose the same frame. Only the zeros decide
+  ## that, which is why this compares them rather than the strengths: a slider
+  ## moving from 0.4 to 0.5 must not rebuild anything, and the two settings are
+  ## the same world as far as the executor is concerned.
+  ##
+  ## It sits beside buildFrame because it answers a question about buildFrame:
+  ## a strength missing from this comparison leaves the executor running the
+  ## frame a previous world composed.
+  (lhs.forces == 0.0) == (rhs.forces == 0.0) and
+    (lhs.fluid == 0.0) == (rhs.fluid == 0.0) and
+    (lhs.deposit == 0.0) == (rhs.deposit == 0.0) and
+    (lhs.fieldForce == 0.0) == (rhs.fieldForce == 0.0) and
+    (lhs.bodies == 0.0) == (rhs.bodies == 0.0) and
+    (lhs.longRange == 0.0) == (rhs.longRange == 0.0)
 
 func acts(strength: float): bool =
   ## Whether a coupling contributes at all. The one place the frame compares a
@@ -101,8 +123,9 @@ type
     sbFillPointers
     sbVelocityDelta
       ## The per-particle velocity accumulator, TWO i32 per particle (x and y).
-      ## Every contributor — forces, forcesSph, fieldForce — accumulates into
-      ## it atomically, and the frame clears it once at the top. That split is
+      ## Every contributor — forces, forcesSph, fieldForce, lrForce —
+      ## accumulates into it atomically, and the frame clears it once at the
+      ## top. That split is
       ## what lets two contributors run in the same frame: if each pass
       ## self-reset the buffer, whichever ran second would erase the first.
     sbDensityDelta
@@ -144,6 +167,22 @@ type
       ## scales rather than velocityDelta's, since one word here can take a
       ## contribution from every particle in the world in one dispatch. The
       ## frame clears it, because bodyIntegrate reads it without resetting it.
+    sbLrDensity
+      ## The long-range mesh's charge accumulator, one i32 per species per
+      ## cell of the LIVE grid. Its own fixed-point scale, not the velocity
+      ## deltas' — long_range_core.LR_DENSITY_SCALE records why. The frame
+      ## clears it once per rendered frame, the cadence of the deposit that
+      ## fills it and the solve that consumes it.
+    sbLrSpectrumA
+    sbLrSpectrumB
+      ## The two spectra the round trip ping-pongs between, each a complex
+      ## pair per species per bin. Two are required rather than convenient:
+      ## the kernel pass reads every source species at a bin to write every
+      ## receiver at that bin, so its output cannot alias its input, and each
+      ## transform stage likewise reads one and writes the other.
+    sbLrPotential
+      ## The solved potential, one f32 per species per cell, read by the force
+      ## pass across every substep of the frame that produced it.
 
   DispatchSize* = enum
     ## Symbolic dispatch sizes, resolved by the executor each frame. The
@@ -159,6 +198,18 @@ type
       ## this value with a dispatchWorkgroups(x, y) call
       ## (webgpu_compute.nim's frame walk) rather than resolving it through
       ## the same one-int path as the others.
+    dsLrRowWorkgroups
+      ## One workgroup per row of the live mesh, species on z: (gridH, 1,
+      ## speciesCount). The transform gives a whole line to one workgroup, so
+      ## the count of lines IS the dispatch extent, and a world running four
+      ## species pays for four.
+    dsLrColWorkgroups
+      ## The same, per column: (gridW, 1, speciesCount).
+    dsLrBinWorkgroups
+      ## One invocation per bin of the live mesh, species on z:
+      ## (ceil(gridW * gridH / workgroup size), 1, speciesCount). The z index
+      ## is the RECEIVING species; each invocation reads every source species
+      ## at its bin.
 
   Dispatch* = object
     ## One setPipeline/setBindGroup/dispatchWorkgroups triple. pipelineKey
@@ -214,12 +265,36 @@ const
     ## A pass that writes no timestamps. gpu_profiler holds one query slot per
     ## pass, so two passes sharing a slot in one encoder would overwrite each
     ## other's query; a pass with no slot of its own carries this instead.
+  PROFILER_SLOT_LONG_RANGE* = 7
+    ## Mirrors gpu_profiler.passLongRange — the mesh solve. Its own slot
+    ## because the solve's cost is the number the grid-size control is chosen
+    ## against, and a slot shared with any other pass could only report a sum.
   PROFILER_SLOT_INTEGRATE* = 6
     ## Mirrors gpu_profiler.passIntegrate. integrate sits outside the physics
     ## pass because it must run after the field passes and the field passes
     ## must run after forces — three orderings that no single pass can hold.
     ## app.nim adds this slot into the reported physics time, so the number the
     ## stats show covers forces and integrate together.
+
+func resolveOneDimensional*(size: DispatchSize;
+    particleWorkgroups, scanBlocks: int): int =
+  ## The one-integer dispatch path: a size that names a single workgroup count
+  ## resolved against the live counts.
+  ##
+  ## A size of another dimensionality raises here rather than returning a
+  ## number. It would be a number the executor could dispatch — the field's
+  ## (x, y) or the mesh's (x, y, z) flattened to x alone — and the GPU would
+  ## run it without complaint, leaving the rest of the grid holding the
+  ## previous frame's contents. The executor dispatches those sizes from their
+  ## own branches of the frame walk.
+  case size
+  of dsParticleWorkgroups: particleWorkgroups
+  of dsScanBlocks: scanBlocks
+  of dsOne: 1
+  of dsFieldWorkgroups, dsLrRowWorkgroups, dsLrColWorkgroups,
+      dsLrBinWorkgroups:
+    raise newException(CatchableError,
+      $size & " is dispatched multi-dimensionally, not as one workgroup count")
 
 func clearBufferNode*(target: SimBuffer;
     cadence: FrameNodeCadence = fncEverySubstep): FrameNode =
@@ -285,6 +360,10 @@ func buildFrame*(couplings: WorldCouplings;
     # The bodies' own accumulator. body-integrate reads it without resetting it,
     # so the frame owns this clear exactly as it owns velocityDelta's.
     clearBufferNode(sbBodyAccum),
+    # The mesh's charge accumulator clears on the cadence of the pass that
+    # fills it: the deposit runs once per rendered frame, so a per-substep
+    # clear would empty the grid under a solve that already read it.
+    clearBufferNode(sbLrDensity, fncOncePerFrame),
     # gridCounts must start at zero for bin-count's atomic increments.
     clearBufferNode(sbGridCounts),
   ]
@@ -311,6 +390,28 @@ func buildFrame*(couplings: WorldCouplings;
   if acts(couplings.fluid):
     forceDispatches.add dispatch("forcesSph", dsParticleWorkgroups)
   result.add computePassNode("Physics", PROFILER_SLOT_PHYSICS, forceDispatches)
+
+  # The mesh solve reads particle positions and nothing else, so it follows
+  # Physics; its placement against the field passes is free, and it goes first
+  # so the two once-per-frame nodes sit together. Once per frame because the
+  # potential it leaves is good for the whole rendered frame: solving it per
+  # substep would multiply its cost by sphSubsteps and make Fluid Strength a
+  # second, undeclared control over how hard this coupling pulls.
+  #
+  # The whole chain is guarded by one strength. Nothing outside it reads the
+  # density, either spectrum or the potential, so the chain's only output is
+  # the velocity delta the force pass writes, and the strength multiplies that
+  # output entirely — the same rule a single pass answers to, applied to a
+  # chain.
+  if acts(couplings.longRange):
+    result.add computePassNode("Long Range Solve", PROFILER_SLOT_LONG_RANGE, @[
+      dispatch("lrDeposit", dsParticleWorkgroups),
+      dispatch("lrFftRows", dsLrRowWorkgroups),
+      dispatch("lrFftCols", dsLrColWorkgroups),
+      dispatch("lrKernel", dsLrBinWorkgroups),
+      dispatch("lrFftColsInv", dsLrColWorkgroups),
+      dispatch("lrFftRowsInv", dsLrRowWorkgroups),
+    ], fncOncePerFrame)
 
   # The field belongs to the world, not to a coupling: it evolves whether or not
   # particles write to it or read from it. A field frozen mid-pattern at zero
@@ -363,6 +464,16 @@ func buildFrame*(couplings: WorldCouplings;
   if acts(couplings.fieldForce):
     result.add computePassNode("Field Force", PROFILER_SLOT_NONE, @[
       dispatch("fieldForce", dsParticleWorkgroups),
+    ])
+
+  # The force reads the potential the solve left and accumulates into the
+  # velocity delta, which every substep clears and integrates — so it runs per
+  # substep, beside the other contributors, while the solve behind it does not.
+  # Substeps read that potential without writing it, sound the same way
+  # fieldForce reading the field texture across substeps is sound.
+  if acts(couplings.longRange):
+    result.add computePassNode("Long Range Force", PROFILER_SLOT_NONE, @[
+      dispatch("lrForce", dsParticleWorkgroups),
     ])
 
   # The bodies read particle positions and write velocityDelta, exactly as the

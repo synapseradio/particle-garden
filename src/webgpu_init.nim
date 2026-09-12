@@ -58,6 +58,20 @@ type
       ## One f32 of presence per slot, rewritten from Nim every frame.
     bodyAccum* {.importjs: "bodyAccum".}: GPUBuffer
       ## Three atomic i32 per body: force x, force y, torque.
+    # The long-range mesh. All four are allocated once at the memory_layout
+    # ceiling and indexed by the LIVE grid size the LrParams uniform carries,
+    # so changing the mesh size destroys nothing, creates nothing, and rebuilds
+    # no bind group.
+    lrDensity* {.importjs: "lrDensity".}: GPUBuffer
+      ## Fixed-point charge, i32 per species per cell.
+    lrSpectrumA* {.importjs: "lrSpectrumA".}: GPUBuffer
+    lrSpectrumB* {.importjs: "lrSpectrumB".}: GPUBuffer
+      ## The two spectra the round trip ping-pongs between, a complex f32 pair
+      ## per species per bin. Two rather than one because the kernel pass reads
+      ## every source species at a bin to write every receiver at that bin, so
+      ## its output cannot alias its input.
+    lrPotential* {.importjs: "lrPotential".}: GPUBuffer
+      ## The solved potential, f32 per species per cell.
 
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
     gridOffsets* {.importjs: "gridOffsets".}: GPUBuffer
@@ -91,6 +105,11 @@ type
     bodies* {.importjs: "bodies".}: int
     bodyEnvelope* {.importjs: "bodyEnvelope".}: int
     bodyAccum* {.importjs: "bodyAccum".}: int
+    lrDensity* {.importjs: "lrDensity".}: int
+    lrSpectrum* {.importjs: "lrSpectrum".}: int
+      ## One size for both spectra: they swap roles every stage, so a size
+      ## difference between them could only be a mistake.
+    lrPotential* {.importjs: "lrPotential".}: int
     gridCounts* {.importjs: "gridCounts".}: int
     gridOffsets* {.importjs: "gridOffsets".}: int
     sync* {.importjs: "sync".}: int
@@ -158,6 +177,13 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   result.bodies = memory_layout.MAX_BODIES * gpu_types.BodyLayout.totalSize
   result.bodyEnvelope = memory_layout.MAX_BODIES * 4
   result.bodyAccum = memory_layout.MAX_BODIES * 3 * 4
+  # The long-range mesh, at the ceiling rather than at the live size: the mesh
+  # selector then moves no allocation. 38 MB at the declared maximum.
+  let lrCells = memory_layout.LR_GRID_MAX_W * memory_layout.LR_GRID_MAX_H *
+    memory_layout.MAX_SPECIES
+  result.lrDensity = lrCells * 4      # i32 of fixed-point charge per cell
+  result.lrSpectrum = lrCells * 8     # a complex f32 pair per bin
+  result.lrPotential = lrCells * 4    # f32 per cell
 
   # Grid: u32 per cell
   result.gridCounts = gridCells * 4
@@ -398,6 +424,14 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
     sizes.bodyEnvelope, bufferUsage, "Body Envelope (f32 per slot)")
   buffers.bodyAccum = createBuf(
     sizes.bodyAccum, bufferUsage, "Body Reaction Accumulator (fixed-point i32)")
+  buffers.lrDensity = createBuf(
+    sizes.lrDensity, bufferUsage, "Long Range Charge (fixed-point i32)")
+  buffers.lrSpectrumA = createBuf(
+    sizes.lrSpectrum, bufferUsage, "Long Range Spectrum A (complex f32)")
+  buffers.lrSpectrumB = createBuf(
+    sizes.lrSpectrum, bufferUsage, "Long Range Spectrum B (complex f32)")
+  buffers.lrPotential = createBuf(
+    sizes.lrPotential, bufferUsage, "Long Range Potential (f32)")
 
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")
   buffers.gridOffsets = createBuf(sizes.gridOffsets, bufferUsage, "Grid Cell Offsets")

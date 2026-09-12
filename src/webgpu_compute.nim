@@ -37,6 +37,10 @@ import sim_registry
 import shader_manifest
 import sph_core
 import field_core
+import long_range_core
+# config_ranges owns LR_GRID_SIZES, the declared mesh sizes the selector
+# indexes; the live size bounds every long-range dispatch and clear below.
+import config_ranges
 from physics_core import frameFactor
 from memory_layout import MAX_BODIES
 from body_core import nil
@@ -218,6 +222,8 @@ proc advanceBodies*(seconds: float) =
     config.CONFIG.bodyIgnitionRate, seconds)
   if lit.isSome:
     discard lightBody(lit.get.atX, lit.get.atY, lit.get.shaping)
+let lrParamsData = newFloat32Array(LR_PARAMS_F32_COUNT)
+let lrParamsUint = newUint32Array(lrParamsData.buffer)
 
 proc requestFieldSeed*() =
   ## Ask for the field to be re-seeded on the next frame. Synchronous and
@@ -228,17 +234,6 @@ proc requestFieldSeed*() =
   ## watch, which is the point of the control.
   inc fieldSeedNonce
   pendingFieldSeed = true
-
-func sameFrameShape(lhs, rhs: WorldCouplings): bool =
-  ## Whether two coupling vectors compose the same frame. Only the zeros decide
-  ## that, which is why this compares them rather than the strengths: a slider
-  ## moving from 0.4 to 0.5 must not rebuild anything, and the two settings are
-  ## the same world as far as the executor is concerned.
-  (lhs.forces == 0.0) == (rhs.forces == 0.0) and
-    (lhs.fluid == 0.0) == (rhs.fluid == 0.0) and
-    (lhs.deposit == 0.0) == (rhs.deposit == 0.0) and
-    (lhs.fieldForce == 0.0) == (rhs.fieldForce == 0.0) and
-    (lhs.bodies == 0.0) == (rhs.bodies == 0.0)
 
 proc setCouplings*(couplings: WorldCouplings) =
   ## Adopt the world these strengths describe.
@@ -725,6 +720,12 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     # What both bodies passes need that belongs to no single body.
     uniformBuffers["bodyParams"] = device.createBufferLabeled(
       wgslUniformSize(BodyParamsLayout), uniformUsage, "Body Parameters Uniform")
+    # The long-range mesh's one uniform, read by all five of its shaders. It
+    # carries the live grid size, so the mesh selector moves a number here
+    # rather than any resource.
+    uniformBuffers["lrParams"] = device.createBufferLabeled(
+      wgslUniformSize(LrParamsLayout), uniformUsage,
+      "Long Range Parameters Uniform")
 
     # Which reaction rd-step runs. Gray-Scott is the only implemented value, so
     # the contents never vary and the upload belongs here rather than in the
@@ -737,7 +738,7 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
     queue.writeBufferTyped(
       cast[GPUBuffer](uniformBuffers["reactionParams"]), 0, reactionParamsData)
 
-    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 7 uniform buffers created".toJs)
+    consoleLog("[PHASE: UNIFORM BUFFER CREATION] Success - 8 uniform buffers created".toJs)
 
     consoleLog("[PHASE: PIPELINE CREATION] Creating compute pipelines...".toJs)
 
@@ -822,6 +823,15 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   let matrix = params["matrix"]
 
   let numCells = gridW * gridH
+
+  # The long-range mesh's LIVE size, read from the declared table the selector
+  # indexes. Buffers are allocated at the ceiling, so this bounds only what the
+  # chain reads, writes and clears — no allocation moves when the user picks a
+  # different mesh.
+  let lrSize = LR_GRID_SIZES[clamp(config.CONFIG.longRangeGridIndex,
+    LONG_RANGE_GRID_INDEX_MIN, LONG_RANGE_GRID_INDEX_MAX)]
+  let lrSpecies = config.CONFIG.speciesCount
+  let lrCells = lrSize.w * lrSize.h * lrSpecies
   # bin-count, bin-scatter, forces, and integrate all dispatch per-particle
   # and share one workgroup-size-derived divisor. They're independently
   # tunable in shader_config.nim's WorkgroupConfig but all sit at the same
@@ -986,6 +996,29 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     bodyEnvelopeData[slot] = presences[slot]
   queue.writeBufferTyped(
     cast[GPUBuffer](gpuBuffers.bodyEnvelope), 0, bodyEnvelopeData)
+  # The long-range mesh. The three counts bound every loop in the chain; the
+  # rest arrive pre-divided so no shader in it divides.
+  lrParamsUint[LR_GRID_W] = uint32(lrSize.w)
+  lrParamsUint[LR_GRID_H] = uint32(lrSize.h)
+  lrParamsUint[LR_SPECIES_COUNT] = uint32(lrSpecies)
+  # The strength with the substep's frame folded in, the way the field force
+  # carries its own: n substeps then sum to one frame's worth of push, and
+  # nothing in lr-force reads a timestep.
+  lrParamsData[LR_FORCE_SCALE] =
+    float32(config.CONFIG.longRangeStrength * frameFactor(substepDt))
+  # 1/lambda^2 from the reach the user set. The reach's range floor is strictly
+  # positive so this inverse always exists.
+  lrParamsData[LR_INV_REACH_SQ] =
+    float32(lrInverseReachSq(config.CONFIG.longRangeReach))
+  lrParamsData[LR_SOFTENING] =
+    float32(lrSofteningWorld(lrSize.w, lrSize.h, width, height))
+  lrParamsData[LR_WORLD_WIDTH] = float32(width)
+  lrParamsData[LR_WORLD_HEIGHT] = float32(height)
+  # The inverse transform's normalization, folded into the kernel where a
+  # multiply already happens rather than given a pass of its own.
+  lrParamsData[LR_INV_CELLS] = float32(lrInverseCells(lrSize.w, lrSize.h))
+  queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["lrParams"]), 0,
+    lrParamsData)
 
   if gridW != cachedBindGroupGridW or gridH != cachedBindGroupGridH:
     await createBindGroups(gridW, gridH)
@@ -1012,6 +1045,10 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbBodies: cast[GPUBuffer](gpuBuffers.bodies)
     of sbBodyEnvelope: cast[GPUBuffer](gpuBuffers.bodyEnvelope)
     of sbBodyAccum: cast[GPUBuffer](gpuBuffers.bodyAccum)
+    of sbLrDensity: cast[GPUBuffer](gpuBuffers.lrDensity)
+    of sbLrSpectrumA: cast[GPUBuffer](gpuBuffers.lrSpectrumA)
+    of sbLrSpectrumB: cast[GPUBuffer](gpuBuffers.lrSpectrumB)
+    of sbLrPotential: cast[GPUBuffer](gpuBuffers.lrPotential)
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
     case simBuffer
@@ -1030,24 +1067,38 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       # Three i32 per body — force x, force y, torque. The whole table is
       # cleared whatever the live body count is: a slot that frees mid-frame
       # would otherwise carry its last impulse into whatever ignites next.
+    of sbLrDensity: lrCells * 4
+      # The LIVE region only. Clearing the whole allocation would cost the
+      # ceiling's 6.29 MB every frame however small the mesh the user chose,
+      # and no pass reads past the live region.
+    of sbLrSpectrumA, sbLrSpectrumB: lrCells * 8  # a complex f32 pair per bin
+    of sbLrPotential: lrCells * 4
 
   # The 2D field dispatch (dsFieldWorkgroups) covers FIELD_W x FIELD_H in
-  # fieldStepX x fieldStepY tiles. Every other DispatchSize is 1D; this one is
-  # dispatched via the (x, y) overload in the walk below.
+  # fieldStepX x fieldStepY tiles.
   let fieldStepX = shader_config.getWorkgroupSize("field-step-x")
   let fieldStepY = shader_config.getWorkgroupSize("field-step-y")
   let fieldGroupsX = jsCeil(FIELD_W.float / fieldStepX.float)
   let fieldGroupsY = jsCeil(FIELD_H.float / fieldStepY.float)
 
-  proc resolveDispatchSize(size: DispatchSize): int =
+  # The mesh chain's three-dimensional dispatches. The transform gives one line
+  # to one workgroup, so the extent is the count of lines; the kernel runs one
+  # invocation per bin. Every one of them batches species on z at the LIVE
+  # species count, so a four-species world pays for four.
+  let lrBinSize = shader_config.getWorkgroupSize("lr-kernel")
+  let lrBinGroups = jsCeil(float(lrSize.w * lrSize.h) / lrBinSize.float)
+
+  proc resolveDispatchExtents(size: DispatchSize): (int, int, int) =
+    ## The (x, y, z) a size dispatches at. The one-integer sizes resolve
+    ## through sim_registry's pure path, which raises on the sizes that carry
+    ## more than one dimension; those are answered here instead.
     case size
-    of dsParticleWorkgroups: particleWorkgroups
-    of dsScanBlocks: scanBlocks
-    of dsOne: 1
-    of dsFieldWorkgroups:
-      # Resolved inline as a 2D dispatch in the walk below, never through this
-      # 1D path — see the dsFieldWorkgroups branch of the dispatch loop.
-      raise newException(CatchableError, "dsFieldWorkgroups is dispatched 2D, not via resolveDispatchSize")
+    of dsFieldWorkgroups: (fieldGroupsX, fieldGroupsY, 1)
+    of dsLrRowWorkgroups: (lrSize.h, 1, lrSpecies)
+    of dsLrColWorkgroups: (lrSize.w, 1, lrSpecies)
+    of dsLrBinWorkgroups: (lrBinGroups, 1, lrSpecies)
+    of dsParticleWorkgroups, dsScanBlocks, dsOne:
+      (resolveOneDimensional(size, particleWorkgroups, scanBlocks), 1, 1)
 
   let commandEncoder = device.createCommandEncoderLabeled("Physics Frame Command Encoder")
 
@@ -1098,11 +1149,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
         for dispatchStep in node.dispatches:
           computePass.setPipeline(cast[GPUComputePipeline](pipelines[dispatchStep.pipelineKey.cstring]))
           computePass.setBindGroup(0, cast[GPUBindGroup](bindGroups[dispatchStep.pipelineKey.cstring]))
-          if dispatchStep.size == dsFieldWorkgroups:
-            # The one 2D dispatch: one workgroup per fieldStepX x fieldStepY tile.
-            computePass.dispatchWorkgroups(fieldGroupsX, fieldGroupsY)
-          else:
-            computePass.dispatchWorkgroups(resolveDispatchSize(dispatchStep.size))
+          let (groupsX, groupsY, groupsZ) =
+            resolveDispatchExtents(dispatchStep.size)
+          computePass.dispatchWorkgroups(groupsX, groupsY, groupsZ)
         computePass.endPass()
 
   # Census readback: 4 bytes, mapped only when the previous map finished, so

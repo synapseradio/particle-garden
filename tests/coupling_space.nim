@@ -1,7 +1,7 @@
 # The corners of the coupling-strength space, so an invariant asserted "for
 # every world" genuinely covers the space rather than a handful of settings the
 # author happened to think of. Both the frame tests and the manifest tests sweep
-# this one list, so a fifth strength widens their reach by editing one loop.
+# this one list, so a sixth strength widens their reach by editing one loop.
 #
 # CORNERS, NOT SAMPLES. buildFrame asks exactly one question of each strength —
 # is it zero — so the frame space is finite however continuous the strengths
@@ -29,15 +29,19 @@ const ALL_COUPLINGS* = block:
       for deposit in [COUPLING_OFF, COUPLING_ON]:
         for fieldForce in [COUPLING_OFF, COUPLING_ON]:
           for bodies in [COUPLING_OFF, COUPLING_ON]:
-            combinations.add WorldCouplings(forces: forces, fluid: fluid,
-              deposit: deposit, fieldForce: fieldForce, bodies: bodies)
+            for longRange in [COUPLING_OFF, COUPLING_ON]:
+              combinations.add WorldCouplings(forces: forces, fluid: fluid,
+                deposit: deposit, fieldForce: fieldForce, bodies: bodies,
+                longRange: longRange)
   combinations
 
 const FULLY_COUPLED* = WorldCouplings(forces: COUPLING_ON, fluid: COUPLING_ON,
-  deposit: COUPLING_ON, fieldForce: COUPLING_ON, bodies: COUPLING_ON)
+  deposit: COUPLING_ON, fieldForce: COUPLING_ON, bodies: COUPLING_ON,
+  longRange: COUPLING_ON)
   ## Every coupling acting. The world every skip is measured against.
 
 const UNCOUPLED* = WorldCouplings(forces: COUPLING_OFF, fluid: COUPLING_OFF,
-  deposit: COUPLING_OFF, fieldForce: COUPLING_OFF, bodies: COUPLING_OFF)
+  deposit: COUPLING_OFF, fieldForce: COUPLING_OFF, bodies: COUPLING_OFF,
+  longRange: COUPLING_OFF)
   ## Every strength at zero. Still a world, still running: what survives here is
   ## the definition of world-intrinsic.

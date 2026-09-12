@@ -122,11 +122,11 @@ defaults to zero.
 Pure Nim and native tests. The frame learns to dispatch a chain whose shaders arrive in group 5; the
 default strength of zero means no frame dispatches it yet, so the app keeps running.
 
-- [ ] 3.1 **Red first.** Add a fifth level to the nested loops in `tests/coupling_space.nim` and the
+- [x] 3.1 **Red first.** Add a fifth level to the nested loops in `tests/coupling_space.nim` and the
       `longRange` member to `FULLY_COUPLED` and `UNCOUPLED`, widening `ALL_COUPLINGS` from sixteen
       corner worlds to thirty-two. Verify: `tests/test_sim_registry.nim` and
       `tests/test_shader_manifest.nim` fail to compile on the missing `WorldCouplings` member
-- [ ] 3.2 **Red first.** Extend `tests/test_sim_registry.nim`: add the seven long-range pipeline keys
+- [x] 3.2 **Red first.** Extend `tests/test_sim_registry.nim`: add the seven long-range pipeline keys
       to the `KNOWN` list and to the strip list in "no world enumerates", so stripping them from any
       frame still leaves exactly `WORLD_INTRINSIC_SEQUENCE`; add a case to "A Strength At Zero Skips
       Its Own Pass And Nothing Else" asserting that zero long-range strength removes all seven
@@ -134,20 +134,20 @@ default strength of zero means no frame dispatches it yet, so the app keeps runn
       the force node's is `fncEverySubstep`, and that no compute pass mixes two; assert the density
       clear carries the solve's cadence; assert the new profiler slot is distinct from every other
       slot that indexes the query set. Verify: the new cases fail
-- [ ] 3.3 Add to `src/sim_registry.nim`: the `longRange` member of `WorldCouplings`; the four
+- [x] 3.3 Add to `src/sim_registry.nim`: the `longRange` member of `WorldCouplings`; the four
       `SimBuffer` values `sbLrDensity`, `sbLrSpectrumA`, `sbLrSpectrumB`, `sbLrPotential`; the
       three-dimensional `DispatchSize` values for the row, column, bin and particle shapes the chain
       needs; `PROFILER_SLOT_LONG_RANGE`; the `fncOncePerFrame` density clear; and the two guarded
       nodes of design D12's frame sketch — the solve after Physics, the force before Integrate.
       Verify: 3.1 and 3.2 pass
-- [ ] 3.4 Add `passLongRange` to `src/gpu_profiler.nim` with `numPasses` raised to match, mirroring
+- [x] 3.4 Add `passLongRange` to `src/gpu_profiler.nim` with `numPasses` raised to match, mirroring
       the slot constant 3.3 added. Verify: `just happen` builds, and the two values agree by reading
       both files — the pairing is unenforced and `src/sim_registry.nim:181-186` already records why
-- [ ] 3.5 Read the strength in `couplingsOf` (`src/ui/state/sim_config.nim`) and add it to
+- [x] 3.5 Read the strength in `couplingsOf` (`src/ui/state/sim_config.nim`) and add it to
       `sameFrameShape` (`src/webgpu_compute.nim:133-141`), so a strength crossing zero rebuilds the
       frame. Verify: a native test asserting `sameFrameShape` distinguishes a zero from a non-zero
       long-range strength, red before this task
-- [ ] 3.6 **Red first, then carry.** Extend `tests/test_shader_manifest.nim` for the seven keys, then
+- [x] 3.6 **Red first, then carry.** Extend `tests/test_shader_manifest.nim` for the seven keys, then
       add `LONG_RANGE_SPECS` to `src/shader_manifest.nim` and append it in `allShaderSpecs`, two keys
       sharing `lr-fft-rows.wgsl` at different entry points and two sharing `lr-fft-cols.wgsl`. Verify:
       every key any frame dispatches is registered exactly once
@@ -155,25 +155,25 @@ default strength of zero means no frame dispatches it yet, so the app keeps runn
 
 ## 4. Layouts, buffers, and the executor's third dimension
 
-- [ ] 4.1 **Red first.** Extend `tests/test_gpu_types.nim` with a "Generated LrParams Layout" suite
+- [x] 4.1 **Red first.** Extend `tests/test_gpu_types.nim` with a "Generated LrParams Layout" suite
       pinning the field order, the written size and the allocated size. Verify: it fails on the
       missing layout
-- [ ] 4.2 Add `LrParamsLayout` to `src/gpu_types.nim` carrying the live grid width and height, the
+- [x] 4.2 Add `LrParamsLayout` to `src/gpu_types.nim` carrying the live grid width and height, the
       live species count, the frame-scaled force strength, the inverse squared screening length, the
       softening width, the world extent, and the inverse-transform normalization — with the static
       offset and size assertions every layout carries — and add its `generateStructModule` call to
       `tools/wgsl_bundle.nim`. The attraction matrix is not a member; the kernel pass binds
       `SimParams` and reads the matrix already there. Verify: 4.1 passes and the generated
       `web/shaders/modules/lr_params.wgsl` appears
-- [ ] 4.3 Create the four buffers at the `memory_layout` ceiling in `src/webgpu_init.nim` and add one
+- [x] 4.3 Create the four buffers at the `memory_layout` ceiling in `src/webgpu_init.nim` and add one
       exhaustive `case` entry each to `byteLengthFor` in `src/webgpu_compute.nim`. Verify: removing
       one entry turns the compile red, which is the whole point of that `case`
-- [ ] 4.4 **Red first, then carry.** Assert in `tests/test_sim_registry.nim` that a three-dimensional
+- [x] 4.4 **Red first, then carry.** Assert in `tests/test_sim_registry.nim` that a three-dimensional
       dispatch size resolved through the one-integer path raises, the way `dsFieldWorkgroups` already
       does (`src/webgpu_compute.nim:866-869`). Then extend the frame walk in `src/webgpu_compute.nim`
       with the three-dimensional case, resolving the z extent against the live species count and the
       x extent against the live grid size. Verify: the raise fires and the walk dispatches `(x, y, z)`
-- [ ] 4.5 Write `LrParams` once per frame in `src/webgpu_compute.nim` beside the other uniform writes,
+- [x] 4.5 Write `LrParams` once per frame in `src/webgpu_compute.nim` beside the other uniform writes,
       folding the substep's frame into the force scale the way `frameScaledFieldForce` does
       (`src/field_core.nim`), and mapping the reach to the inverse squared screening length so nothing
       in the shader divides. Verify: `just happen` builds

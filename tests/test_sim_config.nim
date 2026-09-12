@@ -121,11 +121,13 @@ suite "The Couplings Are Read Off The Parameters":
     state.fluidStrength = 0.25
     state.rdDeposit = 0.03
     state.rdFieldForce = 40.0
+    state.longRangeStrength = 0.75
     let couplings = couplingsOf(state)
     check couplings.forces == 2.5
     check couplings.fluid == 0.25
     check couplings.deposit == 0.03
     check couplings.fieldForce == 40.0
+    check couplings.longRange == 0.75
 
   test "the shipped world couples forces and chemistry, and no fluid":
     let couplings = couplingsOf(initSimulationState())
@@ -133,6 +135,9 @@ suite "The Couplings Are Read Off The Parameters":
     check couplings.deposit > 0.0
     check couplings.fieldForce > 0.0
     check couplings.fluid == 0.0
+    # The mesh ships silent for the same reason the fluid does: a coupling that
+    # costs a solve every frame starts where the user put it, at zero.
+    check couplings.longRange == 0.0
 
   test "every coupling strength can be turned off through its own range":
     # A strength whose minimum sits above zero cannot express "off", leaving
@@ -142,11 +147,13 @@ suite "The Couplings Are Read Off The Parameters":
     silent.fluidStrength = FLUID_STRENGTH_MIN
     silent.rdDeposit = RD_DEPOSIT_MIN
     silent.rdFieldForce = RD_FIELD_FORCE_MIN
+    silent.longRangeStrength = LONG_RANGE_STRENGTH_MIN
     let couplings = couplingsOf(silent)
     check couplings.forces == 0.0
     check couplings.fluid == 0.0
     check couplings.deposit == 0.0
     check couplings.fieldForce == 0.0
+    check couplings.longRange == 0.0
 
   test "fluid strength's default and range are consistent":
     let defaults = initSimulationState()

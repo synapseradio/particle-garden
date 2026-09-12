@@ -291,6 +291,9 @@ proc generateStructModules() =
   generateStructModule("reaction_params",
     structModuleHeader("reaction_params", "ReactionParamsLayout"),
     toWgslStruct(ReactionParamsLayout))
+  generateStructModule("lr_params",
+    structModuleHeader("lr_params", "LrParamsLayout", LrParamsLayout.notes),
+    toWgslStruct(LrParamsLayout))
   generateStructModule("species_chemistry",
     structModuleHeader("species_chemistry", "SpeciesChemistryLayout"),
     toWgslStruct(SpeciesChemistryLayout))

@@ -46,9 +46,9 @@ func couplingsOf*(simulation: SimulationState): WorldCouplings =
   ## Each strength is the number the shader multiplies by, not a proxy for it:
   ## forceStrength reaches forces.wgsl as `params.forceMultiplier`, fluidStrength
   ## scales forces-sph's whole per-pair contribution, rdDeposit is what
-  ## field-deposit lays down, and rdFieldForce is the gain field-force applies.
+  ## field-deposit lays down, rdFieldForce is the gain field-force applies,
   ## bodiesStrength multiplies both bodies passes, the particle's force and the
-  ## body's reaction alike.
+  ## body's reaction alike, and longRangeStrength is the gain lr-force applies.
   ## So a strength being zero and its pass contributing nothing are the same
   ## statement, which is what lets buildFrame skip on it.
   WorldCouplings(
@@ -56,7 +56,8 @@ func couplingsOf*(simulation: SimulationState): WorldCouplings =
     fluid: simulation.fluidStrength,
     deposit: simulation.rdDeposit,
     fieldForce: simulation.rdFieldForce,
-    bodies: simulation.bodiesStrength
+    bodies: simulation.bodiesStrength,
+    longRange: simulation.longRangeStrength
   )
 
 ## The couplings the executor last acted on. web_api sets it after every write

@@ -54,6 +54,15 @@ const WORLD_INTRINSIC_SEQUENCE =
   ## the neighbour sweep that measures density and carries the mouse, the
   ## field's own Gray-Scott evolution, and the integration that moves particles.
 
+const LONG_RANGE_SOLVE_KEYS = @["lrDeposit", "lrFftRows", "lrFftCols",
+  "lrKernel", "lrFftColsInv", "lrFftRowsInv"]
+  ## The mesh solve, in the order the round trip forces: deposit, forward
+  ## transform along each axis, the mix in k-space, then the inverse back.
+
+const LONG_RANGE_KEYS = LONG_RANGE_SOLVE_KEYS & @["lrForce"]
+  ## The whole chain. One strength owns all seven, which is why the skip tests
+  ## below check the chain leaves as a unit rather than pass by pass.
+
 
 suite "The World Runs, Whatever The Strengths Are":
   test "a world with every strength at zero still runs every world-intrinsic pass":
@@ -128,6 +137,25 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     var noBodies = FULLY_COUPLED
     noBodies.bodies = COUPLING_OFF
     check not dispatchesPipeline(noBodies, "bodyForce")
+  test "zero long-range strength skips the whole mesh chain":
+    # Seven dispatches, one strength: the solve and the force it feeds are one
+    # coupling, so a world at zero strength must run none of them rather than
+    # solve a mesh nothing reads.
+    for key in LONG_RANGE_KEYS:
+      check dispatchesPipeline(FULLY_COUPLED, key)
+    var noLongRange = FULLY_COUPLED
+    noLongRange.longRange = COUPLING_OFF
+    for key in LONG_RANGE_KEYS:
+      checkpoint("zero long-range strength still dispatches " & key)
+      check not dispatchesPipeline(noLongRange, key)
+
+  test "zeroing the long-range strength removes its seven passes and nothing else":
+    var noLongRange = FULLY_COUPLED
+    noLongRange.longRange = COUPLING_OFF
+    var stripped = dispatchSequence(FULLY_COUPLED)
+    for key in LONG_RANGE_KEYS:
+      stripped = stripped.without(key)
+    check dispatchSequence(noLongRange) == stripped
 
   test "moving a strength to zero changes nothing else about the world":
     # The test that makes a skip an optimization rather than a mode: zeroing one
@@ -170,6 +198,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     barelyOn.deposit = 1e-9
     barelyOn.fieldForce = 1e-9
     barelyOn.bodies = 1e-9
+    barelyOn.longRange = 1e-9
     check dispatchSequence(barelyOn) == dispatchSequence(FULLY_COUPLED)
 
   test "no world enumerates: every frame is the intrinsic sequence plus its couplings":
@@ -178,8 +207,8 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     # exactly the intrinsic sequence is left, whatever the strengths were.
     for couplings in ALL_COUPLINGS:
       var stripped = dispatchSequence(couplings)
-      for key in ["forcesSph", "fieldDeposit", "fieldForce", "bodyForce",
-          "bodyIntegrate"]:
+      for key in @["forcesSph", "fieldDeposit", "fieldForce", "bodyForce",
+          "bodyIntegrate"] & LONG_RANGE_KEYS:
         stripped = stripped.without(key)
       check stripped == WORLD_INTRINSIC_SEQUENCE
 
@@ -357,10 +386,84 @@ suite "Field Passes Compose Safely":
       "binCount", "prefixLocal", "prefixBlocks", "prefixFinal", "binScatter",
       "forces", "forcesSph", "integrate",
       "fieldDeposit", "fieldResolve", "rdStepToFront", "rdStepToTrail",
-      "fieldForce", "bodyForce", "bodyIntegrate"]
+      "fieldForce", "bodyForce", "bodyIntegrate",
+      "lrDeposit", "lrFftRows", "lrFftCols", "lrKernel", "lrFftColsInv",
+      "lrFftRowsInv", "lrForce"]
     for couplings in ALL_COUPLINGS:
       for key in dispatchSequence(couplings):
         check key in KNOWN
+
+
+suite "A Strength Crossing Zero Rebuilds The Frame":
+  # The executor rebuilds the frame description only when the shape changes, so
+  # what counts as a change of shape has to be exactly the set of zeros. A
+  # strength whose zero this comparison forgets leaves a world dispatching a
+  # pass at zero strength, or skipping one whose strength is not zero, until
+  # something else happens to rebuild.
+
+  test "a strength moving inside its range is the same frame shape":
+    var moved = FULLY_COUPLED
+    moved.longRange = 0.4
+    var movedAgain = moved
+    movedAgain.longRange = 0.5
+    check sameFrameShape(moved, movedAgain)
+
+  test "the long-range strength crossing zero is a different frame shape":
+    var acting = FULLY_COUPLED
+    acting.longRange = COUPLING_ON
+    var silent = acting
+    silent.longRange = COUPLING_OFF
+    check not sameFrameShape(acting, silent)
+
+  test "two worlds dispatching different work never call themselves the same shape":
+    # Stated over the whole corner space rather than per strength: a strength
+    # this comparison forgot would show up here as two worlds calling
+    # themselves the same shape while dispatching different work, and the
+    # executor would keep running the frame the previous world composed.
+    #
+    # ONE DIRECTION ONLY, and deliberately. The converse is false for the force
+    # strength, which changes no dispatch at all (it acts inside forces.wgsl),
+    # so two worlds differing only there are the same frame under different
+    # zeros. Comparing it anyway costs one rebuild of a pure sequence when the
+    # slider crosses zero; forgetting a strength that does change the frame
+    # costs a wrong world until something else rebuilds.
+    for lhs in ALL_COUPLINGS:
+      for rhs in ALL_COUPLINGS:
+        if dispatchSequence(lhs) != dispatchSequence(rhs):
+          check not sameFrameShape(lhs, rhs)
+
+
+suite "A Dispatch Size Resolves Through Its Own Dimensionality":
+  # The executor dispatches most sizes as a single workgroup count, the field
+  # as (x, y), and the mesh chain as (x, y, z). A size resolved through the
+  # wrong path would not fail: it would return a number and dispatch a wrong
+  # shape, which on the GPU reads as a partly-transformed grid rather than as
+  # an error. So the one-integer path raises on every size that is not one.
+
+  test "the one-integer sizes resolve to the counts they name":
+    check resolveOneDimensional(dsParticleWorkgroups, 7, 3) == 7
+    check resolveOneDimensional(dsScanBlocks, 7, 3) == 3
+    check resolveOneDimensional(dsOne, 7, 3) == 1
+
+  test "a multi-dimensional size raises rather than resolving to a number":
+    for size in [dsFieldWorkgroups, dsLrRowWorkgroups, dsLrColWorkgroups,
+        dsLrBinWorkgroups]:
+      checkpoint("resolving " & $size & " through the one-integer path")
+      expect CatchableError:
+        discard resolveOneDimensional(size, 7, 3)
+
+  test "every size the mesh chain dispatches is a three-dimensional one":
+    # The species batch rides the z extent, so a mesh pass resolved as one
+    # integer would transform the first species and leave the rest holding the
+    # previous frame's spectrum.
+    for node in buildFrame(FULLY_COUPLED):
+      if node.kind != fnkComputePass: continue
+      for step in node.dispatches:
+        if step.pipelineKey in LONG_RANGE_SOLVE_KEYS and
+            step.pipelineKey != "lrDeposit":
+          checkpoint(step.pipelineKey & " resolves as one integer")
+          expect CatchableError:
+            discard resolveOneDimensional(step.size, 7, 3)
 
 
 suite "Profiler Slot Constants":
@@ -369,13 +472,14 @@ suite "Profiler Slot Constants":
     # timestamps and report a meaningless delta — the field pass borrowing the
     # grid-build slot is the collision this forbids.
     let slots = [PROFILER_SLOT_GRID_BUILD, PROFILER_SLOT_PHYSICS,
-      PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE]
+      PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE, PROFILER_SLOT_LONG_RANGE]
     check toHashSet(slots).len == slots.len
 
   test "PROFILER_SLOT_NONE indexes no query slot":
     # It marks the absence of a slot, so it must not collide with a real one.
     check PROFILER_SLOT_NONE notin [PROFILER_SLOT_GRID_BUILD,
-      PROFILER_SLOT_PHYSICS, PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE]
+      PROFILER_SLOT_PHYSICS, PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE,
+      PROFILER_SLOT_LONG_RANGE]
 
   test "every frame's timestamped compute passes hold distinct profiler slots":
     # Passes carrying PROFILER_SLOT_NONE write no timestamps, so any number of
@@ -450,6 +554,29 @@ suite "The Field Chemistry Runs Once Per Rendered Frame":
       # resolve all read. field_core asserts RD_STEPS_PER_FRAME odd for it.
       check swaps mod 2 == 0
 
+  test "the mesh solve runs once per frame and the force it feeds every substep":
+    # The solve is the expensive half and the potential it leaves is good for
+    # the whole rendered frame; the force reads that potential into the
+    # velocity delta every substep clears and integrates. Two cadences, so two
+    # nodes.
+    for couplings in ALL_COUPLINGS:
+      if not dispatchesPipeline(couplings, "lrForce"):
+        continue
+      let oncePerFrame = nodesWithCadence(couplings, fncOncePerFrame)
+      for key in LONG_RANGE_SOLVE_KEYS:
+        checkpoint("solve pass " & key & " is not once per frame")
+        check key in oncePerFrame
+      check "lrForce" in nodesWithCadence(couplings, fncEverySubstep)
+
+  test "the mesh density clear carries the solve's cadence":
+    # The deposit accumulates into it and the solve consumes it, both once per
+    # rendered frame. Clearing it per substep would empty the grid under a
+    # solve that already ran; clearing it less often would sum frames.
+    for couplings in ALL_COUPLINGS:
+      if not dispatchesPipeline(couplings, "lrDeposit"):
+        continue
+      check "clear:sbLrDensity" in nodesWithCadence(couplings, fncOncePerFrame)
+
   test "no compute pass mixes two cadences":
     # A pass is the unit the executor skips, so two cadences inside one node
     # could only be honoured by skipping both or neither.
@@ -457,4 +584,7 @@ suite "The Field Chemistry Runs Once Per Rendered Frame":
       for node in buildFrame(couplings):
         if node.kind == fnkComputePass and node.cadence == fncOncePerFrame:
           for step in node.dispatches:
-            check step.pipelineKey != "fieldForce"
+            check step.pipelineKey notin ["fieldForce", "lrForce"]
+        if node.kind == fnkComputePass and node.cadence == fncEverySubstep:
+          for step in node.dispatches:
+            check step.pipelineKey notin LONG_RANGE_SOLVE_KEYS

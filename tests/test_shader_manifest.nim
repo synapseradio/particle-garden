@@ -65,6 +65,17 @@ suite "Every Dispatched Pipeline Has A Registered Shader Spec":
     check "forcesSph" in manifestKeys
     check "forcesSph" notin dispatchKeysOf(buildFrame(UNCOUPLED))
 
+  test "the whole mesh chain is registered though the shipped world dispatches none of it":
+    # Seven keys behind one strength, and the same teeth forcesSph has: the
+    # shipped strength is zero, so nothing dispatches any of them until a user
+    # moves the slider, and a key missing here would make that move an
+    # asynchronous fetch of six shaders mid-frame.
+    for key in ["lrDeposit", "lrFftRows", "lrFftCols", "lrKernel",
+        "lrFftColsInv", "lrFftRowsInv", "lrForce"]:
+      checkpoint("unregistered long-range key: " & key)
+      check key in manifestKeys
+      check key notin dispatchKeysOf(buildFrame(UNCOUPLED))
+
 
 suite "Shader Spec Manifests Are Well-Formed":
   test "every spec path is a .wgsl file served under ./shaders/":
@@ -102,3 +113,23 @@ suite "Shader Spec Manifests Are Well-Formed":
       found
     check toFrontSpec.path == toTrailSpec.path
     check toFrontSpec.entryPoint == toTrailSpec.entryPoint
+
+  test "each transform file serves its forward and inverse key at different entry points":
+    # The other shape a shared file takes. rdStep's two keys differ only in
+    # which texture the bind group points at, so one entry point serves both;
+    # here the direction is in the code, so one file carries two entry points
+    # and a key naming the wrong one would run the round trip in one direction
+    # twice.
+    proc specFor(key: string): ShaderSpec =
+      for spec in allShaderSpecs():
+        if spec.key == key: return spec
+      raise newException(KeyError, "no spec for key: " & key)
+    for (forward, inverse) in [("lrFftRows", "lrFftRowsInv"),
+        ("lrFftCols", "lrFftColsInv")]:
+      checkpoint("the pair " & forward & " / " & inverse)
+      check specFor(forward).path == specFor(inverse).path
+      check specFor(forward).entryPoint != specFor(inverse).entryPoint
+    # And the two files are themselves distinct: rows and columns walk
+    # different strides, so one file serving both would transform one axis
+    # twice.
+    check specFor("lrFftRows").path != specFor("lrFftCols").path
