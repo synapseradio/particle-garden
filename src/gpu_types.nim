@@ -389,6 +389,80 @@ const
     totalSize: 96
   )
 
+  # Body struct (64 bytes, generated into web/shaders/modules/body.wgsl)
+  #
+  # One element of sbBodies. Pose is GPU-owned — body-integrate is the only
+  # writer of the centre, the angle and the two velocities — and the shaping
+  # below it is written once by Nim at ignition and never again, because a body
+  # keeps what it was ignited with while the sliders move on.
+  #
+  # The shaping rides the BODY rather than the pass uniform for that reason: a
+  # shape in the uniform would restyle every living body the moment a slider
+  # moved, making each one a view of the panel instead of an event in the world.
+  #
+  # PACKING. Thirteen f32 and three pads, so the stride is 64 — one GPU cache
+  # line per body, and an alignment no field straddles.
+  BodyLayout* = GpuStruct(
+    name: "Body",
+    fields: @[
+      GpuField(name: "centerX",    kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "centerY",    kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "velX",       kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "velY",       kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "angle",      kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "angVel",     kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "radius",     kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "anisotropy", kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "bandWidth",  kind: gtF32, offset: 32, size: 4, count: 1),
+      GpuField(name: "proximity",  kind: gtF32, offset: 36, size: 4, count: 1),
+      GpuField(name: "enclosure",  kind: gtF32, offset: 40, size: 4, count: 1),
+      GpuField(name: "invMass",    kind: gtF32, offset: 44, size: 4, count: 1),
+      GpuField(name: "invInertia", kind: gtF32, offset: 48, size: 4, count: 1),
+      GpuField(name: "pad0",       kind: gtF32, offset: 52, size: 4, count: 1),
+      GpuField(name: "pad1",       kind: gtF32, offset: 56, size: 4, count: 1),
+      GpuField(name: "pad2",       kind: gtF32, offset: 60, size: 4, count: 1),
+    ],
+    totalSize: 64,
+    notes: "// invMass and invInertia are derived from the body's area at\n" &
+      "// ignition and stored INVERTED, so neither pass divides.\n"
+  )
+
+  # BodyParams struct (64 bytes, generated into
+  # web/shaders/modules/body_params.wgsl)
+  #
+  # What both bodies passes need that is not a property of any one body: how
+  # many slots to walk, how much of what a body says lands, and the numbers the
+  # rigid step is stable under. Every one of them is a Nim constant or a live
+  # slider reaching the GPU unchanged — the shaders declare none of their own.
+  #
+  # TWO CLOCKS, both carried because the step needs both. `dtSeconds` is the
+  # substep's own length, which is what a body TRAVELS over; `frames` is that
+  # length in reference frames (physics_core.frameFactor), which is what the
+  # damping and the impulse caps are measured in. Folding them into one number
+  # is what makes a frame's effect scale as the square of its timestep.
+  BodyParamsLayout* = GpuStruct(
+    name: "BodyParams",
+    fields: @[
+      GpuField(name: "count",          kind: gtU32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "strength",       kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "worldW",         kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "worldH",         kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "dtSeconds",      kind: gtF32, offset: 16, size: 4, count: 1),
+      GpuField(name: "frames",         kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "forceScale",     kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "torqueScale",    kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "linearDamping",  kind: gtF32, offset: 32, size: 4, count: 1),
+      GpuField(name: "angularDamping", kind: gtF32, offset: 36, size: 4, count: 1),
+      GpuField(name: "maxSpeedChange", kind: gtF32, offset: 40, size: 4, count: 1),
+      GpuField(name: "maxSpinChange",  kind: gtF32, offset: 44, size: 4, count: 1),
+      GpuField(name: "pad0",           kind: gtF32, offset: 48, size: 4, count: 1),
+      GpuField(name: "pad1",           kind: gtF32, offset: 52, size: 4, count: 1),
+      GpuField(name: "pad2",           kind: gtF32, offset: 56, size: 4, count: 1),
+      GpuField(name: "pad3",           kind: gtF32, offset: 60, size: 4, count: 1),
+    ],
+    totalSize: 64
+  )
+
   # BloomParams struct (16 bytes, generated into web/shaders/modules/bloom_params.wgsl)
   # The separable-blur pass uniform. `direction` selects the blur axis — (1,0)
   # for the horizontal pass, (0,1) for the vertical — and `texelSize` is one
@@ -688,7 +762,7 @@ static:
   # assertions stay beside the struct they size.
   for layout in [RenderParamsLayout, FadeParamsLayout, CameraLayout,
       OverlayParamsLayout, FieldParamsLayout, ReactionParamsLayout,
-      SpeciesChemistryLayout]:
+      SpeciesChemistryLayout, BodyLayout, BodyParamsLayout]:
     let computedOffsets = layout.wgslComputedOffsets
     for fieldIndex in 0 ..< layout.fields.len:
       assert computedOffsets[fieldIndex] == layout.fields[fieldIndex].offset,
@@ -759,6 +833,28 @@ static:
     CHEMISTRY_SPECIES_SLOTS
   assert MAX_SPECIES <= CHEMISTRY_SPECIES_SLOTS,
     "SpeciesChemistry's species slots cannot hold MAX_SPECIES"
+
+# =============================================================================
+# BODYPARAMS FIELD INDICES (the bodies passes, webgpu_compute.nim)
+# =============================================================================
+# BODY_COUNT=0, BODY_STRENGTH=1, ... BODY_MAX_SPIN_CHANGE=11, three pads,
+# BODY_PARAMS_F32_COUNT=16. The count is a u32 read through the aliased
+# uniform buffer, exactly as INTEG_PARTICLE_COUNT is.
+
+genFieldIndices(BodyParamsLayout, "BODY")
+
+const BODY_STRIDE_F32* = BodyLayout.totalSize div 4
+  ## Floats one body occupies in sbBodies. Nim writes a slot as that many
+  ## floats at ignition, so the stride comes from the layout rather than from a
+  ## literal that could drift from it.
+
+static:
+  # Offset agreement rides the layout sweep above; the sizes are these structs'
+  # own. Sixty-four for the body is a whole GPU cache line, so one body's read
+  # in either pass costs one line rather than straddling two.
+  assert BodyLayout.totalSize == 64, "Body must be 64 bytes"
+  assert BodyParamsLayout.totalSize == 64, "BodyParams must be 64 bytes"
+  assert BodyParamsLayout.wgslUniformSize == 64, "BodyParams allocates 64 bytes"
 
 # =============================================================================
 # BLOOMPARAMS / TONEMAPPARAMS FIELD INDICES (HDR bloom, webgpu_render.nim)

@@ -18,6 +18,9 @@ const knownShaders = [
   # RD per-particle passes dispatch dsParticleWorkgroups, so their 1D workgroup
   # size follows the same warp-multiple contract as the particle passes.
   "field-deposit", "field-force",
+  # body-integrate dispatches one workgroup over the whole body table, so its
+  # width answers to the same warp-multiple contract.
+  "body-integrate",
 ]
 
 suite "Workgroup Sizes Are Valid GPU Dispatch Sizes":

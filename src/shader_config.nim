@@ -32,6 +32,10 @@ type
     fieldForce*: int      ## field-force.wgsl: particles per workgroup (1D)
     fieldStepX*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, X
     fieldStepY*: int      ## field-resolve.wgsl / rd-step.wgsl: cells per workgroup, Y
+    bodyIntegrate*: int   ## body-integrate.wgsl: bodies per workgroup. The pass
+                          ## dispatches ONE workgroup, so this is the whole
+                          ## table's width and MAX_BODIES may not exceed it —
+                          ## asserted below.
 
   TuningConstants* = object
     ## These become {{TUNABLE_*}} placeholders in WGSL.
@@ -92,6 +96,8 @@ const
     fieldForce: 128,      # Per-particle gradient sampling; matches fieldDeposit
     fieldStepX: 16,       # 16x16 = 256 invocations per 2D field tile (warp multiple)
     fieldStepY: 16,       # 512 field dim / 16 = 32 groups per axis (divides exactly)
+    bodyIntegrate: 64,    # One workgroup covers the whole body table, with room
+                          # to double it before the shader has to change
   )
 
   PRODUCTION_TUNING* = TuningConstants(
@@ -152,6 +158,7 @@ proc getWorkgroupSize*(name: string): int =
   of "field-force": activeConfig.workgroups.fieldForce
   of "field-step-x": activeConfig.workgroups.fieldStepX
   of "field-step-y": activeConfig.workgroups.fieldStepY
+  of "body-integrate": activeConfig.workgroups.bodyIntegrate
   else: 128  # Safe default
 
 func getTunableFloat*(name: string): float =
@@ -210,7 +217,15 @@ from trail_core import TRAIL_TAPER_FULL_ELONGATION
 from glow_core import GlowTuning
 # The particle budget that derivation is taken against, and the species ceiling
 # the render-side colour arrays are sized from.
-from memory_layout import MAX_PARTICLES, MAX_SPECIES
+from memory_layout import MAX_PARTICLES, MAX_SPECIES, MAX_BODIES
+
+static:
+  # body-integrate dispatches ONE workgroup and gives one thread to one slot, so
+  # a table wider than the workgroup would leave its last bodies unstepped —
+  # frozen mid-life, and invisible, so nothing on screen would say why.
+  assert MAX_BODIES <= PRODUCTION_WORKGROUPS.bodyIntegrate,
+    "MAX_BODIES exceeds the bodyIntegrate workgroup size: widen the workgroup " &
+    "or dispatch more than one"
 
 from physics_core import FRAME_DT_REFERENCE
 

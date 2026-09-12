@@ -45,7 +45,9 @@ const
     ## the particle-side pass evaluates every slot for every particle, so this
     ## is a per-particle cost as much as a memory one. Small enough that the
     ## loop stays cheap, large enough that a player cannot exhaust the table by
-    ## hand.
+    ## hand. Raising it past the bodyIntegrate workgroup size turns the compile
+    ## red in shader_config.nim: that pass dispatches one workgroup and a body
+    ## beyond its width would never be stepped.
 
 # ==============================================================================
 # ==============================================================================

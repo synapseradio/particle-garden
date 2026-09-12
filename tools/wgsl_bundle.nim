@@ -294,6 +294,13 @@ proc generateStructModules() =
   generateStructModule("species_chemistry",
     structModuleHeader("species_chemistry", "SpeciesChemistryLayout"),
     toWgslStruct(SpeciesChemistryLayout))
+  generateStructModule("body",
+    structModuleHeader("body", "BodyLayout", BodyLayout.notes),
+    toWgslStruct(BodyLayout) & "\n" &
+      "const MAX_BODIES: u32 = " & $memory_layout.MAX_BODIES & "u;\n")
+  generateStructModule("body_params",
+    structModuleHeader("body_params", "BodyParamsLayout"),
+    toWgslStruct(BodyParamsLayout))
   generateStructModule("bloom_params",
     structModuleHeader("bloom_params", "BloomParamsLayout"),
     toWgslStruct(BloomParamsLayout))

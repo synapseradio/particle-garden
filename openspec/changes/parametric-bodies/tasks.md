@@ -136,18 +136,18 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
 
 ## 4. Layouts, buffers, and the generated WGSL structs
 
-- [ ] 4.1 **Red first.** Add `BodyLayout` and `BodyParamsLayout` to `src/gpu_types.nim` with one
+- [x] 4.1 **Red first.** Add `BodyLayout` and `BodyParamsLayout` to `src/gpu_types.nim` with one
       offset deliberately wrong, and add both to the static offset sweep at `:684-703`. Verify:
       `just happen` fails at the Nim compile naming the field. Then correct the offset. Verify: green
-- [ ] 4.2 Add the static assertion that `MAX_BODIES` does not exceed the `bodyIntegrate` workgroup
+- [x] 4.2 Add the static assertion that `MAX_BODIES` does not exceed the `bodyIntegrate` workgroup
       size, with the `bodyIntegrate` entry added to `WorkgroupConfig` and `PRODUCTION_WORKGROUPS`
       (`src/shader_config.nim:19-34`, `:83-95`). Verify: `just happen` is green, and temporarily
       raising `MAX_BODIES` above that width turns the compile red
-- [ ] 4.3 Generate the WGSL struct modules from both layout tables through
+- [x] 4.3 Generate the WGSL struct modules from both layout tables through
       `generateStructModule` (`tools/wgsl_bundle.nim:245`), the way `SpeciesChemistryLayout` is
       generated. Verify: `just shaders` emits the modules and `just happen` is green with no
       hand-written struct in `web/shaders/modules/`
-- [ ] 4.4 **Red first.** Add `sbBodies`, `sbBodyEnvelope` and `sbBodyAccum` to `SimBuffer`
+- [x] 4.4 **Red first.** Add `sbBodies`, `sbBodyEnvelope` and `sbBodyAccum` to `SimBuffer`
       (`src/sim_registry.nim:90-127`) without touching `byteLengthFor`. Verify: `just happen` fails
       on the non-exhaustive `case` at `src/webgpu_compute.nim:841-851`. Then add the three arms and
       the buffer creation. Verify: green

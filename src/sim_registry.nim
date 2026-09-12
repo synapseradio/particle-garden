@@ -129,6 +129,21 @@ type
       ## One-word alive-cell census fieldResolve accumulates. Cleared per
       ## frame description, so under substepping the value at frame end is
       ## the last substep's census, never a sum.
+    sbBodies
+      ## The body table: MAX_BODIES records of pose and shaping. Nim writes a
+      ## slot once at ignition and bodyIntegrate writes pose thereafter, so the
+      ## frame never clears it — a cleared body is a body at the origin with no
+      ## mass.
+    sbBodyEnvelope
+      ## One f32 of presence per slot, rewritten by Nim every frame. Separate
+      ## from the record because the writers differ in cadence: this one is
+      ## CPU-written per frame while the record beside it is GPU-written, and a
+      ## strided per-frame write into the record would race the integrate.
+    sbBodyAccum
+      ## Three atomic i32 per body — force in two axes and torque — at the body
+      ## scales rather than velocityDelta's, since one word here can take a
+      ## contribution from every particle in the world in one dispatch. The
+      ## frame clears it, because bodyIntegrate reads it without resetting it.
 
   DispatchSize* = enum
     ## Symbolic dispatch sizes, resolved by the executor each frame. The

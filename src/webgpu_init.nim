@@ -19,6 +19,7 @@ import std/asyncjs
 import bindings/js_interop
 import bindings/webgpu
 import memory_layout
+import gpu_types  # BodyLayout, which sizes the body buffer
 import field_core
 
 proc makeJsObject(): JsObject {.importjs: "({})".}
@@ -50,6 +51,14 @@ type
     fieldAliveReadback* {.importjs: "fieldAliveReadback".}: GPUBuffer
       ## The 4-byte MAP_READ staging pair for fieldAlive.
 
+    bodies* {.importjs: "bodies".}: GPUBuffer
+      ## MAX_BODIES Body records. Nim writes one slot at ignition,
+      ## body-integrate writes pose every substep, and nothing clears it.
+    bodyEnvelope* {.importjs: "bodyEnvelope".}: GPUBuffer
+      ## One f32 of presence per slot, rewritten from Nim every frame.
+    bodyAccum* {.importjs: "bodyAccum".}: GPUBuffer
+      ## Three atomic i32 per body: force x, force y, torque.
+
     gridCounts* {.importjs: "gridCounts".}: GPUBuffer
     gridOffsets* {.importjs: "gridOffsets".}: GPUBuffer
     fillPointers* {.importjs: "fillPointers".}: GPUBuffer
@@ -79,6 +88,9 @@ type
     sphDensityDelta* {.importjs: "sphDensityDelta".}: int
     crowdDensityDelta* {.importjs: "crowdDensityDelta".}: int
     fieldAlive* {.importjs: "fieldAlive".}: int
+    bodies* {.importjs: "bodies".}: int
+    bodyEnvelope* {.importjs: "bodyEnvelope".}: int
+    bodyAccum* {.importjs: "bodyAccum".}: int
     gridCounts* {.importjs: "gridCounts".}: int
     gridOffsets* {.importjs: "gridOffsets".}: int
     sync* {.importjs: "sync".}: int
@@ -140,6 +152,12 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
   result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 4
   result.fieldAlive = 4  # one u32: the frame's alive-cell census
+
+  # The bodies triple. Sized from the layout table rather than from literals, so
+  # a field added to the Body struct resizes its buffer with it.
+  result.bodies = memory_layout.MAX_BODIES * gpu_types.BodyLayout.totalSize
+  result.bodyEnvelope = memory_layout.MAX_BODIES * 4
+  result.bodyAccum = memory_layout.MAX_BODIES * 3 * 4
 
   # Grid: u32 per cell
   result.gridCounts = gridCells * 4
@@ -374,6 +392,12 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   buffers.fieldAliveReadback = createBuf(sizes.fieldAlive,
     bitwiseOr(gpuBufferUsageCopyDst, gpuBufferUsageMapRead),
     "Field Alive-Cell Readback")
+
+  buffers.bodies = createBuf(sizes.bodies, bufferUsage, "Bodies (pose and shaping)")
+  buffers.bodyEnvelope = createBuf(
+    sizes.bodyEnvelope, bufferUsage, "Body Envelope (f32 per slot)")
+  buffers.bodyAccum = createBuf(
+    sizes.bodyAccum, bufferUsage, "Body Reaction Accumulator (fixed-point i32)")
 
   buffers.gridCounts = createBuf(sizes.gridCounts, bufferUsage, "Grid Cell Counts")
   buffers.gridOffsets = createBuf(sizes.gridOffsets, bufferUsage, "Grid Cell Offsets")

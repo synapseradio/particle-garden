@@ -37,6 +37,7 @@ import shader_manifest
 import sph_core
 import field_core
 from physics_core import frameFactor
+from memory_layout import MAX_BODIES
 
 # Alias for GPU buffers to distinguish from CPU buffers
 template gpuBuffers*(): untyped = webgpu_init.buffers
@@ -837,6 +838,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbCrowdDensityDelta: cast[GPUBuffer](gpuBuffers.crowdDensityDelta)
     of sbFieldAlive: cast[GPUBuffer](gpuBuffers.fieldAlive)
     of sbFieldDeposit: webgpu_init.fieldDepositGpuBuffer()
+    of sbBodies: cast[GPUBuffer](gpuBuffers.bodies)
+    of sbBodyEnvelope: cast[GPUBuffer](gpuBuffers.bodyEnvelope)
+    of sbBodyAccum: cast[GPUBuffer](gpuBuffers.bodyAccum)
 
   proc byteLengthFor(simBuffer: SimBuffer): int =
     case simBuffer
@@ -849,6 +853,12 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       particleCount * 4  # i32 per particle
     of sbFieldAlive: 4  # one u32: the frame's alive-cell census
     of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
+    of sbBodies: MAX_BODIES * BodyLayout.totalSize
+    of sbBodyEnvelope: MAX_BODIES * 4
+    of sbBodyAccum: MAX_BODIES * 3 * 4
+      # Three i32 per body — force x, force y, torque. The whole table is
+      # cleared whatever the live body count is: a slot that frees mid-frame
+      # would otherwise carry its last impulse into whatever ignites next.
 
   # The 2D field dispatch (dsFieldWorkgroups) covers FIELD_W x FIELD_H in
   # fieldStepX x fieldStepY tiles. Every other DispatchSize is 1D; this one is
