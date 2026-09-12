@@ -243,13 +243,13 @@ held by review — change a shader and its oracle in the same diff or the pair d
       declared 256 x 128 position and re-run 6.3, recording both figures. The selector already offers
       both sizes, so this is one constant and no structural change. Verify: the recorded entry names
       which size shipped and why
-- [ ] 6.5 Update `docs/one-world.md`: `longRange` in the strengths table (`:19-24`, now five), the
+- [x] 6.5 Update `docs/one-world.md`: `longRange` in the strengths table (`:19-24`, now five), the
       long-range density accumulator and its once-per-frame cadence in the delta-buffer section
       (`:158-186`), and a paragraph in "Adding a fifth coupling" (`:188`) restating it as a sixth and
       naming the chain rule — a coupling may own a chain of passes, and the chain is skippable when
       nothing outside it reads any intermediate product. Verify: the document names five strengths and
       the chain rule appears beside the single-pass one
-- [ ] 6.6 Update `docs/enforcement.md`: the coupling-floor row from four floors to five (`:49`);
+- [x] 6.6 Update `docs/enforcement.md`: the coupling-floor row from four floors to five (`:49`);
       `long_range_core.nim` in the reference-oracle table (`:58-77`) naming all five shaders; the new
       build-asserted guarantees (the `LrParams` offsets, the declared-size assertions, the density
       accumulator's overflow bound); the new test-held ones (the transform against a naive DFT, the

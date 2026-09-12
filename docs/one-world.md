@@ -23,6 +23,7 @@ simulation parameter the panel writes through the ordinary descriptor path, and
 | `deposit` | `rdDeposit` | how much each particle secretes into the chemical field | `field-deposit.wgsl` |
 | `fieldForce` | `rdFieldForce` | how hard the field's gradient steers particles | `field-force.wgsl` |
 | `bodies` | `bodiesStrength` | everything a body says to the particles, proximity and enclosure together — and so, through the reaction, everything the particles say back | `body-force.wgsl`, `body-integrate.wgsl` |
+| `longRange` | `longRangeStrength` | the impulse the mesh's solved potential gives each particle, and so everything the six-dispatch chain behind it produces | `lr-deposit.wgsl`, `lr-fft-rows.wgsl`, `lr-fft-cols.wgsl`, `lr-kernel.wgsl`, `lr-force.wgsl` |
 
 Every one of those five ranges reaches zero. A static loop at the bottom of
 `src/config_ranges.nim` fails the build if a coupling strength's floor sits
@@ -53,8 +54,9 @@ neighbour sweep in `forces.wgsl`, `fieldResolve`, the `RD_STEPS_PER_FRAME`
 Gray-Scott substeps, and `integrate`. These make up what the world is.
 
 **Coupling-owned passes drop out at exactly zero.** `forcesSph` under `fluid`,
-`fieldDeposit` under `deposit`, and `fieldForce` under `fieldForce`. Each
-strength multiplies its pass's entire output.
+`fieldDeposit` under `deposit`, `fieldForce` under `fieldForce`, and the
+long-range chain's six dispatches under `longRange`. Each strength multiplies
+its pass's entire output.
 
 ### Forces are the asymmetric case
 
@@ -111,7 +113,7 @@ intrinsic sequence always appears and always in the same order; each `acts(...)`
 guard inserts one coupling's pass into it. Strip the coupling-owned keys from any
 frame and exactly the intrinsic sequence remains, and
 `tests/test_sim_registry.nim` states it that way — as a derivation rather than a
-list — so a new coupling cannot reintroduce enumeration by accident.
+list — so a further coupling cannot reintroduce enumeration by accident.
 
 Dispatch sizes stay symbolic (`DispatchSize`), resolved by the executor each
 frame, so particle-count and grid-size changes never rebuild the description.
@@ -123,17 +125,20 @@ of work.
 
 ### The order a frame composes in
 
-1. Clear `sbVelocityDelta`, `sbDensityDelta` and `sbGridCounts`.
+1. Clear `sbVelocityDelta`, `sbDensityDelta`, `sbLrDensity` and `sbGridCounts`.
 2. **Grid Build** — `binCount`, then `prefixLocal`, `prefixBlocks`,
    `prefixFinal`.
 3. Copy `sbGridOffsets` into `sbFillPointers`, which `binScatter` consumes as
    its running write cursors.
 4. **Physics** — `binScatter`, then `forces`, then `forcesSph` where `fluid`
    acts.
-5. **Field (RD)** — `fieldDeposit` where `deposit` acts, then `fieldResolve`,
+5. **Long Range Solve** where `longRange` acts — `lrDeposit`, the forward
+   transforms, `lrKernel`, the inverse transforms.
+6. **Field (RD)** — `fieldDeposit` where `deposit` acts, then `fieldResolve`,
    then `RD_STEPS_PER_FRAME` substeps alternating `rdStepToFront` and
    `rdStepToTrail`, then `fieldForce` where `fieldForce` acts.
-6. **Integrate** — `integrate`.
+7. **Long Range Force** where `longRange` acts — `lrForce`.
+8. **Integrate** — `integrate`.
 
 `integrate` closes every frame because it reads the summed deltas and moves
 particles, so every contributor must already have run. It sits in its own compute
@@ -160,7 +165,7 @@ is registered twice.
 
 `velocityDelta` accumulates per-particle velocity impulses as fixed-point
 integers, two `i32` per particle. Four passes contribute to it: `forces`,
-`forcesSph`, `fieldForce` and `bodyForce`.
+`forcesSph`, `fieldForce`, `bodyForce` and `lrForce`.
 
 `buildFrame` clears both delta buffers once at the top of the frame, and every
 contributor accumulates only. The rule for any new pass that writes a delta
@@ -186,6 +191,7 @@ consumes it. That is also what makes skipping the deposit at zero exact rather
 than merely cheap — the buffer a skipped deposit leaves behind already holds
 zero.
 
+<<<<<<< HEAD
 `sbBodyAccum` follows the same rule from the other side. `bodyForce` folds the
 negation of every impulse it hands a particle, and the torque that impulse
 carries about the body's centre, into three atomic `i32` per body; `bodyIntegrate`
@@ -197,10 +203,22 @@ assertion in `src/body_core.nim` relates the particle budget, the largest
 contribution the ranges admit and the scale, failing the compile if their
 product leaves `int32`.
 
+`sbLrDensity` is the long-range mesh's charge accumulator, one `i32` per cell
+per species, filled by four `atomicAdd`s per particle in `lr-deposit.wgsl`. It
+clears on the cadence of the pass that fills it — `fncOncePerFrame`, like the
+solve — because the executor encodes the description once per substep, and a
+per-substep clear would empty the grid under a solve that had already read it.
+Its fixed point is its own (`LR_DENSITY_SCALE` in `src/long_range_core.nim`),
+coarser than the velocity deltas' so that the whole particle budget can land in
+one cell without wrapping an `i32` negative. The two spectra and the potential
+take no clear at all: every cell of each is written before it is read on the
+same frame.
+
 ## Adding a coupling
 
-Every step below has an existing example to copy. `bodiesStrength` is the most
-recent coupling to arrive and touches all of them.
+Every step below has an existing example to copy. `bodiesStrength` and
+`longRangeStrength` are the most recent couplings to arrive and touch all of
+them.
 
 Settle the multiplier question before writing any guard. Does your strength scale
 everything its pass produces? If it does, the pass is coupling-owned and may be
@@ -208,6 +226,17 @@ skipped at zero. If the pass also writes something no strength scales — a
 measurement, a user input, a texture the renderer samples — the pass is
 world-intrinsic, the strength acts inside the shader, and the frame never changes
 shape.
+
+**A coupling may own a chain rather than a pass, and the same rule decides it.**
+`longRange` guards six dispatches and three buffers between the particles and
+the impulse it finally writes. A chain is skippable when nothing outside it
+reads any intermediate product: then its only output is the one the strength
+multiplies, and the whole chain answers the single-pass question as a unit.
+Give one pass of that chain a reader outside it — a renderer sampling the mesh
+density, a probe reading a spectrum — and the chain divides. Everything up to
+that reader becomes world-intrinsic, and the strength stops multiplying
+everything the chain produces, which is the jump at zero arriving by the back
+door.
 
 **1. `src/config_ranges.nim` — give the strength a range whose floor is zero.**
 The static loop at the bottom of that file fails the build otherwise.
@@ -237,8 +266,9 @@ it before `integrate`, and relative to the force and field passes according to
 what it reads. Add a `PROFILER_SLOT_*` constant mirroring `gpu_profiler.nim` if
 it needs a compute pass of its own.
 
-**6. `src/webgpu_compute.nim` — add it to `sameFrameShape`.** That function
-decides whether a write to the simulation state rebuilds the frame. A strength
+**6. `src/sim_registry.nim` — add it to `sameFrameShape`.** That function
+decides whether a write to the simulation state rebuilds the frame; it sits
+beside `buildFrame` so a native test can hold the two together. A strength
 missing from it crosses zero without the frame noticing.
 
 **7. `src/shader_manifest.nim` — name its shaders.** Add a `ShaderSpec` array and
@@ -298,7 +328,7 @@ world gains a pass at step 5, and no code anywhere names the combination.
 ## Presets are points in this world
 
 A preset records a point in the one world's parameter space. The current schema
-— v4, `CURRENT_SCHEMA_VERSION` in `src/preset.nim` — carries the five strengths
+— v4, `CURRENT_SCHEMA_VERSION` in `src/preset.nim` — carries the six strengths
 among its ordinary settings and names no mode.
 
 `LEGACY_MODE_COUPLINGS` in `src/preset.nim` is the only table in the codebase

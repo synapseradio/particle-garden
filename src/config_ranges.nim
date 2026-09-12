@@ -567,7 +567,7 @@ static:
   doAssert CROWDING_STRENGTH_MIN == 0.0,
     "crowding strength zero is today's force law and must stay reachable"
   # Every coupling strength reaches zero. One loop rather than an
-  # assertion each, so a new coupling with a nonzero floor fails here.
+  # assertion each, so a further coupling with a nonzero floor fails here.
   for strengthFloor in [FORCE_STRENGTH_MIN, FLUID_STRENGTH_MIN,
       RD_DEPOSIT_MIN, RD_FIELD_FORCE_MIN, BODIES_STRENGTH_MIN,
       LONG_RANGE_STRENGTH_MIN]:
