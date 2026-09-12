@@ -11,6 +11,7 @@ decision against its evidence rather than taking it on trust.
 | `chemotaxis-stability.md` | When agents that both deposit into and follow a chemical gradient aggregate stably versus collapse |
 | `alife-research.md` | Architectures for coupling continuous fields to particle agents, and what keeps such systems evolving indefinitely |
 | `artistic-research.md` | Making a toroidal world feel boundless, and making simulation feel painterly rather than clinical |
+| `long-range-coupling.md` | Which fast long-range method fits a 2D toroidal WGSL world (FFT mesh over Barnes-Hut and FMM), and how a resizable grid, arbitrary-pair coupling and generative structures land on the same deposit-solve-read loop |
 
 ## The four findings that decided the design
 

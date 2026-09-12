@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-12
+# A measurement spike: no runtime behaviour changes, so no spec changes either.
+skip_specs: true
