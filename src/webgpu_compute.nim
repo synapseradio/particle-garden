@@ -16,6 +16,7 @@
 
 from std/jsffi import JsObject, toJs, to, `[]`, `[]=`
 import std/asyncjs
+import std/options
 import std/strutils
 import bindings/js_interop
 import bindings/webgpu
@@ -146,10 +147,10 @@ var bodySeconds = 0.0
   ## running; capped delta rather than a timestamp, because a pause or a stall
   ## must not age a body that nothing was drawing.
 
-proc advanceBodyClock*(seconds: float) =
-  ## Move the bodies' clock forward. Called once per frame with the same capped
-  ## wall-clock delta the weathers run on.
-  bodySeconds += seconds
+var bodyGenerator = body_core.initBodyGenerator(body_core.BODY_GENERATOR_SEED)
+  ## The world's own source of bodies. It lives beside the table rather than in
+  ## the frame loop because every ignition restarts its cadence, including the
+  ## ones a player makes, and the table is where those arrive.
 
 let bodySlotData = newFloat32Array(BODY_SLOT_PARAMS_F32_COUNT)
   ## One body record, refilled per ignition. The pads it was allocated with stay
@@ -178,9 +179,9 @@ proc writeBodySlot(slot: int) =
   queue.writeBufferTyped(cast[GPUBuffer](gpuBuffers.bodies),
     slot * BodyLayout.totalSize, bodySlotData)
 
-proc igniteBody*(atX, atY: float): bool =
-  ## Put a body at a world point and report whether a slot was found. The one
-  ## entry every source of an ignition reaches the world through.
+proc lightBody(atX, atY: float; shaping: body_core.BodyShaping): bool =
+  ## Put a body at a world point, with the dispositions the sliders describe
+  ## right now, and report whether a slot was free.
   ##
   ## The world has nowhere to put a body before its buffers exist, so an
   ## ignition arriving then is refused rather than held.
@@ -192,9 +193,6 @@ proc igniteBody*(atX, atY: float): bool =
     proximity: config.CONFIG.bodyProximity,
     enclosure: config.CONFIG.bodyEnclosure,
     lifetime: config.CONFIG.bodyLifetime)
-  # A circle with an even envelope holding half way through its decay.
-  let shaping = body_core.BodyShaping(
-    anisotropy: 1.0, envelopeSkew: 0.0, sustain: 0.5)
   # The allocator answers where before it answers whether, and it is the same
   # search igniteBody runs, so the index and the record cannot disagree.
   let slot = body_core.freeSlotIndex(bodyState, bodySeconds)
@@ -202,6 +200,24 @@ proc igniteBody*(atX, atY: float): bool =
     bodySeconds)
   if result:
     writeBodySlot(slot)
+
+proc igniteBody*(atX, atY: float): bool =
+  ## A body at a world point, asked for from outside — the canvas gesture, the
+  ## boundary method. The point is the caller's and the shape is the world's
+  ## next draw, so a player's body and one the world lights on its own are the
+  ## same kind of thing, and the draw restarts the cadence so the world does not
+  ## fire on top of the gesture.
+  lightBody(atX, atY, body_core.drawIgnition(bodyGenerator).shaping)
+
+proc advanceBodies*(seconds: float) =
+  ## One frame of wall-clock time for the bodies: the clock every envelope is
+  ## read against, and the cadence the world lights its own bodies on. Called
+  ## from the frame loop with the same capped delta the weathers run on.
+  bodySeconds += seconds
+  let lit = body_core.worldIgnition(bodyGenerator,
+    config.CONFIG.bodyIgnitionRate, seconds)
+  if lit.isSome:
+    discard lightBody(lit.get.atX, lit.get.atY, lit.get.shaping)
 
 proc requestFieldSeed*() =
   ## Ask for the field to be re-seeded on the next frame. Synchronous and

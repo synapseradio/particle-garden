@@ -24,7 +24,7 @@
 #
 # ==============================================================================
 
-import std/math
+import std/[math, options]
 import memory_layout
 import physics_core
 
@@ -88,6 +88,21 @@ type
     ## Everything Nim knows about the bodies. Pose is absent on purpose: the
     ## GPU owns it and nothing here reads it back.
     slots*: array[MAX_BODIES, BodySlot]
+
+  BodyDraw* = object
+    ## One body the world's sequence yields: where it goes and what shape it is
+    ## born with. The dispositions are not here — those are the live sliders',
+    ## so a body the world lights and a body a player lights are the same kind
+    ## of thing.
+    atX*, atY*: float
+    shaping*: BodyShaping
+
+  BodyGenerator* = object
+    ## The world's own source of bodies: a phase on the wall clock and a seeded
+    ## sequence. Both pure, so what the world lights is reproducible and the
+    ## cadence is testable without a world to light it in.
+    phase*: float       ## Seconds since the last body, from any source.
+    sequence*: uint64   ## Advanced once per draw.
 
   BodyAccumulator* = object
     ## One body's share of sbBodyAccum: force in two axes and torque, in fixed
@@ -219,6 +234,10 @@ const
     ## crossing the world in four to eight seconds at its fastest and never
     ## faster however large the crowd. Third mechanism: it bounds what one
     ## substep may do to one body without bounding what a player may ask for.
+  BODY_GENERATOR_SEED* = 0x2545F4914F6CDD1D'u64
+    ## Where the world's sequence starts, every run. Fixed rather than sampled
+    ## from a clock, so the cadence tests can assert the bodies the world lights
+    ## rather than merely that it lit one.
   BODY_MAX_SPIN_CHANGE* = 0.03
     ## The same cap on angular speed, in radians per second. The same geometric
     ## sum puts a body's fastest turn near half a radian a second, a slow tumble
@@ -558,3 +577,63 @@ proc igniteBody*(state: var BodyState; atX, atY: float;
       invMass: masses.invMass,
       invInertia: masses.invInertia))
   true
+
+# ==============================================================================
+# THE WORLD'S OWN GENERATOR
+# ==============================================================================
+
+func initBodyGenerator*(seed: uint64): BodyGenerator =
+  BodyGenerator(phase: 0.0, sequence: seed)
+
+func nextUnit(sequence: uint64): tuple[next: uint64; value: float] =
+  ## One step of splitmix64, and the [0, 1) value it yields. Chosen for being a
+  ## few lines of pure arithmetic with no state beyond the word itself: the
+  ## sequence a seed produces is the same on both backends and in the suite.
+  let next = sequence + 0x9E3779B97F4A7C15'u64
+  var mixed = next
+  mixed = (mixed xor (mixed shr 30)) * 0xBF58476D1CE4E5B9'u64
+  mixed = (mixed xor (mixed shr 27)) * 0x94D049BB133111EB'u64
+  mixed = mixed xor (mixed shr 31)
+  # 53 bits is what a float carries exactly, so every value is representable.
+  (next: next, value: float(mixed shr 11) / float(1'u64 shl 53))
+
+proc drawIgnition*(generator: var BodyGenerator): BodyDraw =
+  ## The next body in the world's sequence, and the moment the cadence starts
+  ## counting from again. Every ignition draws — a player's gesture takes the
+  ## shaping and keeps its own point — so the world never fires on top of a
+  ## body that has just been lit.
+  generator.phase = 0.0
+  let x = nextUnit(generator.sequence)
+  let y = nextUnit(x.next)
+  let shape = nextUnit(y.next)
+  let skew = nextUnit(shape.next)
+  let level = nextUnit(skew.next)
+  generator.sequence = level.next
+  BodyDraw(
+    atX: x.value * BODY_WORLD_W,
+    atY: y.value * BODY_WORLD_H,
+    shaping: BodyShaping(
+      # Geometric between the two bounds, not linear: anisotropy is a ratio, so
+      # halving and doubling are the same distance from the circle at one.
+      anisotropy: exp(ln(BODY_ANISOTROPY_FLOOR) + shape.value *
+        (ln(BODY_ANISOTROPY_CEILING) - ln(BODY_ANISOTROPY_FLOOR))),
+      envelopeSkew: (skew.value * 2.0 - 1.0) * BODY_SKEW_EXTENT,
+      sustain: BODY_SUSTAIN_FLOOR + level.value *
+        (BODY_SUSTAIN_CEILING - BODY_SUSTAIN_FLOOR)))
+
+proc worldIgnition*(generator: var BodyGenerator;
+    rate, deltaSeconds: float): Option[BodyDraw] =
+  ## Advance the cadence by a wall-clock delta and hand back the body the world
+  ## lights, if this is the moment. A rate of zero lights none: the world's own
+  ## source is off at the bottom of its range, which is a rate rather than a
+  ## mode.
+  ##
+  ## It reads its rate and the clock, never the bodies strength. A body lit into
+  ## a world at zero strength costs a slot and moves nothing, and acts() is the
+  ## one place a strength is read against zero.
+  if rate <= 0.0:
+    return none(BodyDraw)
+  generator.phase += deltaSeconds
+  if generator.phase < 1.0 / rate:
+    return none(BodyDraw)
+  some(generator.drawIgnition())

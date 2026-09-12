@@ -238,16 +238,16 @@ remain the only ignition sources, `bodyIgnitionRate` leaves `src/config_ranges.n
 `src/ui/api/param_descriptor.nim`, `src/preset.nim` and the help file with it, leaving six
 descriptors, and `igniteBody`'s callers supply their own shaping.
 
-- [ ] 8.1 **Red first.** Extend `tests/test_body_core.nim` with the cadence and the draw: a rate of
+- [x] 8.1 **Red first.** Extend `tests/test_body_core.nim` with the cadence and the draw: a rate of
       zero ignites nothing however long the clock runs; a non-zero rate ignites on schedule regardless
       of the `bodies` strength; a player's ignition restarts the phase rather than letting the next
       one fire immediately; and one seed replays the same sequence of positions and shapings twice,
       while two seeds differ. Verify: the tests fail
-- [ ] 8.2 Add the cadence and the seeded sequence to `src/body_core.nim` per design D11 — one pure
+- [x] 8.2 Add the cadence and the seeded sequence to `src/body_core.nim` per design D11 — one pure
       `uint64` state advanced per ignition, mapped onto the world rectangle and onto the shaping
       bounds, reading only its own rate and never the coupling strength. Verify: 8.1 passes, and
       `tests/test_no_modes.nim` stays green
-- [ ] 8.3 Advance the phase from the frame loop in `src/app.nim` on capped wall-clock delta, beside
+- [x] 8.3 Advance the phase from the frame loop in `src/app.nim` on capped wall-clock delta, beside
       the climate branch at `:266-269`, honoring that file's import-order landmine
       (`docs/enforcement.md`, Landmines). Verify: `just happen` is green
 - [ ] 8.4 `just happen` builds and `just check` is green

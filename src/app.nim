@@ -294,10 +294,11 @@ proc loop(now: float): Future[void] {.async.} =
   # dt: the analyser reports what the room is doing right now.
   audio_input.pollAudioFrame(cappedDt)
 
-  # The bodies age on that same wall clock: a lifetime in seconds means seconds
-  # whatever Time Scale says, and capped delta means a stalled frame does not
-  # retire a body nobody watched live.
-  webgpu_compute.advanceBodyClock(cappedDt)
+  # The bodies age on that same wall clock, and the world lights its own on it:
+  # a lifetime in seconds means seconds whatever Time Scale says, and capped
+  # delta means a stalled frame neither retires a body nobody watched live nor
+  # fires a burst of new ones to catch up.
+  webgpu_compute.advanceBodies(cappedDt)
 
   await physics(dt)
 

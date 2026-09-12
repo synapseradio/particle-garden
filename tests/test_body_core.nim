@@ -7,7 +7,7 @@
 ## circle in closed form, Newton's third law, the lifetime argument itself, and
 ## symmetry.
 
-import std/[unittest, math, os, strutils, strformat]
+import std/[unittest, math, options, os, strutils, strformat]
 import ../src/body_core
 import ../src/memory_layout
 import ../src/physics_core
@@ -495,6 +495,74 @@ suite "Nim Owns Ignition And Slots, And Knows Them From The Clock Alone":
     let expected = bodyInverseMasses(disposition().radius, BODY_ANISOTROPY_MAX)
     check state.slots[0].body.invMass == expected.invMass
     check state.slots[0].body.invInertia == expected.invInertia
+
+suite "The World Lights Bodies On A Cadence Of Its Own":
+  # ORACLE: the rate, in bodies per second, and arithmetic on the clock. The
+  # cadence takes that rate and a wall-clock delta and nothing else — no
+  # coupling strength appears anywhere in this suite because none reaches the
+  # generator: a body lit into a world at zero strength costs a slot and moves
+  # nothing, and acts() is the only place a strength is read against zero.
+
+  proc drawSequence(seed: uint64; count: int): seq[BodyDraw] =
+    var generator = initBodyGenerator(seed)
+    for index in 0 ..< count:
+      result.add generator.drawIgnition()
+
+  test "a rate of zero lights nothing however long the clock runs":
+    var generator = initBodyGenerator(BODY_GENERATOR_SEED)
+    for tick in 0 ..< 10_000:
+      check generator.worldIgnition(0.0, 0.05).isNone
+
+  test "the world lights a body every interval and never twice in one":
+    for rate in [0.25, 1.0, BODY_IGNITION_RATE_MAX]:
+      var generator = initBodyGenerator(BODY_GENERATOR_SEED)
+      const DT = 1.0 / 64.0  # exact in binary, so the clock below is too
+      let interval = 1.0 / rate
+      var clock = 0.0
+      var lastFire = 0.0
+      var fires = 0
+      for tick in 0 ..< 3840:  # a minute at that step
+        clock += DT
+        if generator.worldIgnition(rate, DT).isSome:
+          checkpoint("rate " & $rate)
+          check clock - lastFire >= interval
+          check clock - lastFire < interval + DT
+          lastFire = clock
+          inc fires
+      check fires > 0
+
+  test "a body lit by hand restarts the cadence":
+    # The world does not fire on top of a gesture: the next interval counts from
+    # the body just lit, whoever lit it.
+    var generator = initBodyGenerator(BODY_GENERATOR_SEED)
+    const RATE = 1.0
+    const DT = 0.25
+    for tick in 0 ..< 3:
+      check generator.worldIgnition(RATE, DT).isNone
+    discard generator.drawIgnition()
+    for tick in 0 ..< 3:
+      check generator.worldIgnition(RATE, DT).isNone
+    check generator.worldIgnition(RATE, DT).isSome
+
+  test "one seed replays the same bodies and two seeds part ways":
+    check drawSequence(BODY_GENERATOR_SEED, 16) ==
+      drawSequence(BODY_GENERATOR_SEED, 16)
+    check drawSequence(BODY_GENERATOR_SEED, 16) !=
+      drawSequence(BODY_GENERATOR_SEED + 1, 16)
+
+  test "every body the world draws lands in the world and inside the bounds":
+    for draw in drawSequence(BODY_GENERATOR_SEED, 512):
+      check draw.atX >= 0.0
+      check draw.atX < BODY_WORLD_W
+      check draw.atY >= 0.0
+      check draw.atY < BODY_WORLD_H
+      check draw.shaping.anisotropy >= BODY_ANISOTROPY_MIN
+      check draw.shaping.anisotropy <= BODY_ANISOTROPY_MAX
+      check draw.shaping.envelopeSkew >= BODY_ENVELOPE_SKEW_MIN
+      check draw.shaping.envelopeSkew <= BODY_ENVELOPE_SKEW_MAX
+      check draw.shaping.sustain >= BODY_SUSTAIN_MIN
+      check draw.shaping.sustain <= BODY_SUSTAIN_MAX
+
 
 suite "A Body Is Pushed By The Particles It Pushes":
   const WORLD_W = TEST_WORLD_W
