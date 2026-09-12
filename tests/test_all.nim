@@ -31,6 +31,7 @@ import test_camera_core
 import test_camera_drift
 import test_climate_core
 import test_camera_input
+import test_audio_core
 import test_wgsl_lint
 import test_no_modes
 import test_meta_vacuity
@@ -74,6 +75,7 @@ static:
   discard test_camera_drift.CAMERA_DRIFT_TESTS_LOADED
   discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
   discard test_camera_input.CAMERA_INPUT_TESTS_LOADED
+  discard test_audio_core.AUDIO_CORE_TESTS_LOADED
   discard test_wgsl_lint.WGSL_LINT_TESTS_LOADED
   discard test_no_modes.NO_MODES_TESTS_LOADED
   discard test_meta_vacuity.META_VACUITY_TESTS_LOADED

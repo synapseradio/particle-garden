@@ -146,6 +146,36 @@ export interface StatsSample {
   ceilings: Record<string, number>;
 }
 
+// The listen affordance's state, named by Nim (audio_core.ListenState); the
+// panel renders the name and restates no threshold behind it.
+export type ListenState =
+  | "Disconnected"
+  | "Requesting"
+  | "Connected"
+  | "Denied"
+  | "Silent";
+
+// One audio source the frame loop can deliver: five continuous features in
+// [0, 1] and one event. Labels come from Nim; the meters restate none.
+export interface AudioSourceEntry {
+  id: string;
+  label: string;
+  kind: "continuous" | "event";
+}
+
+// Pushed once per frame while a capture chain is live and a subscriber is
+// registered, and once on each state change otherwise. `onset` carries the
+// event's energy in the frame it fires and is null in every other frame.
+export interface AudioSample {
+  state: ListenState;
+  loudness: number;
+  bass: number;
+  mid: number;
+  high: number;
+  brightness: number;
+  onset: number | null;
+}
+
 export interface PresetKeys {
   prefix: string;
   indexKey: string;
@@ -252,6 +282,15 @@ export interface GardenAPI {
   reseedField(): void;
 
   onStats(callback: (stats: StatsSample) => void): void;
+
+  // Audio. Start and stop are synchronous and return no promise: start leaves
+  // the affordance Requesting before it returns and the outcome arrives on the
+  // metering push; stop leaves it Disconnected before it returns. A subscribe
+  // pushes the current state once and returns its unsubscribe.
+  startListening(): void;
+  stopListening(): void;
+  onAudio(callback: (sample: AudioSample) => void): () => void;
+  audioSources(): AudioSourceEntry[];
   /** Dormancy: id -> whether the control's consumer can act. Evaluated
    * Nim-side; called on the panel's own writes and on each stats push. */
   dormantParams(): Record<string, boolean>;

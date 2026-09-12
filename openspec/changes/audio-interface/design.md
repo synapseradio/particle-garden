@@ -61,6 +61,8 @@ Band edges at 250 Hz and 2000 Hz, with the bass band starting at 20 Hz and the h
 
 Each normalized feature tracks a floor and a ceiling in decibels. The floor rises slowly and falls instantly, tracking the noise floor. The ceiling rises instantly on a louder frame and decays slowly, holding recent peaks. The feature is the level's position inside that window, clamped, with a minimum window width so silence divides by nothing. The result adapts to any microphone gain within seconds and needs no configuration, which is the shipped pedagogy: plug in, play, see.
 
+Found at implementation (2026-09-12): because the floor falls instantly, a perfectly flat held level sits on its own floor and reads exactly zero, so "a held level returns inside (0, 1)" is unsatisfiable for a flat stimulus by construction. A real input never holds flat, and the test in `tests/test_audio_core.nim` holds the level the way a room delivers one, a few decibels of movement around the stepped level, and pins the frame count at which every feature is back inside (0, 1). The floor and ceiling rates, the minimum window width and the silence threshold are the core's own constants, each with its condition beside it.
+
 Rejected: a fixed dBFS mapping, which bakes one microphone's gain into every number. Rejected: a full automatic gain control on the samples themselves, which would alter what the other features measure. Rejected: a calibration control ("set loudest" pin or input gain slider), so adaptive normalization stands alone and a manual anchor waits on measured need.
 
 ### 6. Where smoothing lives

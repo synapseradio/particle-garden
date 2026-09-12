@@ -34,6 +34,7 @@ One home per fact.
 | Per-capability requirements, each citing its gate | `openspec/specs/` |
 | The inventory of facts stated at two sites, each with its tier | `src/agreements.nim`, explained in [agreements.md](agreements.md) |
 | Shader sources and shared modules | `web/shaders/src/`, `web/shaders/modules/`, bundled by `tools/wgsl_bundle.nim` |
+| Audio feature definitions, thresholds and windows | `src/ui/input/audio_core.nim` |
 
 ## Guarantees
 
@@ -50,6 +51,9 @@ One home per fact.
 | A shader constant equals its config value | Derived where it travels by `{{PLACEHOLDER}}` from `src/shader_config.nim` | The bundler fails on an unresolved placeholder | |
 | The blast radius in `forces.wgsl` equals `shader_config.blastRangeSq` | Derived | The shader reads `{{TUNABLE_BLAST_RANGE_SQ}}` and `{{TUNABLE_BLAST_RANGE}}`, both emitted from the one field | |
 | Every key `getPlaceholderMap` emits is read by a shader source | Test-held | `tests/test_agreements.nim`, enumerating the map against `web/shaders/src/` and `web/shaders/modules/` | |
+| Every audio feature is finite and in [0, 1], with silence reading zero | Test-held | `tests/test_audio_core.nim` | |
+| The capture chain is created inside the listen gesture and released on stop | Unenforced | Review against `src/audio_input.nim` and the gate record under `scratchpad/audio-interface/` | |
+| Audio is analysed before the frame's physics | Unenforced | Review of the loop in `src/app.nim` | |
 
 ## Reference oracles
 

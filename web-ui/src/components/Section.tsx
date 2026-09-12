@@ -5,14 +5,16 @@
 // defaultOpen is read once, at mount. Every section stays mounted for the life
 // of the panel, so a manual collapse or expand sticks until the page reloads.
 
-import { createSignal, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, Show, type JSX } from "solid-js";
 
 export function Section(props: {
   title: string;
   defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: JSX.Element;
 }) {
   const [open, setOpen] = createSignal(props.defaultOpen ?? false);
+  createEffect(() => props.onOpenChange?.(open()));
   return (
     <div class="control-section">
       <button class="section-header" onClick={() => setOpen(!open())}>

@@ -416,3 +416,20 @@
   line-height: 1.3;
   color: #8a7a55;
 }
+
+/* The onset indicator: lights at the fired energy and fades on its own,
+   presentation over a value the core already computed. */
+#ui-root .audio-onset {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+  background: #4d96ff;
+  transition: opacity 0.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ui-root .audio-onset {
+    transition: none;
+  }
+}

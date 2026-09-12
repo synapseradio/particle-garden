@@ -241,7 +241,9 @@ asserting every feature returns inside (0, 1) within a bounded frame count the t
 descriptor claim is held by `tests/test_param_descriptor.nim`, which walks the whole table.
 
 #### Scenario: A gain step is absorbed
-- **WHEN** the input level steps 20 dB up or down and holds
+- **WHEN** the input level steps 20 dB up or down and holds there with a room's ordinary
+  movement around it (a perfectly flat level sits on its own instantly-falling floor and reads
+  zero by construction)
 - **THEN** every feature returns inside (0, 1) within the bounded frame count the test pins
 
 #### Scenario: A narrow window never divides by zero

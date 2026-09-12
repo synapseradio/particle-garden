@@ -33,6 +33,7 @@ import grid
 import canvas_input
 import climate_core
 import web_api
+import audio_input
 
 # Layer 4: WebGPU modules
 import webgpu_init
@@ -288,6 +289,10 @@ proc loop(now: float): Future[void] {.async.} =
       float32(config.WORLD_W), float32(config.WORLD_H))
     cameraDriftState = advanced.state
     webgpu_render.setCamera(advanced.camera)
+
+  # Same wall clock as the weathers above (cappedDt), not the timeScale-scaled
+  # dt: the analyser reports what the room is doing right now.
+  audio_input.pollAudioFrame(cappedDt)
 
   await physics(dt)
 

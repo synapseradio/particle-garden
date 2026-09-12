@@ -74,6 +74,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_trail_core.nim` | The trail: its per-frame geometric decay, and the frames of persistence the trail-length slider buys | Native |
 | `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, zoom clamping and anchoring, the screen-UV/world reprojection pair, and the floor on the composed visible radius | Native |
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
+| `test_audio_core.nim` | The audio feature core: a tone's brightness at its logarithmic position, band energy reaching its own feature, onsets on a click train with the refractory window holding, silence reading exactly zero, a 20 dB gain step absorbed inside a pinned frame count, a fuzz sweep for finiteness and range, and every time constant spanning the same wall-clock seconds at two frame deltas | Native |
 | `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, tours every named regime, and that every parameter it declares it writes has a descriptor to write through | Native |
 | `test_no_modes.nim` | Guard test: no forbidden mode identifier or mode-id string literal survives anywhere in `src/` or `web-ui/src/`, except the one narrow, self-checking exemption for `preset.nim`'s versioned-schema legacy migration table | Native |
 
@@ -118,6 +119,7 @@ test_all.nim (runner)
     ├── test_trail_core.nim     → trail_core.nim (trail decay, persistence in frames)
     ├── test_camera_core.nim    → camera_core.nim (toroidal camera, reprojection, visible-radius floor)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
+    ├── test_audio_core.nim     → ui/input/audio_core.nim (features, onsets, adaptive windows)
     ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
     ├── test_camera_drift.nim   → camera_drift.nim (self-moving view)
     ├── test_build_flags.nim    → justfile, particle_garden.nimble (flag lists agree)

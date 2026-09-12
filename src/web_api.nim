@@ -45,7 +45,7 @@ when defined(js):
   from std/dom import getElementById
 
   from bindings/js_interop import newJsObject, newJsArray, push, setGlobal,
-    consoleWarn, gaussian
+    consoleWarn, gaussian, jsNull
   from bindings/typed_arrays import Float32Array, `[]`, `[]=`
   from bindings/dom_extensions import HTMLElement
 
@@ -59,6 +59,7 @@ when defined(js):
   import climate_core
   import ui/api/dormancy
   import ui/api/help_content
+  import ui/input/audio_core
   import ui/api/param_descriptor
   import ui/api/slider_curve
   import ui/state/matrix_state
@@ -802,6 +803,43 @@ when defined(js):
 
   var statsCallbacks: seq[proc(stats: JsObject)] = @[]
 
+  # Audio metering: a plain per-frame push, same shape as the stats push
+  # above, with its own subscriber list because it runs on the frame clock
+  # rather than the fps window. audio_input hands its four hooks in at
+  # module init through registerAudioControl, so this file never imports
+  # audio_input (which sits a layer above it).
+  var audioCallbacks: seq[tuple[id: int, callback: proc(sample: JsObject)]] = @[]
+  var audioSubscriberSeq = 0
+  var audioStartHook: proc() = nil
+  var audioStopHook: proc() = nil
+  var audioCurrentStateHook: proc(): ListenState = nil
+  var audioSourcesHook: proc(): JsObject = nil
+
+  proc registerAudioControl*(start, stop: proc(); currentState: proc(): ListenState;
+      sources: proc(): JsObject) =
+    audioStartHook = start
+    audioStopHook = stop
+    audioCurrentStateHook = currentState
+    audioSourcesHook = sources
+
+  proc buildAudioSample(state: ListenState; features: AudioFeatures): JsObject =
+    result = newJsObject()
+    result["state"] = toJs(cstring($state))
+    result["loudness"] = toJs(features.loudness)
+    result["bass"] = toJs(features.bass)
+    result["mid"] = toJs(features.mid)
+    result["high"] = toJs(features.high)
+    result["brightness"] = toJs(features.brightness)
+    result["onset"] =
+      if features.onset.fired: toJs(features.onset.energy) else: jsNull
+
+  proc pushAudio*(state: ListenState; features: AudioFeatures) =
+    if audioCallbacks.len == 0:
+      return
+    let sample = buildAudioSample(state, features)
+    for entry in audioCallbacks:
+      entry.callback(sample)
+
   var lastFieldAliveCells = 0
     ## Latest pushed alive-cell census; dormancy predicates evaluate against
     ## the same value the panel last saw.
@@ -1308,6 +1346,31 @@ when defined(js):
     # Stats
     result["onStats"] = toJs(proc(callback: proc(stats: JsObject)) =
       statsCallbacks.add(callback))
+
+    # Audio. Start and stop are synchronous, returning no promise, so the
+    # panel never renders a listening claim the boundary has already ended.
+    # The hooks are nil until audio_input's module init runs, which import
+    # order in app.nim guarantees happens before any click.
+    result["startListening"] = toJs(proc() =
+      if not audioStartHook.isNil: audioStartHook())
+    result["stopListening"] = toJs(proc() =
+      if not audioStopHook.isNil: audioStopHook())
+    result["onAudio"] = toJs(proc(callback: proc(sample: JsObject)): proc() =
+      audioSubscriberSeq += 1
+      let subscriberId = audioSubscriberSeq
+      audioCallbacks.add((id: subscriberId, callback: callback))
+      # A subscriber that opens while Disconnected sees the state at once.
+      let openState =
+        if audioCurrentStateHook.isNil: lsDisconnected else: audioCurrentStateHook()
+      callback(buildAudioSample(openState, AudioFeatures(onset: Onset(fired: false))))
+      proc() =
+        var kept: seq[tuple[id: int, callback: proc(sample: JsObject)]] = @[]
+        for entry in audioCallbacks:
+          if entry.id != subscriberId:
+            kept.add(entry)
+        audioCallbacks = kept)
+    result["audioSources"] = toJs(proc(): JsObject =
+      if audioSourcesHook.isNil: newJsArray() else: audioSourcesHook())
 
     # Presets (hybrid: Nim owns schema/validation/apply-order; the UI owns
     # localStorage I/O using these keys and strings)
