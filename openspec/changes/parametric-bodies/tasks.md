@@ -272,11 +272,11 @@ descriptors, and `igniteBody`'s callers supply their own shaping.
       record it in `docs/perf-report.md` beside the group 2 entry, against the 16.7 ms budget that
       file uses (`:134`). Verify: the entry states the particle count, the live body count, and the
       measured per-frame cost
-- [ ] 9.4 Update `docs/one-world.md`: `bodies` in the four-strengths table (`:19-24`, now five), the
+- [x] 9.4 Update `docs/one-world.md`: `bodies` in the four-strengths table (`:19-24`, now five), the
       body accumulator in the delta-buffer section (`:158-186`), and the generator beside the climate
       (`:305-318`). Correct the sentence at `:288` naming schema v2 — `CURRENT_SCHEMA_VERSION` is 4
       (`src/preset.nim:49`). Verify: the document names five strengths and no stale schema version
-- [ ] 9.5 Update `docs/enforcement.md`: the coupling-floor row from four floors to five (`:49`),
+- [x] 9.5 Update `docs/enforcement.md`: the coupling-floor row from four floors to five (`:49`),
       `body_core.nim` in the reference-oracle table (`:58-79`) naming both shaders, the new
       build-asserted guarantees (offsets, the workgroup ceiling, the accumulator's overflow bound),
       the test-held ones (the stability sweep, the tunnelling bound, help coverage), and one landmine:

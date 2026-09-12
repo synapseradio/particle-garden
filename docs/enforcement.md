@@ -46,11 +46,19 @@ One home per fact.
 | Every toggle, selector, and button is documented | Unenforced | Convention; these are `gardenAPI` functions outside the descriptor table | The four relations ranging over served action and toggle ids too |
 | The bundled shader set equals the registered binding manifest, and is non-empty | Test-held | `tests/test_wgsl_lint.nim`; `just check` bundles first so the sweep has a subject | |
 | The compiler flag list in `justfile` equals the one in `particle_garden.nimble` | Test-held | `tests/test_build_flags.nim` | One file reading the other |
-| Every coupling strength's range reaches zero, so each coupling turns off through its own slider | Build-asserted | A static loop over the four floors at the bottom of `src/config_ranges.nim`; crowding, which shapes the force law instead of gating a pass, is asserted beside it | |
+| Every coupling strength's range reaches zero, so each coupling turns off through its own slider | Build-asserted | A static loop over the five floors at the bottom of `src/config_ranges.nim`; crowding, which shapes the force law instead of gating a pass, is asserted beside it | |
+| A body's GPU record and its params match the Nim layouts field for field | Build-asserted | `BodyLayout` and `BodyParamsLayout` ride the static offset sweep in `src/gpu_types.nim`, and both the shader structs and the Nim write indices are generated from them | |
+| One workgroup covers the whole body table | Build-asserted | `static: assert MAX_BODIES <= PRODUCTION_WORKGROUPS.bodyIntegrate` in `src/shader_config.nim`, which is what makes `bodyIntegrate`'s `dsOne` dispatch correct | |
+| A full crowd cannot overflow a body's force or torque accumulator | Build-asserted | Static assertions in `src/body_core.nim` relating `MAX_PARTICLES`, the largest contribution the ranges admit, the world's half-diagonal and the two fixed-point scales | |
+| No reachable crowd drives a body unstable | Test-held | The sweep in `tests/test_body_core.nim` over the corners of the expressible space, against the ceiling the change caps and damping set | |
+| The fastest particle cannot tunnel through an enclosing body | Test-held | `tests/test_body_core.nim` derives the band floor from the particle speed ceiling and the longest substep, and `config_ranges` takes `BODY_BAND_MIN` from it | |
+| The bodies group is documented, like every other slider group | Test-held | `tests/test_help_content.nim` over `docs/help/35-bodies.md` and the seven descriptors | |
+| A gesture cannot exist without appearing in the help reference | Derived | `help_content.bindingReferenceBody` renders the same `InputBindings` rows the handlers read | |
 | WGSL struct modules match the Nim layout tables | Derived | `tools/wgsl_bundle.nim` generates every module from `src/gpu_types.nim`, whose offsets are static-asserted | |
 | A shader constant equals its config value | Derived where it travels by `{{PLACEHOLDER}}` from `src/shader_config.nim` | The bundler fails on an unresolved placeholder | |
 | The blast radius in `forces.wgsl` equals `shader_config.blastRangeSq` | Derived | The shader reads `{{TUNABLE_BLAST_RANGE_SQ}}` and `{{TUNABLE_BLAST_RANGE}}`, both emitted from the one field | |
 | Every key `getPlaceholderMap` emits is read by a shader source | Test-held | `tests/test_agreements.nim`, enumerating the map against `web/shaders/src/` and `web/shaders/modules/` | |
+| `GardenAPI` in `web-ui/src/garden-api.ts` declares every method `buildGardenApi` installs | Unenforced | Nothing relates the two: `tsc` only reddens for a method the panel actually calls, so a declaration for a boundary method no component calls — `igniteBody`, whose caller is the Nim-side canvas gesture — is documentation | A test relating the installed key set to the declared members, in both directions |
 | Every audio feature is finite and in [0, 1], with silence reading zero | Test-held | `tests/test_audio_core.nim` | |
 | The capture chain is created inside the listen gesture and released on stop | Unenforced | Review against `src/audio_input.nim` and the gate record under `scratchpad/audio-interface/` | |
 | Audio is analysed before the frame's physics | Unenforced | Review of the loop in `src/app.nim` | |
@@ -75,6 +83,7 @@ derives the table from the headers and compares.
 | `glow_core.nim` | `glow.wgsl` (halo radius, falloff, warmth, alpha integral) |
 | `trail_core.nim` | `fade.wgsl` (per-frame decay), `render.wgsl`'s motion-blur taper, plus the trail-length mapping the renderer writes |
 | `overlay_core.nim` | `overlay.wgsl` (ring and frame coverage) |
+| `body_core.nim` | `body-force.wgsl` (the anisotropic signed distance, proximity, enclosure, and the reaction it accumulates) and `body-integrate.wgsl` (the semi-implicit rigid step, its change caps, the exponential damping and the torus wrap) |
 
 **Known drift in `sph_core` against `forces-sph.wgsl`.** The shader clamps the Tait density to
 `restDensity * SPH_MAX_DENSITY_RATIO`; `flooredTaitPressure` applies only the floor, and its
@@ -103,6 +112,7 @@ Each is unenforced. Verify in a running app until its raising step lands.
 | Landmine | What happens | Raised by |
 |---|---|---|
 | Render bind group resources | Entry counts and shader-side binding sets are checked; which resource lands at each binding is not. In `src/webgpu_render.nim` a binding's layout and its resource sit hundreds of lines apart inside one procedure | A table of binding index to resource kind that generates both layout and group |
+| The bodies skip at zero is exact only while bodies are invisible | `acts(couplings.bodies)` drops both bodies passes at zero, including the body's own integrate, and that is exact because everything a body does reaches the world through forces the strength scales. Give a body any observable route the strength does not scale — draw it, let it deposit into the field, report its pose — and a frozen body stops being indistinguishable from a drifting one, which makes the integrate world-intrinsic and this guard wrong | Making the integrate intrinsic at the same time as making a body observable, or scaling the new route by the same strength |
 | Import order in `src/app.nim` | The JS backend hoists variables, so a misordered import fails at runtime. Never alphabetize it | |
 | nimble exit codes | nimble exits 0 on task failure. Build through `just`, whose recipes call `nim` directly | |
 | Silent stop | Device loss clears `isWebGPUAvailable`, which the frame guard in `src/app.nim` never reads, and no handler wraps the loop, so one throw or one lost device stops the world with nothing visible | A guard that reads the loss flag, and a handler that reinitializes or reports |

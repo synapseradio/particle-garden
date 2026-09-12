@@ -9,11 +9,11 @@ differs in no kind from a world running a little fluid.
 This document guides adding a coupling. Read `src/sim_registry.nim` alongside it
 — that file holds the authority, this holds the map.
 
-## The four strengths
+## The five strengths
 
-`WorldCouplings` in `src/sim_registry.nim` holds four floats. Each names a live
+`WorldCouplings` in `src/sim_registry.nim` holds five floats. Each names a live
 simulation parameter the panel writes through the ordinary descriptor path, and
-`couplingsOf` in `src/ui/state/sim_config.nim` reads all four off
+`couplingsOf` in `src/ui/state/sim_config.nim` reads all five off
 `SimulationState` on demand, so nothing keeps a second copy that could disagree.
 
 | Strength | Parameter | What it scales | Shader |
@@ -22,8 +22,9 @@ simulation parameter the panel writes through the ordinary descriptor path, and
 | `fluid` | `fluidStrength` | the SPH pass's whole per-pair velocity contribution, pressure and smoothing together | `forces-sph.wgsl` |
 | `deposit` | `rdDeposit` | how much each particle secretes into the chemical field | `field-deposit.wgsl` |
 | `fieldForce` | `rdFieldForce` | how hard the field's gradient steers particles | `field-force.wgsl` |
+| `bodies` | `bodiesStrength` | everything a body says to the particles, proximity and enclosure together — and so, through the reaction, everything the particles say back | `body-force.wgsl`, `body-integrate.wgsl` |
 
-Every one of those four ranges reaches zero. A static loop at the bottom of
+Every one of those five ranges reaches zero. A static loop at the bottom of
 `src/config_ranges.nim` fails the build if a coupling strength's floor sits
 anywhere else, so each coupling can be switched off through its own slider.
 
@@ -110,7 +111,7 @@ intrinsic sequence always appears and always in the same order; each `acts(...)`
 guard inserts one coupling's pass into it. Strip the coupling-owned keys from any
 frame and exactly the intrinsic sequence remains, and
 `tests/test_sim_registry.nim` states it that way — as a derivation rather than a
-list — so a fifth coupling cannot reintroduce enumeration by accident.
+list — so a new coupling cannot reintroduce enumeration by accident.
 
 Dispatch sizes stay symbolic (`DispatchSize`), resolved by the executor each
 frame, so particle-count and grid-size changes never rebuild the description.
@@ -158,8 +159,8 @@ is registered twice.
 ## Delta buffers have one reset owner
 
 `velocityDelta` accumulates per-particle velocity impulses as fixed-point
-integers, two `i32` per particle. Three passes contribute to it: `forces`,
-`forcesSph` and `fieldForce`.
+integers, two `i32` per particle. Four passes contribute to it: `forces`,
+`forcesSph`, `fieldForce` and `bodyForce`.
 
 `buildFrame` clears both delta buffers once at the top of the frame, and every
 contributor accumulates only. The rule for any new pass that writes a delta
@@ -185,9 +186,20 @@ consumes it. That is also what makes skipping the deposit at zero exact rather
 than merely cheap — the buffer a skipped deposit leaves behind already holds
 zero.
 
-## Adding a fifth coupling
+`sbBodyAccum` follows the same rule from the other side. `bodyForce` folds the
+negation of every impulse it hands a particle, and the torque that impulse
+carries about the body's centre, into three atomic `i32` per body; `bodyIntegrate`
+reads that sum and resets nothing, so the frame clears it with the other delta
+buffers. Its two fixed-point scales are its own rather than `velocityDelta`'s:
+one body's word can take a contribution from every particle in the world in one
+dispatch, where a particle's word only ever takes its own, and a static
+assertion in `src/body_core.nim` relates the particle budget, the largest
+contribution the ranges admit and the scale, failing the compile if their
+product leaves `int32`.
 
-Every step below has an existing example to copy. `fluidStrength` is the most
+## Adding a coupling
+
+Every step below has an existing example to copy. `bodiesStrength` is the most
 recent coupling to arrive and touches all of them.
 
 Settle the multiplier question before writing any guard. Does your strength scale
@@ -285,8 +297,9 @@ world gains a pass at step 5, and no code anywhere names the combination.
 
 ## Presets are points in this world
 
-A preset records a point in the one world's parameter space. Schema v2 carries
-the four strengths among its ordinary settings and names no mode.
+A preset records a point in the one world's parameter space. The current schema
+— v4, `CURRENT_SCHEMA_VERSION` in `src/preset.nim` — carries the five strengths
+among its ordinary settings and names no mode.
 
 `LEGACY_MODE_COUPLINGS` in `src/preset.nim` is the only table in the codebase
 that names a mode, and it describes files rather than the model: the v1 branch of
@@ -325,6 +338,29 @@ that any such table stays in range (convexity of the parameter box) and moves
 without velocity corners (smoothstep easing) live beside the code in
 `climate_core.nim`, and `tests/test_climate_core.nim` exercises both over
 tables of different arities.
+
+## The world lights its own bodies on a cadence
+
+`body_core.nim` carries a second self-mover, and it runs on the same clock as the
+weathers: a phase advanced from the frame loop on capped wall-clock delta, never
+the `timeScale`-scaled dt, so a rate of one body a second means a second at any
+speed and a stalled frame neither ages a body nobody watched nor fires a burst to
+catch up.
+
+Where the climate walks parameters a user can watch move, the generator makes
+events: `bodyIgnitionRate` says how often, and a seeded `uint64` sequence says
+where each body goes and what shape it takes. Seeded rather than sampled from a
+runtime source, so `tests/test_body_core.nim` can assert the bodies the world
+lights rather than merely that it lit one.
+
+Two properties are worth stating because both are easy to break:
+
+- The cadence reads its own rate and the clock, and never the `bodies` strength.
+  `acts` stays the one place a strength is compared to anything, and a body lit
+  into a world at zero strength costs a slot and moves nothing.
+- Every ignition restarts the cadence, whoever made it. A player's gesture takes
+  the sequence's next shape and keeps its own point, so the world does not fire
+  on top of a gesture and the two kinds of body look alike.
 
 ## Facts about the field that are easy to get wrong
 
