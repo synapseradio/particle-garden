@@ -316,18 +316,26 @@ agreement. `PROFILER_SLOT_NONE` is what Field Force already carries.
 ### D9. The rigid step: the plainest one that is stable
 
 ```
-  f   = accum.force  / BODY_FIXED_POINT_SCALE       # clamped to the per-substep impulse cap
-  tau = accum.torque / BODY_TORQUE_FIXED_SCALE
-  vel    = (vel    + f   * invMass    * dt) * pow(linearDamping,  dt)
-  angVel = (angVel + tau * invInertia * dt) * pow(angularDamping, dt)
-  center = wrapToTorus(center + vel * dt)
-  angle  = angle + angVel * dt
+  impulse = accum.force  / BODY_FIXED_POINT_SCALE   # a velocity impulse; the substep's frame is in it
+  tau     = accum.torque / BODY_TORQUE_FIXED_SCALE
+  frames  = frameFactor(dt)
+  dv      = impulse * invMass,  its length capped at BODY_MAX_SPEED_CHANGE * frames
+  dw      = tau * invInertia,   clamped to ±BODY_MAX_SPIN_CHANGE * frames
+  vel     = (vel    + dv) * pow(linearDamping,  frames)
+  angVel  = (angVel + dw) * pow(angularDamping, frames)
+  center  = wrapToTorus(center + vel * dt)
+  angle   = angle + angVel * dt
 ```
 
 Semi-implicit Euler: velocity first, then position from the new velocity. It is unconditionally more
 forgiving than explicit Euler at the same cost, it is what `integrate.wgsl` already does for
-particles, and a body is a mood. Damping is exponential in `dt` so the substep count does not change
-how fast a body settles.
+particles, and a body is a mood. The accumulated reaction is the negation of the velocity impulses
+the particles received, which already carry the substep's frame, so no timestep multiplies it; a
+second `dt` would make a frame's effect scale as the square of the frame length over the substep
+count. Damping and the change caps run on the reference-frame count, the unit every force constant
+in the repository is measured in, so neither the frame rate nor the substep count changes how fast a
+body settles. `src/body_core.nim`'s `bodyRigidStep` is the oracle the shader mirrors and the group 2
+sweep measured.
 
 `invMass` scales as `1 / (radius² * anisotropy)`: a big body is hard to push, a small one skitters,
 and the relation is the physical one rather than a curve someone drew. `invInertia` follows the

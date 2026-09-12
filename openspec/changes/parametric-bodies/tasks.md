@@ -61,7 +61,7 @@ Everything in this group is native Nim. No shader, no buffer, no panel.
 - [x] 1.8 Add the allocator and the semi-implicit step to `src/body_core.nim` per design D5, D9 and
       D11, with `MAX_BODIES` added to `src/memory_layout.nim` beside `MAX_PARTICLES` and
       `MAX_SPECIES`. Verify: 1.7 passes
-- [ ] 1.9 `just happen` builds and `just check` is green
+- [x] 1.9 `just happen` builds and `just check` is green
 
 ## 2. Measurement gate: a crowd cannot drive a body unstable
 
@@ -94,7 +94,7 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
 - [x] 2.5 Record the sweep in `docs/perf-report.md` under the table shape that file already uses
       (`:86`, `:134`), with the conditions a stranger needs to re-run it. Verify: the entry names the
       machine, the ranges swept, and the four premises
-- [ ] 2.6 `just happen` builds and `just check` is green
+- [x] 2.6 `just happen` builds and `just check` is green
 
 ## 3. The numbers and the panel surface
 
@@ -132,7 +132,7 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
       Verify: `tests/test_preset.nim` passes
 - [x] 3.8 Read the strength in `couplingsOf` (`src/ui/state/sim_config.nim:43-57`) and add `bodies`
       to `WorldCouplings` (`src/sim_registry.nim:67-82`). Verify: `just happen` is green
-- [ ] 3.9 `just happen` builds and `just check` is green
+- [x] 3.9 `just happen` builds and `just check` is green
 
 ## 4. Layouts, buffers, and the generated WGSL structs
 
@@ -151,7 +151,7 @@ no person, and it gates group 6 alone — groups 3, 4, 5 and 7 wait on nothing h
       (`src/sim_registry.nim:90-127`) without touching `byteLengthFor`. Verify: `just happen` fails
       on the non-exhaustive `case` at `src/webgpu_compute.nim:841-851`. Then add the three arms and
       the buffer creation. Verify: green
-- [ ] 4.5 `just happen` builds and `just check` is green
+- [x] 4.5 `just happen` builds and `just check` is green
 
 ## 5. The particle-side pass, end to end
 
@@ -195,7 +195,7 @@ At the end of this group a body ignited from the console pulls particles. Bodies
       installed `:1405`), the declaration in `web-ui/src/garden-api.ts`, and the slot write into
       `sbBodies`. Verify: the tests pass, `just build-ui` typechecks, and removing the declaration
       from `garden-api.ts` turns `tsc --noEmit` red
-- [ ] 5.9 `just happen` builds and `just check` is green
+- [x] 5.9 `just happen` builds and `just check` is green
 
 ## 6. Feedback: the body is pushed and moves
 
@@ -215,7 +215,7 @@ Gated on group 2.
 - [x] 6.4 Register and bind `bodyIntegrate` by the same four steps as 5.3 and 5.4, and add its
       dispatch to the `Bodies` node. Verify: 6.1 passes and `tests/test_shader_manifest.nim` still
       finds every dispatched key registered exactly once
-- [ ] 6.5 `just happen` builds and `just check` is green
+- [x] 6.5 `just happen` builds and `just check` is green
 
 ## 7. The canvas gesture
 
@@ -229,7 +229,7 @@ Gated on group 2.
       the binding appears in the generated gesture reference the help panel serves
       (`openspec/specs/in-app-help/spec.md`, "The gesture and key reference is generated from the
       binding table")
-- [ ] 7.3 `just happen` builds and `just check` is green
+- [x] 7.3 `just happen` builds and `just check` is green
 
 ## 8. The world's own generator
 
@@ -250,7 +250,7 @@ descriptors, and `igniteBody`'s callers supply their own shaping.
 - [x] 8.3 Advance the phase from the frame loop in `src/app.nim` on capped wall-clock delta, beside
       the climate branch at `:266-269`, honoring that file's import-order landmine
       (`docs/enforcement.md`, Landmines). Verify: `just happen` is green
-- [ ] 8.4 `just happen` builds and `just check` is green
+- [x] 8.4 `just happen` builds and `just check` is green
 
 ## 9. In-app verification and the records
 
