@@ -39,6 +39,13 @@ const
     ## A multiple of 4, so every vec4-packed GPU layout indexed by species
     ## (the attraction matrix, both chemistry channels) fills whole slots.
   MAX_GRID* = 256         ## Maximum grid cells per dimension (256x256 = 65536 cells)
+  MAX_BODIES* = 32
+    ## Parametric bodies the world holds at once. The bodies buffer, the
+    ## envelope buffer and the per-body accumulator are all sized from it, and
+    ## the particle-side pass evaluates every slot for every particle, so this
+    ## is a per-particle cost as much as a memory one. Small enough that the
+    ## loop stays cheap, large enough that a player cannot exhaust the table by
+    ## hand.
 
 # ==============================================================================
 # ==============================================================================

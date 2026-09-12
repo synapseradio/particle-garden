@@ -1,0 +1,419 @@
+# ==============================================================================
+# PARAMETRIC BODIES (Pure)
+# ==============================================================================
+#
+# A body is a few numbers whose surface is an analytic signed distance function.
+# One evaluation per particle yields the distance to that surface, the direction
+# it lies in, and which side the particle is on, and proximity and enclosure both
+# fall out of those three facts.
+#
+# This is a reference oracle, like physics_core and field_core: the arithmetic
+# that really runs lives in web/shaders/src/body-force.wgsl (one thread per
+# particle) and web/shaders/src/body-integrate.wgsl (one thread per body), where
+# no native test can reach it. Change a shader and this mirror in the same diff,
+# or the pair drifts — docs/enforcement.md records that the pair is held by
+# review alone.
+#
+# The records here carry `float`. The GPU structs they mirror carry f32 and
+# src/gpu_types.nim owns those offsets; keeping the oracle's arithmetic wider
+# than the shader's is what makes a failing test an algebra error rather than an
+# f32 rounding artifact.
+#
+# Pure module: no FFI, no imports from GPU-facing code. Compiles on both the
+# native (just test) and JS backends.
+#
+# ==============================================================================
+
+import std/math
+import memory_layout
+
+type
+  Body* = object
+    ## One body's whole record. Pose is GPU-owned — only body-integrate writes
+    ## centre, angle and the two velocities — and the shaping below is written
+    ## once at ignition, because a body keeps what it was ignited with while
+    ## the sliders move on.
+    centerX*, centerY*: float   ## World coordinates, wrapped to the torus.
+    velX*, velY*: float
+    angle*, angVel*: float
+    radius*: float              ## Semi-axis along the body's own x.
+    anisotropy*: float          ## Semi-axis along y, as a multiple of radius.
+    bandWidth*: float           ## Proximity's reach either side of the surface.
+    proximity*: float           ## Signed: toward the surface.
+    enclosure*: float           ## Signed: positive holds in, negative keeps out.
+    invMass*, invInertia*: float
+      ## Derived from the body's area at ignition and stored inverted, so the
+      ## shader divides nothing.
+
+  BodySample* = object
+    ## What one evaluation returns. Both force laws read this and nothing else,
+    ## which is what holds the pass to one evaluation per body per particle.
+    distance*: float
+      ## Signed, negative inside. Exact when the two semi-axes are equal and a
+      ## lower bound on the true distance otherwise, never an overestimate.
+      ## Nothing in this capability reads an absolute distance — the forces read
+      ## the sign, the direction and the ordering, all of which the scaling
+      ## leaves exact.
+    normalX*, normalY*: float   ## Unit, pointing away from the body.
+
+  BodyShaping* = object
+    ## What a body is born with. None of these is a descriptor: they are fixed
+    ## when a body ignites rather than adjusted while it lives, so they travel
+    ## on the ignition call and are clamped there.
+    anisotropy*: float     ## One is a circle; above and below are ellipses.
+    envelopeSkew*: float   ## Moves weight between the rise and the fall.
+    sustain*: float        ## The level decay falls to.
+
+  BodyDisposition* = object
+    ## What the world's sliders say at the moment a body is born. A body keeps
+    ## these while the sliders move on, which is what makes it an event in the
+    ## world rather than a view of the panel.
+    radius*: float
+    bandWidth*: float
+    proximity*: float
+    enclosure*: float
+    lifetime*: float
+
+  BodySlot* = object
+    ## One place in the table. A lifetime of zero means the slot has never held
+    ## a body — the one state the clock alone cannot describe.
+    ignitedAt*: float
+    lifetime*: float
+    envelopeSkew*: float
+    sustain*: float
+    body*: Body
+
+  BodyState* = object
+    ## Everything Nim knows about the bodies. Pose is absent on purpose: the
+    ## GPU owns it and nothing here reads it back.
+    slots*: array[MAX_BODIES, BodySlot]
+
+  BodyAccumulator* = object
+    ## One body's share of sbBodyAccum: force in two axes and torque, in fixed
+    ## point at the body's own scales. Every particle in the world may add to
+    ## one of these words in one dispatch, which is why the scales are not the
+    ## per-particle accumulator's.
+    forceX*, forceY*, torque*: int32
+
+const
+  ENVELOPE_PROPORTIONS* = (attack: 0.15, hold: 0.25, decay: 0.25,
+    release: 0.35)
+    ## How an unskewed lifetime divides between the four phases. One duration
+    ## reaches the panel and these split it, so lifetime is the sum of the
+    ## phases by construction rather than by a user's arithmetic.
+  ENVELOPE_SKEW_SPAN* = 0.3
+    ## How far a skew of one moves weight from the fall into the rise. At the
+    ## extremes the rise runs from a tenth of the lifetime to seven tenths, so
+    ## every phase keeps a positive duration — which the assertion below holds
+    ## against a retune of either constant.
+  BODY_WORLD_W* = 3840.0
+  BODY_WORLD_H* = 2160.0
+    ## The world a body lives in. Stated here because this module is pure and
+    ## cannot import config.nim, which carries FFI pragmas;
+    ## tests/test_body_core.nim reads config.nim from source and holds the two
+    ## together, the way field_core's world aspect is held.
+  BODY_WORLD_HALF_DIAGONAL* =
+    0.5 * sqrt(BODY_WORLD_W * BODY_WORLD_W + BODY_WORLD_H * BODY_WORLD_H)
+    ## The longest lever arm a minimum-image displacement can present, and so
+    ## the bound the torque accumulator's scale is sized against.
+  BODY_FIXED_POINT_SCALE* = 256.0
+    ## The per-body force accumulator's own scale, far coarser than
+    ## velocityDelta's 65536. One body's word may receive a contribution from
+    ## every particle in the world in a single dispatch, where a particle's word
+    ## receives only its own; the static assertion beside the ranges relates the
+    ## budget, the largest contribution the ranges admit, and this scale.
+  BODY_TORQUE_FIXED_SCALE* = 0.125
+    ## The torque word's scale, coarser again because torque carries a lever arm
+    ## bounded only by the world's half-diagonal. Below one: eight torque units
+    ## to the accumulator's unit. A body's moment of inertia is of order its
+    ## mass times its size squared, so one unit of torque turns it by far less
+    ## than a frame can show, and the resolution that matters is the summed
+    ## crowd's rather than one particle's.
+  BODY_DENSITY* = 0.05
+    ## A body's mass per unit of its own area, in the units a particle's impulse
+    ## carries — a particle is one mass unit, so this says how many particles a
+    ## body of unit area weighs. Provisional until the stability sweep warrants
+    ## it.
+  BODY_LINEAR_DAMPING* = 0.7
+  BODY_ANGULAR_DAMPING* = 0.7
+    ## Velocity retained per reference frame, applied as pow(damping, dt) so the
+    ## substep count cannot change how fast a body settles. Provisional until
+    ## the stability sweep warrants them.
+  BODY_MAX_SPEED_CHANGE* = 4.0
+    ## The most one reference frame of accumulated impulse may change a body's
+    ## speed by, in world units per frame. Provisional until the stability sweep
+    ## warrants it.
+  BODY_MAX_SPIN_CHANGE* = 0.02
+    ## The same cap on angular speed, in radians per frame. Provisional until
+    ## the stability sweep warrants it.
+
+static:
+  doAssert abs(ENVELOPE_PROPORTIONS.attack + ENVELOPE_PROPORTIONS.hold +
+    ENVELOPE_PROPORTIONS.decay + ENVELOPE_PROPORTIONS.release - 1.0) < 1e-9,
+    "the envelope proportions must sum to one, or a body's realized lifetime " &
+    "stops being the lifetime it was ignited with"
+  doAssert ENVELOPE_PROPORTIONS.attack > 0.0 and
+    ENVELOPE_PROPORTIONS.hold > 0.0 and ENVELOPE_PROPORTIONS.decay > 0.0 and
+    ENVELOPE_PROPORTIONS.release > 0.0
+  doAssert ENVELOPE_SKEW_SPAN <
+    min(ENVELOPE_PROPORTIONS.attack + ENVELOPE_PROPORTIONS.hold,
+      ENVELOPE_PROPORTIONS.decay + ENVELOPE_PROPORTIONS.release),
+    "a skew of one must leave both the rise and the fall a positive duration"
+
+func smoothstepUnit(atFraction: float): float =
+  ## The Hermite ease climate_core uses, on an already-normalized fraction:
+  ## zero slope at both ends, so a value crossing a phase boundary has no
+  ## corner in it either.
+  let clamped = clamp(atFraction, 0.0, 1.0)
+  clamped * clamped * (3.0 - 2.0 * clamped)
+
+func envelopePhases*(lifetime, skew: float): tuple[
+    attack, hold, decay, release: float] =
+  ## The four durations this lifetime and this skew divide into. Their sum is
+  ## the lifetime at every skew, which is the property slot allocation rests on:
+  ## Nim knows when a slot frees the moment the body ignites, however the
+  ## envelope is shaped.
+  let rise = ENVELOPE_PROPORTIONS.attack + ENVELOPE_PROPORTIONS.hold
+  let fall = ENVELOPE_PROPORTIONS.decay + ENVELOPE_PROPORTIONS.release
+  let risePart = rise + skew * ENVELOPE_SKEW_SPAN
+  let fallPart = 1.0 - risePart
+  (attack: lifetime * risePart * ENVELOPE_PROPORTIONS.attack / rise,
+   hold: lifetime * risePart * ENVELOPE_PROPORTIONS.hold / rise,
+   decay: lifetime * fallPart * ENVELOPE_PROPORTIONS.decay / fall,
+   release: lifetime * fallPart * ENVELOPE_PROPORTIONS.release / fall)
+
+func bodyEnvelope*(elapsed, lifetime, skew, sustain: float): float =
+  ## A body's presence at `elapsed` seconds after its ignition: zero before it,
+  ## zero from its lifetime onward, and continuous everywhere between.
+  ##
+  ## Zero is an ordinary value of this and no threshold is compared against it
+  ## anywhere on the force path — a body contributes what its envelope says,
+  ## down to arbitrarily small values.
+  if elapsed < 0.0 or elapsed >= lifetime or lifetime <= 0.0:
+    return 0.0
+  let phases = envelopePhases(lifetime, skew)
+  if elapsed < phases.attack:
+    return smoothstepUnit(elapsed / phases.attack)
+  let decayStart = phases.attack + phases.hold
+  if elapsed < decayStart:
+    return 1.0
+  let releaseStart = decayStart + phases.decay
+  if elapsed < releaseStart:
+    return 1.0 + (sustain - 1.0) * smoothstepUnit(
+      (elapsed - decayStart) / phases.decay)
+  sustain * (1.0 - smoothstepUnit((elapsed - releaseStart) / phases.release))
+
+func minimumImage*(delta, size: float): float =
+  ## The shortest displacement across a torus of this size. Mirrors
+  ## physics_core.wrapDelta, in float and taking the full size rather than both
+  ## halves, since a body's reach is not bounded by a grid cell.
+  let half = size * 0.5
+  if delta > half: delta - size
+  elif delta < -half: delta + size
+  else: delta
+
+func wrapToTorus*(position, size: float): float =
+  ## A position folded back into [0, size). `mod` rather than the single
+  ## add-or-subtract integrate.wgsl uses, because a body's step is not bounded
+  ## by a speed cap the way a particle's is.
+  let wrapped = position mod size
+  if wrapped < 0.0: wrapped + size else: wrapped
+
+func sampleBody*(body: Body; atX, atY, worldW, worldH: float): BodySample =
+  ## The anisotropic disc, evaluated at a world point.
+  ##
+  ## Carry the point into body space, divide by the per-axis radii, and scale
+  ## the unit circle's distance back out by the SMALLER semi-axis. That divisor
+  ## is the Lipschitz correction: it makes the returned value a lower bound on
+  ## the true distance rather than an overestimate, and the true distance itself
+  ## when the radii are equal.
+  let toPointX = minimumImage(atX - body.centerX, worldW)
+  let toPointY = minimumImage(atY - body.centerY, worldH)
+  let cosA = cos(body.angle)
+  let sinA = sin(body.angle)
+  # rot(-angle): into the body's own frame.
+  let localX = toPointX * cosA + toPointY * sinA
+  let localY = -toPointX * sinA + toPointY * cosA
+  let semiX = body.radius
+  let semiY = body.radius * body.anisotropy
+  let unitX = localX / semiX
+  let unitY = localY / semiY
+  let unitLength = sqrt(unitX * unitX + unitY * unitY)
+  let smaller = min(semiX, semiY)
+  # The gradient of the unit-circle distance, carried back out: dividing a
+  # second time by each semi-axis is what tilts the normal away from the radius
+  # on an ellipse.
+  var gradientX = unitX / semiX
+  var gradientY = unitY / semiY
+  let gradientLength = sqrt(gradientX * gradientX + gradientY * gradientY)
+  if gradientLength > 0.0:
+    gradientX = gradientX / gradientLength
+    gradientY = gradientY / gradientLength
+  else:
+    # Dead centre: no direction is outward. Any unit vector keeps the forces
+    # finite, and a particle exactly on a body's centre would otherwise poison
+    # the whole accumulator with a NaN.
+    gradientX = 1.0
+    gradientY = 0.0
+  BodySample(
+    distance: (unitLength - 1.0) * smaller,
+    normalX: gradientX * cosA - gradientY * sinA,
+    normalY: gradientX * sinA + gradientY * cosA)
+
+func bodyForceAt*(body: Body; atX, atY, worldW, worldH, envelope,
+    strength: float): tuple[x, y: float] =
+  ## The velocity impulse this body gives a particle at that point, both forces
+  ## out of one evaluation.
+  ##
+  ## PROXIMITY acts inside a band around the surface and pulls toward it from
+  ## either side, easing to zero with zero slope at the band's edge, so a
+  ## particle drifting across that edge feels neither a step in the force nor a
+  ## corner in it.
+  ##
+  ## ENCLOSURE is one signed strength read against the distance's sign: positive
+  ## acts on what is outside and pushes it in, negative acts on what is inside
+  ## and pushes it out, and zero does neither. The band is its ramp, not its
+  ## reach — past the band the hold is at full strength, which is what brings an
+  ## escaped particle back however far it got.
+  ##
+  ## The band is a divisor, so what keeps this finite is a band range whose
+  ## floor is above zero, exactly as the SPH smoothing radius's floor keeps the
+  ## kernel normalizations finite.
+  let sample = sampleBody(body, atX, atY, worldW, worldH)
+  let spanned = abs(sample.distance) / body.bandWidth
+  let towardSurface = -float(sgn(sample.distance)) * body.proximity *
+    smoothstepUnit(1.0 - spanned)
+  let actingSide =
+    if sample.distance * float(sgn(body.enclosure)) >= 0.0: 1.0 else: 0.0
+  let holding = -body.enclosure * actingSide * min(spanned, 1.0)
+  let along = (towardSurface + holding) * envelope * strength
+  (x: sample.normalX * along, y: sample.normalY * along)
+
+# ==============================================================================
+# THE REACTION AND THE RIGID STEP
+# ==============================================================================
+
+proc addBodyReaction*(accumulator: var BodyAccumulator; body: Body;
+    atX, atY, worldW, worldH, forceX, forceY: float) =
+  ## The equal and opposite impulse, and its torque about the body's centre over
+  ## the toroidal minimum-image displacement, folded into the body's own
+  ## accumulator. The integer add is what body-force.wgsl performs with
+  ## atomicAdd, truncation and all.
+  ##
+  ## Reaction is the negation of action before any damping, so the pass has no
+  ## way to give particles a push the body does not feel.
+  let leverX = minimumImage(atX - body.centerX, worldW)
+  let leverY = minimumImage(atY - body.centerY, worldH)
+  accumulator.forceX += int32(-forceX * BODY_FIXED_POINT_SCALE)
+  accumulator.forceY += int32(-forceY * BODY_FIXED_POINT_SCALE)
+  accumulator.torque += int32(
+    -(leverX * forceY - leverY * forceX) * BODY_TORQUE_FIXED_SCALE)
+
+func decoded*(accumulator: BodyAccumulator): tuple[
+    forceX, forceY, torque: float] =
+  ## The accumulator read back as the quantities it stands for.
+  (forceX: accumulator.forceX.float / BODY_FIXED_POINT_SCALE,
+   forceY: accumulator.forceY.float / BODY_FIXED_POINT_SCALE,
+   torque: accumulator.torque.float / BODY_TORQUE_FIXED_SCALE)
+
+func bodyRigidStep*(body: Body; forceX, forceY, torque, dt,
+    worldW, worldH: float): Body =
+  ## Semi-implicit Euler: velocity first, then position from the new velocity —
+  ## what integrate.wgsl already does for particles, and unconditionally more
+  ## forgiving than explicit Euler at the same cost.
+  ##
+  ## Damping is exponential in dt, so the substep count decides how finely a
+  ## frame is cut and never how fast a body comes to rest. `dt` is the substep's
+  ## share of a reference frame: one at a single substep, a third at three.
+  ##
+  ## The per-substep change caps bound what one substep may do to one body
+  ## without bounding what a player may ask for. They are the third mechanism
+  ## the stability sweep reaches for, after the mass and the damping.
+  result = body
+  var changeX = forceX * body.invMass * dt
+  var changeY = forceY * body.invMass * dt
+  let allowance = BODY_MAX_SPEED_CHANGE * dt
+  let asked = sqrt(changeX * changeX + changeY * changeY)
+  if asked > allowance:
+    changeX = changeX * allowance / asked
+    changeY = changeY * allowance / asked
+  let spinAllowance = BODY_MAX_SPIN_CHANGE * dt
+  let changeSpin = clamp(torque * body.invInertia * dt,
+    -spinAllowance, spinAllowance)
+  result.velX = (body.velX + changeX) * pow(BODY_LINEAR_DAMPING, dt)
+  result.velY = (body.velY + changeY) * pow(BODY_LINEAR_DAMPING, dt)
+  result.angVel = (body.angVel + changeSpin) * pow(BODY_ANGULAR_DAMPING, dt)
+  result.centerX = wrapToTorus(body.centerX + result.velX * dt, worldW)
+  result.centerY = wrapToTorus(body.centerY + result.velY * dt, worldH)
+  result.angle = body.angle + result.angVel * dt
+
+# ==============================================================================
+# IGNITION AND SLOTS
+# ==============================================================================
+
+func initBodyState*(): BodyState =
+  ## Every slot free. A slot with no lifetime has never held a body, which is
+  ## the one state the clock cannot describe.
+  BodyState()
+
+func slotIsLive*(slot: BodySlot; nowSeconds: float): bool =
+  ## Whether this slot holds a body that has not finished. Computable from the
+  ## wall clock alone — Nim never reads a body back from the GPU.
+  slot.lifetime > 0.0 and nowSeconds - slot.ignitedAt < slot.lifetime
+
+func liveSlots*(state: BodyState; nowSeconds: float): int =
+  for slot in state.slots:
+    if slot.slotIsLive(nowSeconds):
+      inc result
+
+func freeSlots*(state: BodyState; nowSeconds: float): int =
+  MAX_BODIES - state.liveSlots(nowSeconds)
+
+func envelopeValues*(state: BodyState;
+    nowSeconds: float): array[MAX_BODIES, float] =
+  ## One envelope value per slot, the contiguous array Nim uploads each frame.
+  ## A free slot reads exactly zero, so the pass costs a branch rather than an
+  ## evaluation there.
+  for index, slot in state.slots:
+    if slot.slotIsLive(nowSeconds):
+      result[index] = bodyEnvelope(nowSeconds - slot.ignitedAt, slot.lifetime,
+        slot.envelopeSkew, slot.sustain)
+
+proc igniteBody*(state: var BodyState; atX, atY: float;
+    disposition: BodyDisposition; shaping: BodyShaping;
+    nowSeconds: float): bool =
+  ## Put a body at a world point, and report whether a slot was found.
+  ##
+  ## The one entry every source reaches the world through — the panel's
+  ## gesture, the boundary method, the world's own generator — so the bounds
+  ## this proc applies hold for all of them at once.
+  ##
+  ## Igniting into an occupied slot is refused rather than overwriting a live
+  ## body, and the refusal is the return value.
+  for index, slot in state.slots:
+    if slot.slotIsLive(nowSeconds):
+      continue
+    let semiX = disposition.radius
+    let semiY = disposition.radius * shaping.anisotropy
+    # Mass from area, so a big body is hard to push and a small one skitters,
+    # and the moment of inertia the ellipse's own m(a^2 + b^2)/4. Stored
+    # inverted: the shader divides nothing.
+    let mass = BODY_DENSITY * semiX * semiY
+    let inertia = mass * (semiX * semiX + semiY * semiY) * 0.25
+    state.slots[index] = BodySlot(
+      ignitedAt: nowSeconds,
+      lifetime: disposition.lifetime,
+      envelopeSkew: shaping.envelopeSkew,
+      sustain: shaping.sustain,
+      body: Body(
+        centerX: wrapToTorus(atX, BODY_WORLD_W),
+        centerY: wrapToTorus(atY, BODY_WORLD_H),
+        radius: disposition.radius,
+        anisotropy: shaping.anisotropy,
+        bandWidth: disposition.bandWidth,
+        proximity: disposition.proximity,
+        enclosure: disposition.enclosure,
+        invMass: 1.0 / mass,
+        invInertia: 1.0 / inertia))
+    return true
+  false

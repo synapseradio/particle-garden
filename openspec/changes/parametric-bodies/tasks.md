@@ -29,7 +29,7 @@ throughout.
 
 Everything in this group is native Nim. No shader, no buffer, no panel.
 
-- [ ] 1.1 **Red first.** Write `tests/test_body_core.nim` against a module that does not exist yet,
+- [x] 1.1 **Red first.** Write `tests/test_body_core.nim` against a module that does not exist yet,
       asserting properties rather than pinned scalars: the signed distance is negative strictly
       inside and positive strictly outside for isotropic and anisotropic bodies; it is zero on the
       surface within tolerance; rotating body and sample point together leaves it unchanged; the
@@ -37,28 +37,28 @@ Everything in this group is native Nim. No shader, no buffer, no panel.
       body one unit from a world edge acts on a particle one unit past it exactly as on a particle
       two units away inside. Register the module in `tests/test_all.nim` and in `tests/README.md`.
       Verify: `nim c -r tests/test_body_core.nim` fails to compile on the missing import
-- [ ] 1.2 Write `src/body_core.nim` with the SDF of design D3 and the toroidal helper, pure, no FFI,
+- [x] 1.2 Write `src/body_core.nim` with the SDF of design D3 and the toroidal helper, pure, no FFI,
       no import from GPU-facing code. Verify: the 1.1 assertions pass
-- [ ] 1.3 **Red first.** Extend `tests/test_body_core.nim` with the envelope: continuity at each of
+- [x] 1.3 **Red first.** Extend `tests/test_body_core.nim` with the envelope: continuity at each of
       the four phase boundaries, zero before attack and zero after release, monotone within attack
       and within decay, realized lifetime equal to the `bodyLifetime` argument at every admissible
       envelope skew, and the sustain level reached at the end of decay. Verify: the new tests fail
-- [ ] 1.4 Add the envelope to `src/body_core.nim` per design D10: one lifetime, the four
+- [x] 1.4 Add the envelope to `src/body_core.nim` per design D10: one lifetime, the four
       `ENVELOPE_PROPORTIONS` constants with the static assertion that they sum to one, and the skew
       that redistributes them without changing the total. Verify: 1.3 passes, and changing one
       proportion without changing another turns the compile red
-- [ ] 1.5 **Red first.** Extend the suite with the force laws: proximity is exactly zero at and
+- [x] 1.5 **Red first.** Extend the suite with the force laws: proximity is exactly zero at and
       beyond the band edge and its derivative is zero there; proximity points toward the surface from
       both sides; enclosure at zero strength is zero at every distance; negating enclosure negates the
       force and changes nothing else; both scale linearly in the envelope. Verify: the new tests fail
-- [ ] 1.6 Add the force laws to `src/body_core.nim` per design D4. Verify: 1.5 passes
-- [ ] 1.7 **Red first.** Extend the suite with the slot allocator and the rigid step: a slot is reused
+- [x] 1.6 Add the force laws to `src/body_core.nim` per design D4. Verify: 1.5 passes
+- [x] 1.7 **Red first.** Extend the suite with the slot allocator and the rigid step: a slot is reused
       only after its full lifetime elapses; a full table refuses ignition and says so; free count is
       the ceiling minus live count at every clock value; the summed particle impulse plus the
       accumulated body impulse is zero to fixed-point resolution; a symmetrically surrounded body
       receives zero net force and zero net torque; exponential damping settles a body in the same
       wall-clock time at one substep and at eight. Verify: the new tests fail
-- [ ] 1.8 Add the allocator and the semi-implicit step to `src/body_core.nim` per design D5, D9 and
+- [x] 1.8 Add the allocator and the semi-implicit step to `src/body_core.nim` per design D5, D9 and
       D11, with `MAX_BODIES` added to `src/memory_layout.nim` beside `MAX_PARTICLES` and
       `MAX_SPECIES`. Verify: 1.7 passes
 - [ ] 1.9 `just happen` builds and `just check` is green
