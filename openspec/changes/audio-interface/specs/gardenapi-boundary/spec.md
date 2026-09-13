@@ -74,3 +74,32 @@ on the JS backend alone (`src/web_api.nim:29-32`).
 #### Scenario: The meter shows what the world received
 - **WHEN** a frame's push arrives
 - **THEN** it carries the same values that frame delivered to the control matrix
+
+### Requirement: The Room Gate's storage key crosses as a Nim-owned value
+
+The boundary SHALL serve the localStorage key the Room Gate is remembered under as
+`audioKeys().roomGate`, the way `matrixKeys().mapping` serves the mapping key
+(`src/web_api.nim:1641-1644`). The key SHALL be a Nim constant beside the Room Gate's default in
+`src/ui/input/audio_core.nim`, outside the preset key prefix and distinct from the mapping key.
+
+The panel SHALL own localStorage under that key: it restores the stored value through `setParam` once
+at mount, and writes the value whenever the synced Room Gate differs from the last value written. It
+SHALL restate neither the key nor the range, and a restore passes through `setParam`'s clamp.
+
+Enforcement: agent-checkable in part.
+- `tests/test_audio_core.nim` under `just test` holds the key outside `pg.presets.` and distinct from
+  `MAPPING_STORAGE_KEY`.
+- `tsc --noEmit` checks the `audioKeys` signature declared in `web-ui/src/garden-api.ts`
+  (`justfile:29-31`).
+- `web-ui/test/audio-section.test.ts` holds the restore parse.
+
+That the panel writes no literal key is review-enforced against `web-ui/src/components/Panel.tsx`.
+
+#### Scenario: The key comes from Nim
+- **WHEN** the panel reads or writes the remembered Room Gate
+- **THEN** it uses the key `audioKeys().roomGate` returns, with no key literal in the panel
+
+#### Scenario: A restore is clamped by the boundary
+- **WHEN** the stored value lies outside the Room Gate's range
+- **THEN** the restore lands at the nearer bound, through `setParam`
+

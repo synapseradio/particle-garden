@@ -78,15 +78,17 @@ while restating none of the thresholds behind it:
 - `Connected`: the stream is live.
 - `Denied`: the request ended without a live stream, whether the user refused the prompt or the
   launched window offers no capture.
-- `Silent`: connected, with the loudness feature at the bottom of its normalized window for three
+- `Silent`: connected, with the loudness feature at the bottom of its room-gated window for three
   seconds, the state that answers whether the room is quiet or the capture is broken.
 
 A request SHALL leave `Requesting` when it settles, either way.
 
 Enforcement: the states are one Nim enum, so a consumer that leaves a state unhandled fails the Nim
-build wherever it matches exhaustively (`just build-app`, `justfile:26-27`). The transitions
-themselves are review-enforced and verified in a running app, since the capture chain is never
-mocked.
+build wherever it matches exhaustively (`just build-app`, `justfile:26-27`). The core's silence
+report, which decides `Silent` against `Connected`, is agent-checkable by native tests under
+`just test` (`tests/test_audio_core.nim`), including a room whose noise flickers by several decibels
+frame to frame. The transitions themselves are review-enforced and verified in a running app, since
+the capture chain is never mocked.
 
 #### Scenario: The prompt is open
 - **WHEN** the user activates the listen control and the browser's permission prompt is open
@@ -100,9 +102,15 @@ mocked.
 - **WHEN** a live capture reports loudness at the bottom of its window for three seconds
 - **THEN** the affordance reports `Silent` and the capture stays live
 
+#### Scenario: A flickering room still reaches Silent
+- **WHEN** the core, having heard a sounding passage, receives a room whose noise moves by several
+  decibels from frame to frame and never rises past its room gate
+- **THEN** the core reports silent within the silence window plus the margin its test pins
+
 #### Scenario: Sound returns
-- **WHEN** a `Silent` capture receives sound above the floor
-- **THEN** the affordance reports `Connected` on the next analysed frame
+- **WHEN** a `Silent` capture receives sound that rises above the room gate
+- **THEN** the core reports not silent on the first analysed frame whose loudness reads above its
+  room edge, which natively is the next frame and live arrives within one analyser window
 
 ### Requirement: The analyser window is fixed and the browser averages nothing
 
@@ -125,16 +133,18 @@ running app.
 
 ### Requirement: One pure Nim module computes every feature value
 
-Exactly four inputs SHALL cross into the feature core each frame: the frequency array of 1024
-decibel values, the time-domain array of 2048 samples, the sample rate, and the frame's wall-clock
-delta. Every constant (band edges, window widths, thresholds, the refractory span) and every
+Exactly five inputs SHALL cross into the feature core each frame: the frequency array of 1024
+decibel values, the time-domain array of 2048 samples, the sample rate, the frame's wall-clock
+delta, and the Room Gate offset in decibels. Every constant (band edges, window widths, room gates,
+noise-floor rates, thresholds, the refractory span) and every
 arithmetic step from arrays to feature values SHALL live inside that module, which SHALL read a
 decibel value of negative infinity as zero magnitude. No feature value SHALL be computed in
 JavaScript, in a shader, or in the panel, and the wiring around the core SHALL do nothing but poll,
-copy, and call.
+copy, read the Room Gate, and call.
 
 Every constant the core expresses in time SHALL be honored against that delta rather than counted in
-frames, so the refractory window and the adaptation span the same wall-clock time at any frame rate.
+frames, so the refractory window, the adaptation and the noise floor's movement span the same
+wall-clock time at any frame rate.
 A constant counted in frames spans half the seconds at 120 fps that it spans at 60.
 
 Enforcement: the module compiles on both backends and a native test compiled with `nim c` exercises
@@ -143,8 +153,8 @@ it under `just test`, the pattern the pure cores already follow (`src/climate_co
 
 #### Scenario: A frame's analysis is one call
 - **WHEN** a frame polls the analyser
-- **THEN** the wiring copies the two arrays, hands them to the core with the sample rate and the
-  frame's wall-clock delta, and receives the six feature values back
+- **THEN** the wiring copies the two arrays, hands them to the core with the sample rate, the
+  frame's wall-clock delta and the current Room Gate offset, and receives the six feature values back
 
 #### Scenario: Time constants hold at any frame rate
 - **WHEN** the same signal is analysed twice, once at a 8.33 ms frame delta and once at 16.7 ms
@@ -164,12 +174,15 @@ Five sources SHALL be delivered as continuous values, each defined from the fram
   20 to 250 Hz, 250 to 2000 Hz, and 2000 to 8000 Hz, expressed in decibels, each normalized against
   its own window because spectral tilt reads one shared window as a permanently quiet high band.
 - `audio:brightness`: the spectral centroid over linear magnitudes between 20 Hz and 8000 Hz, placed
-  by logarithmic frequency position between 200 Hz and 8000 Hz. Below the energy floor the centroid
-  is undefined, so brightness SHALL decay toward zero across frames instead of jumping to a value.
+  by logarithmic frequency position between 200 Hz and 8000 Hz. The centroid is defined only on a
+  frame where at least one band reads above its room edge and the spectrum stands above the energy
+  floor. On any other frame the spectrum is the room's own timbre, so brightness SHALL decay toward
+  zero across frames instead of jumping to a value.
 
-Enforcement: a native test over the core under `just test`, holding a single-bin spectrum at 440 Hz
-to its logarithmic position within tolerance, and holding energy confined to one band to that band's
-feature leading while the others stay low.
+Enforcement: agent-checkable by native tests over the core under `just test`
+(`tests/test_audio_core.nim`): a single-bin spectrum at 440 Hz, heard over a room, held to its
+logarithmic position within tolerance; energy confined to one band, over a room, leading that band's
+feature while the others stay low; and a gated room in which brightness falls below 0.01.
 
 #### Scenario: A single tone lands where its frequency says
 - **WHEN** the core receives a spectrum with all energy in the bin nearest 440 Hz
@@ -181,19 +194,25 @@ feature leading while the others stay low.
 - **THEN** that band's feature leads and the other two stay low
 
 #### Scenario: Brightness fades instead of jumping
-- **WHEN** energy falls below the floor where the centroid is undefined
+- **WHEN** every band falls to its room edge, where the centroid is undefined
 - **THEN** brightness decays toward zero across frames, neither snapping to zero in one frame nor
   holding its last value
+
+#### Scenario: A quiet room has no brightness
+- **WHEN** the core receives only a room whose every band stays under its room edge
+- **THEN** brightness settles below 0.01, whatever the room's spectral shape
 
 ### Requirement: Onset fires on rectified spectral flux with a refractory window
 
 `audio:onset` SHALL be delivered as an event source. The core SHALL compute half-wave rectified
 spectral flux, the sum of per-bin magnitude increases since the previous frame, normalized by a
 running median. A flux crossing of the threshold SHALL fire exactly one event carrying its energy
-clamped to [0, 1]. For 100 ms after a firing, no further event SHALL fire however the flux moves.
+clamped to [0, 1], and only on a frame whose loudness reads above its room edge, so the room's own
+flicker fires nothing. For 100 ms after a firing, no further event SHALL fire however the flux moves.
 
-Enforcement: a native test under `just test` feeding a click train at a known period, asserting one
-event per click at the expected frames and none inside the refractory window.
+Enforcement: agent-checkable by native tests under `just test` (`tests/test_audio_core.nim`): a click
+train at a known period, asserting one event per click at the expected frames and none inside the
+refractory window, and a flickering room asserting no event across its whole run.
 
 #### Scenario: A click train fires once per click
 - **WHEN** the core receives a click train whose period exceeds the refractory window
@@ -203,22 +222,27 @@ event per click at the expected frames and none inside the refractory window.
 - **WHEN** two threshold crossings fall within 100 ms of each other
 - **THEN** only the first fires an event
 
+#### Scenario: The room fires nothing
+- **WHEN** the core receives a room whose noise flickers frame to frame under its room gate
+- **THEN** no onset event fires across the run, though the room's flux crosses the threshold
+
 #### Scenario: Steady sound fires nothing
 - **WHEN** the core receives a loud steady spectrum whose bins stop increasing
 - **THEN** no onset event fires, however loud the signal
 
 ### Requirement: Every feature stays inside [0, 1] and never reaches NaN
 
-For any finite input arrays and any sample rate the analyser reports, each of the six values SHALL
-be a finite number inside [0, 1]. Silence, every bin at negative infinity, SHALL give exactly zero
+For any finite input arrays, any sample rate the analyser reports, and any Room Gate offset inside
+its descriptor range, each of the six values SHALL be a finite number inside [0, 1]. Silence, every bin at negative infinity, SHALL give exactly zero
 for every feature and fire no onset, and the core's own state SHALL stay finite across it, so the
 next sounding frame produces finite values.
 
-Enforcement: two native tests under `just test`, a silence case and a fuzz sweep over random finite
-arrays asserting range and finiteness on every feature.
+Enforcement: agent-checkable by two native tests under `just test` (`tests/test_audio_core.nim`), a
+silence case and a fuzz sweep over random finite arrays and Room Gate offsets across the range in
+`src/config_ranges.nim`, asserting range and finiteness on every feature.
 
 #### Scenario: Random input stays in range
-- **WHEN** the core receives random finite arrays
+- **WHEN** the core receives random finite arrays at any Room Gate offset in range
 - **THEN** every feature value is finite and inside [0, 1]
 
 #### Scenario: Silence reads as zero
@@ -226,34 +250,124 @@ arrays asserting range and finiteness on every feature.
 - **THEN** every feature is exactly zero, no onset fires, and the following sounding frame produces
   finite values
 
-### Requirement: Normalization adapts to unknown gain without a control
+### Requirement: Normalization adapts to unknown gain and reads the room as zero
 
-Each normalized feature SHALL track a floor and a ceiling in decibels. The floor rises slowly and
-falls instantly, tracking the noise floor. The ceiling rises instantly on a louder frame and decays
-slowly, holding recent peaks. The feature is the level's clamped position inside that window, and
-the window SHALL hold a minimum width so silence divides by nothing.
+Each normalized feature SHALL track three levels in decibels: a window floor that falls instantly
+and rises slowly, holding the recent quiet; a ceiling that rises instantly and decays slowly, holding
+recent peaks; and a noise floor that falls quickly and rises slowly, never stepping past the level,
+placed by the first analysed frame and settling near the level's quietest twentieth.
 
-No calibration control SHALL ship with it: no input-gain slider, no loudest-pin, no threshold
-control. Audio SHALL add no entry to the parameter descriptor table.
+The window's lower edge SHALL be the higher of the window floor and the noise floor plus that
+feature's room gate plus the Room Gate offset. The feature is the level's clamped position between
+the lower edge and the ceiling, over a span of at least the minimum window width, so silence divides
+by nothing. Each feature's room gate SHALL be a constant carrying beside it the condition it was
+measured under: the excursion of that feature's level above its noise floor that stationary room
+noise does not exceed.
 
-Enforcement: a native test under `just test` stepping the input level 20 dB up and back down and
-asserting every feature returns inside (0, 1) within a bounded frame count the test pins. The empty
-descriptor claim is held by `tests/test_param_descriptor.nim`, which walks the whole table.
+An input gain applied before this window moves no feature, because every step of it commutes with a
+constant decibel offset. No input-gain control SHALL ship.
+
+Enforcement: agent-checkable by native tests under `just test` (`tests/test_audio_core.nim`):
+- A 20 dB step up and back down over a heard room, asserting every feature returns inside (0, 1)
+  within a bounded frame count the test pins.
+- A flickering room reading zero on every level feature at its 99th percentile.
+- A sound whose quietest frames stand above the widest room gate over a heard room reading the same
+  at a Room Gate of zero and at the range minimum.
+- Every level shifted by one decibel offset changing no level feature.
+
+That no other audio control ships is held by `tests/test_param_descriptor.nim`, which pins
+`audioRoomGate` as the only descriptor routed through the audio store.
 
 #### Scenario: A gain step is absorbed
-- **WHEN** the input level steps 20 dB up or down and holds there with a room's ordinary
-  movement around it (a perfectly flat level sits on its own instantly-falling floor and reads
-  zero by construction)
+- **WHEN** the input level steps 20 dB up or down over a room the core has heard, and holds there
+  with a room's ordinary movement around it (a perfectly flat level sits on its own instantly-falling
+  floor and reads zero by construction)
 - **THEN** every feature returns inside (0, 1) within the bounded frame count the test pins
 
 #### Scenario: A narrow window never divides by zero
 - **WHEN** the level sits inside a window narrower than the minimum width
 - **THEN** the feature value is finite, computed against the minimum width
 
-#### Scenario: The audio section offers no numbers to tune
+#### Scenario: A quiet room reads as zero
+- **WHEN** the core receives only room noise that flickers by several decibels from frame to frame
+- **THEN** loudness, bass, mid and high read zero on at least 99 frames in 100
+
+#### Scenario: A sound heard over a room keeps its range
+- **WHEN** a sound whose quietest frames stand more than the widest room gate above a room the core
+  has heard is analysed at a Room Gate of zero and again at the range minimum
+- **THEN** every level feature reads the same on every frame of both runs
+
+#### Scenario: Microphone gain moves nothing
+- **WHEN** every bin and sample of a sounding signal is scaled by one constant gain that keeps it
+  above the level floor
+- **THEN** every level feature reads the same on every frame as the unscaled signal
+
+### Requirement: One Room Gate control sets how far above the room a sound must rise
+
+The audio section SHALL offer exactly one slider, the Room Gate, the decibel offset added to every
+feature's room gate. It is the parameter descriptor `audioRoomGate`, labelled "Room Gate", in the
+descriptor group `audio`, routed through a store of its own that never reaches `CONFIG`:
+- Its range SHALL come from `src/config_ranges.nim`, its minimum being the negated widest room gate.
+- Its default of zero SHALL come from `src/ui/input/audio_core.nim` beside the room gates, marked by
+  a default notch.
+- The panel SHALL restate none of its numbers.
+
+The wiring SHALL read the offset every frame into the core's input, so a move lands on the next
+analysed frame, and stopping listening SHALL leave the offset unchanged. The offset SHALL be
+remembered on this browser across reloads, under the storage key the boundary serves, and SHALL
+never be written into or read from a preset. No audio source's row SHALL write it, and a controller's
+row may.
+
+Raising the offset makes a louder room read as zero and reach `Silent`. Lowering it lets quieter
+sounds through with the room's flicker. Below zero, `Silent` may not be reachable, and the help file
+says so.
+
+This control reverses an earlier rule that the audio section offer no numbers to tune. A quiet room
+observed live read loudness far above zero and never reached `Silent`, and live sets run in loud
+rooms whose noise no automatic gate measured on a quiet one can tell from a steady sound the
+performer means.
+
+Enforcement: agent-checkable by:
+- `tests/test_param_descriptor.nim` under `just test`, pinning the descriptor's group, store and
+  default and `audioRoomGate` as the only id its store routes.
+- `src/config_ranges.nim`'s compile-time range assertions, and `tests/test_audio_core.nim` holding the
+  minimum equal to the negated widest room gate and the offset's effect on the core.
+- `tests/test_panel_reachability.nim`, holding that the panel places it.
+- `tests/test_response_probe.nim`, holding that it carries a probe.
+
+- `web-ui/test/audio-section.test.ts` under `just test-ui`, holding that a stored value restores only
+  when it parses to a finite number.
+- `tests/test_control_matrix.nim`, holding the refusal of an audio source's row.
+
+Next-frame landing, survival across a stop, and survival across a reload are review-enforced against
+`src/audio_input.nim` and `web-ui/src/components/Panel.tsx`, and verified in a running app.
+
+#### Scenario: Raising the gate silences a steady sound
+- **WHEN** the Room Gate is raised above a steady sound that stands a few decibels over the room
+- **THEN** every level feature reads zero and the core reports silent within the silence window
+  plus its pinned margin
+
+#### Scenario: Lowering the gate returns the sound
+- **WHEN** the Room Gate returns below that sound
+- **THEN** the sound's level features read above zero again and the core reports not silent
+
+#### Scenario: A preset does not carry the room
+- **WHEN** a preset is saved with the Room Gate moved from its default, and loaded after the gate is
+  moved again
+- **THEN** the preset's schema holds no Room Gate field and the gate keeps its current position
+
+#### Scenario: The Room Gate survives a reload
+- **WHEN** the Room Gate is moved and the page is reloaded
+- **THEN** the slider and the core's offset start at the moved position, clamped to the range
+
+#### Scenario: A corrupt stored value leaves the default
+- **WHEN** the stored Room Gate value parses to no finite number
+- **THEN** the Room Gate starts at its default
+
+#### Scenario: The only number in the section is the Room Gate
 - **WHEN** the panel renders the audio section
-- **THEN** it offers the listen control and the meters, and no slider for gain, threshold, or
-  calibration
+- **THEN** it offers the listen control, the meters, and the Room Gate slider, and no slider for
+  input gain, a per-feature gate, or the silence threshold
 
 ### Requirement: The core adds no smoothing beyond its definitions
 
@@ -340,18 +454,20 @@ stop and on denial. Test-held in `tests/test_control_matrix.nim`.
 ### Requirement: A help file documents the listen control and the six sources
 
 `docs/help/` SHALL carry one audio file with the three-line front matter the parser asserts
-(`src/ui/api/help_content.nim:46-51`), keyed through `ReservedHelpKeys` because audio ships no
-descriptor group (`src/ui/api/help_content.nim:38-40`). It SHALL cover what the listen control does,
-that captured sound never leaves the application, the permission prompt and how to revisit a
-refusal, the six sources in the room's terms, what the meters show, what the three live rows do, and that
-three more rows wait at zero depth, with an invitation to raise and remap them.
+(`src/ui/api/help_content.nim:46-51`), keyed by the descriptor group `audio`, which the Room Gate
+makes a group, so the key leaves `ReservedHelpKeys` (`src/ui/api/help_content.nim:42`). It SHALL cover
+what the listen control does, that captured sound never leaves the application, the permission
+prompt and how to revisit a refusal, the six sources in the room's terms, what the meters show, what
+the Room Gate does and when to raise or lower it, and what the shipped rows do. It SHALL name
+`audioRoomGate` on a code-span line.
 
 The file SHALL keep the four coverage relations green, including the relation that no help file
 names an id absent from the descriptor table
 (`tests/test_help_content.nim:29-63`).
 
-Enforcement: `tests/test_help_content.nim` under `just test`, whose relations fail on a missing
-file, an unresolvable key, an unnamed descriptor, and a named id no descriptor serves.
+Enforcement: agent-checkable by `tests/test_help_content.nim` under `just test`, whose relations fail
+on a missing file, an unresolvable key, a descriptor its group's file does not name, and a named id
+no descriptor serves.
 
 #### Scenario: Help for audio is served like every other group
 - **WHEN** the user opens help with the audio section in view
@@ -359,5 +475,5 @@ file, an unresolvable key, an unnamed descriptor, and a named id no descriptor s
 
 #### Scenario: The audio file passes the coverage sweep
 - **WHEN** `just test` runs with the audio help file in place
-- **THEN** all four coverage relations pass, the audio key resolving as a reserved key and the file
-  naming no id the descriptor table lacks
+- **THEN** all four coverage relations pass, the audio key resolving as a descriptor group and the
+  file naming `audioRoomGate` and no id the descriptor table lacks
