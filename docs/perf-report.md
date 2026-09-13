@@ -148,6 +148,21 @@ No measured configuration exceeds the 16.7 ms interactive budget. The closest is
 a longer window carries that configuration past the budget is unmeasured. Remediation of any pass
 belongs to whoever owns it.
 
+### The long-range solve
+
+The `passLongRange` slot (`lr=` in the `[gpu-profile]` record) read **0.459 ms** at n=128000, 12
+species, a 512 x 256 mesh (index 1 of `LR_GRID_SIZES`, `src/config_ranges.nim:91-94`, the shipped
+default), Long Range 0.50, Reach 600,
+in Chromium 152.0.7977.82 (arm64, macOS 26.5.2), the build the spike measured its 0.417-0.450 ms
+solve on. The slot spans the deposit, the four transform dispatches and the kernel mix. The force
+pass it feeds carries no slot. The figure sits under the 1.0 ms allotment, so the shipped mesh size
+stands. The solve runs once per frame, so no substep multiplier applies. The reading was taken while
+the population was collapsing under the long-range pull (FPS 32, physics 17.01 ms), a balance
+defect recorded in `scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`. Its dispatch counts do not depend on
+where particles sit: the deposit dispatches per particle workgroup and the transforms and kernel per
+mesh row, column and bin (`src/sim_registry.nim:410-417`). Whether the deposit's atomic adds cost
+more when many particles share a cell is unmeasured. Record: `scratchpad/long-range-mesh/in-app__13-09-26-1625.md`.
+
 ## What the substep multiplier costs
 
 `w3-128k` raises `sphSubsteps` to 3 against `w2-128k`'s 2 with nothing else changed. Its raw
@@ -304,8 +319,10 @@ rather than restating it: the particle budget (`MAX_PARTICLES`), the strength an
 and the substep count with the longest frame (`SPH_MAX_SUBSTEPS`, `src/app.nim`'s frame-delta cap,
 `TIME_SCALE_MAX`, `FRAME_DT_REFERENCE`).
 
-The bodies passes' own GPU cost is not measured here. It needs a browser and belongs with the first
-in-app run.
+The bodies passes' GPU cost is measured only with no live body so far: the `passBodies` slot
+(`bodies=` in `[gpu-profile]`) read 0.066-0.076 ms at n=128000, Bodies 1.00, in Chromium
+152.0.7977.82. With no live body, every one of the 32 slots takes the zero-envelope early-out. The
+figure with live bodies is pending the in-app run.
 
 ## Evidence
 
