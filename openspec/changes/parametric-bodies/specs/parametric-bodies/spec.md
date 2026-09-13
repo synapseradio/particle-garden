@@ -102,10 +102,20 @@ and SHALL evaluate each body at most once per particle per dispatch.
 either side, with a falloff that reaches zero at the band's edge so no particle feels a step as it
 enters or leaves the band.
 
-*Enclosure* SHALL be one signed strength read against the distance's sign: positive holds particles
-inside, negative keeps them outside, and zero does neither. It SHALL NOT be expressed as a mode, a
+*Enclosure* SHALL be one signed strength read against the distance's sign: it resists crossing the
+surface rather than pulling from within. Positive acts only on particles outside and pushes them
+back in, negative acts only on particles inside and pushes them back out, and zero does neither. It SHALL NOT be expressed as a mode, a
 flag, or a pair of separate strengths, because zero is an ordinary value of it and the two behaviors
 are one quantity's two signs.
+
+Enclosure SHALL have a finite reach. On the side its sign names, it SHALL rise from zero at the
+surface to its full strength at the band's edge. It SHALL then fall back to exactly zero at twice
+the band's width from the surface, and SHALL contribute exactly zero at every distance beyond. The
+reach SHALL be derived from the band and SHALL NOT be a separate control. Both the rise and the fall
+SHALL be continuous with a continuous first derivative at the surface, at the band's edge and at the
+reach's end, so no particle feels a step or a corner anywhere it crosses. Distance for the reach is
+the same evaluation and the same toroidal minimum image as for the sign, so a body near a world edge
+reaches across it exactly as far as it reaches elsewhere.
 
 Both SHALL be multiplied by the body's envelope and by the `bodies` coupling strength before they
 reach the velocity accumulator, and SHALL be accumulated with `atomicAdd`, never stored
@@ -114,6 +124,11 @@ reach the velocity accumulator, and SHALL be accumulated with `atomicAdd`, never
 Enforcement — Test-held: `tests/test_body_core.nim` holds that proximity is zero at and beyond the
 band edge, that it points toward the surface from both sides, that enclosure is zero at zero strength
 for every distance, and that flipping the enclosure sign flips the force direction and nothing else.
+The same suite holds the reach: at and beyond twice the band, a body at the force ceiling in both
+proximity and enclosure gives exactly zero, for either enclosure sign, for a round and an elongated
+body, and across a world edge. It also holds that the enclosure's slope vanishes at the surface, at
+the band's edge and at the reach's end. The shader half is Unenforced across the pair, as for every
+law here.
 `tests/test_sim_registry.nim` holds that the bodies pass accumulates into `sbVelocityDelta` rather
 than clearing it, through the suite that pins every delta buffer's single reset owner (`:171-215`).
 
@@ -132,6 +147,74 @@ than clearing it, through the suite that pins every delta buffer's single reset 
 - **WHEN** enclosure strength is negated
 - **THEN** the same particles are pushed the opposite way with the same magnitude, and no other
   behavior changes
+
+#### Scenario: A positive hold moves no particle beyond its reach
+
+- **WHEN** a body holds particles in at the enclosure ceiling and a particle lies outside it at twice
+  the band's width from the surface or farther, anywhere in the wrapped world
+- **THEN** the body gives that particle exactly zero impulse, and the body receives exactly zero
+  reaction from it
+
+#### Scenario: An escapee near the body is drawn back
+
+- **WHEN** a particle held in by a positive enclosure has escaped to between the surface and twice
+  the band's width
+- **THEN** it receives an impulse toward the surface, strongest at the band's edge and fading
+  continuously to zero at the reach's end
+
+#### Scenario: A crowd beyond every reach leaves the bodies where they are
+
+- **WHEN** two holding bodies sit apart and a crowd lies beyond both of their reaches
+- **THEN** neither body moves, the distance between them is unchanged, and the crowd receives
+  nothing from either
+
+### Requirement: A body's pull on a particle is bounded in size and in region
+
+What one body can do to one particle SHALL be stated, as an interface other couplings may rely on.
+A coupling that must out-push every outside pull, such as a density-rising pressure term, reads this
+interface.
+
+The impulse one body hands one particle SHALL NOT exceed the body force ceiling times the `bodies`
+strength times the body's envelope, per reference frame. That bound SHALL hold at every point and
+for every combination of proximity and enclosure signs, including where the two act the same way.
+The largest admissible per-particle contribution the accumulator bound reads SHALL be that same
+single ceiling scaled by the largest substep's frame factor.
+
+The impulse SHALL be non-zero only within the shell where the body's evaluated distance lies within
+twice the band's width of the surface. Every particle outside that shell SHALL receive exactly zero
+from that body. Contributions from several bodies SHALL add, so a particle inside `k` shells
+receives at most `k` times the per-body bound, and at most `MAX_BODIES` times it anywhere.
+
+The reaction a body receives SHALL come only from particles inside its shell. The body's response
+to that reaction is bounded per substep by the change caps the stability gate warrants.
+
+No normalization by crowd size SHALL be applied to either the impulse or the reaction: each
+particle feels its own bounded force, and reaction stays the exact negation of action.
+
+Enforcement — Test-held: `tests/test_body_core.nim` sweeps sample points across and beyond the
+shell over both force signs at their ceilings, several bands, radii and anisotropies. It holds that
+the force's magnitude never exceeds the per-body bound. It holds that the force is exactly zero
+wherever the evaluated distance is at least twice the band. It holds that along an elongated body's
+long axis the force is zero past twice the band times the ratio of its semi-axes, on a body small
+enough that its shell does not wrap the torus. Its test "overlapping bodies add and a body out of
+reach adds nothing" holds the overlap scenario: a body whose shell excludes the particle contributes
+exactly zero, and the particle's slot-order total equals the in-shell bodies' separate forces added.
+Unenforced across the pair: the summing loop itself lives in the shader, and the mirror has no
+multi-body entry. Build-asserted: the accumulator overflow assertion reads the same single-ceiling
+contribution.
+
+#### Scenario: Proximity and enclosure at their ceilings never sum past one ceiling
+
+- **WHEN** a body carries proximity and enclosure both at the force ceiling and a particle lies
+  anywhere within its band on the side both act
+- **THEN** the impulse it receives is at most one force ceiling times strength and envelope per
+  reference frame
+
+#### Scenario: Overlapping bodies add, and nothing else does
+
+- **WHEN** a particle lies inside the shells of several live bodies
+- **THEN** its impulse is the sum of each body's bounded contribution, and bodies whose shells it
+  lies outside contribute exactly nothing
 
 ### Requirement: The bodies strength scales the whole coupling and skips both passes at exactly zero
 
@@ -227,7 +310,8 @@ the run itself in `docs/perf-report.md` under the table shape that file already 
 
 #### Scenario: The full budget pushing one body settles
 
-- **WHEN** the whole particle budget is placed inside one body's band at the strength ceiling
+- **WHEN** the whole particle budget is placed across one body's reach, from inside its band to
+  twice the band outside it, at the strength ceiling
 - **THEN** the body's speed and angular speed settle to bounded values rather than growing
 
 #### Scenario: A premise moves and the bound is re-earned
@@ -238,19 +322,24 @@ the run itself in `docs/perf-report.md` under the table shape that file already 
 ### Requirement: An enclosing body cannot be tunnelled
 
 An enclosing body's band SHALL be at least as wide as the distance a particle at the speed cap
-travels in one substep, so no particle can cross the surface without a substep placing it inside the
-band where the enclosure force acts. That floor SHALL be derived from the speed cap and the substep
-timestep rather than chosen, and the derivation SHALL be stated beside the constant.
+travels in one substep, so no particle can cross the surface without a substep placing it on the
+rising part of the enclosure, inside the band. That floor SHALL be derived from the speed cap and
+the substep timestep rather than chosen, and the derivation SHALL be stated beside the constant.
+
+Because enclosure's reach is finite, whether an escaping particle is turned back depends on the hold's
+strength as well as the band: a weak hold lets a fast particle through its reach. The floor
+guarantees the particle meets the hold, not that every hold stops it.
 
 Enforcement — Test-held: `tests/test_body_core.nim` holds that a particle launched at the speed cap
-directly at an enclosing surface is turned rather than passing through, at the narrowest band the
-range allows and the largest timestep the substep range allows.
+across an enclosing surface lands on the rising part of the hold, at the narrowest band the range
+allows and the largest timestep the substep range allows. At half that floor the same crossing lands
+at the end of the reach, where the hold is zero.
 
 #### Scenario: The fastest particle is still contained
 
-- **WHEN** a particle at the speed cap travels straight at an enclosing body's wall, with the band at
-  its narrowest and the timestep at its largest
-- **THEN** the particle is turned back and does not appear on the far side
+- **WHEN** a particle at the speed cap travels straight out through an enclosing body's wall, with
+  enclosure at its ceiling, the band at its narrowest and the timestep at its largest
+- **THEN** the particle is turned back and does not leave the body's reach
 
 ### Requirement: The body accumulator cannot overflow its fixed-point range
 

@@ -105,9 +105,9 @@ Body = object
   angle, angVel: float32
   radius: float32               ## semi-axis along the body's x
   anisotropy: float32           ## semi-axis along y, as a multiple of radius
-  bandWidth: float32            ## proximity's reach either side of the surface
+  bandWidth: float32            ## proximity's reach either side of the surface; enclosure's is twice it
   proximity: float32            ## signed: toward the surface
-  enclosure: float32            ## signed: positive holds in, negative keeps out
+  enclosure: float32            ## signed: resists crossing; positive pushes escapees back in, negative pushes intruders out
   invMass, invInertia: float32  ## derived from area at ignition, not stored twice
 ```
 
@@ -167,25 +167,122 @@ Where a second family goes: one more branch on a `kind` field in the record and 
 evaluation, both in `body_core` and its shader mirror. Nothing else changes — not the buffers, not
 the frame, not the forces. That is the extension this design leaves open and does not build.
 
-### D4. Two forces from one evaluation
+### D4. Two forces from one evaluation, both with a finite reach
 
 ```
   n     = surface direction at p, pointing outward
-  fall  = smoothstep(1, 0, abs(d) / bandWidth)     # 1 at the surface, 0 at the band edge
+  u     = abs(d) / bandWidth
+  fall  = smoothstep(0, 1, 1 - u)                  # 1 at the surface, 0 at the band edge
+  hold  = smoothstep(0, 1, 1 - abs(u - 1))         # 0 at the surface, 1 at the band edge, 0 at 2 bands
   Fprox = -sign(d) * n * proximity * fall
-  Fencl = -n * enclosure * step(0, d * sign(enclosure)) * saturate(abs(d) / bandWidth)
+  Fencl = -n * enclosure * step(0, d * sign(enclosure)) * hold
   F     = (Fprox + Fencl) * envelope[i] * params.bodiesStrength
 ```
 
-`smoothstep` rather than a linear ramp so the force's derivative is zero at the band edge too — a
-particle drifting across the edge feels neither a step in force nor a corner in it. The same choice
-`climate_core` makes for its easing, and for the same reason (`docs/one-world.md:319-328`).
+Summary: proximity reaches one band from the surface, enclosure reaches two bands, and past two
+bands a body hands a particle exactly nothing.
 
-Enclosure is one signed number, not a pair of strengths and not an enum. Positive holds particles
-inside, negative keeps them out, zero does neither, and zero is an ordinary value reached by moving
-a slider — the one-world rule at parameter scale. It ramps over the band rather than acting as a hard
-wall, which is what makes the tunnelling bound (D13) a band-width relation rather than an impulse
-relation.
+`smoothstep` rather than a linear ramp so the force's derivative is zero at the band edge too. A
+particle drifting across the edge feels neither a step in force nor a corner in it. `climate_core`
+makes the same choice for its easing, for the same reason (`docs/one-world.md:319-328`).
+
+Enclosure is one signed number, not a pair of strengths and not an enum. It resists crossing
+rather than pulling from within. Positive pushes back what has got out and gives exactly zero
+everywhere inside, which is the step gate above. Negative pushes back out what has got in. Zero does
+neither. Zero is an ordinary value reached by moving
+a slider, which is the one-world rule at parameter scale. The hold rises over the band rather than
+acting as a hard wall, which makes the tunnelling bound (D13) a band-width relation rather than an
+impulse relation. It peaks at the band edge and falls off over a second band past it.
+
+**Reversal.** This decision first specified `saturate(abs(d) / bandWidth)`: a ramp over the band and
+full strength beyond it, "so an escaped particle is always brought back". That law never falls off,
+so a positive hold pulled every particle outside the body at full strength across the whole torus.
+The diagnosis probe measured 10.000 at 400, 1000 and 1800 from the centre at Hold 10
+(`scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`, section 2).
+
+The reaction then drags each body toward everything it pulls. The drag is capped per substep
+(`web/shaders/src/body-integrate.wgsl:75-83`), so every body converges on the population. In the
+running app, Wild Bodies 1/s at Hold 10 gathered all 128 000 particles into one mass within six
+seconds at 7 FPS (`scratchpad/parametric-bodies/in-app__13-09-26-1616.md`, observation 3). The law
+also contradicted the spec's local reading of enclosure and the Body Reach help line. The old law
+was C0 only, with corners at the surface and at the band edge. The user chose a falloff past the
+band over the two alternatives below.
+
+**The profile.** `hold` is one smoothstep bump over `u ∈ [0, 2]`:
+
+- Its slope is zero at the surface, where the inside is identically zero.
+- Its slope is zero from both sides at the band edge, where it peaks.
+- Its slope is zero at two bands, where it meets zero.
+
+So the force is C1 at every point a particle can cross, and it has compact support. At half a band,
+`hold` equals the old linear ramp exactly (`smoothstep(0.5) = 0.5`). That is why the `bodies.netHold`
+probe, which samples there, never saw the reach.
+
+**The handoff.** `smoothstep(x) + smoothstep(1 - x) = 1`. Inside the band, where proximity and
+enclosure push the same way, their sum is `|P|·fall + |E|·hold ≤ max(|P|, |E|)`, and at `P = E` it is
+flat across the band. Past the band only the hold acts. So one body's impulse on one particle never
+exceeds `BODY_FORCE_CEILING · bodiesStrength · envelope` per reference frame, at any point and any
+sign combination. The earlier `2 · BODY_FORCE_CEILING` in `BODY_MAX_FORCE_PER_PARTICLE` was an
+over-count, and D16 states the tighter bound as an interface.
+
+**The length: one band past the band, derived from `bodyBand`.** The reach is set by the control
+whose help line already says "how far the forces carry". It adds no slider, no preset field, no
+probe and no record field. It scales with the one number a player already uses to say how far a
+body carries.
+
+**Torus.** Distance is the minimum image (D3), so the reach is measured to the nearest image and a
+particle feels at most one image of a body. A body whose reach shell spans more than half the world
+on an axis covers that axis. That is a size a player chose, and nothing clamps it.
+
+**Anisotropy.** The shell is `d < 2·bandWidth` in the evaluation's own distance. Outside an ellipse
+that distance satisfies `t · s_short / s_long ≤ d ≤ t` against the true distance `t`, because the
+scaling is bi-Lipschitz with those two constants. So the shell reaches at most
+`2 · bandWidth · s_long / s_short` in true distance along the long axis, four times the round
+body's reach at `BODY_ANISOTROPY_CEILING`. A scratch probe restating the law marched outward over
+3600 bearings on a body at anisotropy 4, radius 100 and band 50. The farthest non-zero force sat
+399.8 from the surface, against the bound of 400 (`scratchpad/parametric-bodies/falloff_probe.nim`,
+section 2). So the bound holds and is attained. The first red test of task group 10 holds it in the
+suite.
+
+The probe met a second fact on the way. At radius 240 the long semi-axis plus the reach passes half
+the world's height, and the minimum image wraps the shell onto the far side of the body. That is the
+torus paragraph above, reached at a size a player can pick.
+
+**What a player gives up: capture has a speed.** In continuous time, with every other force set
+aside, a particle leaving the surface outward at speed `v` is stopped inside the shell iff
+`v² < 240 · |E| · bodiesStrength · envelope · bandWidth`. That comes from integrating
+`120 · |E| · hold` over `[0, 2·bandWidth]`, whose integral is `bandWidth`. The 120 is
+`1 / FRAME_DT_REFERENCE` (`src/physics_core.nim:23`).
+
+| Hold | Band | Escape speed |
+|---|---|---|
+| ceiling | shipped default 120 | about 537 |
+| ceiling | floor | about 245 |
+| 1 | shipped default 120 | about 170 |
+| about 0.35 | shipped default 120 | about 100, the particle speed ceiling |
+
+So a strong hold recaptures every particle the speed cap admits, and a weak hold lets the fastest
+escapees go for good. A scratch probe stepped a one-dimensional particle at reference-frame
+substeps, with no friction, cap or pair force, and bisected the largest speed that stops inside the
+reach. It matched the formula to the first decimal at all four rows: 536.7, 244.9, 169.7 and 100.4
+(`scratchpad/parametric-bodies/falloff_probe.nim`, section 1). Friction and the speed cap both help
+capture. The pair force and the app's longer substeps are outside that check.
+
+Options for enclosure's reach, each with what it sacrifices:
+
+| Option | Sacrifice | Verdict |
+|---|---|---|
+| Full strength past the band (the original law) | Every body pulls the whole world; bodies converge; measured collapse | Rejected by the user |
+| Zero at the band edge, the ramp ending where proximity ends | An escapee past the band is never recaptured, and a positive hold becomes a wall met only on the way out | Rejected by the user |
+| **Smoothstep bump, falloff length = `bodyBand`** | Capture has an escape speed (above); reach is tied to Body Reach and cannot be set apart from it | **Chosen** |
+| Falloff length = body radius | Reach grows with size and not with the control named for reach, so the help line is wrong again; a large body at the radius ceiling reaches 800 past its band | Rejected |
+| Falloff length = the pair-force interaction radius | Couples a body to an unrelated control; `body_core` sits upstream of that state and would need one more uniform | Rejected |
+| A new `bodyHoldReach` slider | An eighth descriptor, help line, probe, preset field and record field against D12's seven. Its zero would put a step at the band edge (ramp to one, fall over nothing), so zero stops being an ordinary value unless the profile is redrawn around it | Rejected for this cut; the route stays open as one field |
+| A fixed world-unit constant | A number derived from nothing; a small body and a large one reach the same distance | Rejected (article 8) |
+| Exponential or Gaussian tail | Never reaches zero, so the world is still reached, only more quietly, and "no particle past the reach moves" cannot be stated | Rejected |
+| Inverse-square tail | Sums the world's mass; convergence stays | Rejected |
+| Linear falloff | Corners at the band edge and at the reach edge | Rejected |
+| Smootherstep (C2) | Nothing reads a second derivative; semi-implicit Euler is content with C1 | Rejected |
 
 Rejected: a hard positional correction (projecting a particle back to the surface). It writes
 position, and the only pass that writes position is `integrate`. A force composes with every other
@@ -263,6 +360,11 @@ static:
 
 The torque word needs the same treatment with the world's half-diagonal as the lever arm, since
 torque is force times distance and the distance is bounded by the minimum image.
+
+The largest per-particle contribution is one `BODY_FORCE_CEILING`, not two. D4's handoff identity
+means proximity and enclosure never sum past the larger of the two. `BODY_MAX_FORCE_PER_PARTICLE`
+is restated at one ceiling, and a sweep test holds `bodyForceAt` under it (D16). That loosens the
+assertion's headroom and moves no user-facing range.
 
 Rejected: reusing `FIXED_POINT_SCALE`. It would silently wrap under a full crowd, and wrapping shows
 as a body flung across the world — a bug that looks like physics.
@@ -488,6 +590,30 @@ Proven versus designed: nothing in this decision is proven. It is the one place 
 a measurement, not a reading, settles the question, which is why it precedes the feedback tasks
 rather than following them.
 
+**The gate's blind spot, and its correction.** The sweep measures one body under one crowd
+pre-placed in a wedge spanning ±0.9 of a band about the surface (`tests/test_body_core.nim`,
+`runCrowdPush`). It passed with world-reaching enclosure, and it would pass again, because its
+question is whether a body's speed stays bounded. The in-app collapse was not a speed failure. It
+was a reach failure: particles far outside every band were pulled in, and bodies were dragged across
+the world toward them. No crowd outside the band existed in the rig, and no second body did either.
+
+So the gate gains two relations, both in task group 10:
+
+- A reach relation: past `2 · bandWidth` the force is exactly zero, for either sign, round or
+  elongated, including across a world edge.
+- A two-body relation: two holding bodies with a crowd lying beyond both reaches stay exactly where
+  they were. A control with the crowd moved inside one body's reach shows that body moving, so the
+  test can see motion.
+
+The sweep's wedge widens to span `[-0.9, +1.9]` bands so the falloff is inside the measured space.
+The force law is premise 3, so the sweep re-runs.
+
+The tunnelling suite's note ("enclosure saturates … an escaped particle is always brought back")
+is corrected in the same group. At half the derived floor the crossing now lands at the reach's
+end, where the hold is zero, rather than at a wall at full strength. The spec scenario that the
+fastest particle is turned back is restated at the enclosure ceiling, where the escape speed of D4
+exceeds the speed cap.
+
 ### D14. What this design owes to links
 
 Links are deferred (proposal, Out of scope), and the single obligation is that nothing here makes
@@ -518,8 +644,76 @@ Cost: the particle pass evaluates `MAX_BODIES` SDFs per particle per substep, wi
 zero envelope. At 128 000 particles and 32 slots that is 4.1 million evaluations of roughly a dozen
 arithmetic ops per substep, against a worst-case measured headroom of 3.75 ms in a 16.7 ms frame
 (`docs/perf-report.md:140`). That figure is a reading of the perf record, not a measurement of this
-pass; the profiler slot question (D8) is what would turn it into one, and the first in-app run is
-where the number arrives.
+pass; the bodies profiler slot (D8) turns it into one, and the first in-app run is where the number
+arrives.
+
+### D16. What bounds a body's pull, stated as an interface
+
+Once the reach is finite, three numbers bound what a body does. Another change needs them. A
+density-rising pressure term that must out-push every outside pull (`coupling-balance`, not yet
+scaffolded) reads them as its input, so they are a spec requirement rather than prose.
+
+**Per particle, per body.** The impulse one body hands one particle is at most
+`BODY_FORCE_CEILING · bodiesStrength · envelope` velocity units per reference frame. Per substep
+that is `frameFactor(dt)` times as much, bounded overall by `BODY_MAX_FORCE_PER_PARTICLE`. At the
+ceilings it is 10 per reference frame, in either direction, inward or outward. The handoff identity
+of D4 is what makes this one ceiling rather than two.
+
+**Region.** The impulse is non-zero only where the evaluation's distance satisfies
+`|d| < 2 · bandWidth`, and additionally `d ≥ 0` for positive enclosure's part and `d ≤ 0` for
+negative enclosure's part. In true world distance that shell is at most
+`2 · bandWidth · max(anisotropy, 1/anisotropy)` from the surface (D4, Anisotropy; measured at 399.8 against 400 in
+`scratchpad/parametric-bodies/falloff_probe.nim`). Everywhere
+else the body contributes exactly zero, not a small value.
+
+**Per particle, all bodies.** Contributions add across slots, so a particle inside `k` overlapping
+shells receives at most `k` times the per-body bound. The worst case is `MAX_BODIES = 32` shells
+overlapping with aligned normals, which is 320 per reference frame at the ceilings. The bound is
+stated at its worst.
+
+**Per body, reaction.** A body's reaction is the negated sum over the particles inside its shell. It
+is bounded by the population in the shell times the per-particle bound. The body's response to it is
+capped per substep by `BODY_MAX_SPEED_CHANGE` and settles under the D13 ceiling
+`cap · frames · d / (1 − d)`. Only particles inside the shell can pull a body. So a body drifts
+toward a one-sided crowd within `2 · bandWidth` of its surface and is blind to everything farther
+away.
+
+Normalization considered and rejected, each with its sacrifice:
+
+| Option | Sacrifice | Verdict |
+|---|---|---|
+| **None: per-particle bound, finite region, reaction capped per substep (D9)** | Total pull on a crowd grows with the crowd inside the shell, and density inside a held body is bounded by nothing in this change | **Chosen** |
+| Divide each particle's pull by the count in reach | Needs a counting pass or a previous-substep count buffer, so evaluation is no longer one per body per particle. One particle's force would depend on the whole crowd: a lone escapee feels the full hold and a dense crowd is barely held, which inverts what a hold is for | Rejected |
+| Divide the reaction by the count in reach | Breaks "reaction is exactly the negation of action" (spec), so a pass could push particles a body does not feel. The per-substep cap already bounds what the reaction can do | Rejected |
+| Divide by the envelope integrated over a lifetime | A long-lived body becomes a quieter one, against D10's "a longer life buys more of this, never a louder body" | Rejected |
+
+What this change does not bound: density. A body at ceiling hold still gathers everything inside its
+shell into its interior. Several bodies near one crowd can drift together through it. In a scratch
+closed loop, two holding bodies 1200 apart, at Hold 10 with Skin Pull 6, drew together to 465.8
+over 600 frames at 60 Hz. They shared a 128 000-weighted clump reaching into both shells. With the
+clump kept beyond both shells their separation stayed exactly 1200
+(`scratchpad/parametric-bodies/falloff_probe.nim`, section 3). The global convergence D4's reversal names is gone. Whether local gathering still costs
+the pair-force pass what observation 3 recorded is unmeasured until 9.2 re-runs. A bound on
+concentration belongs to the pressure term, which consumes this interface.
+
+**Probe.** `bodies.netHold` sums the outward-signed force at ±half a band
+(`src/ui/api/response_probe.nim`, `bodyEnclosureProbe`). There the new hold equals the old ramp, so
+the probe cannot tell a finite reach from an infinite one. It becomes an integral of the
+outward-signed force over a window symmetric about the surface, `w = min(2 · bandWidth, radius)`
+each side, sampled at `RefBodySamples`:
+
+- Symmetry keeps proximity's antisymmetric contribution cancelling.
+- The inside half keeps the sign dead-free across the whole track.
+- At the shipped slice (radius 240, band 120) the window is exactly the reach.
+
+`bodies.band`'s fixed path lengthens from `BODY_BAND_MAX` to `2 · BODY_BAND_MAX` so the widest
+reach fits on it. Both probes stay linear in their slider. `tests/test_response_probe.nim` rewrites
+`docs/control-legibility-report.md` on every run, so the report follows.
+
+**Help.** `docs/help/35-bodies.md` today says of `bodyBand` "this says how far the forces carry from
+it", and the old hold contradicted that. The line becomes true once it says both reaches: the pull
+toward the surface carries one band, and the hold is strongest one band out and gone at two. The
+`bodyEnclosure` line gains that a particle carried farther than that is let go.
 
 ## Risks / Trade-offs
 
@@ -539,6 +733,13 @@ where the number arrives.
   (`docs/enforcement.md`, Two-sided agreements). → A wrong count fails GPU validation at runtime in
   the browser and nothing earlier catches it, so the in-app run is the detector for the two new
   pipelines.
+- **A held body still gathers what its shell holds.** → The reach is finite (D4) and the pull is
+  bounded per particle and per region (D16), but concentration inside a body is not bounded here.
+  The interface D16 states is what a density-rising pressure term reads. Task 9.2 re-observes
+  Hold 10 under Wild Bodies after group 10 lands.
+- **A weak hold lets fast particles go.** → By design (D4, capture has a speed). The escape speed
+  exceeds the particle speed ceiling for any hold above about 0.35 at the default band (100.4 at
+  0.35, `scratchpad/parametric-bodies/falloff_probe.nim`, section 1).
 - **A body ignited at the world's edge.** → Every displacement is minimum-image and the integrate
   wraps, so an edge body behaves like any other. The risk is that one of the several places doing
   this arithmetic forgets; the property tests in `tests/test_body_core.nim` are what catch it.
@@ -548,7 +749,8 @@ where the number arrives.
 
 ## Settled decisions
 
-Ten questions this design opened, each answered before the first task. They are recorded rather than
+Eleven questions this design opened. The first ten were answered before the first task, and the
+eleventh after the in-app run. They are recorded rather than
 dropped because each one rules out a shape someone will otherwise propose again, and two of them are
 premises other decisions rest on.
 
@@ -575,3 +777,7 @@ premises other decisions rest on.
 9. **The envelope is its own buffer**, not a field of the body record, because the two have different
    writers on different cadences (D6).
 10. **Names:** the capability is `parametric-bodies`, the help file is `docs/help/35-bodies.md`.
+11. **Enclosure falls off past the band** (13-09-26, the user's decision after the in-app collapse).
+    It keeps recapturing near escapees and does not reach the world: a smoothstep bump peaking at the
+    band edge and reaching zero at twice the band, with the length derived from `bodyBand` (D4). The
+    user rejected both zero at the band edge and world reach. No range was clamped to get here.

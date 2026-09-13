@@ -34,9 +34,13 @@ coupling rather than an obstacle map.
   and the ellipse. A second primitive family — a rounded box, a ring — is a listed future extension
   and no task here builds one.
 - **Two forces from one evaluation.** *Proximity*: inside a band around the surface, a pull toward
-  the surface, from either side. *Enclosure*: a signed strength that holds particles in when
-  positive, keeps them out when negative, and does neither at zero. One signed parameter rather than
-  an inside/outside switch, because zero is an ordinary value of it.
+  the surface, from either side. *Enclosure*: a signed strength that resists crossing the surface.
+  Positive pushes particles that have got out back in and does nothing to those inside. Negative
+  pushes particles that have got in back out. Zero does neither. One signed parameter rather than
+  an inside/outside switch, because zero is an ordinary value of it. Both are local. Proximity
+  reaches one band from the surface. Enclosure peaks at the band's edge and falls to nothing at twice
+  the band, so a body recaptures near escapees and never pulls the world. What one body can hand one
+  particle, and where, is stated as a bound other couplings can rely on.
 - **Bodies move and are moved.** Each body carries linear and angular velocity integrated on the GPU
   by the plainest semi-implicit step with damping. Particles that feel a body push back on it:
   the bodies pass accumulates the equal and opposite force and its torque into a per-body atomic

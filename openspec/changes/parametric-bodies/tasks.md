@@ -4,6 +4,11 @@ gate the proposal names and it precedes group 6, the only group that writes feed
 world's own generator, touches `src/app.nim`, one section of `src/body_core.nim` and one range, and
 nothing in groups 1 through 7 depends on it — cut it to a follow-up change by deleting the group.
 
+Group 10, enclosure's finite reach, was added after the first in-app run of 9.2 collapsed the whole
+population into one mass (`scratchpad/parametric-bodies/in-app__13-09-26-1616.md`). Its number is new
+so no existing identifier renumbers, and it sits in the file ahead of group 9. The order of work is
+1–8, then 10, then 9. Tasks 9.2 and 9.3 wait on it.
+
 Every decision the design opened is settled (design, Settled decisions). Three of them shape what
 appears below and what does not: bodies are not drawn, so no render work appears; a body's lifetime is
 fixed at ignition, so no release-on-gesture write path appears; and the panel carries seven
@@ -254,14 +259,132 @@ descriptors, and `igniteBody`'s callers supply their own shaping.
       (`docs/enforcement.md`, Landmines). Verify: `just happen` is green
 - [x] 8.4 `just happen` builds and `just check` is green
 
+## 10. Enclosure's finite reach and the bound on a body's pull
+
+Runs before group 9 (see the note at the top). Design D4 (the reach, its profile and the options),
+D13 (the gate's blind spot) and D16 (the bound as an interface). Every red test below is run and
+watched failing for its stated reason before 10.5 touches the law. The shader and the mirror change
+in one diff (`docs/engineering-principles.md`, article 5).
+
+- [ ] 10.1 **Red first.** In `tests/test_body_core.nim`, suite "One Evaluation Yields Both Proximity
+      And Enclosure", add "a positive hold moves no particle beyond twice its band". The force from a
+      body with proximity and enclosure both at `BODY_FORCE_CEILING` is exactly zero, in both axes, at
+      offsets `2·BAND`, `2·BAND + 1`, `5·BAND`, and half the world away. Hold the mirror too: a
+      negative hold moves nothing at inside depths of `2·BAND` or more, on a body whose radius exceeds
+      that depth. Hold the torus: a body one band from a world edge gives zero to a particle whose
+      minimum-image offset is past twice the band. Hold anisotropy: on a body at
+      `BODY_ANISOTROPY_CEILING` with radius 100 and band 50, the force is zero along the long axis past
+      `2·band·anisotropy` in true distance and non-zero just inside `2·band` in evaluated distance.
+      Those parameters are local to this sub-test rather than the suite fixture. At the fixture's
+      radius 400 the long semi-axis is 1600, past half the world height of 1080, so the minimum image
+      wraps the body. The critic measured the force going non-zero, zero, then non-zero along the
+      axis, and no reach is defined there. At radius 100 the semi-axis plus reach is 800, which stays
+      inside the half-height.
+      The oracle is the stated reach, not `bodyForceAt`. Verify: fails today at every outside offset,
+      with the force at `-enclosure` (the diagnosis probe measured 10.000 at 1800 from the centre,
+      `scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`, section 2)
+- [ ] 10.2 **Red first.** Beside 10.1, add the profile's shape as relations:
+      - "enclosure peaks at the band edge": the force there is `-enclosure` at strength and envelope
+        one, and smaller at `0.9·BAND` and at `1.1·BAND`.
+      - "enclosure meets the surface, the band edge and the reach end without a corner": at 1% of a
+        band from each of the three points, on the side where the force is non-zero, the force is
+        below `0.001·enclosure` away from its value at that point. This is the ratio the proximity
+        edge test already uses.
+      - "proximity and enclosure at the ceiling never sum past one ceiling": sweep offsets across
+        `[-2·BAND, 2·BAND]` for all four sign pairs, and check `|force| ≤ BODY_FORCE_CEILING` to
+        `EPSILON_LOOSE`.
+      Verify all three fail today:
+      - The peak test fails because the force at `1.1·BAND` equals the edge's.
+      - The corner test fails at the surface and the band edge, where the linear ramp moves 1% of
+        enclosure over 1% of a band. At the reach end it passes vacuously today, and 10.1 is its red.
+      - The ceiling test fails near the surface, where `smoothstep(1 - u) + u` exceeds one for
+        `u < 0.5` (at `u = 0.25`, a sum of about 1.09 ceilings).
+- [ ] 10.3 **Red first.** Add a suite "A Body Is Blind Past Its Reach" with the test "two holding
+      bodies stay put when the crowd lies beyond both reaches". Two bodies sit at the enclosure and
+      strength ceilings, default radius and band, far enough apart that their shells do not overlap.
+      A weighted-sample clump sits on the line between them, beyond both shells. Close the loop with
+      `bodyForceAt`, `addBodyReaction` and `bodyRigidStep` over `SWEEP_FRAMES` at the largest frame,
+      in the shape of `runCrowdPush`. Assert:
+      - both bodies' velocities are exactly zero every frame;
+      - their separation is unchanged;
+      - the clump's samples received zero impulse.
+      Then a control in the same suite: with the clump moved inside one body's shell, that body moves
+      toward it, so the rig can see motion (article 4). Verify: the first test fails today with both
+      bodies accelerating toward the clump. The control passes today and after.
+
+      In the same suite, add "overlapping bodies add and a body out of reach adds nothing".
+      - Two holding bodies at the enclosure ceiling sit with overlapping shells, and a particle lies
+        inside both.
+      - A third body at the enclosure ceiling sits more than twice its band from that particle.
+      - Assert that the third body's `bodyForceAt` is exactly zero in both axes.
+      - Assert that the particle's total over the three slots, summed in slot order as
+        `body-force.wgsl`'s loop sums, equals the two overlapping bodies' forces added. The oracle is
+        each body's force taken alone.
+      - Assert that each of the two in-shell forces is non-zero, so the sum is not vacuous.
+
+      The addition itself is the shader's loop. The mirror has no multi-body entry, so the pair
+      holds the summing by review like every shader expression (`docs/enforcement.md`, Reference
+      oracles). The test holds the part the mirror owns: nothing out of reach enters the sum. Verify:
+      the test fails today on the third body, which the world-wide hold gives `-enclosure`
+- [ ] 10.4 **Red first where it can be.** Correct the tests that assert the old law:
+      - Replace "enclosure reaches beyond the band at the strength it ramped to"
+        (`tests/test_body_core.nim:358-369`) with "enclosure fades to zero over a second band past
+        the band edge". The force at `1.5·BAND` has half the peak's magnitude, from
+        `smoothstep(0.5) = 0.5`, and the force at `2·BAND` is zero.
+      - In "An Enclosing Body Cannot Be Tunnelled", correct the suite note that says enclosure
+        saturates and an escaped particle is always brought back.
+      - Change "at half the derived floor the same particle skips the ramp" to assert that the crossing
+        lands at the reach's end, where the force is zero, rather than meeting the wall at full
+        strength.
+      - In the stability sweep, widen `runCrowdPush`'s wedge from `±0.9` of a band to span
+        `[-0.9, +1.9]` bands so the falloff is measured.
+      Verify: the replaced test and the half-floor test fail today for the stated reason. The widened
+      sweep still passes today, since the old law is also bounded in speed; that is recorded, not
+      treated as red
+- [ ] 10.5 Change the law in one diff:
+      - In `src/body_core.nim`'s `bodyForceAt`, `holding` becomes
+        `-enclosure * actingSide * smoothstepUnit(1.0 - abs(spanned - 1.0))`, and its doc comment is
+        corrected to the finite reach.
+      - In `web/shaders/src/body-force.wgsl` (`:133-139`), the same expression becomes
+        `smoothstep(0.0, 1.0, 1.0 - abs(spanned - 1.0))`, with the comment corrected.
+      - Restate `BODY_MAX_FORCE_PER_PARTICLE` at one `BODY_FORCE_CEILING` with the handoff identity
+        beside it (design D7, D16). The overflow assertions stay and gain headroom.
+      - Correct the `bandWidth` field comment on `Body` to name both reaches.
+      No range in `src/config_ranges.nim` moves.
+      Verify: 10.1–10.4 pass, the stability sweep passes at the shipped range with its premise 3
+      re-run, `just shaders` bundles and `tests/test_wgsl_lint.nim` passes
+- [ ] 10.6 In `src/ui/api/response_probe.nim`:
+      - `bodyEnclosureProbe` (`bodies.netHold`) integrates the outward-signed force over a window
+        symmetric about the surface, `min(2·bandWidth, radius)` each side, at `RefBodySamples`.
+      - `bodyBandProbe`'s path lengthens to `2·BODY_BAND_MAX`.
+      Both docstrings say what the window reads (design D16). Verify: `tests/test_response_probe.nim`
+      passes with both controls still legible, and the rewritten
+      `docs/control-legibility-report.md` shows the two rows' verdicts
+- [ ] 10.7 In `docs/help/35-bodies.md`, rewrite the `bodyBand` line to state both reaches: the pull
+      toward the surface carries this far, and the hold is strongest this far out and gone at twice
+      it. The `bodyEnclosure` line stops saying "keeps particles in" and says the hold resists
+      crossing. Positive pushes back what has got out and does nothing inside. Negative pushes back
+      what has got in. A particle carried past twice the band is let go. Verify:
+      `tests/test_help_content.nim` passes
+- [ ] 10.8 In `docs/enforcement.md`, add the guarantee "a body's pull on a particle is bounded in size
+      and in region" as Test-held by the 10.1–10.2 relations and 10.3's overlap test, with the summing
+      loop recorded as unenforced across the shader and mirror pair. Correct the accumulator overflow row to
+      the single-ceiling contribution. Annotate the group 2 entry in `docs/perf-report.md` with the
+      re-run under the changed force law and the widened wedge, appended under the original rather
+      than rewriting it (article 12). Verify: every new row names its tier
+- [ ] 10.9 `just happen` builds and `just check` is green
+
 ## 9. In-app verification and the records
 
 9.1 needs a person only for the browser connection; every observation after it is the agent's.
 
-- [ ] 9.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
-      start Chrome and connect Browser MCP, and start nothing until they confirm — `./main` exits
-      with code 0 when no browser attaches (CLAUDE.md, Build and test). Touches no file
-- [ ] 9.2 **Agent procedure.** `just happen`, launch `./main` in the background, poll
+- [x] 9.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
+      start Chrome and connect Browser MCP, and start nothing until they confirm (CLAUDE.md, Build
+      and test). Touches no file
+- [ ] 9.2 **Waits on group 10 and on `coupling-balance`'s density term** (the user's choice, 13-09-26: measure with held-crowd density bounded, since the falloff alone still lets a body gather its reach). The 13-09-26 16:16 run stopped at observation 3, when Hold 10
+      collapsed the population through enclosure's world reach. Re-run the whole procedure after 10.9
+      is green, and add one observation: at Hold 10 under Wild Bodies 1/s, particles farther than
+      twice the band from every body are not drawn in. **Agent procedure.** `just happen`, run `./main --serve` as a persistent background shell, poll
       `http://127.0.0.1:8089` for 200, navigate the connected tab there, and settle a population.
       Then: call `gardenAPI.igniteBody` at a point inside the crowd and observe particles gathering
       along a surface that is itself never drawn; raise enclosure and observe a crowd held; drive the
