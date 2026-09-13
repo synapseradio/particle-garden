@@ -117,6 +117,8 @@ just happen
 ./main
 ```
 
+`just serve` builds and runs it with no window; open `http://127.0.0.1:8089` in your own Chrome or Edge.
+
 Requires [Nim](https://nim-lang.org/) 2.0+, [Bun](https://bun.sh/) for the control panel bundle, and [just](https://github.com/casey/just).
 
 </details>
@@ -134,7 +136,7 @@ Requires Chrome 113+, Edge 113+, or Firefox (behind a flag).
 Edit `src/main.nim` and change the port constant.
 
 **Browser doesn't open**
-webui (the library that opens the native window) couldn't find a browser. Install Chrome, Firefox, or Edge.
+webui (the library that opens the native window) couldn't find a browser. Install Chrome, Firefox, or Edge. Or run `./main --serve` and open `http://127.0.0.1:8089` yourself.
 
 </details>
 

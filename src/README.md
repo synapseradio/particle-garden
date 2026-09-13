@@ -33,9 +33,12 @@ just happen
 
 A browser window opens showing the simulation. Drag sliders to adjust forces between particle species.
 
+`./main --serve` skips the window and serves until killed, so the page runs in any WebGPU Chromium tab at `http://127.0.0.1:8089`, including one an agent drives through Browser MCP.
+
 | Command | Purpose |
 |---------|---------|
 | `just happen` | Build everything: shaders, frontend, UI bundle, native binary |
+| `just serve` | Build, then serve with no window (`./main --serve`) |
 | `just check` | Both test suites (native Nim + bun) |
 | `just test` | Native Nim suite only |
 | `just release` | Optimized production build |
