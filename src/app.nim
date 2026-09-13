@@ -60,7 +60,8 @@ proc makeJsObject(): JsObject {.importjs: "({})".}
 # Bitwise OR for int truncation
 proc bitwiseOr(value: float, mask: int): int {.importjs: "(#|#)".}
 proc logGpuProfile(particleCount: int, gridMs: float, physicsMs: float, drawMs: float,
-                   presentMs: float, bloomMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms bloom=' + #.toFixed(3) + 'ms')".}
+                   presentMs: float, bloomMs: float, longRangeMs: float,
+                   bodiesMs: float) {.importjs: "console.log('[gpu-profile] n=' + # + ' grid=' + #.toFixed(3) + 'ms physics=' + #.toFixed(3) + 'ms draw=' + #.toFixed(3) + 'ms present=' + #.toFixed(3) + 'ms bloom=' + #.toFixed(3) + 'ms lr=' + #.toFixed(3) + 'ms bodies=' + #.toFixed(3) + 'ms')".}
 proc urlParamInt(name: cstring, fallback: int): int {.importjs: "(parseInt(new URLSearchParams(location.search).get(#)) || #)".}
 proc urlParamHas(name: cstring): bool {.importjs: "(new URLSearchParams(location.search).has(#))".}
 
@@ -293,6 +294,8 @@ proc loop(now: float): Future[void] {.async.} =
     var gpuDrawMs = 0.0
     var gpuPresentMs = 0.0
     var gpuFieldMs = 0.0
+    var gpuLongRangeMs = 0.0
+    var gpuBodiesMs = 0.0
     if gpu_profiler.isActive():
       # Grid build and the field are both world-intrinsic, so both slots carry
       # a real number every frame. They stay separate so neither time can
@@ -308,15 +311,20 @@ proc loop(now: float): Future[void] {.async.} =
       gpuPresentMs = gpu_profiler.passTimeMs(gpu_profiler.passPresent)
       gpuFieldMs = gpu_profiler.passTimeMs(gpu_profiler.passField)
       let bloomMs = gpu_profiler.passTimeMs(gpu_profiler.passBloom)
+      # A skipped pass writes no timestamps and readback keeps the slot's last
+      # average, so after a strength returns to zero these hold a stale figure.
+      gpuLongRangeMs = gpu_profiler.passTimeMs(gpu_profiler.passLongRange)
+      gpuBodiesMs = gpu_profiler.passTimeMs(gpu_profiler.passBodies)
       # Leave a capturable baseline record in the console every ~5s
       gpuLogCounter = gpuLogCounter + 1
       if gpuLogCounter >= 10:
         gpuLogCounter = 0
         logGpuProfile(runtimeState.particleCount, gpuGridMs, gpuPhysicsMs,
-          gpuDrawMs, gpuPresentMs, bloomMs)
+          gpuDrawMs, gpuPresentMs, bloomMs, gpuLongRangeMs, gpuBodiesMs)
     web_api.pushStats(runtimeState.fps, runtimeState.particleCount, 0,
       computeTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs, gpuPresentMs,
-      gpuFieldMs, webgpu_compute.latestFieldAliveCells())
+      gpuFieldMs, gpuLongRangeMs, gpuBodiesMs,
+      webgpu_compute.latestFieldAliveCells())
 
   if runtimeState.profiling.frameCount >= 60:
     runtimeState = runtimeState.resetProfiling()

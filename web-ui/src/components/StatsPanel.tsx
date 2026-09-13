@@ -27,6 +27,8 @@ export function StatsPanel(props: { ctrl: PanelController }) {
       <div>GPU grid: <span>{gpu(stats()?.gpuGridMs)}</span>ms</div>
       <div>GPU field: <span>{gpu(stats()?.gpuFieldMs)}</span>ms</div>
       <div>GPU physics: <span>{gpu(stats()?.gpuPhysicsMs)}</span>ms</div>
+      <div>GPU long range: <span>{gpu(stats()?.gpuLongRangeMs)}</span>ms</div>
+      <div>GPU bodies: <span>{gpu(stats()?.gpuBodiesMs)}</span>ms</div>
       <div>GPU draw: <span>{gpu(stats()?.gpuDrawMs)}</span>ms</div>
       <div>GPU present: <span>{gpu(stats()?.gpuPresentMs)}</span>ms</div>
     </div>

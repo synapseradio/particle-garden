@@ -130,6 +130,11 @@ export interface StatsSample {
   // The reaction-diffusion field pass. Zero while the field couplings sit at
   // zero strength and the frame leaves their passes out.
   gpuFieldMs: number;
+  // The long-range mesh solve, and the bodies pass (first substep's span). Zero
+  // until the pass first runs; after its strength returns to zero the figure
+  // holds its last reading, because a skipped pass writes no timestamps.
+  gpuLongRangeMs: number;
+  gpuBodiesMs: number;
   /** How many field cells resolved above the aliveness threshold this
    * frame; zero means the field is dark. Feeds the dormancy predicates
    * over world state. */

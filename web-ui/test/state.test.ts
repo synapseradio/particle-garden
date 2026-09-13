@@ -58,6 +58,8 @@ function statsSample(
     gpuDrawMs: 0,
     gpuPresentMs: 0,
     gpuFieldMs: 0,
+    gpuLongRangeMs: 0,
+    gpuBodiesMs: 0,
     fieldAliveCells: 0,
     params,
     ceilings,

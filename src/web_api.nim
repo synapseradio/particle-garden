@@ -980,7 +980,8 @@ when defined(js):
 
   proc pushStats*(fps, particleCount: int;
       gridTimeMs, workerTimeMs, gpuGridMs, gpuPhysicsMs, gpuDrawMs,
-      gpuPresentMs, gpuFieldMs: float; fieldAliveCells: int) =
+      gpuPresentMs, gpuFieldMs, gpuLongRangeMs, gpuBodiesMs: float;
+      fieldAliveCells: int) =
     ## Called from app.nim's frame loop, on the loop's own FPS-refresh
     ## cadence. Raw numbers — formatting belongs to the UI.
     ##
@@ -1038,6 +1039,8 @@ when defined(js):
     stats["gpuDrawMs"] = toJs(gpuDrawMs)
     stats["gpuPresentMs"] = toJs(gpuPresentMs)
     stats["gpuFieldMs"] = toJs(gpuFieldMs)
+    stats["gpuLongRangeMs"] = toJs(gpuLongRangeMs)
+    stats["gpuBodiesMs"] = toJs(gpuBodiesMs)
     lastFieldAliveCells = fieldAliveCells
     stats["fieldAliveCells"] = toJs(fieldAliveCells)
     for callback in statsCallbacks:
