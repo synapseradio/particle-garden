@@ -48,6 +48,13 @@ The rig is designed and unexercised. Nothing after this group means anything unt
 
 ## 3. Calibrate the crowding ceiling
 
+This group waits on the `coupling-balance` change. On 13-09-26, crowding at its maximum was measured
+to remove at most about 1.2 of attraction at a clump edge, against long-range impulses of 26 to 112.
+Crowding only scales positive attraction (`web/shaders/src/forces.wgsl:73-93`), so it cannot oppose
+an outside pull (`scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`). That change designs
+the pressure term and the shared scale that crowding's ceiling is measured against, so a ceiling
+calibrated before it lands measures a force law about to change.
+
 Budget about two hours of wall clock. Runs are sequential: one app instance, one GPU.
 
 - [ ] 3.1 Sweep fixture C over `gardenAPI.paramValueAt('crowdingStrength', p)` for `p` in 0.0, 0.2,
