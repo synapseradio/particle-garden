@@ -379,7 +379,7 @@ One node, two dispatches, per substep, guarded by `acts(couplings.bodies)`:
 
 ```nim
 if acts(couplings.bodies):
-  result.add computePassNode("Bodies", PROFILER_SLOT_NONE, @[
+  result.add computePassNode("Bodies", PROFILER_SLOT_BODIES, @[
     dispatch("bodyForce", dsParticleWorkgroups),
     dispatch("bodyIntegrate", dsOne),
   ])
@@ -411,9 +411,13 @@ Rejected: appending `bodyForce` to the Physics node. It would share `PROFILER_SL
 the bodies cost into the number the stats panel shows as physics, and hiding exactly the cost this
 change adds.
 
-Rejected: a profiler slot of its own. The slots mirror `gpu_profiler.nim` by hand with no test
-holding the pairing (`src/sim_registry.nim:181-186`), so a new slot adds an unenforced two-sided
-agreement. `PROFILER_SLOT_NONE` is what Field Force already carries.
+Chosen: a profiler slot of its own, `PROFILER_SLOT_BODIES`, mirroring `gpu_profiler.passBodies`.
+This reverses the original choice of `PROFILER_SLOT_NONE`, which left task 9.3's per-frame cost
+unreadable: no other instrument separates this pass from the frame. The slots still mirror
+`gpu_profiler.nim` by hand, and no test holds that pairing (`src/sim_registry.nim:252-257`), so the
+slot adds one more unenforced two-sided agreement. `tests/test_sim_registry.nim` holds the Nim-side
+slots distinct, which long-range-mesh added for `PROFILER_SLOT_LONG_RANGE`. The figure reaches the
+`[gpu-profile]` console record and the stats push.
 
 ### D9. The rigid step: the plainest one that is stable
 
@@ -771,9 +775,9 @@ premises other decisions rest on.
    the blast (`src/canvas_input.nim:172-179`, `:204-212`).
 7. **`MAX_BODIES` is 32** — small enough for the per-particle loop, large enough that a player cannot
    exhaust it by hand, and under every plausible workgroup size (D15).
-8. **The bodies node carries `PROFILER_SLOT_NONE`**, as Field Force does, and sits after Field Force
-   and before Integrate (D8). A slot of its own would measure the pass and would add an unenforced
-   two-sided agreement with `gpu_profiler.nim`.
+8. **The bodies node carries its own profiler slot, `PROFILER_SLOT_BODIES`**, and sits after Field
+   Force and before Integrate (D8). The slot is what makes the pass's cost measurable, at the price
+   of one more unenforced two-sided agreement with `gpu_profiler.nim`.
 9. **The envelope is its own buffer**, not a field of the body record, because the two have different
    writers on different cadences (D6).
 10. **Names:** the capability is `parametric-bodies`, the help file is `docs/help/35-bodies.md`.

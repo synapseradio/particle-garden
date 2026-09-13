@@ -393,7 +393,10 @@ in one diff (`docs/engineering-principles.md`, article 5).
       in the console from either new bind group fails this task — that pair is unenforced across the
       two sides (`docs/enforcement.md`, Two-sided agreements). Record the run in
       `scratchpad/parametric-bodies/in-app__<DD-MM-YY-HHmm>.md`. Kill the port 8089 listener
-- [ ] 9.3 Read the bodies pass's cost from the stats panel during 9.2 at the full particle budget and
+- [ ] 9.3 **Waits on group 10 and `coupling-balance`**, because its cost reading is taken during 9.2. Give the Bodies node its own profiler slot (`PROFILER_SLOT_BODIES`, mirroring
+      `gpu_profiler.passBodies`; design D8) and surface it as `bodies=` in the `[gpu-profile]` console
+      record and as `gpuBodiesMs` on the stats push. Then read the bodies pass's cost from that
+      figure during 9.2 at the full particle budget and
       record it in `docs/perf-report.md` beside the group 2 entry, against the 16.7 ms budget that
       file uses (`:134`). Verify: the entry states the particle count, the live body count, and the
       measured per-frame cost
