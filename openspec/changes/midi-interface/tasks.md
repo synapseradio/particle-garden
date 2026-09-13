@@ -67,16 +67,16 @@ The proposal's measurement gate. Browser MCP drives the user's Chrome, not the w
 and cannot press the browser's own permission prompt or type in a devtools console, so 1.2 and 1.3 are
 the user's. They gate group 7 alone; groups 2 through 6 wait on nothing here.
 
-- [ ] 1.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
+- [x] 1.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
       start Chrome and connect Browser MCP, and start nothing until they confirm. Touches no file
 - [ ] 1.2 **Live gate.** Needs a person: the permission prompt and the webui window's console are
-      both outside Browser MCP's reach. `just happen`, launch `./main` in the background, poll
-      `http://127.0.0.1:8089` for 200, and navigate the connected tab there. Ask the user to run
+      both outside Browser MCP's reach. `just happen`, run `./main --serve` as a persistent background
+      shell, poll `http://127.0.0.1:8089` for 200, and navigate the connected tab there. Ask the user to run
       `typeof navigator.requestMIDIAccess` and then
       `navigator.requestMIDIAccess().then(a => console.log('[midi-gate] inputs=' + a.inputs.size)).catch(e => console.log('[midi-gate] refused ' + e.name))`
       in that tab's console, to answer the permission prompt, and to report what printed; read the
-      same lines back through `browser_get_console_logs`. Then ask the user to run both lines in the
-      webui-launched window and report, since that window is not the connected tab. Record both
+      same lines back through `browser_get_console_logs`. Then kill the port 8089 listener, ask the user to
+      launch bare `./main`, run both lines in the webui-launched window, and report, since that window is not the connected tab. Record both
       outcomes, and whether `http://127.0.0.1` counted as a secure context, in
       `scratchpad/midi-interface/midi-gate__<DD-MM-YY-HHmm>.md`. A refusal in the webui window lands
       the connect affordance in its unavailable state and changes no later task. Kill the port 8089
@@ -382,10 +382,10 @@ rest of this group is unchanged.
 ## 9. Live verification
 
 Each task names the agent procedure and the observation that settles it: Browser MCP against the
-user's Chrome, `./main` in the background, the port killed at the end. The permission click is the
+user's Chrome, `./main --serve` in a persistent background shell, the port killed at the end. The permission click is the
 user's, for the reason group 1 states, and 9.3 through 9.7 need the MIDI source task 1.3 asked about.
 
-- [ ] 9.1 `just happen`, launch `./main` in the background, poll the port, navigate the connected tab
+- [x] 9.1 `just happen`, run `./main --serve` as a persistent background shell, poll the port, navigate the connected tab
       and snapshot the MIDI section: a switch with `aria-checked` false, the state reading
       disconnected, the thirteen shipped rows listed with their targets, every one resolved before any
       hardware has spoken, and no row marked unresolved
