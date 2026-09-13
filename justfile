@@ -39,7 +39,7 @@ build-native:
 
 # Full build. ORDER MATTERS: build-native staticReads the other steps' output.
 happen: shaders build-app build-ui build-native
-    @echo "Build complete. Run with: ./main"
+    @echo "Build complete. Run with: ./main (or ./main --serve for no window)"
 
 # Native Nim test suite (pure-logic modules)
 test:
@@ -73,6 +73,10 @@ be:
     just deps
     just happen
     ./main
+
+# Build, then serve the page with no webui window, for any WebGPU Chromium tab
+serve: happen
+    ./main --serve
 
 # Optimized release build (same order and flags as the nimble release task,
 # with the UI bundle built first for build-native's staticRead)

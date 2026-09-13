@@ -8,6 +8,7 @@
 #
 # 2. Native Window (WebUI):
 #    - Opens a native browser window pointing to localhost:8089
+#    - Skipped under --serve: the server runs alone until killed
 #
 # SECURITY HEADERS (COOP/COEP):
 # The server provides Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy
@@ -99,8 +100,19 @@ proc serverThread() {.thread.} =
   waitFor startCrossOriginIsolatedServer()
 
 proc main() =
+  let args = commandLineParams()
+  let serveOnly = args == @["--serve"]
+  if args.len > 0 and not serveOnly:
+    stderr.writeLine "usage: main [--serve]"
+    quit(2)
+
   var thread: Thread[void]
   createThread(thread, serverThread)
+
+  if serveOnly:
+    echo "Serving http://127.0.0.1:", ServerPort, " with no window. Ctrl-C to stop."
+    joinThread(thread)
+    return
 
   sleep(100)
 
