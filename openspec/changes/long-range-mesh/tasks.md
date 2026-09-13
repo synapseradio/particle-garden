@@ -218,10 +218,15 @@ held by review — change a shader and its oracle in the same diff or the pair d
 
 6.1 needs a person only for the browser connection; every observation after it is the agent's.
 
-- [ ] 6.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
-      start Chrome and connect Browser MCP, and start nothing until they confirm — `./main` exits with
-      code 0 when no browser attaches (CLAUDE.md, Build and test). Touches no file
-- [ ] 6.2 **Agent procedure.** `just happen`, launch `./main` in the background, poll
+- [x] 6.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
+      start Chrome and connect Browser MCP, and start nothing until they confirm (CLAUDE.md, Build and
+      test). Touches no file
+- [ ] 6.2 **Waits on the `coupling-balance` change.** The first run (13-09-26,
+      `scratchpad/long-range-mesh/in-app__13-09-26-1625.md`) found Long Range 0.50 at 12 species
+      collapses the population: the potential grows with particle count and no pressure answers it
+      (`scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`). The observations below are
+      taken after that change lands. Browser MCP has no script-eval tool, so the matrix edits below
+      go through the panel's matrix editor. **Agent procedure.** `just happen`, run `./main --serve` as a persistent background shell, poll
       `http://127.0.0.1:8089` for 200, navigate the connected tab there, and settle a population at
       128 000 particles. Then: raise the long-range strength from zero and observe distant groups
       answering each other; sweep the reach from floor to ceiling and observe the influence widening
@@ -232,17 +237,20 @@ held by review — change a shader and its oracle in the same diff or the pair d
       after. A GPU validation error in the console from any of the five bind groups fails this task —
       that pair is unenforced across the two sides (`docs/enforcement.md:96`). Record the run in
       `scratchpad/long-range-mesh/in-app__<DD-MM-YY-HHmm>.md`. Kill the port 8089 listener
-- [ ] 6.3 **The gate the spike left open.** During 6.2, read the long-range profiler slot at 128 000
+- [x] 6.3 **The gate the spike left open.** `src/app.nim` never read `passLongRange`; surface it as
+      `lr=` in the `[gpu-profile]` console record and as `gpuLongRangeMs` on the stats push. During
+      6.2, read the long-range profiler slot at 128 000
       particles and at twelve species, and compare against the 1.0 ms allotment. The spike's 0.417 to
       0.450 ms covered the solve alone, so the figure here includes the deposit and force passes for
       the first time. Record it in `docs/perf-report.md` beside the settled 128k row (`:140`), stating
       the particle count, the species count, the live grid size, and the browser build — the spike's
       figure was taken on Chromium 152 against the record's Chromium 150, and this entry closes that
       boundary by measuring both in one build. Verify: the entry states every one of those conditions
-- [ ] 6.4 If 6.3 exceeds the allotment, move the default grid index in `src/config_ranges.nim` to the
+- [x] 6.4 If 6.3 exceeds the allotment, move the default grid index in `src/config_ranges.nim` to the
       declared 256 x 128 position and re-run 6.3, recording both figures. The selector already offers
       both sizes, so this is one constant and no structural change. Verify: the recorded entry names
-      which size shipped and why
+      which size shipped and why. Resolved 13-09-26: 0.459 ms at 512 x 256 is under the allotment,
+      so 512 x 256 ships (`docs/perf-report.md`, "The long-range solve")
 - [x] 6.5 Update `docs/one-world.md`: `longRange` in the strengths table (`:19-24`, now five), the
       long-range density accumulator and its once-per-frame cadence in the delta-buffer section
       (`:158-186`), and a paragraph in "Adding a fifth coupling" (`:188`) restating it as a sixth and
