@@ -187,14 +187,16 @@ At the end of this group a body ignited from the console pulls particles. Bodies
 - [x] 5.7 Wire the executor: create the three buffers, write `BodyParams` per frame beside the other
       uniform writes in `runPhysicsFrame` (`src/webgpu_compute.nim:723-764`), and upload the envelope
       array every frame regardless of strength (design D5). Verify: `just happen` is green
-- [ ] 5.8 **Red first.** Extend `tests/test_body_core.nim`: an ignition carrying an anisotropy,
+- [x] 5.8 **Red first.** Extend `tests/test_body_core.nim`: an ignition carrying an anisotropy,
       envelope skew or sustain outside its `config_ranges` bound produces a body holding the nearest
       admissible value, and the clamp lives in the entry point so no caller repeats it. Verify: the
       tests fail. Then add `igniteBody` — the single Nim entry of design D11 in `src/body_core.nim`
       taking a world point and a `BodyShaping`, the method on `gardenAPI` (`src/web_api.nim:1167`,
       installed `:1405`), the declaration in `web-ui/src/garden-api.ts`, and the slot write into
-      `sbBodies`. Verify: the tests pass, `just build-ui` typechecks, and removing the declaration
-      from `garden-api.ts` turns `tsc --noEmit` red
+      `sbBodies`. Verify: the tests pass and `just build-ui` typechecks. No TS file calls
+      `igniteBody`, so `tsc` cannot go red on its removal; the declaration's agreement with the
+      installed `gardenAPI` is recorded as unenforced in `docs/enforcement.md` with the test that
+      would raise it
 - [x] 5.9 `just happen` builds and `just check` is green
 
 ## 6. Feedback: the body is pushed and moves
