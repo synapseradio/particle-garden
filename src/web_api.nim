@@ -35,13 +35,12 @@
 
 when defined(js):
   import std/tables
-  from std/json import pretty
-  from std/math import round
+  from std/json import pretty, parseJson
   # The parameter dispatch's build gate names the offending descriptor in its
   # message, so it needs a compile-time error over a computed string; the
   # `{.error.}` pragma accepts only a literal.
   from std/macros import error
-  from std/jsffi import JsObject, toJs, `[]=`
+  from std/jsffi import JsObject, toJs, `[]`, `[]=`
   from std/dom import getElementById
 
   from bindings/js_interop import newJsObject, newJsArray, push, setGlobal,
@@ -60,7 +59,11 @@ when defined(js):
   import ui/api/dormancy
   import ui/api/help_content
   import ui/input/audio_core
+  import ui/input/control_matrix
+  import ui/input/shipped_mapping
+  from ui/input/midi_core import MidiState, msUnavailable
   import ui/api/param_descriptor
+  import ui/api/param_fields
   import ui/api/slider_curve
   import ui/state/matrix_state
   import ui/state/palette_state
@@ -138,26 +141,19 @@ when defined(js):
     ## CONFIG is what the frame runs, so it takes the EFFECTIVE state: every
     ## stored value, with each derived parameter bounded by its live ceiling
     ## (param_descriptor.effectiveSimulation). `currentSimulation` keeps the
-    ## stored one untouched, and getParam and the preset snapshot both read it
-    ## from there — which is what makes shrinking a ceiling input lower the
-    ## fluid without moving the slider, and restoring it return the stored value
-    ## whole.
+    ## stored one untouched, and getParam, the modulation base and the preset
+    ## snapshot all read it from there.
     ##
     ## Recomputed on every write rather than only when the bounded parameter
-    ## moves, because a ceiling INPUT moving is what usually changes the answer:
-    ## the fraction, the substeps and the time scale each land here through the
-    ## same path, so the effective value is correct in the same tick as whatever
-    ## moved it.
+    ## moves, because a ceiling INPUT moving is what usually changes the answer,
+    ## so the effective value is correct in the same tick as whatever moved it.
     ##
-    ## THE PRESET PATH NEEDS NOTHING OF ITS OWN, and that is a decision rather
-    ## than an omission. `presetApplySteps` applies every scalar in one
-    ## pasScalars step (src/ui/presets/preset_store_core.nim), so no ordering
-    ## among scalars exists to get wrong — and none is needed, since the
-    ## effective value is computed from the final state after the apply lands
-    ## rather than during it. A preset carrying more stiffness than its own
-    ## fluid can hold therefore round-trips its stored stiffness intact and runs
-    ## at the ceiling that fluid implies.
-    mirrorInto(effectiveSimulation(storedState), CONFIG[])
+    ## The couplings publish from the same effective state, so a strength lifted
+    ## off zero by a Modulate row reaches the executor, which would otherwise
+    ## keep that pass out of the frame while CONFIG carried the lift.
+    let effective = effectiveSimulation(storedState)
+    mirrorInto(effective, CONFIG[])
+    worldCouplings.set(couplingsOf(effective))
 
   proc applyRenderToConfig(renderState: RenderState) =
     mirrorInto(renderState, CONFIG[])
@@ -165,17 +161,10 @@ when defined(js):
   proc updateSimulation*(mutate: proc(simState: var SimulationState)) =
     ## Mutate a copy of the simulation state, store it, and mirror it into
     ## CONFIG synchronously.
-    ##
-    ## The couplings are published here because this is the one write path: a
-    ## strength crossing zero has to reach the executor whatever moved it — a
-    ## slider, a preset, or the drifting climate. webgpu_compute rebuilds the
-    ## frame only when the zeros actually change, so publishing on every write
-    ## costs a comparison.
     var simState = currentSimulation
     mutate(simState)
     currentSimulation = simState
     applySimulationToConfig(simState)
-    worldCouplings.set(couplingsOf(simState))
 
   proc updateRender*(mutate: proc(renderState: var RenderState)) =
     ## Mutate a copy of the render state, store it, and mirror it into
@@ -213,22 +202,14 @@ when defined(js):
     result["step"] = toJs(descriptor.step)
     result["precision"] = toJs(descriptor.precision)
     # The travel curve. The panel converts between position and
-    # value through paramValueAt/paramPositionOf and computes no mapping;
-    # positionStep is the uniform position increment that walks the
-    # descriptor's own value lattice under cLinear, and under a warp it is
-    # simply a fine-enough handle granularity — the value direction snaps to
-    # the lattice either way.
+    # value through paramValueAt/paramPositionOf and computes no mapping.
     result["curve"] = toJs(
       case descriptor.curve
       of cLinear: cstring"linear"
       of cLog: cstring"log"
       of cPower: cstring"power")
     result["curveExponent"] = toJs(descriptor.curveExponent)
-    result["positionStep"] = toJs(
-      if descriptor.step > 0.0 and descriptor.maxValue > descriptor.minValue:
-        descriptor.step / (descriptor.maxValue - descriptor.minValue)
-      else:
-        0.01)
+    result["positionStep"] = toJs(positionStep(descriptor))
     result["defaultValue"] = toJs(descriptor.defaultValue)
     result["store"] = toJs(storeName(descriptor.store))
     result["reinitOnCommit"] = toJs(descriptor.reinitOnCommit)
@@ -421,42 +402,15 @@ when defined(js):
     if not overlay.isNil:
       overlay.style.display = cstring"block"
 
-  const ReadElsewhere = ["paletteSaturation", "paletteLightness",
-    "sphStiffness", "cameraZoom"]
-    ## The ids whose answer does not live in a CONFIG field of the same name.
-    ## getParamImpl serves each with its own arm and the gate below exempts
-    ## exactly these, so an id drops out of the generated read only by being
-    ## named here, in one place, beside the arm that then owes a reason.
-
-  proc readParamField[T](record: T; id: string; value: var float): bool =
-    ## Read the field of `record` whose NAME is `id` into `value`, and report
-    ## whether such a field exists.
-    ##
-    ## The read counterpart of assignParamField below, walking by fieldPairs for
-    ## the same reason: a descriptor id and a CONFIG field of the same name need
-    ## no third place declaring that they belong together. Integer fields widen,
-    ## which is what the panel's one numeric channel carries.
-    for name, field in record.fieldPairs:
-      when field is int:
-        if name == id:
-          value = field.float
-          return true
-      elif field is float:
-        if name == id:
-          value = field
-          return true
-    false
+  const ReadElsewhere = ["paletteSaturation", "paletteLightness", "cameraZoom"]
+    ## The ids whose answer lives outside the two state records. getParamImpl
+    ## serves each with its own arm and the gate below exempts exactly these, so
+    ## an id drops out of the generated read only by being named here.
 
   proc getParamImpl(id: string): float =
     case id
     of "paletteSaturation": return paletteEditorState.saturation
     of "paletteLightness": return paletteEditorState.lightness
-    of "sphStiffness":
-      # The STORED stiffness, not the mirrored one. CONFIG holds what the fluid
-      # runs, which its ceiling may have bounded; the panel asks what the user
-      # chose, and a slider whose handle slid on its own because a different
-      # control moved would be reporting the clamp as a preference.
-      return currentSimulation.sphStiffness
     of "cameraZoom":
       # Read back from the live camera, not from CONFIG — it is not there. The
       # panel needs this so the slider tracks a zoom the WHEEL performed.
@@ -464,42 +418,50 @@ when defined(js):
       return canvas_input.cameraGetter().zoom.float
     else: discard
 
-    var value = 0.0
-    if readParamField(CONFIG[], id, value):
-      return value
+    if id in paramsById:
+      # The STORED value, from the record its store routes to. CONFIG carries
+      # the effective one a ceiling or a live excursion already moved, so a read
+      # of the mirror would report that motion as what the user chose.
+      let stored = storedParamValue(currentSimulation, currentRender,
+        paramsById[id])
+      if stored.found:
+        return stored.value
     consoleWarn(toJs("[gardenAPI] unknown param id: " & id))
     0.0
 
   static:
     # THE READ GATE, the counterpart of the write gate below. Every descriptor
-    # the scalar path serves must be answerable: either its id names a CONFIG
-    # field, or ReadElsewhere names it and getParamImpl carries its arm.
-    #
-    # WHAT IT PREVENTS. A descriptor whose id is a real state field but which
-    # nobody added a read arm for used to build green and write correctly while
-    # getParam answered 0.0 forever, so the slider showed zero and snapped back
-    # to it. Nothing else notices: the write path's gate passes, because the
-    # write path was never the broken half.
-    #
-    # WHAT THE FAILURE LOOKS LIKE. Same shape as the write gate's: `nim js`
-    # stops with exit code 1 at the `error` line below, naming the id inside
-    # quotes, and web/app.js on disk stays the last good one.
+    # the scalar path serves must be answerable out of the store it routes to:
+    # a readable field of that record, or an arm in getParamImpl named in
+    # ReadElsewhere. Without it a descriptor naming no field of its store
+    # builds green and writes correctly while getParam answers 0.0 forever.
     #
     # Per-species chemistry is excluded rather than exempted: those descriptors
     # carry one value per species in a live array, so getParam has no single
     # number to answer with and the panel reads the cells directly.
-    var configProbe = default(typeof(CONFIG[]))
+    let simProbe = initSimulationState()
+    let renderProbe = initRenderState()
     for descriptor in buildParamDescriptors():
-      if descriptor.store == psSpeciesChemistry:
-        continue
-      if descriptor.id in ReadElsewhere:
-        continue
       var probeValue = 0.0
-      if not readParamField(configProbe, descriptor.id, probeValue):
-        error("[gardenAPI] descriptor \"" & descriptor.id &
-          "\" names no numeric ConfigObject field, so getParam would answer " &
-          "0.0 for it; give it a CONFIG field or an arm in getParamImpl and " &
-          "name it in ReadElsewhere")
+      case descriptor.store
+      of psSimulation:
+        if not readParamField(simProbe, descriptor.id, probeValue):
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to psSimulation but names no readable field of " &
+            "SimulationState, so getParam would answer 0.0 for it")
+      of psRender:
+        if not readParamField(renderProbe, descriptor.id, probeValue):
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to psRender but names no readable field of " &
+            "RenderState, so getParam would answer 0.0 for it")
+      of psPalette, psCamera:
+        if descriptor.id notin ReadElsewhere:
+          error("[gardenAPI] descriptor \"" & descriptor.id &
+            "\" routes to " & $descriptor.store & ", whose values live " &
+            "outside both records; give it a getParamImpl arm and name it in " &
+            "ReadElsewhere")
+      of psSpeciesChemistry:
+        discard
 
     # ReadElsewhere earns its exemptions or loses them. Without this an id that
     # left the descriptor set would keep an arm nobody reaches, and the next
@@ -513,29 +475,6 @@ when defined(js):
       if not named:
         error("[gardenAPI] ReadElsewhere names \"" & exempt &
           "\", which no descriptor declares; drop it and its getParamImpl arm")
-
-  proc assignParamField[T](record: var T; id: string; value: float): bool =
-    ## Write `value` into the field of `record` whose NAME is `id`, and report
-    ## whether such a field exists.
-    ##
-    ## `fieldPairs` unrolls at compile time, so what reads as a search is a flat
-    ## list of comparisons against the record's real field names. That is what
-    ## makes a routing table unnecessary: a descriptor id and a state field of
-    ## the same name need no third place declaring that they belong together.
-    ##
-    ## Integer fields take int(value), and the truncation is already done —
-    ## clampParamValue rounds a pkInt parameter through int() before this sees
-    ## it, so what arrives for an int field is whole.
-    for name, field in record.fieldPairs:
-      when field is int:
-        if name == id:
-          field = int(value)
-          return true
-      elif field is float:
-        if name == id:
-          field = value
-          return true
-    false
 
   static:
     # THE BUILD GATE. Every descriptor that routes to a state record
@@ -596,8 +535,9 @@ when defined(js):
     ## Clamp against the descriptor, then route by the descriptor's STORE.
     ##
     ## The two stores that write a typed state record dispatch through
-    ## assignParamField above, so a parameter whose id is its field name needs
-    ## nothing written here; the two that write something else keep an arm each.
+    ## ui/api/param_fields' assignParamField, so a parameter whose id is its
+    ## field name needs nothing written here; the two that write something else
+    ## keep an arm each.
     ## The static block above is what makes the field walk safe to ignore the
     ## result of: it proves at compile time that every routed id lands.
     if id notin paramsById:
@@ -710,69 +650,243 @@ when defined(js):
         return regime.id
     ""
 
-  # Resolved once at module scope, off climate_core's list of what the weather
-  # writes. A string lookup per axis per frame buys nothing when the set never
-  # varies, and resolving here means a climate id with no descriptor raises at
-  # startup rather than mid-drift.
-  let climateDescriptors: array[ClimateAxis, ParamDescriptor] = block:
-    var resolved: array[ClimateAxis, ParamDescriptor]
-    for axis in ClimateAxis:
-      resolved[axis] = paramsById[CLIMATE_PARAM_IDS[axis]]
-    resolved
+  # ============================================================================
+  #
+  # THE CONTROL MATRIX. The live mapping, the delivery entry points every source
+  # family calls, and the per-frame flush the frame loop calls. The row model,
+  # validation, arbitration, takeover, excursions and the document schema are
+  # ui/input/control_matrix's; what lives here is the boundary that hands the
+  # flush this frame's state and applies what it answers through the write paths
+  # above.
 
-  proc setClimateFromSimulation*(point: array[ClimateAxis, float]) =
-    ## The parameter path for writes the SIMULATION originates rather than the
-    ## user — the drifting climate advancing its axes each frame.
-    ##
-    ## Takes the tour point whole rather than one float per axis, so the frame
-    ## loop hands over what climate_core produced without naming the axes on
-    ## the way past. An axis added to ClimateAxis reaches this clamp with no
-    ## call site to widen.
-    ##
-    ## Deliberately the same clamped path a slider drag takes, not a shortcut
-    ## into CONFIG: the panel reads its values back through getParam, so a
-    ## direct CONFIG write would move the simulation while leaving the sliders
-    ## showing the old numbers. Watching the controls move is what makes the
-    ## weather legible instead of mysterious.
-    ##
-    ## Every axis lands in ONE mirror cycle. A climate point is a coordinate in
-    ## the feed/kill plane, so its halves belong to the same write, and running
-    ## the store copy and the CONFIG mirror once per frame instead of once per
-    ## axis is what keeps that write off the frame budget.
-    let clampedFeed = clampParamValue(climateDescriptors[caFeed], point[caFeed])
-    let clampedKill = clampParamValue(climateDescriptors[caKill], point[caKill])
-    updateSimulation(proc(simState: var SimulationState) =
-      simState.rdFeed = clampedFeed
-      simState.rdKill = clampedKill)
+  var matrix = initMatrixState()
+    ## The one live mapping. Every descriptor a row targets resolves through
+    ## paramsById, which already holds every served descriptor by id, so no
+    ## second resolution of the same table exists to fall out of step.
 
-  let forceWeatherDescriptors: array[ForceAxis, ParamDescriptor] = block:
-    var resolved: array[ForceAxis, ParamDescriptor]
-    for axis in ForceAxis:
-      resolved[axis] = paramsById[FORCE_WEATHER_PARAM_IDS[axis]]
-    resolved
+  # The clock family and the two weather tours are the boundary's own
+  # registration: a Tour row names clock:frame, and no value is ever delivered
+  # on it. Every other family registers at its own module init.
+  matrix.registerSourceFamily("clock", SHIPPED_CLOCK_SOURCES)
+  for shippedTour in SHIPPED_TOURS:
+    matrix.registerTour(shippedTour)
+  # The shipped mapping. A stored document arrives through applyMappingJson at
+  # startup, because localStorage I/O is the panel's half.
+  matrix.setRows(DEFAULT_MAPPING)
 
-  proc setForceWeatherFromSimulation*(point: array[ForceAxis, float]) =
-    ## The force weather's frame write, on the same terms setClimateFromSimulation
-    ## states: the clamped descriptor path rather than a shortcut into CONFIG, so
-    ## the toured sliders move and the panel keeps telling the truth, and the
-    ## whole point in one mirror cycle rather than one per axis.
-    ##
-    ## THE RADIUS ROUNDS. `interactionRadius` is a count of world units and the
-    ## tour interpolates in floats, so this is where the two meet. Rounding here
-    ## rather than in the tour keeps climate_core's guarantees stated about the
-    ## continuous path they are actually proven of; what a viewer sees is a
-    ## radius slider stepping by one unit of a hundred and forty, which is the
-    ## same thing a drag on that slider shows.
-    let clampedStrength = clampParamValue(
-      forceWeatherDescriptors[fxStrength], point[fxStrength])
-    let clampedRadius = clampParamValue(
-      forceWeatherDescriptors[fxRadius], point[fxRadius])
-    let clampedFriction = clampParamValue(
-      forceWeatherDescriptors[fxFriction], point[fxFriction])
-    updateSimulation(proc(simState: var SimulationState) =
-      simState.forceStrength = clampedStrength
-      simState.interactionRadius = int(round(clampedRadius))
-      simState.friction = clampedFriction)
+  proc registerSourceFamily*(familyId: string;
+      declarations: openArray[SourceDeclaration]) =
+    ## Replaces this family's declared set whole and leaves every other family's
+    ## alone, which is how a family declares lazily and grows as its devices
+    ## arrive.
+    control_matrix.registerSourceFamily(matrix, familyId, declarations)
+
+  proc setSourceValue*(sourceId: string; value: float) =
+    ## A continuous source's latest value; clamped into [0, 1] and coalesced
+    ## until the next flush.
+    control_matrix.setSourceValue(matrix, sourceId, value)
+
+  proc withdrawSourceFamily*(familyId: string) =
+    ## Releases this family's sources so their Modulate rows fall back to
+    ## base and their Write rows write nothing until it delivers again.
+    control_matrix.withdrawSourceFamily(matrix, familyId)
+
+  proc emitSourceEvent*(sourceId: string; magnitude: float; ordinal: int) =
+    ## One event, queued in arrival order and drained at the next flush.
+    control_matrix.emitSourceEvent(matrix, sourceId, magnitude, ordinal)
+
+  proc jsonParse(text: cstring): JsObject {.importjs: "JSON.parse(#)".}
+  proc jsonStringify(value: JsObject): cstring {.importjs: "JSON.stringify(#)".}
+    ## A row travels between the panel and control_matrix's schema as document
+    ## text, through these two: the document encoder and decoder already hold
+    ## the row shape, so nothing here writes a second one to fall out of step
+    ## with it.
+
+  proc documentRows(rows: seq[ControlRow]): JsObject =
+    jsonParse(cstring(toDocumentText(rows)))["rows"]
+
+  proc servedMappingRows(): JsObject =
+    ## The active mapping: each row's own document shape plus where it sits and
+    ## whether its source is declared this session.
+    result = documentRows(matrix.rows)
+    for index in 0 ..< matrix.rows.len:
+      let row = matrix.rows[index]
+      let entry = result[index]
+      entry["index"] = toJs(index)
+      entry["resolved"] = toJs(rowResolved(matrix, row))
+      if row.kind == rkTour:
+        # Which parameters the tour writes. A row's own fields cannot show it,
+        # and without it nothing on the editor's side can see a write row
+        # landing on an axis a tour also moves. Served only: an edit sends the
+        # row's own fields and the decode reads none of this.
+        let axes = newJsArray()
+        for axisId in tourAxisIds(matrix, row.tourId):
+          axes.push(toJs(cstring(axisId)))
+        entry["axisParamIds"] = toJs(axes)
+
+  proc rowFromSpec(spec: JsObject):
+      tuple[ok: bool, row: ControlRow, error: string] =
+    ## A row the panel sent, through the same row decoder a stored document
+    ## runs. Shape only: the target relations are checked by the edit that
+    ## follows, so a refused edit answers the relation it broke rather than a
+    ## decode's silence.
+    let decoded = rowFromJson(parseJson($jsonStringify(spec)))
+    if not decoded.ok:
+      return (false, ControlRow(),
+        "the row is missing a field its kind needs")
+    (true, decoded.row, "")
+
+  proc editOutcome(verdict: tuple[ok: bool, reason: string]): JsObject =
+    ## The {ok, error} shape the preset apply answers in, so the panel reads one
+    ## refusal shape across the boundary.
+    result = newJsObject()
+    result["ok"] = toJs(verdict.ok)
+    if not verdict.ok:
+      result["error"] = toJs(cstring(verdict.reason))
+
+  var mappingCallbacks: seq[tuple[id: int, callback: proc(rows: JsObject)]] = @[]
+  var mappingSubscriberSeq = 0
+
+  proc mappingChanged() =
+    ## Every accepted edit, applied document and completed learn arrives here,
+    ## so the editor never has to ask whether a binding landed.
+    if mappingCallbacks.len == 0:
+      return
+    let rows = servedMappingRows()
+    for entry in mappingCallbacks:
+      entry.callback(rows)
+
+  proc paramContextOf(id: string): ParamContext =
+    let descriptor = paramsById[id]
+    case descriptor.store
+    of psSimulation, psRender:
+      storedContext(descriptor, currentSimulation, currentRender)
+    of psPalette, psCamera, psSpeciesChemistry:
+      # Neither store is CONFIG-mirrored, so getParamImpl's arm already answers
+      # the stored value, and no descriptor of theirs carries a derived bound.
+      ParamContext(descriptor: descriptor, storedValue: getParamImpl(id),
+        ceiling: NaN)
+
+  proc flushContext(dtSeconds: float): FlushContext =
+    ## Every parameter any row targets or names as a speed, plus the two gates
+    ## the weathers ride. The gate ids are CONFIG field names because no
+    ## boolean descriptor exists to name.
+    var params = initTable[string, ParamContext]()
+    proc note(id: string) =
+      if id.len > 0 and id notin params and id in paramsById:
+        params[id] = paramContextOf(id)
+    for row in matrix.rows:
+      case row.kind
+      of rkModulate: note(row.modParamId)
+      of rkWrite: note(row.writeParamId)
+      of rkTour:
+        note(row.tourSpeedParamId)
+        for axisId in tourAxisIds(matrix, row.tourId):
+          note(axisId)
+      of rkFire, rkTouch: discard
+    var gates = initTable[string, bool]()
+    gates[CLIMATE_GATE_ID] = CONFIG.climateDrift
+    gates[FORCE_WEATHER_GATE_ID] = CONFIG.forceWeather
+    FlushContext(dtSeconds: dtSeconds, params: params, gates: gates)
+
+  var lastExcursions = initTable[string, float]()
+    ## What the last flush reported as live excursions, so the stats push can
+    ## carry them on its own cadence rather than the frame's.
+
+  proc applyMatrixWrites(writes: Table[string, float]) =
+    ## The frame's settled writes, batched by store: one updateSimulation and
+    ## one updateRender however many parameters moved, and the ordinary
+    ## setParam arm for a palette or camera target, which is not a field
+    ## assignment. Every value passes clampParamValue, the one clamp authority,
+    ## exactly as a slider's does.
+    var simulationWrites: seq[tuple[id: string, value: float]]
+    var renderWrites: seq[tuple[id: string, value: float]]
+    var routedWrites: seq[tuple[id: string, value: float]]
+    for id, raw in writes:
+      if id notin paramsById:
+        continue
+      let descriptor = paramsById[id]
+      let value = clampParamValue(descriptor, raw)
+      case descriptor.store
+      of psSimulation: simulationWrites.add (id, value)
+      of psRender: renderWrites.add (id, value)
+      of psPalette, psCamera, psSpeciesChemistry: routedWrites.add (id, value)
+    if simulationWrites.len > 0:
+      updateSimulation(proc(simState: var SimulationState) =
+        for entry in simulationWrites:
+          discard assignParamField(simState, entry.id, entry.value))
+    if renderWrites.len > 0:
+      updateRender(proc(renderState: var RenderState) =
+        for entry in renderWrites:
+          discard assignParamField(renderState, entry.id, entry.value))
+    for entry in routedWrites:
+      setParamImpl(entry.id, entry.value)
+
+  proc mirrorModulated(effective: Table[string, float]) =
+    ## An excursion moves the WORLD, never the stored value: the effective
+    ## values are assigned into a COPY of each store and the copy is handed to
+    ## the existing mirror, so currentSimulation and currentRender stay the
+    ## user's own and the preset snapshot exports what the user chose. The
+    ## effect-time clamp stays where applySimulationToConfig keeps it.
+    var simulationCopy = currentSimulation
+    var renderCopy = currentRender
+    var simulationMoved = false
+    var renderMoved = false
+    for id, value in effective:
+      if id notin paramsById:
+        continue
+      let descriptor = paramsById[id]
+      let bounded = clampParamValue(descriptor, value)
+      case descriptor.store
+      of psSimulation:
+        discard assignParamField(simulationCopy, id, bounded)
+        simulationMoved = true
+      of psRender:
+        discard assignParamField(renderCopy, id, bounded)
+        renderMoved = true
+      of psPalette, psCamera, psSpeciesChemistry:
+        # A modulate row reaches the two record stores alone, which validation
+        # holds, so nothing else can arrive here.
+        discard
+    if simulationMoved:
+      applySimulationToConfig(simulationCopy)
+    if renderMoved:
+      applyRenderToConfig(renderCopy)
+
+  proc runMatrixAction(action: ResolvedAction) =
+    ## Every action a Fire row can resolve, dispatched by kind. The case is
+    ## exhaustive with no else arm, so an action kind added to the enum fails
+    ## the build here rather than firing nothing. A toggle flips what the world
+    ## currently holds, which is what a single button on a controller means.
+    case action.kind
+    of akRegime: applyRegimeImpl(action.payload)
+    of akRandomizeMatrix: randomizeMatrix()
+    of akResetParticles: triggerParticleReinit()
+    of akReseedField: triggerFieldReseed()
+    of akToggleTrails: setTrailsImpl(not CONFIG.trails)
+    of akToggleBloom: setBloomImpl(not CONFIG.bloomEnabled)
+    of akToggleClimateDrift: setClimateDriftImpl(not CONFIG.climateDrift)
+    of akToggleForceWeather: setForceWeatherImpl(not CONFIG.forceWeather)
+    of akToggleCameraDrift: setCameraDriftImpl(not CONFIG.cameraDrift)
+
+  proc flushMatrix*(dtSeconds: float) =
+    ## One frame of the mapping: drain what every family delivered, arbitrate,
+    ## and apply the outcome. Called once per frame from the loop after every
+    ## family's delivery and before physics, and the frame's only parameter
+    ## writer.
+    let outcome = control_matrix.flushMatrix(matrix, flushContext(dtSeconds))
+    lastExcursions = outcome.excursions
+    if outcome.writes.len > 0:
+      applyMatrixWrites(outcome.writes)
+    if outcome.remirror:
+      mirrorModulated(outcome.effective)
+    for action in outcome.actions:
+      runMatrixAction(action)
+    if outcome.learned:
+      mappingChanged()
+    if outcome.hasBlast:
+      canvas_input.placeBlastAtViewFraction(
+        outcome.blast.u, outcome.blast.v, outcome.blast.strength)
 
   proc commitParamImpl(id: string) =
     ## The slider-release side effect (the DOM "change" event): only the two
@@ -827,6 +941,21 @@ when defined(js):
     audioCurrentStateHook = currentState
     audioSourcesHook = sources
 
+  # MIDI transport, on the same terms: src/midi_input.nim sits a layer above
+  # this file and hands its four hooks in at module init, so the transport's
+  # arrival needs no edit here and its absence answers Unavailable.
+  var midiConnectHook: proc() = nil
+  var midiDisconnectHook: proc() = nil
+  var midiStateHook: proc(): MidiState = nil
+  var midiPortsHook: proc(): seq[tuple[id, name: string]] = nil
+
+  proc registerMidiControl*(connect, disconnect: proc();
+      state: proc(): MidiState; ports: proc(): seq[tuple[id, name: string]]) =
+    midiConnectHook = connect
+    midiDisconnectHook = disconnect
+    midiStateHook = state
+    midiPortsHook = ports
+
   proc buildAudioSample(state: ListenState; features: AudioFeatures): JsObject =
     result = newJsObject()
     result["state"] = toJs(cstring($state))
@@ -855,24 +984,21 @@ when defined(js):
     ## Called from app.nim's frame loop, on the loop's own FPS-refresh
     ## cadence. Raw numbers — formatting belongs to the UI.
     ##
-    ## `params` carries the parameters the SIMULATION writes on its own, so the
-    ## panel learns of a drifting climate by being told rather than by asking.
-    ## It rides this channel rather than one of its own because the panel needs
-    ## a single subscription for everything the frame loop reports, and a
-    ## second weather's axes join by appearing in the loop below.
+    ## `params` carries the parameters written from outside the panel, so the
+    ## panel learns of a drifting weather or a hand on a knob by being told
+    ## rather than by asking. It rides this channel rather than one of its own
+    ## because the panel needs a single subscription for everything the frame
+    ## loop reports, and the id set is derived from the mapping's own rows, so
+    ## a row added or retargeted carries its parameter here with it.
     ##
-    ## Sent on every push, not only while drift is on: the panel then holds the
-    ## truth about these parameters whatever moved them, and never has to track
-    ## which feature is currently writing which id.
+    ## Sent on every push, not only while something is moving them: the panel
+    ## then holds the truth about these parameters whatever moved them, and
+    ## never has to track which feature is currently writing which id.
     if statsCallbacks.len == 0:
       return
     let stats = newJsObject()
     let simulationWrites = newJsObject()
-    for axis in ClimateAxis:
-      let id = CLIMATE_PARAM_IDS[axis]
-      simulationWrites[cstring(id)] = toJs(getParamImpl(id))
-    for axis in ForceAxis:
-      let id = FORCE_WEATHER_PARAM_IDS[axis]
+    for id in writtenParamIds(matrix):
       simulationWrites[cstring(id)] = toJs(getParamImpl(id))
     stats["params"] = toJs(simulationWrites)
     # The live ceiling of every derived bound, by parameter id. It rides this
@@ -893,6 +1019,16 @@ when defined(js):
         ceilings[cstring(descriptor.id)] =
           toJs(evaluateCeiling(descriptor.bound.ceilingId, inputs))
     stats["ceilings"] = toJs(ceilings)
+    # The signed travel offset of every parameter a live excursion moves, empty
+    # when none. It rides beside the ceilings for the same reason: the panel
+    # keeps one subscription, and an excursion moves the world without the
+    # panel having written anything. The offsets are the last flush's, so the
+    # shading samples a frame-rate motion at this cadence — informational, and
+    # never a bound on what the instrument sounds like.
+    let excursions = newJsObject()
+    for id, offset in lastExcursions:
+      excursions[cstring(id)] = toJs(offset)
+    stats["excursions"] = toJs(excursions)
     stats["fps"] = toJs(fps)
     stats["particleCount"] = toJs(particleCount)
     stats["gridTimeMs"] = toJs(gridTimeMs)
@@ -908,67 +1044,76 @@ when defined(js):
       callback(stats)
 
   proc snapshotPreset(name: string): Preset =
-    ## Capture the CURRENT live CONFIG, attraction matrix, species chemistry,
-    ## and species palette as a Preset named `name`, stamped with the current
+    ## Capture the STORED settings, attraction matrix, species chemistry, and
+    ## species palette as a Preset named `name`, stamped with the current
     ## wall-clock time.
+    ##
+    ## Stored, not live: CONFIG carries what the frame runs, which is each
+    ## derived parameter bounded by this world's ceiling and each modulated
+    ## parameter mid-excursion. Saving that would bake a ceiling into the
+    ## preset, so a preset saved in a narrow-kernel world came back weaker every
+    ## time it was re-saved, and would export a knob's or a microphone's
+    ## momentary lift as though the user had written it. `stored` is CONFIG's
+    ## shape with the two stored records mirrored over it, so every settings
+    ## line below reads the user's own number by the name CONFIG gives it.
+    var stored = CONFIG[]
+    mirrorInto(currentSimulation, stored)
+    mirrorInto(currentRender, stored)
     var settings: PresetSettings
-    settings.particleCount = CONFIG.particleCount
-    settings.speciesCount = CONFIG.speciesCount
-    settings.interactionRadius = CONFIG.interactionRadius
-    settings.forceStrength = CONFIG.forceStrength
-    settings.crowdingStrength = CONFIG.crowdingStrength
-    settings.friction = CONFIG.friction
-    settings.ruleWildness = CONFIG.ruleWildness
-    settings.timeScale = CONFIG.timeScale
-    settings.particleSize = CONFIG.particleSize
-    settings.trails = CONFIG.trails
-    settings.trailLength = CONFIG.trailLength
-    settings.glowIntensity = CONFIG.glowIntensity
-    settings.velocityGlowScale = CONFIG.velocityGlowScale
-    settings.maxVelocity = CONFIG.maxVelocity
-    settings.repulsionEnd = CONFIG.repulsionEnd
-    settings.attractionPeak = CONFIG.attractionPeak
-    settings.forceModel = CONFIG.forceModel
-    settings.expRepulsionAlpha = CONFIG.expRepulsionAlpha
-    settings.expAttractionBeta = CONFIG.expAttractionBeta
-    settings.glowRadiusScale = CONFIG.glowRadiusScale
-    settings.glowFalloff = CONFIG.glowFalloff
-    settings.glowWarmth = CONFIG.glowWarmth
-    settings.bloomEnabled = CONFIG.bloomEnabled
-    settings.bloomIntensity = CONFIG.bloomIntensity
-    settings.exposure = CONFIG.exposure
-    settings.saturation = CONFIG.saturation
-    settings.contrast = CONFIG.contrast
-    settings.temperature = CONFIG.temperature
-    settings.colormapIndex = CONFIG.colormapIndex
-    settings.fieldOpacity = CONFIG.fieldOpacity
+    settings.particleCount = stored.particleCount
+    settings.speciesCount = stored.speciesCount
+    settings.interactionRadius = stored.interactionRadius
+    settings.forceStrength = stored.forceStrength
+    settings.crowdingStrength = stored.crowdingStrength
+    settings.friction = stored.friction
+    settings.ruleWildness = stored.ruleWildness
+    settings.timeScale = stored.timeScale
+    settings.particleSize = stored.particleSize
+    settings.trails = stored.trails
+    settings.trailLength = stored.trailLength
+    settings.glowIntensity = stored.glowIntensity
+    settings.velocityGlowScale = stored.velocityGlowScale
+    settings.maxVelocity = stored.maxVelocity
+    settings.repulsionEnd = stored.repulsionEnd
+    settings.attractionPeak = stored.attractionPeak
+    settings.forceModel = stored.forceModel
+    settings.expRepulsionAlpha = stored.expRepulsionAlpha
+    settings.expAttractionBeta = stored.expAttractionBeta
+    settings.glowRadiusScale = stored.glowRadiusScale
+    settings.glowFalloff = stored.glowFalloff
+    settings.glowWarmth = stored.glowWarmth
+    settings.bloomEnabled = stored.bloomEnabled
+    settings.bloomIntensity = stored.bloomIntensity
+    settings.exposure = stored.exposure
+    settings.saturation = stored.saturation
+    settings.contrast = stored.contrast
+    settings.temperature = stored.temperature
+    settings.colormapIndex = stored.colormapIndex
+    settings.fieldOpacity = stored.fieldOpacity
     # Every field, and the fluid and chemistry ones especially: `settings` is
     # zero-initialized, so a field left out here serializes as 0 and reloads
     # clamped up to its range minimum. rdDeposit and rdFieldForce are
     # chemistry's coupling strengths, so an omission there turns chemistry off
     # across a save and load. tests/test_preset.nim pins the whole round trip.
-    settings.sphRestDensity = CONFIG.sphRestDensity
-    # The STORED stiffness. CONFIG carries what the fluid runs, and saving that
-    # would bake this world's ceiling into the preset — a preset saved in a
-    # narrow-kernel world would come back weaker every time it was re-saved.
-    settings.sphStiffness = currentSimulation.sphStiffness
-    settings.sphRadiusFraction = CONFIG.sphRadiusFraction
-    settings.sphViscosity = CONFIG.sphViscosity
-    settings.sphSubsteps = CONFIG.sphSubsteps
-    settings.longRangeStrength = CONFIG.longRangeStrength
-    settings.longRangeReach = CONFIG.longRangeReach
-    settings.longRangeGridIndex = CONFIG.longRangeGridIndex
-    settings.rdFeed = CONFIG.rdFeed
-    settings.rdKill = CONFIG.rdKill
-    settings.rdDeposit = CONFIG.rdDeposit
-    settings.rdFieldForce = CONFIG.rdFieldForce
-    settings.fluidStrength = CONFIG.fluidStrength
-    settings.climateDrift = CONFIG.climateDrift
-    settings.climateSpeed = CONFIG.climateSpeed
-    settings.forceWeather = CONFIG.forceWeather
-    settings.forceWeatherSpeed = CONFIG.forceWeatherSpeed
-    settings.cameraDrift = CONFIG.cameraDrift
-    settings.cameraDriftSpeed = CONFIG.cameraDriftSpeed
+    settings.sphRestDensity = stored.sphRestDensity
+    settings.sphStiffness = stored.sphStiffness
+    settings.sphRadiusFraction = stored.sphRadiusFraction
+    settings.sphViscosity = stored.sphViscosity
+    settings.sphSubsteps = stored.sphSubsteps
+    settings.longRangeStrength = stored.longRangeStrength
+    settings.longRangeReach = stored.longRangeReach
+    settings.longRangeGridIndex = stored.longRangeGridIndex
+    settings.rdFeed = stored.rdFeed
+    settings.rdKill = stored.rdKill
+    settings.rdDeposit = stored.rdDeposit
+    settings.rdFieldForce = stored.rdFieldForce
+    settings.fluidStrength = stored.fluidStrength
+    settings.climateDrift = stored.climateDrift
+    settings.climateSpeed = stored.climateSpeed
+    settings.forceWeather = stored.forceWeather
+    settings.forceWeatherSpeed = stored.forceWeatherSpeed
+    settings.cameraDrift = stored.cameraDrift
+    settings.cameraDriftSpeed = stored.cameraDriftSpeed
 
     var matrixSnapshot: Matrix
     for matrixIdx in 0 ..< preset.MATRIX_LEN:
@@ -1389,6 +1534,125 @@ when defined(js):
         audioCallbacks = kept)
     result["audioSources"] = toJs(proc(): JsObject =
       if audioSourcesHook.isNil: newJsArray() else: audioSourcesHook())
+
+    # MIDI. Connect and disconnect are synchronous, returning no promise, on
+    # the same terms the listen pair states. The hooks are nil until
+    # midi_input's module init runs; with none registered the affordance
+    # reports the state Nim names for a runtime that cannot offer MIDI, so the
+    # panel renders a word it never composed.
+    result["connectMidi"] = toJs(proc() =
+      if not midiConnectHook.isNil: midiConnectHook())
+    result["disconnectMidi"] = toJs(proc() =
+      if not midiDisconnectHook.isNil: midiDisconnectHook())
+    result["midiState"] = toJs(proc(): cstring =
+      if midiStateHook.isNil: cstring($msUnavailable)
+      else: cstring($midiStateHook()))
+    result["midiPorts"] = toJs(proc(): JsObject =
+      let jsArray = newJsArray()
+      if not midiPortsHook.isNil:
+        for port in midiPortsHook():
+          let entry = newJsObject()
+          entry["id"] = toJs(cstring(port.id))
+          entry["name"] = toJs(cstring(port.name))
+          jsArray.push(entry)
+      jsArray)
+
+    # Mappings (hybrid on the preset's terms: Nim owns the row model,
+    # validation, the document schema and the shipped default; the panel owns
+    # localStorage under the key matrixKeys serves)
+    result["mappingRows"] = toJs(proc(): JsObject = servedMappingRows())
+    result["mappingSources"] = toJs(proc(): JsObject =
+      let jsArray = newJsArray()
+      for declaration in declaredSources(matrix):
+        let entry = newJsObject()
+        entry["id"] = toJs(cstring(declaration.id))
+        entry["label"] = toJs(cstring(declaration.label))
+        entry["kind"] = toJs(
+          if declaration.kind == skContinuous: cstring"continuous"
+          else: cstring"event")
+        jsArray.push(entry)
+      jsArray)
+    result["mappingActions"] = toJs(proc(): JsObject =
+      let jsArray = newJsArray()
+      for actionId in ACTION_IDS:
+        jsArray.push(toJs(cstring(actionId)))
+      jsArray)
+    result["defaultMappingRows"] = toJs(proc(): JsObject =
+      documentRows(DEFAULT_MAPPING))
+    result["setMappingRow"] = toJs(proc(index: int; row: JsObject): JsObject =
+      let decoded = rowFromSpec(row)
+      if not decoded.ok:
+        return editOutcome((false, decoded.error))
+      let verdict = matrix.setRow(index, decoded.row, paramsById)
+      if verdict.ok: mappingChanged()
+      editOutcome(verdict))
+    result["addMappingRow"] = toJs(proc(row: JsObject): JsObject =
+      let decoded = rowFromSpec(row)
+      if not decoded.ok:
+        return editOutcome((false, decoded.error))
+      let verdict = matrix.addRow(decoded.row, paramsById)
+      if verdict.ok: mappingChanged()
+      editOutcome(verdict))
+    result["removeMappingRow"] = toJs(proc(index: int): JsObject =
+      let verdict = matrix.removeRow(index)
+      if verdict.ok: mappingChanged()
+      editOutcome(verdict))
+    result["setMappingRank"] = toJs(proc(index, rank: int): JsObject =
+      let verdict = matrix.setRank(index, rank, paramsById)
+      if verdict.ok: mappingChanged()
+      editOutcome(verdict))
+    result["armLearn"] = toJs(proc(slot: JsObject) =
+      let decoded = rowFromSpec(slot)
+      if not decoded.ok:
+        # Nothing to render a refusal on: an arming is a gesture, not an edit.
+        consoleWarn(toJs("[gardenAPI] learn slot refused: " & decoded.error))
+        return
+      # The slot's source is empty until learn fills it, and an undeclared
+      # source passes the relation check, so only the target is judged here.
+      let verdict = validateRow(matrix, paramsById, decoded.row)
+      if not verdict.ok:
+        consoleWarn(toJs("[gardenAPI] learn slot refused: " & verdict.reason))
+        return
+      matrix.armLearn(decoded.row))
+    result["cancelLearn"] = toJs(proc() = matrix.cancelLearn())
+    result["learnState"] = toJs(proc(): JsObject =
+      let served = newJsObject()
+      let arming = learnState(matrix)
+      served["armed"] = toJs(arming.armed)
+      served["slot"] =
+        if arming.armed: documentRows(@[arming.slot])[0] else: jsNull
+      served)
+    result["onMapping"] = toJs(proc(callback: proc(rows: JsObject)): proc() =
+      mappingSubscriberSeq += 1
+      let subscriberId = mappingSubscriberSeq
+      mappingCallbacks.add((id: subscriberId, callback: callback))
+      # A subscriber sees the mapping as it stands at once, so the editor
+      # renders from this one channel rather than asking on open.
+      callback(servedMappingRows())
+      proc() =
+        var kept: seq[tuple[id: int, callback: proc(rows: JsObject)]] = @[]
+        for entry in mappingCallbacks:
+          if entry.id != subscriberId:
+            kept.add(entry)
+        mappingCallbacks = kept)
+    result["matrixKeys"] = toJs(proc(): JsObject =
+      let keys = newJsObject()
+      keys["mapping"] = toJs(cstring(MAPPING_STORAGE_KEY))
+      keys)
+    result["exportMappingJson"] = toJs(proc(): cstring =
+      cstring(toDocumentText(matrix.rows)))
+    result["applyMappingJson"] = toJs(proc(jsonText: cstring): JsObject =
+      # The same validate-first decode a load from storage runs. A refused
+      # document leaves the mapping exactly as it was, which at startup is the
+      # shipped default.
+      if not jsonParseable(jsonText):
+        return editOutcome((false, "malformed JSON"))
+      let loaded = parseDocument($jsonText, paramsById, matrix)
+      if not loaded.ok:
+        return editOutcome((false, loaded.error))
+      matrix.setRows(loaded.rows)
+      mappingChanged()
+      editOutcome((true, "")))
 
     # Presets (hybrid: Nim owns schema/validation/apply-order; the UI owns
     # localStorage I/O using these keys and strings)

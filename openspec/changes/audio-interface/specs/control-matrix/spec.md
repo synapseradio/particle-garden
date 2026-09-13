@@ -46,6 +46,15 @@ effect share a kind and a clock:
 | `audio:mid` | Modulate | `rdDeposit` | 0 |
 | `audio:brightness` | Modulate | `rdFieldForce` | 0 |
 
+> 2026-09-12: the `audio:mid` → `rdDeposit` and `audio:brightness` → `rdFieldForce` rows above no
+> longer ship; reaction-diffusion is decoupled from audio.
+
+> 2026-09-12: the `audio:onset` row above ships as a Modulate impulse on `forceStrength`, depth
+> +0.40 and a 300 ms release, so a hit reaches every particle rather than a disc of them; its
+> target is the one `audio:loudness` holds, so the shipped targets are no longer all distinct and
+> the two rows sum on that parameter. The blast stays available to Touch rows, which is what the
+> shipped MIDI pad grid uses.
+
 Every Modulate row SHALL ship with a zero attack constant and an 80 ms release constant, starting
 values a test pins.
 
@@ -65,6 +74,10 @@ pinning each row's source, kind, target, and depth.
 - **THEN** a blast lands at the center of the visible view, its strength taken from the event's
   energy
 
+> 2026-09-12: the shipped onset row is a Modulate impulse on `forceStrength`, so a hit lifts the
+> force every particle reads and releases to base over 300 ms. This scenario holds for a Touch row
+> a user places on an onset source.
+
 #### Scenario: A shipped row naming an absent target fails the build
 - **WHEN** a shipped audio row names a descriptor id or a source id no declaration covers
 - **THEN** the Nim build fails at the static gate, rather than the row failing silently at flush
@@ -82,9 +95,19 @@ pinning each row's source, kind, target, and depth.
 - **THEN** `fluidStrength`, `forceStrength`, and the blast answer, while `glowIntensity`,
   `rdDeposit`, and `rdFieldForce` hold their stored values until their rows' depths are raised
 
+> 2026-09-12: `rdDeposit` and `rdFieldForce` no longer name shipped rows; the `audio:mid` and
+> `audio:brightness` rows that once held their stored values here are decoupled from audio.
+
+> 2026-09-12: the blast named in this scenario is now a lift of `forceStrength`, the onset row
+> having shipped as a Modulate impulse on that parameter; the three answering targets are
+> `fluidStrength` and `forceStrength`, which onset and loudness share.
+
 #### Scenario: A dormant row is offered in the editor
 - **WHEN** the user opens the mapping editor having never edited it
 - **THEN** the three zero-depth audio rows appear with their targets, ready to raise
+
+> 2026-09-12: one zero-depth row ships, `audio:high` into `glowIntensity`; the mid and brightness
+> rows no longer ship.
 
 #### Scenario: An audio row shares a target with a written value
 - **WHEN** the default matrix also carries a Write row on one of the four coupling strengths

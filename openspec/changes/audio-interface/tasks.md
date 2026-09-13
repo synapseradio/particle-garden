@@ -95,7 +95,7 @@ feature core in group 2 waits on nothing here.
 
 ## 3. The per-frame poll and the matrix hand-off
 
-- [ ] 3.1 In `src/audio_input.nim` register the `audio` family at wiring time through
+- [x] 3.1 In `src/audio_input.nim` register the `audio` family at wiring time through
       `web_api.registerSourceFamily` with five continuous declarations and one event
       declaration, each carrying the label the meters and the mapping editor show. Add
       `pollAudioFrame(dtSeconds)`: with a live chain, copy the two arrays, call `analyse`, set
@@ -104,16 +104,26 @@ feature core in group 2 waits on nothing here.
       `Connected` and `Silent` on the core's silence report. In `src/app.nim` call it in the
       frame loop directly before `web_api.flushMatrix(cappedDt)`. Verify `just build-app`, and by
       reading the loop that the call precedes the flush
-- [ ] 3.2 **Red first.** In the shipped-matrix test `midi-interface` lands beside
-      `src/ui/input/control_matrix.nim`, pin six audio rows by source, kind, target and depth:
+- [x] 3.2 **Red first.** In the shipped-mapping suite of `tests/test_control_matrix.nim` (the
+      shipped default lives in `src/ui/input/shipped_mapping.nim`, not in `control_matrix.nim`, as
+      `midi-interface` built it), pin six audio rows by source, kind, target and depth:
       `audio:onset` Touch on a one-cell grid with `baseNote` 0; `audio:bass` Modulate
       `fluidStrength` +0.30; `audio:loudness` Modulate `forceStrength` +0.25; `audio:high`
       Modulate `glowIntensity` 0; `audio:mid` Modulate `rdDeposit` 0; `audio:brightness`
       Modulate `rdFieldForce` 0; every Modulate row at a zero attack and an 80 ms release; the
-      six targets distinct. Run it and confirm it fails. Add the rows to the default matrix
-      `const` in `src/ui/input/control_matrix.nim` and run green; `just build-app` passes the
-      static gate on the shipped rows
-- [ ] 3.3 `just happen` builds and `just check` is green
+      six targets distinct. Run it and confirm it fails. Add the six declarations as
+      `SHIPPED_AUDIO_SOURCES` in `src/ui/input/shipped_mapping.nim`, registered by
+      `shippedMatrixState()` beside the MIDI family so the static gate sees the audio rows
+      resolved, and add the rows to `DEFAULT_MAPPING` there; `src/audio_input.nim` registers the
+      same constant, so the labels have one home. Run green; `just build-app` passes the static
+      gate on the shipped rows. Widen the help relation in `tests/test_help_content.nim` so a
+      shipped row's target may be named by any help file, since the audio rows are documented in
+      `65-audio.md` rather than `70-midi.md`
+> 2026-09-12: the `audio:onset` pin in 3.2 now reads a Modulate impulse on `forceStrength`, depth
+> +0.40 and a 300 ms release, sharing loudness's target; the shipped audio targets are no longer
+> all distinct.
+
+- [x] 3.3 `just happen` builds and `just check` is green
 
 ## 4. Metering push and the affordance
 
@@ -142,7 +152,7 @@ feature core in group 2 waits on nothing here.
 
 ## 5. Help and enforcement
 
-- [ ] 5.1 Fill `docs/help/65-audio.md`: what Listen does and that captured sound never leaves
+- [x] 5.1 Fill `docs/help/65-audio.md`: what Listen does and that captured sound never leaves
       the app, the permission prompt and how to revisit a refusal in the browser's site
       settings, the six sources in the room's terms, what the meters show, what the three live
       rows do, and the three rows waiting at zero depth with the invitation to raise and remap

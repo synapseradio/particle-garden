@@ -29,12 +29,14 @@ One home per fact.
 | Probe registry and context slices | `src/ui/api/response_probe.nim` |
 | Slider travel mapping (the panel computes none) | `src/ui/api/slider_curve.nim` |
 | Every mouse, touch, and key binding, as data | `src/ui/input/binding_table.nim` |
-| Weather tours and their step ceilings | `src/climate_core.nim` |
+| Weather tours and their step ceilings | `src/climate_core.nim` for the tables, `src/ui/input/shipped_mapping.nim` for their registration |
 | The self-moving view | `src/camera_drift.nim` |
 | Per-capability requirements, each citing its gate | `openspec/specs/` |
 | The inventory of facts stated at two sites, each with its tier | `src/agreements.nim`, explained in [agreements.md](agreements.md) |
 | Shader sources and shared modules | `web/shaders/src/`, `web/shaders/modules/`, bundled by `tools/wgsl_bundle.nim` |
 | Audio feature definitions, thresholds and windows | `src/ui/input/audio_core.nim` |
+| The control matrix: rows, validation, arbitration, takeover, envelopes, the mapping document schema | `src/ui/input/control_matrix.nim` |
+| The shipped mapping, its source declarations and tour registrations | `src/ui/input/shipped_mapping.nim` |
 
 ## Guarantees
 
@@ -67,6 +69,14 @@ One home per fact.
 | Every audio feature is finite and in [0, 1], with silence reading zero | Test-held | `tests/test_audio_core.nim` | |
 | The capture chain is created inside the listen gesture and released on stop | Unenforced | Review against `src/audio_input.nim` and the gate record under `scratchpad/audio-interface/` | |
 | Audio is analysed before the frame's physics | Unenforced | Review of the loop in `src/app.nim` | |
+| Every shipped mapping row validates against the descriptor table and the declared sources | Build-asserted | The `static:` gate in `src/ui/input/shipped_mapping.nim` | |
+| Arbitration, takeover and envelopes | Test-held | `tests/test_control_matrix.nim` | |
+| The flush is the frame's only parameter writer | Test-held for the source sweep over `src/app.nim` | `tests/test_control_matrix.nim` | |
+| MIDI transport acquisition and hot-plug | Unenforced | Review against `src/midi_input.nim` and the gate record under `scratchpad/midi-interface/` | |
+| The modulation base and `getParam` read the stored record, never the CONFIG mirror | Test-held | `tests/test_control_matrix.nim` | |
+| The preset snapshot reads stored state for every modulated field | Unenforced | Review at `snapshotPreset` in `src/web_api.nim` | Routing each settings line through `storedParamValue` (`src/ui/api/param_fields.nim`), the one read that answers from the stored record |
+| Stopping a source family returns its Modulate rows to base | Test-held for the primitive, Agent-checkable at the call sites | `tests/test_control_matrix.nim`; `src/audio_input.nim`, `src/midi_input.nim` | |
+| A Modulate row on an event source is an impulse that releases to base | Test-held | `tests/test_control_matrix.nim` | |
 
 ## Reference oracles
 

@@ -42,26 +42,34 @@ suite "InputState - Basic Operations":
 
 suite "InputState - Blast Effect":
   test "withBlast triggers blast at position":
-    let state = initInputState().withBlast(50.0, 75.0)
+    let state = initInputState().withBlast(50.0, 75.0, 1.0)
     check state.blastX == 50.0
     check state.blastY == 75.0
     check state.blastStrength == 1.0
 
+  test "withBlast takes the strength its caller names":
+    # A pad hit lands at the velocity it was struck with, so strength is the
+    # caller's to say rather than pinned inside the state.
+    let state = initInputState().withBlast(10.0, 20.0, 0.4)
+    check state.blastX == 10.0
+    check state.blastY == 20.0
+    check state.blastStrength == 0.4
+
   test "withBlastDecay reduces strength":
     let state = initInputState()
-      .withBlast(0.0, 0.0)
+      .withBlast(0.0, 0.0, 1.0)
       .withBlastDecay(0.5)
     check state.blastStrength == 0.5
 
   test "withBlastCleared zeroes strength":
     let state = initInputState()
-      .withBlast(0.0, 0.0)
+      .withBlast(0.0, 0.0, 1.0)
       .withBlastCleared()
     check state.blastStrength == 0.0
 
   test "hasActiveBlast detects active blast":
     let inactive = initInputState()
-    let active = initInputState().withBlast(0.0, 0.0)
+    let active = initInputState().withBlast(0.0, 0.0, 1.0)
     let decayed = active.withBlastDecay(0.0001)
 
     check inactive.hasActiveBlast() == false
@@ -234,7 +242,7 @@ suite "MouseHandler - Double Click":
 
 suite "MouseHandler - Frame Update":
   test "decays active blast":
-    let initial = initInputState().withBlast(0.0, 0.0)
+    let initial = initInputState().withBlast(0.0, 0.0, 1.0)
     let state = updateFrame(initial)
 
     check state.blastStrength < 1.0

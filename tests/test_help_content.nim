@@ -5,12 +5,14 @@
 # group's file, and no file names a non-descriptor. A control renamed without
 # its documentation following goes red here, at the rename.
 
-import std/[os, sequtils, sets, tables, unittest]
+import std/[os, sequtils, sets, strutils, tables, unittest]
 
 const HELP_CONTENT_TESTS_LOADED* = true
 
 import ../src/ui/api/help_content
 import ../src/ui/api/param_descriptor
+import ../src/ui/input/shipped_mapping
+import ../src/ui/input/control_matrix
 
 let helpDir = currentSourcePath().parentDir.parentDir / HelpSourceDir
 
@@ -61,6 +63,34 @@ suite "Coverage Runs In Both Directions":
         if id notin descriptorIds:
           checkpoint(entry.key & " names unknown control `" & id & "`")
         check id in descriptorIds
+
+suite "The MIDI Help File Covers The Shipped Mapping":
+  test "docs/help holds the MIDI file":
+    check fileExists(helpDir / "70-midi.md")
+
+  test "each family's help file names every shipped mapping row's target":
+    # Derived from DEFAULT_MAPPING itself, not spelled out here, so a shipped
+    # row added or retargeted moves this relation instead of leaving it to
+    # drift from what actually ships. A row's family is its source id's first
+    # segment: the audio rows are the audio help's, and every other row,
+    # the clock-driven tours included, is the MIDI help's.
+    require "midi" in entriesByKey
+    require "audio" in entriesByKey
+    var missing: seq[string]
+    for row in DEFAULT_MAPPING:
+      let key = if row.sourceId.startsWith("audio:"): "audio" else: "midi"
+      let target =
+        case row.kind
+        of rkWrite: row.writeParamId
+        of rkFire: row.actionId
+        of rkTouch: row.sourceId
+        of rkTour: row.tourId
+        of rkModulate: row.modParamId
+      if target notin entriesByKey[key].body:
+        missing.add key & " lacks " & target
+    check missing.len == 0
+    if missing.len > 0:
+      echo "  help is missing: ", missing.join(", ")
 
 suite "The Coverage Sweep Can Fail":
   test "a control line with a bogus id is seen":

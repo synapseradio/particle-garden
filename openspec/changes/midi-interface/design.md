@@ -4,7 +4,7 @@
 
 See proposal.md for motivation and scope. The mechanics this design builds on, each proven in the running code and its suites:
 
-- One write path clamps every mutation against the descriptor table (`clampParamValue`, `src/ui/api/param_descriptor.nim:719`) and mirrors typed state into `CONFIG` synchronously (`src/web_api.nim:165-178`). The effect-time clamp lives at exactly one site: `applySimulationToConfig` mirrors `effectiveSimulation(storedState)` while `currentSimulation`, `getParam`, and presets keep the stored value (`src/web_api.nim:135-160`, `src/ui/api/param_descriptor.nim:303-320`).
+- One write path clamps every mutation against the descriptor table (`clampParamValue`, `src/ui/api/param_descriptor.nim:719`) and mirrors typed state into `CONFIG` synchronously (`src/web_api.nim:165-178`). The effect-time clamp lives at exactly one site: `applySimulationToConfig` mirrors `effectiveSimulation(storedState)` while `currentSimulation`, `getParam`, and presets keep the stored value (`src/web_api.nim:135-160`, `src/ui/api/param_descriptor.nim:303-320`). Correction, 2026-09-12: `getParam` kept the stored value for four ids only. Every other id fell through to `readParamField(CONFIG[], ...)`, which is the mirror carrying the previous frame's modulated value, so the Modulate base integrated instead of offsetting; `getParamImpl` and the base read the stored records through `storedParamValue`/`storedContext` from now on.
 - The weathers are the outside-writer precedent: the frame loop writes whole tour points through the clamped path, one batched `updateSimulation` per weather per frame (`src/app.nim:257-269`, `src/web_api.nim:713-736`), with descriptors resolved once at module scope (`src/web_api.nim:707-711`).
 - `slider_curve.valueAt` and `positionOf` map travel in [0, 1] to lattice values and back, honoring curve, envelope, and any served ceiling (`src/ui/api/slider_curve.nim:25-74`, held inverse by `tests/test_slider_curve.nim`).
 - The stats push runs on the loop's FPS-refresh cadence, roughly twice a second (`src/app.nim:284-317`). It sends the two weather id tables' current values on every push and the live ceilings beside them (`src/web_api.nim:805-848`), and the panel applies whatever ids arrive by comparison (`web-ui/src/state.ts:108-119`).
@@ -105,11 +105,17 @@ name the axes (`src/climate_core.nim:89`, `:154`), and `tourAt` maps a phase to 
 pointAt(phase), maxStepPerAxis)`, where the per-axis step ceilings are the ones
 `CLIMATE_MAX_STEPS` and `FORCE_WEATHER_MAX_STEPS` already declare.
 
-A tour advances on wall-clock seconds, so the clock is its source. One `clock` family registers a
-single continuous source, `clock:frame`, carrying the frame's capped wall-clock delta
-(`cappedDt`, `src/app.nim:240`). Wall-clock advance is what the weathers do today and the comment
-at `src/app.nim:244-247` states why: one tour of the regimes a minute means a minute, whatever
-`timeScale` is doing to the simulation.
+A tour advances on wall-clock seconds, so the clock is its source. A Tour row names `clock:frame`,
+the one continuous source the `clock` family declares (`SHIPPED_CLOCK_SOURCES` in
+`src/ui/input/shipped_mapping.nim`, registered by `web_api` at module scope), so the row resolves
+through the same declaration check as every other row. No value is delivered on `clock:frame`: the
+frame's capped wall-clock delta (`cappedDt`, `src/app.nim`) travels in the flush context, where the
+envelopes read it too. Both shipped weathers are Tour rows in `DEFAULT_MAPPING`, ranked below its
+Write rows, so the mapping document is the one place a weather's presence and precedence are
+decided. A tour axis whose descriptor is `pkInt` writes the rounded point, as
+`setForceWeatherFromSimulation` rounds `interactionRadius` today. Wall-clock advance is what the
+weathers do today and the comment at `src/app.nim:244-247` states why: one tour of the regimes a
+minute means a minute, whatever `timeScale` is doing to the simulation.
 
 Phase is row state, not row data. Each Tour row owns its phase, which is what keeps one weather's
 position independent of the other's, the property `src/app.nim:263-264` calls out.
@@ -140,11 +146,15 @@ Per mapped parameter each frame: base travel = `positionOf(descriptor, storedVal
 
 Application reuses the one clamp site. The flush builds a modulated copy of the stored state, assigns each effective value through the same compile-checked field walk `setParam` uses, and hands the copy to the existing mirror: `mirrorInto(effectiveSimulation(modulatedCopy), CONFIG[])` for simulation targets, the render mirror for render targets. `currentSimulation` is never written, so `getParam`, presets, and the slider base stay the user's own, the property the ceiling machinery already proves at this site (`src/web_api.nim:135-160`).
 
-The preset snapshot reads the stored record for every modulated field. `snapshotPreset` reads CONFIG for all of them but `sphStiffness`, which already reads `currentSimulation` for the stored-versus-effective reason its own comment gives (`src/web_api.nim:868-907`, comment at `src/web_api.nim:904-906`). A modulated copy in CONFIG would otherwise export as though the user had written it, so keeping presets the user's own obliges that exception to generalize to every field a Modulate row can reach.
+The preset snapshot reads the stored record for every modulated field. `snapshotPreset` read CONFIG for all of them but `sphStiffness`, which already read `currentSimulation` for the stored-versus-effective reason its own comment gave. A modulated copy in CONFIG would otherwise export as though the user had written it, so keeping presets the user's own obliges that exception to generalize to every field a Modulate row can reach. As built: the snapshot mirrors `currentSimulation` and `currentRender` over a copy of CONFIG's shape and reads every settings line from that copy, so the exception is the rule and no field is named twice.
+
+The couplings publish from the effective state. `couplingsOf` reads the four coupling strengths off the simulation state, and `webgpu_compute` rebuilds the frame description when a strength's zero-ness changes, dropping the pass whose strength is zero (`src/ui/state/sim_config.nim`, `src/webgpu_compute.nim`). Publishing only from `updateSimulation`, off the stored state, would leave a Modulate row that lifts a coupling resting at zero moving CONFIG while the executor kept that pass out of the frame. The publish therefore sits in the one mirror site, `applySimulationToConfig`, reading the effective state it mirrors, so a stored write and a modulated copy reach the executor by the same door. A modulated coupling crossing zero rebuilds the frame at each crossing; the envelope floor snaps a release to zero rather than letting it hover, so the crossings are the source's own on-and-off and not a flutter.
+
+Rejected: refusing the four coupling ids as Modulate targets. Playing the room's bass into the fluid's own strength is the instrument's first move, and the shipped audio rows in the sibling change target exactly these.
 
 Refresh cadence: the flush recomputes and re-mirrors only when some excursion is live or was live the frame before (the return to base must land). Idle cost is one boolean check per frame. Active cost is the weathers' proven cost, one state copy and mirror per frame (`src/app.nim:257-269`).
 
-Envelope: an exponential approach toward the latest source value, computed in the pure matrix from the frame's wall-clock delta, with `attackMs` as the time constant while the source sits above the enveloped value and `releaseMs` while it sits below. Zero on either side passes the raw value on that side. The pair is asymmetric because a musical transient wants the rise kept and the fall lengthened: audio-reactive practice starts near a 1 ms attack and a 20 to 100 ms release (https://kferg.dev/posts/2020/audio-reactive-programming-envelope-followers), and Resolume exposes the same shape as a Gain plus a Fall control that "sets how quickly the value falls back from a peak" (https://resolume.com/support/en/7.12/parameter-animation).
+Envelope: an exponential approach toward the latest source value, computed in the pure matrix from the frame's wall-clock delta, with `attackMs` as the time constant while the source sits above the enveloped value and `releaseMs` while it sits below. Zero on either side passes the raw value on that side. An enveloped value whose magnitude falls under `ENVELOPE_FLOOR` in travel snaps to zero, so an exponential release reaches the base the spec names instead of approaching it forever; the floor sits under a tenth of the finest position step any descriptor serves, so the snap moves no lattice value. The pair is asymmetric because a musical transient wants the rise kept and the fall lengthened: audio-reactive practice starts near a 1 ms attack and a 20 to 100 ms release (https://kferg.dev/posts/2020/audio-reactive-programming-envelope-followers), and Resolume exposes the same shape as a Gain plus a Fall control that "sets how quickly the value falls back from a peak" (https://resolume.com/support/en/7.12/parameter-animation).
 
 Rejected: one symmetric time constant. It blunts the attack by exactly the amount it lengthens the release, so a row driven by an onset-shaped source loses the hit at any setting that also smooths the decay.
 

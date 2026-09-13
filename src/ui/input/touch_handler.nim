@@ -65,7 +65,7 @@ func handleTwoFingerTap*(state: InputState; event: TouchEventData): InputState =
     return state
   let midpointX = (event.touches[0].clientX + event.touches[1].clientX) * 0.5
   let midpointY = (event.touches[0].clientY + event.touches[1].clientY) * 0.5
-  state.withBlast(midpointX, midpointY).withMouseDown(false)
+  state.withBlast(midpointX, midpointY, 1.0).withMouseDown(false)
 
 # ==============================================================================
 # SECTION 3: DOM EVENT EXTRACTION (JS-only)

@@ -4,7 +4,7 @@
 
 See proposal.md for motivation. The states of the world this design builds against, each verified in source:
 
-- One write path mutates the world, and the effect-time clamp lives at exactly one site, where the mirror lands `effectiveSimulation(storedState)` into `CONFIG` while the stored record stays untouched (`src/web_api.nim:135-160`).
+- One write path mutates the world, and the effect-time clamp lives at exactly one site, where the mirror lands `effectiveSimulation(storedState)` into `CONFIG` while the stored record stays untouched (`src/web_api.nim:135-160`). Correction, 2026-09-12: the READ side became true only with this change. Before it, `getParamImpl` read `CONFIG[]` for every id outside four arms, so `getParam` and the Modulate base both answered with the previous frame's modulated value; they read `currentSimulation`/`currentRender` through `storedParamValue`/`storedContext` from now on.
 - The weathers already write through that path once per frame when on (`src/app.nim:244-269`), so per-frame work on the write path has a paid precedent.
 - The stats push runs on the fps window, twice a second (`src/app.nim:284-317`). The camera is polled by the panel on its own cadence instead, because nothing pushes at the panel between those windows (`web-ui/src/components/Panel.tsx:23-38`).
 - Pure cores compile on both backends and are exercised natively (`src/climate_core.nim:1-35`, `tests/test_climate_core.nim`).
@@ -112,6 +112,13 @@ Six rows, each touching exactly one target so cause reads clearly (couplings ver
 | audio:mid | Modulate | rdDeposit | 0 | The music's body feeds the substrate the chemistry grows on |
 | audio:brightness | Modulate | rdFieldForce | 0 | Bright timbre makes particles heed the chemical field |
 
+> 2026-09-12: the audio:mid and audio:brightness rows above no longer ship; reaction-diffusion is
+> decoupled from audio.
+
+> 2026-09-12: the audio:onset row above ships as a Modulate impulse on forceStrength, depth +0.40
+> with a 300 ms release, so a hit reaches every particle rather than the disc a blast covers; it
+> shares loudness's target and the two sum. The blast stays available to Touch rows.
+
 The three live rows are the ones whose cause and effect share a kind and a clock: an impulse to an impulse, pressure to pressure, energy to energy. A mapping reads without explanation when it "has a basis within the physical world" and stays inside one time scale, and a mapping into a structure that accumulates is "rarely perceived" at the scale of the event, showing instead in its cumulative effect (Callear, https://www.seeingsound.co.uk/docs/Audiovisual_Particles.pdf, sections 2.3 and 4.3). The two field rows push a syllable-rate feature into the Gray-Scott field, which accumulates deposit across every frame's substeps (docs/one-world.md, world-intrinsic passes), so they read as texture over a passage and would blur the first three if live from the start. They ship authored, at zero depth, with help inviting the user to raise them once the live three are heard, which is the row the matrix already treats as ordinary: a zero depth keeps its place and moves nothing. The high row joins them so the first listen changes the world and nothing else, and simple correspondences that all fire at once "rapidly cease to be interesting" (Dannenberg, via Callear section 2.2).
 
 `audio:high` lands on the render store rather than a fifth coupling, keeping the one-coupling-per-row teaching, and on `glowIntensity` over `bloomIntensity` because the bloom slider sits dormant while bloom is off (`src/ui/api/param_descriptor.nim:507-509`) where the glow is always in the picture. Steady hiss settles to zero under the adaptive floor, so only high-band content above it sparkles. Depths are starting values pinned by tests and refined against the running world (docs/engineering-principles.md, article 10). Every row's depth has zero in range, the house idiom.
@@ -119,6 +126,10 @@ The three live rows are the ones whose cause and effect share a kind and a clock
 Rejected: six live rows. The climate and force-weather tours keep running while listening, and they are the counterpoint that keeps a mapping from going predictable, which Callear's compositions needed "unmapped elements" to supply. Six audio rows plus two tours moving at once leaves nothing for the eye to attribute.
 
 Rejected for onset's target: a random cell, which reads as noise until the mapping is understood, and the loudest band's spatial position, which the substrate register would earn later but a blast cannot explain today.
+
+> 2026-09-12: onset's target is now the global forceStrength, taken because a blast at the view's
+> centre reaches only the particles inside its radius while a hit should reach the whole world. The
+> spatial targets above stay rejected.
 
 ### 11. Native test plan
 

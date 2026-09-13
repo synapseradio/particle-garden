@@ -22,3 +22,20 @@ export function dormantShare(
   if (ceiling <= min) return 1;
   return (max - ceiling) / span;
 }
+
+// The span a live excursion shades from the handle's base position, both
+// already in track fractions — the curve conversion stays where every other
+// position/value pair converts, through paramPositionOf. Null for no
+// excursion, a non-finite one, or one that moves nothing, so the caller can
+// skip rendering the same way it does for dormantShare's null.
+export function excursionSpan(
+  basePosition: number,
+  offset: number | undefined,
+): [number, number] | null {
+  if (offset === undefined || !Number.isFinite(offset) || offset === 0) {
+    return null;
+  }
+  const target = basePosition + offset;
+  const clamp = (position: number) => Math.min(1, Math.max(0, position));
+  return [clamp(Math.min(basePosition, target)), clamp(Math.max(basePosition, target))];
+}

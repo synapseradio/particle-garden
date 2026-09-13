@@ -319,6 +319,11 @@ lands through the one effect-time site, which recomputes the effective state fro
 on every write and leaves that record untouched (`src/web_api.nim:135-160`), and the matrix's
 behavior for a zero-valued or inert row is held by the `control-matrix` capability's tests.
 
+2026-09-12: `withdrawSourceFamily` in `src/ui/input/control_matrix.nim` zeroes a family's
+continuous sources so their Modulate rows release toward base and their Write rows stop writing;
+`stopListening` and `onMicrophoneDenied` in `src/audio_input.nim` call it with `"audio"` on
+stop and on denial. Test-held in `tests/test_control_matrix.nim`.
+
 #### Scenario: Stopping returns the sliders to their bases
 - **WHEN** the user turns listening off while audio modulation is displacing parameters
 - **THEN** the effective values return to the stored values and the sliders show their authored

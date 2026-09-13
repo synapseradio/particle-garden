@@ -52,6 +52,12 @@ export function createPanelController(api: GardenAPI) {
   // sample arrives, which reads as "no ceiling reported" rather than as a
   // ceiling of zero — a slider draws its whole track live until told otherwise.
   const [ceilings, setCeilings] = createStore<Record<string, number>>({});
+  // The signed travel offset of each parameter a live excursion moves, by id.
+  // Absent means no excursion is live for that id, which reads as nothing to
+  // shade — the same "told rather than asked" channel the ceilings arrive on.
+  const [excursions, setExcursions] = createStore<
+    Record<string, number | undefined>
+  >({});
   // Nim's dormancy verdicts by id, refreshed on the panel's own writes and
   // on each stats push — never per frame.
   const [dormantControls, setDormantControls] = createStore<
@@ -122,6 +128,17 @@ export function createPanelController(api: GardenAPI) {
       for (const [id, value] of Object.entries(sample.ceilings ?? {})) {
         if (ceilings[id] !== value) setCeilings(id, value);
       }
+      // Live excursions, applied by comparison on the same terms — and cleared
+      // where the sample no longer names an id, because an excursion that
+      // ended arrives as an absence and a key left standing would keep shading
+      // a move that is over.
+      const arriving = sample.excursions ?? {};
+      for (const [id, value] of Object.entries(arriving)) {
+        if (excursions[id] !== value) setExcursions(id, value);
+      }
+      for (const id of Object.keys(excursions)) {
+        if (!(id in arriving)) setExcursions(id, undefined);
+      }
       // The climate walks the regime coordinates, so a drift can light or
       // unlight a button. Nim owns the comparison.
       if (moved) setRdRegimeSignal(api.getRdRegime());
@@ -140,6 +157,7 @@ export function createPanelController(api: GardenAPI) {
     byId,
     params,
     ceilings,
+    excursions,
     dormantControls,
     trails,
     bloom,

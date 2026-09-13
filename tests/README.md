@@ -78,6 +78,8 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
 | `test_audio_core.nim` | The audio feature core: a tone's brightness at its logarithmic position, band energy reaching its own feature, onsets on a click train with the refractory window holding, silence reading exactly zero, a 20 dB gain step absorbed inside a pinned frame count, a fuzz sweep for finiteness and range, and every time constant spanning the same wall-clock seconds at two frame deltas | Native |
 | `test_climate_core.nim` | The drifting climate: that its path stays inside the feed/kill rectangle by construction, never steps further than the configured maximum, tours every named regime, and that every parameter it declares it writes has a descriptor to write through | Native |
+| `test_control_matrix.nim` | The control matrix: family registration with whole-set replacement, the five row validation relations against the real descriptor table, delivery staging, excursions summing in travel space under the live ceiling, envelope convergence at two frame deltas, soft takeover engaging by crossing and releasing on a foreign move, ascending-rank apply across Write and Tour rows, tour phases on the wall clock, fire and touch selection, the versioned mapping document's drop-and-clamp decode, the shipped default's fall-back, learn, and a source sweep holding the flush as the frame loop's only parameter writer | Native |
+| `test_midi_core.nim` | The MIDI core: three-byte and one-byte parsing, unconsumed statuses rejected, normalization into continuous and event deliveries keyed by channel, and the beat-clock count across start, continue and stop | Native |
 | `test_no_modes.nim` | Guard test: no forbidden mode identifier or mode-id string literal survives anywhere in `src/` or `web-ui/src/`, except the one narrow, self-checking exemption for `preset.nim`'s versioned-schema legacy migration table | Native |
 
 Every test module compiles natively with `nim c`. There is no JS-backend test target: the browser-dependent modules (FFI bindings, WebGPU, DOM) are verified only by the application build itself. The TypeScript control panel has its own suite — `just test-ui` runs `bun test` over `web-ui/test/`, covering preset storage, formatting, descriptor group arithmetic, notch geometry and snapping, and the panel controller's handling of what the simulation pushes at it; `just check` runs both.
@@ -126,6 +128,8 @@ test_all.nim (runner)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
     ├── test_audio_core.nim     → ui/input/audio_core.nim (features, onsets, adaptive windows)
     ├── test_climate_core.nim   → climate_core.nim (drifting climate path)
+    ├── test_control_matrix.nim → ui/input/control_matrix.nim (rows, arbitration, takeover, schema, learn)
+    ├── test_midi_core.nim      → ui/input/midi_core.nim (message parsing, normalization, clock count)
     ├── test_camera_drift.nim   → camera_drift.nim (self-moving view)
     ├── test_build_flags.nim    → justfile, particle_garden.nimble (flag lists agree)
     ├── test_meta_vacuity.nim   → tests/ (every filesystem-reading test asserts a non-empty subject)

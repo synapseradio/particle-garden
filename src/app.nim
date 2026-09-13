@@ -31,9 +31,9 @@ import shader_config
 # Layer 3: Browser integration modules
 import grid
 import canvas_input
-import climate_core
 import web_api
 import audio_input
+import midi_input
 
 # Layer 4: WebGPU modules
 import webgpu_init
@@ -83,20 +83,10 @@ var frameCount {.exportc.}: int = 0
 var lastFpsTime {.exportc.}: float = 0
 var computeTimeMs {.exportc.}: float = 0
 var gpuLogCounter {.exportc.}: int = 0
-var climatePhase {.exportc.}: float = 0
-  ## Position on the closed regime tour, when climate drift is on. Kept here
-  ## rather than in the typed state because it is loop bookkeeping like
-  ## lastTime: nothing reads it but the loop, no preset saves it, and it wraps
-  ## rather than accumulating.
-var forceWeatherPhase {.exportc.}: float = 0
-  ## Position on the closed force tour, on the same terms. Separate from
-  ## climatePhase so each weather holds its own place: sharing one would drag
-  ## the forces to wherever the climate had wandered the moment someone switched
-  ## the force weather on.
 var cameraDriftState {.exportc.}: DriftState = initDriftState()
   ## What one frame of camera drift hands the next: the quiet clock and the
-  ## breath it is moving through. Loop bookkeeping like the two phases above,
-  ## and it holds no camera position, so nothing here duplicates the view.
+  ## breath it is moving through. Loop bookkeeping like lastTime above, and it
+  ## holds no camera position, so nothing here duplicates the view.
 
 # Per-frame timing staging; folded into runtimeState via withTiming each frame
 var currentTiming* = initTimingState()
@@ -250,34 +240,7 @@ proc loop(now: float): Future[void] {.async.} =
   let dt = cappedDt * config.CONFIG.timeScale
   lastTime = now
 
-  # The weather, when it is switched on. Advanced by WALL-CLOCK seconds
-  # (cappedDt) rather than by the timeScale-scaled dt: "one tour of the regimes
-  # a minute" should mean a minute, not a minute divided by how fast the
-  # simulation happens to be running.
-  #
-  # It writes through web_api's ordinary setParam path, so the toured sliders
-  # visibly move and the panel keeps telling the truth about the state. Writing
-  # CONFIG directly here would be a frame cheaper and would leave the UI lying,
-  # so the visible path is required.
-  #
-  # The tour point travels whole. Which parameters it lands on is climate_core's
-  # to say (CLIMATE_PARAM_IDS), so this loop never names an axis and an added
-  # one needs nothing here.
-  if config.CONFIG.climateDrift:
-    climatePhase = tourAdvance(
-      climatePhase, config.CONFIG.climateSpeed, cappedDt)
-    web_api.setClimateFromSimulation(tourAt(RD_CLIMATE_TOUR, climatePhase))
-
-  # The force weather, on the same terms and the same wall clock. Its own phase,
-  # so switching one weather on does not move the other's position, and its own
-  # speed, so the two can run at rates that suit what each of them changes.
-  if config.CONFIG.forceWeather:
-    forceWeatherPhase = tourAdvance(
-      forceWeatherPhase, config.CONFIG.forceWeatherSpeed, cappedDt)
-    web_api.setForceWeatherFromSimulation(
-      tourAt(FORCE_WEATHER_TOUR, forceWeatherPhase))
-
-  # The camera's own weather, on the same wall clock as the two above. The
+  # The camera's own weather, on the same wall clock as the mapping flush. The
   # touch stamp is taken every frame, drifting or not, so a gesture from before
   # the toggle went on does not cost the quiet interval after it.
   let cameraTouched = canvas_input.takeCameraTouch()
@@ -293,6 +256,13 @@ proc loop(now: float): Future[void] {.async.} =
   # Same wall clock as the weathers above (cappedDt), not the timeScale-scaled
   # dt: the analyser reports what the room is doing right now.
   audio_input.pollAudioFrame(cappedDt)
+
+  # The mapping, after every family has delivered for this frame and before
+  # physics runs against what it writes. On the same wall clock as the audio
+  # poll and the drifts above (cappedDt): a tour named in minutes takes that
+  # many minutes whatever timeScale is doing, and a row's envelope is a span of
+  # real time.
+  web_api.flushMatrix(cappedDt)
 
   # The bodies age on that same wall clock, and the world lights its own on it:
   # a lifetime in seconds means seconds whatever Time Scale says, and capped
@@ -355,6 +325,11 @@ proc loop(now: float): Future[void] {.async.} =
 
 proc init(): Future[void] {.async, exportc.} =
   ## Requires WebGPU; there is no fallback path.
+
+  # Before anything can wait: the connect affordance answers Unavailable until
+  # the transport is wired, and the panel is live while WebGPU is still
+  # initializing below.
+  midi_input.wireMidiControl()
 
   # Optional ?n=<count> URL override for profiling runs at a chosen scale
   let requestedCount = urlParamInt("n", config.CONFIG.particleCount)

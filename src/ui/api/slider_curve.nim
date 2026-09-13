@@ -57,6 +57,16 @@ func valueAt*(descriptor: ParamDescriptor; position: float;
       lo + (hi - lo) * pow(travel, descriptor.curveExponent)
   snapToLattice(descriptor, raw, lo, hi)
 
+func positionStep*(descriptor: ParamDescriptor): float =
+  ## The uniform position increment that walks the descriptor's own value
+  ## lattice under cLinear; under a warp it is a fine-enough handle
+  ## granularity, since the value direction snaps to the lattice either way.
+  ## A descriptor with no step or no span gets a hundredth of the track.
+  if descriptor.step > 0.0 and descriptor.maxValue > descriptor.minValue:
+    descriptor.step / (descriptor.maxValue - descriptor.minValue)
+  else:
+    0.01
+
 func positionOf*(descriptor: ParamDescriptor; value: float;
     boundMin = NaN; boundMax = NaN): float =
   ## Where on the track a value sits. Continuous — rounding belongs to the

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { dormantShare } from "../src/lib/bounds";
+import { dormantShare, excursionSpan } from "../src/lib/bounds";
 
 describe("dormantShare", () => {
   test("a ceiling at or above the maximum leaves the whole track live", () => {
@@ -31,5 +31,38 @@ describe("dormantShare", () => {
   test("a degenerate range reports nothing rather than dividing by zero", () => {
     expect(dormantShare(5, 10, 10)).toBeNull();
     expect(dormantShare(5, 10, 2)).toBeNull();
+  });
+});
+
+describe("excursionSpan", () => {
+  test("shades forward from the handle's base by a positive offset", () => {
+    expect(excursionSpan(0.3, 0.2)).toEqual([0.3, 0.5]);
+  });
+
+  test("shades backward from the handle's base by a negative offset", () => {
+    const [from, to] = excursionSpan(0.3, -0.2) ?? [NaN, NaN];
+    expect(from).toBeCloseTo(0.1, 12);
+    expect(to).toBeCloseTo(0.3, 12);
+  });
+
+  test("clamps the far end to the track's maximum when the offset overshoots", () => {
+    expect(excursionSpan(0.9, 0.5)).toEqual([0.9, 1]);
+  });
+
+  test("clamps the far end to the track's minimum when the offset undershoots", () => {
+    expect(excursionSpan(0.1, -0.5)).toEqual([0, 0.1]);
+  });
+
+  test("shades nothing for a zero offset", () => {
+    expect(excursionSpan(0.4, 0)).toBeNull();
+  });
+
+  test("shades nothing when no excursion is reported for this parameter", () => {
+    expect(excursionSpan(0.4, undefined)).toBeNull();
+  });
+
+  test("shades nothing for a non-finite offset", () => {
+    expect(excursionSpan(0.4, Number.NaN)).toBeNull();
+    expect(excursionSpan(0.4, Number.POSITIVE_INFINITY)).toBeNull();
   });
 });

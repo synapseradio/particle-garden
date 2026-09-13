@@ -16,7 +16,7 @@ import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { PanelController } from "../state";
 import { formatParamValue } from "../lib/format";
 import { applySnap } from "../lib/notches";
-import { dormantShare } from "../lib/bounds";
+import { dormantShare, excursionSpan } from "../lib/bounds";
 import { horizonMs } from "../lib/acknowledge";
 
 const ACK_MS = 250;
@@ -73,6 +73,13 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
   const positionOf = (value: number) =>
     props.ctrl.paramPositionOf(props.id, value);
 
+  // The span a live excursion shades, beside the derived-ceiling shading
+  // above. The offset arrives as signed travel, the handle's own coordinate,
+  // so it adds to the handle's position with no conversion. Undefined means
+  // no excursion is live for this id.
+  const excursion = (): [number, number] | null =>
+    excursionSpan(positionOf(value()), props.ctrl.excursions[props.id]);
+
   // Only notches that land inside the track get a tick. Nim already asserts
   // every notch is in range, so this filter is a guard against an older
   // app.js, not an expected case.
@@ -123,6 +130,20 @@ export function ParamSlider(props: { ctrl: PanelController; id: string }) {
           <div
             class="slider-dormant"
             style={{ width: `${(dormant() as number) * 100}%` }}
+            aria-hidden="true"
+          />
+        </Show>
+        <Show when={excursion() !== null}>
+          <div
+            class="slider-excursion"
+            style={{
+              left: `${(excursion() as [number, number])[0] * 100}%`,
+              width: `${
+                ((excursion() as [number, number])[1] -
+                  (excursion() as [number, number])[0]) *
+                100
+              }%`,
+            }}
             aria-hidden="true"
           />
         </Show>

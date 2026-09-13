@@ -20,6 +20,8 @@ when defined(js):
 
   import bindings/web_audio
   import ui/input/audio_core
+  from ui/input/control_matrix import skContinuous
+  from ui/input/shipped_mapping import SHIPPED_AUDIO_SOURCES
   import web_api
 
   var listenState = lsDisconnected
@@ -38,33 +40,16 @@ when defined(js):
     bins: newSeq[float32](FREQUENCY_BIN_COUNT),
     samples: newSeq[float32](ANALYSER_FFT_SIZE))
 
-  type
-    AudioSourceKind = enum
-      askContinuous
-      askEvent
-
-    AudioSourceDeclaration = object
-      id: string
-      label: string
-      kind: AudioSourceKind
-
-  const audioSourceDeclarations* = [
-    AudioSourceDeclaration(id: "audio:loudness", label: "Loudness", kind: askContinuous),
-    AudioSourceDeclaration(id: "audio:bass", label: "Bass", kind: askContinuous),
-    AudioSourceDeclaration(id: "audio:mid", label: "Mid", kind: askContinuous),
-    AudioSourceDeclaration(id: "audio:high", label: "High", kind: askContinuous),
-    AudioSourceDeclaration(id: "audio:brightness", label: "Brightness", kind: askContinuous),
-    AudioSourceDeclaration(id: "audio:onset", label: "Onset", kind: askEvent),
-  ]
-
   proc audioSourcesJs(): JsObject =
+    ## The meters' six entries, off the same declarations the mapping editor
+    ## lists, so a label has one home.
     result = newJsArray()
-    for decl in audioSourceDeclarations:
+    for decl in SHIPPED_AUDIO_SOURCES:
       let entry = newJsObject()
       entry["id"] = toJs(cstring(decl.id))
       entry["label"] = toJs(cstring(decl.label))
       entry["kind"] = toJs(cstring(
-        if decl.kind == askContinuous: "continuous" else: "event"))
+        if decl.kind == skContinuous: "continuous" else: "event"))
       result.push(entry)
 
   proc pushStateOnly() =
@@ -112,6 +97,7 @@ when defined(js):
       discard close(audioContext)
       audioContext = nil
     listenState = lsDenied
+    web_api.withdrawSourceFamily("audio")
     pushStateOnly()
 
   proc requestMicrophone(): Future[void] {.async.} =
@@ -140,6 +126,7 @@ when defined(js):
     analyserNode = nil
     analysisState = initAnalysisState()
     listenState = lsDisconnected
+    web_api.withdrawSourceFamily("audio")
     pushStateOnly()
 
   proc currentListenState(): ListenState = listenState
@@ -159,9 +146,21 @@ when defined(js):
     let features = analyse(analysisState, audioFrame)
     listenState = if features.silent: lsSilent else: lsConnected
     web_api.pushAudio(listenState, features)
+    # The hand-off to the mapping, ahead of the flush the loop runs next. The
+    # five levels are the latest value each; a hit is one event at its energy,
+    # on ordinal zero since a room has no pad to name.
+    web_api.setSourceValue("audio:loudness", features.loudness)
+    web_api.setSourceValue("audio:bass", features.bass)
+    web_api.setSourceValue("audio:mid", features.mid)
+    web_api.setSourceValue("audio:high", features.high)
+    web_api.setSourceValue("audio:brightness", features.brightness)
+    if features.onset.fired:
+      web_api.emitSourceEvent("audio:onset", features.onset.energy, 0)
 
   # Self-registers at module init: web_api's own top-level has already run
   # by the time this line executes (audio_input imports web_api), so no call
-  # from app.nim's init is needed.
+  # from app.nim's init is needed. The family declares whole here, so the
+  # shipped audio rows resolve before Listen is ever pressed.
+  web_api.registerSourceFamily("audio", SHIPPED_AUDIO_SOURCES)
   web_api.registerAudioControl(startListening, stopListening,
     currentListenState, audioSourcesJs)

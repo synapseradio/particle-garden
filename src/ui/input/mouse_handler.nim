@@ -85,7 +85,7 @@ func handleMouseLeave*(state: InputState): InputState =
 
 func handleDoubleClick*(state: InputState; event: MouseEventData): InputState =
   ## Also clears mouseDown, to prevent a stuck state from event timing.
-  state.withBlast(event.clientX, event.clientY).withMouseDown(false)
+  state.withBlast(event.clientX, event.clientY, 1.0).withMouseDown(false)
 
 # ==============================================================================
 # SECTION 3: FRAME UPDATE

@@ -144,6 +144,10 @@ export interface StatsSample {
   // it arrives on this sample rather than being asked for — the same channel
   // and the same reason as `params` above.
   ceilings: Record<string, number>;
+  // The signed travel offset of every parameter a live excursion moves, by
+  // id; empty when none. The slider shades the span from the handle's base by
+  // this offset, on the same channel and cadence as `ceilings`.
+  excursions: Record<string, number>;
 }
 
 // The listen affordance's state, named by Nim (audio_core.ListenState); the
@@ -155,12 +159,108 @@ export type ListenState =
   | "Denied"
   | "Silent";
 
-// One audio source the frame loop can deliver: five continuous features in
-// [0, 1] and one event. Labels come from Nim; the meters restate none.
-export interface AudioSourceEntry {
+// One source a family declares: a continuous value in [0, 1] or an event.
+// Labels come from Nim; the meters and the mapping editor restate none.
+export interface SourceEntry {
   id: string;
   label: string;
   kind: "continuous" | "event";
+}
+
+// The audio family's declarations, the same shape.
+export type AudioSourceEntry = SourceEntry;
+
+// A mapping row as the boundary serves it: the mapping document's own row
+// shape plus where it sits and whether its source is declared this session.
+// Everything a user reads calls one of these a mapping.
+export type MappingRowKind = "modulate" | "write" | "fire" | "touch" | "tour";
+
+interface MappingRowBase {
+  index: number;
+  kind: MappingRowKind;
+  source: string;
+  resolved: boolean;
+}
+
+export interface ModulateRow extends MappingRowBase {
+  kind: "modulate";
+  modParamId: string;
+  depth: number;
+  attackMs: number;
+  releaseMs: number;
+}
+
+export interface WriteRow extends MappingRowBase {
+  kind: "write";
+  writeParamId: string;
+  jump: boolean;
+  rank: number;
+}
+
+export interface FireRow extends MappingRowBase {
+  kind: "fire";
+  actionId: string;
+  ordinal: number;
+}
+
+export interface TouchRow extends MappingRowBase {
+  kind: "touch";
+  gridCols: number;
+  gridRows: number;
+  baseNote: number;
+}
+
+export interface TourRow extends MappingRowBase {
+  kind: "tour";
+  tourId: string;
+  runningParamId: string;
+  tourSpeedParamId: string;
+  tourRank: number;
+  // The parameter ids the registered tour writes, served so the editor can
+  // see a write row colliding with a tour on one axis. Empty when the tour
+  // id is not registered this session.
+  axisParamIds: string[];
+}
+
+export type MappingRow = ModulateRow | WriteRow | FireRow | TouchRow | TourRow;
+
+type DistributiveOmit<T, K extends keyof never> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+// What an edit or a learn arming sends up: a row without the served position,
+// resolution and tour axes. For a learn slot the `source` (and a fire row's
+// `ordinal`, a touch row's `baseNote`) is filled by the binding delivery.
+export type MappingRowSpec = DistributiveOmit<
+  MappingRow,
+  "index" | "resolved" | "axisParamIds"
+>;
+
+export interface MappingEditResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface LearnState {
+  armed: boolean;
+  slot: MappingRowSpec | null;
+}
+
+export interface MatrixKeys {
+  // The localStorage key the one user mapping persists under. Nim owns it.
+  mapping: string;
+}
+
+// The connect affordance's state, named by Nim (midi_core.MidiState).
+export type MidiState =
+  | "Disconnected"
+  | "Requesting"
+  | "Connected"
+  | "Unavailable";
+
+export interface MidiPortEntry {
+  id: string;
+  name: string;
 }
 
 // Pushed once per frame while a capture chain is live and a subscriber is
@@ -298,6 +398,41 @@ export interface GardenAPI {
   /** Dormancy: id -> whether the control's consumer can act. Evaluated
    * Nim-side; called on the panel's own writes and on each stats push. */
   dormantParams(): Record<string, boolean>;
+
+  // MIDI. Connect requests access only when called and leaves the affordance
+  // Requesting before it returns; the outcome arrives through midiState() on
+  // the next push. Disconnect leaves it Disconnected before it returns.
+  connectMidi(): void;
+  disconnectMidi(): void;
+  midiState(): MidiState;
+  midiPorts(): MidiPortEntry[];
+
+  // Mappings (Nim owns the row model, validation, the document schema and the
+  // shipped default; this UI owns localStorage under matrixKeys().mapping).
+  mappingRows(): MappingRow[];
+  // Every declared source of every registered family, in registration order.
+  mappingSources(): SourceEntry[];
+  // Every action id a fire row may name.
+  mappingActions(): string[];
+  defaultMappingRows(): MappingRowSpec[];
+  // Each edit validates and answers a refusal without changing the mapping.
+  setMappingRow(index: number, row: MappingRowSpec): MappingEditResult;
+  addMappingRow(row: MappingRowSpec): MappingEditResult;
+  removeMappingRow(index: number): MappingEditResult;
+  setMappingRank(index: number, rank: number): MappingEditResult;
+  // Learn stays armed until a qualifying source arrives or cancel is called.
+  armLearn(slot: MappingRowSpec): void;
+  cancelLearn(): void;
+  learnState(): LearnState;
+  // Pushed once on subscribe and again whenever the mapping changes: an edit,
+  // an applied document, or a learn arming completing a row. Returns the
+  // unsubscribe.
+  onMapping(callback: (rows: MappingRow[]) => void): () => void;
+  matrixKeys(): MatrixKeys;
+  exportMappingJson(): string;
+  // The same validate-first decode a load runs; a refused document leaves the
+  // mapping as it was.
+  applyMappingJson(json: string): MappingEditResult;
 
   // Presets (Nim owns schema/validation/apply order; this UI owns storage)
   presetKeys(): PresetKeys;

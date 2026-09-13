@@ -60,9 +60,9 @@ func couplingsOf*(simulation: SimulationState): WorldCouplings =
     longRange: simulation.longRangeStrength
   )
 
-## The couplings the executor last acted on. web_api sets it after every write
-## to the simulation state; app.nim subscribes webgpu_compute to it, so a
-## strength crossing zero rebuilds the frame description. Setting it to a value
-## whose zeros are unchanged costs nothing — webgpu_compute compares before
-## rebuilding.
+## The couplings the executor last acted on. web_api sets it from the effective
+## state on every mirror into CONFIG, a stored write or a modulated copy alike;
+## app.nim subscribes webgpu_compute to it, so a strength crossing zero
+## rebuilds the frame description. Setting it to a value whose zeros are
+## unchanged costs nothing — webgpu_compute compares before rebuilding.
 var worldCouplings* = newObservable(couplingsOf(initSimulationState()))

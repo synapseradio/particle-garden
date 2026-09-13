@@ -57,11 +57,14 @@ func withAllButtonsUp*(state: InputState): InputState =
   result.mouseDown = false
   result.mouseRightDown = false
 
-func withBlast*(state: InputState; posX, posY: float): InputState =
+func withBlast*(state: InputState; posX, posY: float;
+    strength: float): InputState =
+  ## A blast at full strength is a hand's gesture; a pad hit carries the
+  ## velocity it was struck with, so the caller names the strength.
   result = state
   result.blastX = posX
   result.blastY = posY
-  result.blastStrength = 1.0
+  result.blastStrength = strength
 
 func withBlastDecay*(state: InputState; decayFactor: float): InputState =
   result = state

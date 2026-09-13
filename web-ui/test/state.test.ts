@@ -61,6 +61,7 @@ function statsSample(
     fieldAliveCells: 0,
     params,
     ceilings,
+    excursions: {},
   };
 }
 

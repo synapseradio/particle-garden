@@ -78,6 +78,42 @@ proc getBlastX*(): float = currentInput.get().blastX
 proc getBlastY*(): float = currentInput.get().blastY
 proc getBlastStrength*(): float = currentInput.get().blastStrength
 
+var blastCanvas: HTMLCanvasElement = nil
+  ## The canvas setupEvents received, kept here so a blast arriving from
+  ## outside an event handler has the pixel dimensions to convert through.
+  ## Nil until app.nim calls setupEvents.
+
+proc worldAtViewPixel(pixelX, pixelY, viewWidth, viewHeight: float):
+    tuple[x, y: float32] =
+  ## The world point under a view pixel, through the live camera. Before
+  ## app.nim wires the camera hooks the default camera stands in, which is
+  ## exact while nothing can have moved the view yet.
+  let camera =
+    if cameraGetter.isNil:
+      initCamera(float32(config.WORLD_W), float32(config.WORLD_H))
+    else:
+      cameraGetter()
+  screenPixelToWorld(float32(pixelX), float32(pixelY),
+    float32(viewWidth), float32(viewHeight),
+    camera, float32(config.WORLD_W), float32(config.WORLD_H))
+
+proc placeBlastAtViewFraction*(u, v, strength: float) =
+  ## A blast at a fraction of the visible view: u right from the left edge, v
+  ## up from the bottom. Converted to world space HERE, at capture, exactly as
+  ## a double-click is — a blast pins a moment to a world point, so a camera
+  ## move during its decay must not drag it with the screen. The same zero-size
+  ## guard the pointer paths use, and for the same reason.
+  if blastCanvas.isNil:
+    return
+  let width = float(blastCanvas.width)
+  let height = float(blastCanvas.height)
+  if width <= 0.0 or height <= 0.0:
+    return
+  # The pixel row counts DOWN from the top while v counts up from the bottom.
+  let world = worldAtViewPixel(u * width, (1.0 - v) * height, width, height)
+  currentInput.set(currentInput.get().withBlast(
+    float(world.x), float(world.y), strength))
+
 const BLAST_DECAY_FACTOR = 0.85
 proc updateInputState*() =
   let current = currentInput.get()
@@ -126,19 +162,12 @@ proc setResizeCallback*(callback: proc()) {.exportc.} =
 
 proc setupEvents*(canvas: JsObject) {.exportc.} =
   let canvasEl = cast[HTMLCanvasElement](canvas)
+  blastCanvas = canvasEl
 
   proc pointerWorld(pixelX, pixelY: float): tuple[x, y: float32] =
-    ## The world point under a pointer pixel, through the live camera. Before
-    ## app.nim wires the camera hooks the default camera stands in, which is
-    ## exact while nothing can have moved the view yet.
-    let camera =
-      if cameraGetter.isNil:
-        initCamera(float32(config.WORLD_W), float32(config.WORLD_H))
-      else:
-        cameraGetter()
-    screenPixelToWorld(float32(pixelX), float32(pixelY),
-      float32(canvasEl.width), float32(canvasEl.height),
-      camera, float32(config.WORLD_W), float32(config.WORLD_H))
+    ## The world point under a pointer pixel, through the live camera.
+    worldAtViewPixel(pixelX, pixelY,
+      float(canvasEl.width), float(canvasEl.height))
 
   domWindow.addEventListener("resize", proc() =
     if not onResize.isNil:

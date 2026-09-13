@@ -34,11 +34,12 @@ const HelpFileNames* = [
   "53-palette.md",
   "60-camera.md",
   "65-audio.md",
+  "70-midi.md",
   "90-glossary.md",
 ]
   ## The panel's section order.
 
-const ReservedHelpKeys* = ["orientation", "reference", "glossary", "audio"]
+const ReservedHelpKeys* = ["orientation", "reference", "glossary", "audio", "midi"]
   ## Keys that name no descriptor group. "reference" is generated from the
   ## binding table rather than read from a file; "audio" ships sources and an
   ## affordance, never a descriptor.

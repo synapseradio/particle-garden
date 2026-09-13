@@ -168,6 +168,13 @@ requires the snapshot to read stored state for every modulated field, since `sna
 CONFIG for all of them but `sphStiffness` (`src/web_api.nim:868-907`) and no gate detects the
 difference.
 
+2026-09-12: the modulation base is now test-held by the suite "the modulation base is the stored
+record" in `tests/test_control_matrix.nim`, which pins a held source to one excursion per frame, a
+CONFIG-read base to a ratchet, and `src/web_api.nim` to `storedContext` with no `readParamField(CONFIG`
+left in it. The `src/web_api.nim:868-907` anchor above is stale: `snapshotPreset` moved, and it now
+mirrors both stored records over its CONFIG copy before reading any field, so the `sphStiffness`
+exception it names no longer describes the code.
+
 #### Scenario: Two rows on one parameter add
 - **WHEN** two `Modulate` rows target one parameter
 - **THEN** the frame runs the value at the sum of their travel offsets

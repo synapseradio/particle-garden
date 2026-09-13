@@ -34,6 +34,8 @@ import test_camera_drift
 import test_climate_core
 import test_camera_input
 import test_audio_core
+import test_control_matrix
+import test_midi_core
 import test_wgsl_lint
 import test_no_modes
 import test_meta_vacuity
@@ -80,6 +82,8 @@ static:
   discard test_climate_core.CLIMATE_CORE_TESTS_LOADED
   discard test_camera_input.CAMERA_INPUT_TESTS_LOADED
   discard test_audio_core.AUDIO_CORE_TESTS_LOADED
+  discard test_control_matrix.CONTROL_MATRIX_TESTS_LOADED
+  discard test_midi_core.MIDI_CORE_TESTS_LOADED
   discard test_wgsl_lint.WGSL_LINT_TESTS_LOADED
   discard test_no_modes.NO_MODES_TESTS_LOADED
   discard test_meta_vacuity.META_VACUITY_TESTS_LOADED

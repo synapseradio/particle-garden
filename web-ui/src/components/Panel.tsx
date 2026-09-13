@@ -19,6 +19,7 @@ import { RegimeSelector } from "./RegimeSelector";
 import { ChemistryEditor } from "./ChemistryEditor";
 import { PresetsSection } from "./PresetsSection";
 import { AudioSection } from "./AudioSection";
+import { MidiSection } from "./MidiSection";
 import { StatsPanel } from "./StatsPanel";
 
 // The camera is the one parameter something outside the panel writes on its
@@ -66,6 +67,7 @@ export function Panel(props: { ctrl: PanelController }) {
   const toggleCollapsed = () => setCollapsed(!collapsed());
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [audioOpen, setAudioOpen] = createSignal(false);
+  const [midiOpen, setMidiOpen] = createSignal(false);
 
   // "?" opens help from anywhere except a text edit in progress.
   const onKey = (event: KeyboardEvent) => {
@@ -329,6 +331,10 @@ export function Panel(props: { ctrl: PanelController }) {
           <For each={groupIds("palette")}>
             {(id) => <ParamSlider ctrl={ctrl} id={id} />}
           </For>
+        </Section>
+
+        <Section title="MIDI" onOpenChange={setMidiOpen}>
+          <MidiSection ctrl={ctrl} active={midiOpen() && !collapsed()} />
         </Section>
 
         <Section title="Audio" onOpenChange={setAudioOpen}>
