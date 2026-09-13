@@ -137,6 +137,7 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
     var noBodies = FULLY_COUPLED
     noBodies.bodies = COUPLING_OFF
     check not dispatchesPipeline(noBodies, "bodyForce")
+
   test "zero long-range strength skips the whole mesh chain":
     # Seven dispatches, one strength: the solve and the force it feeds are one
     # coupling, so a world at zero strength must run none of them rather than

@@ -9,11 +9,11 @@ differs in no kind from a world running a little fluid.
 This document guides adding a coupling. Read `src/sim_registry.nim` alongside it
 — that file holds the authority, this holds the map.
 
-## The five strengths
+## The six strengths
 
-`WorldCouplings` in `src/sim_registry.nim` holds five floats. Each names a live
+`WorldCouplings` in `src/sim_registry.nim` holds six floats. Each names a live
 simulation parameter the panel writes through the ordinary descriptor path, and
-`couplingsOf` in `src/ui/state/sim_config.nim` reads all five off
+`couplingsOf` in `src/ui/state/sim_config.nim` reads all six off
 `SimulationState` on demand, so nothing keeps a second copy that could disagree.
 
 | Strength | Parameter | What it scales | Shader |
@@ -25,7 +25,7 @@ simulation parameter the panel writes through the ordinary descriptor path, and
 | `bodies` | `bodiesStrength` | everything a body says to the particles, proximity and enclosure together — and so, through the reaction, everything the particles say back | `body-force.wgsl`, `body-integrate.wgsl` |
 | `longRange` | `longRangeStrength` | the impulse the mesh's solved potential gives each particle, and so everything the six-dispatch chain behind it produces | `lr-deposit.wgsl`, `lr-fft-rows.wgsl`, `lr-fft-cols.wgsl`, `lr-kernel.wgsl`, `lr-force.wgsl` |
 
-Every one of those five ranges reaches zero. A static loop at the bottom of
+Every one of those six ranges reaches zero. A static loop at the bottom of
 `src/config_ranges.nim` fails the build if a coupling strength's floor sits
 anywhere else, so each coupling can be switched off through its own slider.
 
@@ -54,8 +54,9 @@ neighbour sweep in `forces.wgsl`, `fieldResolve`, the `RD_STEPS_PER_FRAME`
 Gray-Scott substeps, and `integrate`. These make up what the world is.
 
 **Coupling-owned passes drop out at exactly zero.** `forcesSph` under `fluid`,
-`fieldDeposit` under `deposit`, `fieldForce` under `fieldForce`, and the
-long-range chain's six dispatches under `longRange`. Each strength multiplies
+`fieldDeposit` under `deposit`, `fieldForce` under `fieldForce`, `bodyForce`
+and `bodyIntegrate` under `bodies`, and the long-range chain's six dispatches
+under `longRange`. Each strength multiplies
 its pass's entire output.
 
 ### Forces are the asymmetric case
@@ -191,7 +192,6 @@ consumes it. That is also what makes skipping the deposit at zero exact rather
 than merely cheap — the buffer a skipped deposit leaves behind already holds
 zero.
 
-<<<<<<< HEAD
 `sbBodyAccum` follows the same rule from the other side. `bodyForce` folds the
 negation of every impulse it hands a particle, and the torque that impulse
 carries about the body's centre, into three atomic `i32` per body; `bodyIntegrate`

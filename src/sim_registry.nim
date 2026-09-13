@@ -328,7 +328,7 @@ func buildFrame*(couplings: WorldCouplings;
   ## coupling's pass into it. No combination is named anywhere, and stripping the
   ## coupling-owned passes from any frame leaves exactly the intrinsic sequence —
   ## which tests/test_sim_registry.nim asserts as a derivation rather than as a
-  ## list, so a fifth coupling cannot reintroduce enumeration by accident.
+  ## list, so a further coupling cannot reintroduce enumeration by accident.
   ##
   ## THE FRAME OWNS THE DELTA RESETS. Every accumulation buffer is cleared here,
   ## once, before anything writes it; every contributing pass accumulates only.

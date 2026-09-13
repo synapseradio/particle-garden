@@ -155,7 +155,7 @@ bindings/           Nim wrappers for browser APIs
 | Understand structure | `app.nim` (imports in dependency order) |
 | Change shader math | the shader in `web/shaders/src/` and its mirror `*_core.nim`, same diff |
 | Change what a frame dispatches | `sim_registry.nim` (`docs/one-world.md` lists every step) |
-| Add a coupling | `docs/one-world.md`, "Adding a fifth coupling" |
+| Add a coupling | `docs/one-world.md`, "Adding a coupling" |
 | Change the control panel | `web-ui/src/` (Solid/TypeScript) |
 | Change what the panel can reach | `web_api.nim` + `ui/api/param_descriptor.nim` |
 | Adjust particles | `config.nim` (runtime) or `memory_layout.nim` (structure) |

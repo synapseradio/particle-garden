@@ -490,7 +490,7 @@ suite "Clamping Is The Descriptor's Job":
 
 
 suite "The Long-Range Group Is Led By Its Strength":
-  # The fifth coupling reaches the panel as three controls in one group: the
+  # The long-range coupling reaches the panel as three controls in one group: the
   # strength saying how much of the coupling acts, and below it the two saying
   # what kind of reach it has. The grid size is among them because it is the
   # coupling's cost knob and the only consumer of the live-size seam.

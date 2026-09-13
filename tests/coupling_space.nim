@@ -5,7 +5,7 @@
 #
 # CORNERS, NOT SAMPLES. buildFrame asks exactly one question of each strength —
 # is it zero — so the frame space is finite however continuous the strengths
-# are, and these thirty-two worlds are all of it. A test needing the values BETWEEN
+# are, and these sixty-four worlds are all of it. A test needing the values BETWEEN
 # the corners is testing physics rather than frame composition, and belongs with
 # the oracle that mirrors that physics (sph_core, field_core, physics_core).
 #
