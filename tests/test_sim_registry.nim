@@ -473,14 +473,15 @@ suite "Profiler Slot Constants":
     # timestamps and report a meaningless delta — the field pass borrowing the
     # grid-build slot is the collision this forbids.
     let slots = [PROFILER_SLOT_GRID_BUILD, PROFILER_SLOT_PHYSICS,
-      PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE, PROFILER_SLOT_LONG_RANGE]
+      PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE, PROFILER_SLOT_LONG_RANGE,
+      PROFILER_SLOT_BODIES]
     check toHashSet(slots).len == slots.len
 
   test "PROFILER_SLOT_NONE indexes no query slot":
     # It marks the absence of a slot, so it must not collide with a real one.
     check PROFILER_SLOT_NONE notin [PROFILER_SLOT_GRID_BUILD,
       PROFILER_SLOT_PHYSICS, PROFILER_SLOT_FIELD, PROFILER_SLOT_INTEGRATE,
-      PROFILER_SLOT_LONG_RANGE]
+      PROFILER_SLOT_LONG_RANGE, PROFILER_SLOT_BODIES]
 
   test "every frame's timestamped compute passes hold distinct profiler slots":
     # Passes carrying PROFILER_SLOT_NONE write no timestamps, so any number of

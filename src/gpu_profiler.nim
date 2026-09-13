@@ -44,9 +44,12 @@ const
     ## The long-range mesh solve (deposit, the four transform dispatches, the
     ## kernel mix). Its own slot because the solve's cost is what the mesh-size
     ## control is chosen against, and a slot shared with any other pass could
-    ## only report a sum. The force pass it feeds writes no timestamps: it
-    ## runs per substep, where a slot could hold only the last substep's span.
-  numPasses* = 8
+    ## only report a sum. The force pass it feeds writes no timestamps.
+  passBodies* = 8
+    ## The bodies pass (bodyForce, bodyIntegrate). Per substep, and timestamps
+    ## attach on substep 0 only, so like passPhysics it reports one substep's
+    ## span; per-frame cost is that times the substep count.
+  numPasses* = 9
   numQueries = numPasses * 2
 
 proc createJsObject(): JsObject {.importjs: "({})".}

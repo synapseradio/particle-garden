@@ -269,6 +269,9 @@ const
     ## Mirrors gpu_profiler.passLongRange — the mesh solve. Its own slot
     ## because the solve's cost is the number the grid-size control is chosen
     ## against, and a slot shared with any other pass could only report a sum.
+  PROFILER_SLOT_BODIES* = 8
+    ## Mirrors gpu_profiler.passBodies. Reports the first substep's span, as
+    ## PROFILER_SLOT_PHYSICS does.
   PROFILER_SLOT_INTEGRATE* = 6
     ## Mirrors gpu_profiler.passIntegrate. integrate sits outside the physics
     ## pass because it must run after the field passes and the field passes
@@ -491,7 +494,7 @@ func buildFrame*(couplings: WorldCouplings;
     # four already rest on, so the integrate reads the sum the force pass just
     # wrote. dsOne covers the whole table, which shader_config's assertion holds
     # the workgroup wide enough for.
-    result.add computePassNode("Bodies", PROFILER_SLOT_NONE, @[
+    result.add computePassNode("Bodies", PROFILER_SLOT_BODIES, @[
       dispatch("bodyForce", dsParticleWorkgroups),
       dispatch("bodyIntegrate", dsOne),
     ])
