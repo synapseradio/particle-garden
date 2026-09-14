@@ -2,8 +2,8 @@
 
 Owns the balance between the pair force and every force that compresses the world from outside it:
 the one impulse unit every coupling is stated in, the long-range potential's unit, the pressure a
-crowd builds past an onset measured in the world's own mean crowd density, the accumulator that
-pressure writes, and the relations that keep a compressed crowd finite, local and able to relax.
+crowd builds past an onset measured in the world's own mean crowd density, the words the velocity
+impulses accumulate in, and the relations that keep a compressed crowd local and able to relax.
 
 ## ADDED Requirements
 
@@ -19,81 +19,92 @@ rule (`docs/enforcement.md`, Reference oracles). No demand function SHALL feed t
 stiffness.
 
 Enforced by: `tests/test_balance_core.nim` suite "Every Compressor Answers In The Pair Unit", which
-checks each demand function against a direct evaluation of its own oracle (`physics_core`,
-`long_range_core`, `body_core`, `field_core`) at the same configuration (test-held). That each
-shader carries the expression its oracle holds is **unenforced**, the standing condition of every
-reference oracle.
+checks the unit on one touching neighbour's repulsion, and for each demand function sweeps its oracle
+over a grid of configurations inside the ranges and holds that no swept inward impulse exceeds the
+demand and that the demand's own configuration attains it (test-held). That each shader carries the
+expression its oracle holds is **unenforced**, the standing condition of every reference oracle.
 
-#### Scenario: One touching neighbour is one unit
+#### Scenario: One touching neighbour's repulsion is one unit
 
-- **WHEN** the pair demand is evaluated for one neighbour at contact, at force strength 1, over the
-  reference frame
-- **THEN** it returns exactly 1
+- **WHEN** one neighbour at contact acts on a particle at force strength 1 over the reference frame
+- **THEN** the repulsive impulse is exactly `u0`
 
-#### Scenario: A demand agrees with its own oracle
+#### Scenario: A demand is the largest inward impulse
 
-- **WHEN** a compressor's demand function and a direct evaluation of its oracle are taken at the same
-  configuration
-- **THEN** they agree to within the oracle's floating-point tolerance
+- **WHEN** a compressor's oracle is swept over a grid of configurations inside its ranges
+- **THEN** no swept inward impulse exceeds that compressor's demand function, and the demand's own
+  configuration attains it within the oracle's floating-point tolerance
 
 ### Requirement: The long-range pull is measured in the pair unit and not in mesh cells
 
 The long-range impulse on a particle SHALL equal the strength, times the attraction-matrix entry,
-times `u0`, times the interaction radius, times the gradient of the population's number density
-convolved with the screened 2D Green's function. The mesh's cell area SHALL NOT appear in it, so the
+times the unit `U(R) = u0 · R² · (a + R) / a²`, times the gradient of the population's number density
+convolved with the screened 2D Green's function, where `R` is the live interaction radius and
+`a = √(A_world / (π · x_on))` the reference colony's radius. The mesh's cell area SHALL NOT appear in it, so the
 impulse at a point a few cell widths or more from a clump's centre is the same on every declared grid
 size. The kernel's shape, its zero at `k = 0`, the unit-charge deposit and the accumulator's fixed
 point SHALL stay as `long-range-coupling` states them.
 
 Enforced by: `tests/test_long_range_core.nim` suite "The Pull Does Not Depend On Mesh Size", which
 solves one clump on every size in `LR_GRID_SIZES` and compares the sampled impulse 240 and 600 world
-units from the clump's centre (test-held); suite "The Pull Is The Pair Unit Spread By The Green's
-Function", which at reach `LONG_RANGE_REACH_MAX` compares the impulse sampled 240 from a clump's
-centre against `strength · A · u0 · R · M / (2π r)` (test-held). Both use the tolerance recorded
-beside the tests from the static solve's measured gap. That `lr-force.wgsl` and the `LR_FORCE_SCALE`
-write in `src/webgpu_compute.nim` apply the same factor is **unenforced**, closed by the scale
-reaching the shader as one value computed by the oracle.
+units from the clump's centre within the mesh-to-mesh gap the static solve measures under the new unit
+(test-held); suite "The Pull Is The Pair Unit Spread By The Green's Function", which at reach
+`LONG_RANGE_REACH_MAX` compares the impulse sampled 240 from a clump's centre against
+`strength · A · U(R) · M / (2π r)` at radii 10, 50 and 150 within the formula gap the static solve
+measured there (test-held); suite "One Long-Range Ceiling Holds At Every Radius" (test-held). Each tolerance is recorded beside its test. That `lr-force.wgsl` and the
+`LR_FORCE_SCALE` write in `src/webgpu_compute.nim` apply the same factor is **unenforced**, closed by
+the scale reaching the shader as one value computed by the oracle.
 
 #### Scenario: Changing the mesh size does not change the pull
 
 - **WHEN** the same population is solved on 256 × 128 and on 512 × 256 at one strength and reach
 - **THEN** the impulse sampled 240 world units from the clump's centre agrees between the two sizes
-  within the recorded tolerance
+  within the recorded mesh-to-mesh tolerance
 
 #### Scenario: The pull at long reach is the unscreened formula
 
 - **WHEN** a clump of `M` particles is solved at reach `LONG_RANGE_REACH_MAX`
-- **THEN** the impulse 240 from its centre equals `strength · A · u0 · R · M / (2π · 240)` within the
-  recorded tolerance
+- **THEN** the impulse 240 from its centre equals `strength · A · U(R) · M / (2π · 240)` within the
+  recorded formula tolerance
 
 ### Requirement: A crowd denser than the onset pushes itself apart
 
 Inside the neighbour sweep, every pair SHALL receive an equal and opposite repulsive impulse along its
-separation. Its magnitude SHALL be the stiffness `K`, times the sum of both particles' pressures, times
-the pair's proximity weight `1 − r/R`, times the frame's dt, quantized once to one signed integer that
-is added to one particle and subtracted from the other. A particle's pressure SHALL be
-`(max(x − x_on, 0) / x_on)²`, where `x` is its smoothed crowd density over the live world's uniform
-crowd density `N · π · R² / (3 · A)`, and `x_on` is the onset. The term SHALL read the crowd density
-both particles already carry and add no pass. It SHALL NOT be scaled by the force strength, the
-attraction matrix, the crowding attenuation or the friction, and SHALL NOT read any coupling's
-strength. It SHALL
-have no slider. The force law's own expression and grouping SHALL be unchanged.
+separation, per reference frame and not multiplied by the substep. Its magnitude SHALL be the stiffness
+`K`, times the sum of both particles' pressures, times the pair's proximity weight `1 − r/R`, over 120,
+saturated at the per-pair maximum `q_max`; the saturated magnitude times the unit separation SHALL be
+quantized once to one signed integer per component, added to one particle and subtracted from the
+other. The term SHALL carry no viscosity. A particle's
+pressure SHALL be `(max(ρ − ρ_on, 0) / ρ_on)²`, where `ρ` is its smoothed crowd density and the onset
+`ρ_on` is the larger of `x_on` times the live world's uniform crowd density `N · π · R² / (3 · A)` and
+the discrete-contact floor. The term SHALL read the crowd density both particles already carry, SHALL
+NOT read their velocities, and SHALL add no pass. It SHALL NOT be scaled by the force strength, the attraction matrix, the
+crowding attenuation or the friction, and SHALL NOT read any coupling's strength. It SHALL have no
+slider. The force law's own expression and grouping SHALL be unchanged.
 
-Enforced by: `tests/test_physics.nim` suite "Pressure Past The Onset", over the oracle
-`pressurePairImpulse` in `src/physics_core.nim`: zero at and below the onset, strictly increasing
-above it, equal and opposite as one integer, unchanged by force strength, matrix entry and crowding
-(test-held). Suite "The Force Law Is Untouched Below The Onset": at force strengths 0.7, 1 and
-`FORCE_STRENGTH_MAX`, a settled world below the onset writes a bit-identical velocity delta with and
-without the term (test-held on the native oracle). `tests/test_sim_registry.nim` holds that no
-coupling-owned key and no new pipeline key appears (test-held). That `forces.wgsl` carries the
-oracle's expression is **unenforced**, the standing condition of `physics_core`'s mirror; GPU bit
-identity is **unenforced** because the shader compiler may regroup under relaxed math.
+Enforced by: `tests/test_physics.nim` suite "Pressure Past The Onset", over the pressure oracle in
+`src/physics_core.nim`: the float magnitude zero at and below the onset, strictly increasing above it
+up to `q_max` and constant past it; each per-component integer zero at and below the onset and
+non-decreasing in magnitude with density; the two particles' integers exactly opposite; unchanged by
+force strength, matrix entry, crowding, friction and the pair's relative velocity (test-held). Suite "The Force Law Is Untouched
+Below The Onset": at force strengths 0.7, 1 and `FORCE_STRENGTH_MAX` and frame factor 1, a settled
+world below the onset writes a bit-identical velocity delta with and without the term (test-held on
+the native oracle). `tests/test_sim_registry.nim` holds that no coupling-owned key and no new pipeline
+key appears (test-held). That `forces.wgsl` carries the oracle's expression is **unenforced**, the
+standing condition of `physics_core`'s mirror; GPU bit identity is **unenforced** because the shader
+compiler may regroup under relaxed math.
 
-#### Scenario: A world below the onset keeps its force law exactly
+#### Scenario: A world below the onset keeps its force law exactly at frame factor 1
 
-- **WHEN** both particles of a pair sit at or below the onset, at any force strength
+- **WHEN** both particles of a pair sit at or below the onset, at any force strength, at frame factor 1
 - **THEN** the pair's velocity delta on the native oracle is bit-for-bit the delta the force law
   without the term produces
+
+#### Scenario: A saturated pair keeps its direction
+
+- **WHEN** a pair's pressure magnitude passes `q_max`
+- **THEN** its integers are the saturated magnitude times the pair's unit separation, quantized per
+  component
 
 #### Scenario: Pressure acts with the species force switched off
 
@@ -103,125 +114,164 @@ identity is **unenforced** because the shader compiler may regroup under relaxed
 
 #### Scenario: Momentum is conserved exactly by the term
 
-- **WHEN** the pressure integers of every pair in a sweep are summed
-- **THEN** the sum is exactly zero
+- **WHEN** the pressure integers of every pair in a sweep are summed per component
+- **THEN** each sum is exactly zero
 
-#### Scenario: A dense crowd at friction 0 shimmers and does not collapse
+#### Scenario: The onset follows the world's size and keeps a contact floor
 
-- **WHEN** friction is zero and a crowd sits above the onset
-- **THEN** the crowd receives the same pressure impulse as at any other friction, and its members keep
-  moving below the soft speed cap's threshold rather than collapsing
-
-#### Scenario: The onset follows the world's size
-
-- **WHEN** the particle count or the interaction radius changes and a uniform world settles
-- **THEN** the uniform crowd density the term divides by changes with `N · R²`, and the uniform world
-  stays below the onset
+- **WHEN** the particle count or the interaction radius changes and a world settles
+- **THEN** the onset is the larger of `x_on` times the uniform crowd density and the crowd density of
+  a hexagonal lattice at the pair law's rest spacing, so a single contact in a sparse world does not
+  pass it
 
 ### Requirement: The onset and the stiffness are derived and fixed
 
-`src/config_ranges.nim` SHALL hold the onset `x_on` and the stiffness `K`, each with its derivation
-beside it under the measured-bound rule, and neither SHALL change with any coupling's live value:
+`src/config_ranges.nim` SHALL hold the onset ratio `x_on` and the stiffness `K`, each with its
+derivation beside it under the measured-bound rule, and neither SHALL change with any coupling's live
+value:
 
-- `x_on` SHALL lie above the highest settled crowd density, in units of the uniform crowd density,
-  that worlds of mixed matrices reach with no coupling acting, measured on the native binned oracle
-  on a recorded set of calibration seeds at two particle counts and two interaction radii.
-- `K` SHALL be the largest stiffness at which worlds on the calibration seeds, at `FRICTION_MIN` and
-  at the shipped friction, still settle as they do without the term: the ratio of a late window's
-  mean speed to an earlier window's lies within the spread of that ratio without the term.
-- The uniform crowd density SHALL be computed each frame by a pure function in `src/balance_core.nim`
-  from the live particle count, interaction radius and world area, and written as one uniform.
+- `x_on` SHALL sit at the bottom of the band of settled crowd densities, in units of the uniform
+  crowd density, that self-attracting worlds reach with no coupling acting, measured past the floor on
+  the native binned oracle on a recorded set of calibration seeds from `PARTICLE_COUNT_MIN` to
+  `MAX_PARTICLES` and from `INTERACTION_RADIUS_MIN` to `INTERACTION_RADIUS_MAX`. The densest particles
+  of dense mixed-matrix settles MAY lie above it and be trimmed.
+- The floor SHALL be the crowd density of a hexagonal lattice at the pair law's rest spacing for an
+  attracting pair at `MATRIX_MAX_VALUE`, computed from the live pair-law shape by a pure function in
+  `src/balance_core.nim`.
+- `K` SHALL be 540, the stiffness the user chose from the 128 000-particle trade (design D13),
+  confirmed on the calibration seeds. Beside it SHALL stand the friction-0 bound `B_L`: the mean over
+  128 000-particle calibration seeds of L, the late-window mean speed at `FRICTION_MIN` with the term
+  over the same seed's without it, plus the margin `t · s · √(1/n_cal + 1/n_held)` at a false-fail rate
+  of 5%. A self-attracting world at friction 0 MAY settle warmer than without the term, up to `B_L`
+  (about 17% at 128 000 particles, an accepted cost).
+- The uniform crowd density and the floor SHALL be computed each frame by pure functions in
+  `src/balance_core.nim` and written as uniforms.
 
-Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles", which on a
-disjoint recorded set of held-out seeds, self-attracting worlds included, holds that speed ratio
-within its no-term spread at `FRICTION_MIN` and at the shipped friction (test-held). That the frame
-writes the uniform crowd density function's value is **unenforced**, closed by a
-`tests/test_sim_registry.nim` check on the uniform's producer.
+Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles", which on 16
+held-out seeds at 128 000 particles holds the mean L at most `B_L` at `FRICTION_MIN`, one-sided at a 5%
+false-fail rate at frame factor 1 against a `B_L` the same recipe re-derives on the calibration seeds
+(held by the `just calibrate-balance-128k` recipe, run by the task that lands the term and on a change to `K`, the pressure law, the onset, the fine/coarse word split, or the crowd-density computation's dependence on particle count,
+not by every `just check` or `just calibrate-balance`; that the recipe reruns on such a change is
+**unenforced**, the standing condition of the recipe's tier); `K = 1728` turns it red. At frame factor
+1 it cannot tell a per-step accumulation from a per-reference-frame one; the frame-factor arms of the
+next requirement hold that. That the frame writes the functions' values
+is **unenforced**, closed by a `tests/test_sim_registry.nim` check on the uniforms' producer.
 
-#### Scenario: A body appears and distant crowds keep their motion
+#### Scenario: A dense crowd at friction 0 settles no warmer than the accepted bound
 
-- **WHEN** bodies' envelopes rise from zero to one at their ceilings in a two-frame attack
-- **THEN** crowds beyond the bodies' reach keep their mean speed within the spread of a run with no
-  body
+- **WHEN** a self-attracting world of 128 000 particles settles above the onset at `FRICTION_MIN` on the
+  held-out seeds
+- **THEN** its late-window mean speed, over the same seed's without the term, averages at most `B_L`
 
-#### Scenario: A stiffness above the derivation is caught
+#### Scenario: A stiffness above the chosen one is caught
 
-- **WHEN** `K` is raised to a value at which the calibration seeds' speed ratio leaves its no-term
-  spread
-- **THEN** the held-out seeds' speed ratio leaves it too and the suite fails
+- **WHEN** `K` is raised to a value whose 128 000-particle L on the calibration seeds passes `B_L`
+- **THEN** the held-out seeds' mean L passes `B_L` and the suite fails
 
-### Requirement: Every velocity impulse accumulates per reference frame and fits a full crowd
+### Requirement: A frame past the stability limit substeps
 
-Every shader that writes the shared velocity delta SHALL accumulate its impulse per reference frame,
-not multiplied by the substep, and integrate SHALL multiply the decoded delta by the frame factor
-once. The sum of every writer's largest per-particle impulse per reference frame, each bounded by a
-full crowd of `MAX_PARTICLES`, times the velocity scale, SHALL fit a signed 32-bit word. No user range
-SHALL be narrowed to satisfy it.
+When a frame's frame factor `ff` exceeds `ff_stable`, the executor SHALL run the whole frame
+description `max(fluid substeps, ⌈ff / ff_stable⌉)` times, each substep advancing the frame's time over
+that count. `src/config_ranges.nim` SHALL hold `ff_stable` with its conditions beside it: the largest
+frame factor, held fixed through a run, at which a dense self-attracting world at the recorded `K` and shipped friction settles
+no warmer per reference frame than at frame factor 1, on the calibration seeds, one-sided at a 5%
+false-fail rate. The time-scale range SHALL NOT be narrowed to avoid substeps.
 
-Enforced by: a static assertion at the bottom of `src/config_ranges.nim` summing every writer's
-per-particle maximum (build-asserted); `tests/test_physics.nim` suite "A Full Crowd Decodes To Its
-Impulse", which encodes a full crowd at contact at `FORCE_STRENGTH_MAX` and frame factor 30 through
-the writer oracle and decodes it through the integrate oracle (test-held). That each of the six
-shaders carries the convention is **unenforced**, the standing condition of the mirror.
+Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles", which on the
+held-out seeds runs frame factors 2, 10 and 30, a frame factor drawn per frame from 8 to 16, and one
+alternating 10 and 13, through the substep rule, and holds each no warmer per
+reference frame than frame factor 1 at shipped friction, one-sided at a 5% false-fail rate (held by
+the `just calibrate-balance` recipe, not by every `just check`). That `src/webgpu_compute.nim` applies
+the rule is **unenforced** beyond the oracle, the standing condition of the executor. The added GPU
+cost per substep is **agent-checkable** in-app.
+
+#### Scenario: A long frame at a stiffness past its limit substeps
+
+- **WHEN** a frame held at the 0.05 s cap at time scale 5 carries frame factor 30 and `ff_stable` is 12
+- **THEN** the frame runs 3 substeps of 10 reference frames each
+
+#### Scenario: A 60 Hz frame at any time scale does not substep
+
+- **WHEN** a frame on a 60 Hz display carries frame factor at most 10 and `ff_stable` is 12
+- **THEN** the frame runs 1 step
+
+#### Scenario: A frame factor that straddles the limit settles no warmer than the shipped frame
+
+- **WHEN** a dense self-attracting world settles with its frame factor drawn each frame from 8 to 16
+  under the substep rule and `ff_stable` is 12
+- **THEN** its late-window mean speed per reference frame is no warmer than the same world's at frame
+  factor 1
+
+#### Scenario: A long frame settles no warmer than the shipped frame
+
+- **WHEN** a dense self-attracting world settles at frame factor 30 under the substep rule
+- **THEN** its late-window mean speed per reference frame is no warmer than the same world's at frame
+  factor 1
+
+### Requirement: Every velocity impulse accumulates per reference frame in words that fit a full crowd
+
+Every shader that writes the velocity delta SHALL accumulate its impulse per reference frame, not
+multiplied by the substep, and integrate SHALL multiply the decoded delta by the frame factor once.
+The delta SHALL be held in two signed 32-bit words per particle: a fine word at 2^16 and a coarse word
+counting `2^k` fine quanta. A writer whose full crowd does not fit the fine word SHALL split each
+integer `q` into `q >> k` for the coarse word and `q & (2^k − 1)` for the fine word, which sum back to
+`q` exactly. `k` SHALL be the largest value at which every writer's full-crowd contribution to the fine
+word fits, and `q_max` the largest per-pair pressure the coarse word admits after SPH's. No user range
+SHALL be narrowed to satisfy either word.
+
+Enforced by: static assertions at the bottom of `src/config_ranges.nim` summing every writer's
+per-particle maximum per reference frame into each word, each term naming its constants
+(build-asserted); `tests/test_physics.nim` suite "A Full Crowd Decodes To Its Impulse", which for
+every writer encodes a full crowd at its maxima through the writer's oracle and decodes it through
+the integrate oracle at frame factors 1, 2 and 30 (test-held); suite "Today's Low Bits Move By Less
+Than The Frame Factor", which compares each contribution with the today-convention oracle
+(test-held). That each of the five shaders carries the convention is **unenforced**, the standing
+condition of the mirror.
 
 #### Scenario: A full crowd on the largest substep keeps its impulse
 
-- **WHEN** `MAX_PARTICLES` neighbours at contact act on one particle at `FORCE_STRENGTH_MAX` on a
-  0.25 s substep
+- **WHEN** a full crowd at any writer's maxima acts on one particle on a 0.25 s substep
 - **THEN** the decoded velocity delta equals the float impulse within one quantum times the frame
   factor, with its sign
 
-#### Scenario: A budget outgrows the velocity word
+#### Scenario: A delta below the onset moves only in its low bits
 
-- **WHEN** `MAX_PARTICLES`, `FORCE_STRENGTH_MAX` or any writer's per-particle maximum rises past the
-  word's span
-- **THEN** the build fails at the assertion, and the remedy is the word's scale, width or
-  accumulation, never a user range
+- **WHEN** a contribution is written at frame factor `ff` under the per-reference-frame convention
+- **THEN** its decoded delta differs from the today-convention delta by less than `max(1, ff)` quanta,
+  and by zero at frame factor 1
 
-### Requirement: The pressure's accumulator holds a full crowd
+#### Scenario: A budget outgrows a word
 
-The pressure SHALL accumulate per reference frame into its own fixed-point word with its own scale.
-The largest per-pair integer, times `MAX_PARTICLES`, SHALL fit a signed 32-bit word. The scale SHALL
-be the coarsest at which the calibration seeds keep the stiffness criterion and the relaxation of a
-compressed crowd, and the per-pair saturation the largest the word then admits.
+- **WHEN** `MAX_PARTICLES`, `MATRIX_MAX_VALUE`, `MAX_VELOCITY_MAX`, `q_max`, `k` or any writer's
+  per-particle maximum rises past its word's span
+- **THEN** the build fails at the assertion, and the remedy is the words' scale, width or split, never
+  a user range
 
-Enforced by: a static assertion at the bottom of `src/config_ranges.nim` holding
-`q_max · MAX_PARTICLES · scale < 2^31 − 1` (build-asserted). That `forces.wgsl` saturates each pair at
-`q_max` is **unenforced**, the standing condition of the mirror.
+### Requirement: A compressed crowd stays local and below its collapse
 
-#### Scenario: A budget grows past what the word holds
+With the bodies stacked up to `MAX_BODIES` aligned shells at the bound `parametric-bodies` states, a
+held crowd's density SHALL stay below the density the same hold reaches with no pressure, and crowds
+beyond the bodies' reach SHALL keep the motion they have with no body acting. With long range, the
+field force and the mouse also at the maxima of their ranges, the same SHOULD hold. A held crowd MAY compress past the onset while held and MAY cost
+the pair pass more while held. No absolute crowd-density or cost ceiling SHALL be imposed: the ceiling
+is relative to the world's own mean crowd density and the contact floor. The pair pass's allotment
+SHALL bound the cost the term adds to a settled world at `MAX_PARTICLES`, drawn from the settled
+128 000-particle headroom at the shipped radius, not held or dense configurations.
 
-- **WHEN** `MAX_PARTICLES`, the scale or the per-pair saturation rises so the full-crowd sum passes the
-  word's span
-- **THEN** the build fails at the assertion, and the remedy is the word's scale or width, never a
-  user range
+Enforced by: `tests/test_balance_core.nim` suite "A Compressed Crowd Stays Local And Below Its
+Collapse", a stepped binned oracle world at 16 000 particles and radius 50 on 16 held-out seeds,
+including one self-attracting species, with a stiffness-zero control bounded to 100 held frames,
+one-sided at a 5% false-fail rate (held by the `just calibrate-balance` recipe run at change time).
+The oracle world models bodies alone, so the hold with long range, the field force and the mouse at
+their maxima as well is **unenforced** by any suite; the 128 000-particle hold with long range at its
+maximum is **agent-checkable** in-app.
 
-### Requirement: A compressed crowd stays finite and local
+#### Scenario: Every body stacked at its ceiling holds a crowd below its collapse
 
-With every compressor at the maximum of its ranges, the bodies stacked up to `MAX_BODIES` aligned
-shells at the bound `parametric-bodies` states, a held crowd's density SHALL stay finite, and crowds
-beyond every compressor's reach SHALL keep the motion they have with no compressor acting. A held
-crowd MAY compress past the onset while held and MAY cost the pair pass more while held. No absolute
-crowd-density or cost ceiling SHALL be imposed: the ceiling is relative to the world's own mean crowd
-density, so every configuration keeps its own settled look and a dense configuration costs what its
-settle costs. The pair pass's allotment SHALL gate the settled shipped world at `MAX_PARTICLES`, not
-held or dense configurations.
-
-Enforced by: `tests/test_balance_core.nim` suite "A Compressed Crowd Stays Finite And Local", a
-stepped binned oracle world at `MAX_PARTICLES` on the held-out seeds, including one self-attracting
-species, with a negative control at stiffness zero whose held crowd collapses (test-held).
-
-#### Scenario: Every body stacked at its ceiling holds a crowd without collapsing it
-
-- **WHEN** `MAX_BODIES` bodies with aligned shells at their ceilings act on a settled world for 300
+- **WHEN** `MAX_BODIES` bodies with aligned shells at their ceilings act on a settled world for 100
   frames
-- **THEN** the busiest particle's crowd density stays finite and below the stiffness-zero control's
-
-#### Scenario: The control collapses
-
-- **WHEN** the same run uses stiffness zero
-- **THEN** the busiest particle's crowd density exceeds every value the pressured run reached, which
-  proves the suite can see a collapse
+- **THEN** the busiest particle's crowd density stays below the stiffness-zero control's at the same
+  held frame
 
 #### Scenario: A dense configuration keeps its settle
 
@@ -233,57 +283,69 @@ species, with a negative control at stiffness zero whose held crowd collapses (t
 #### Scenario: A hold does not heat the far world
 
 - **WHEN** the stacked bodies hold
-- **THEN** the mean speed of particles beyond the bodies' reach stays within the spread of a run with
-  no body
+- **THEN** the mean speed of particles beyond the bodies' reach exceeds a run with no body by no more
+  than the recorded margin
 
 ### Requirement: A compressed crowd relaxes when the compressor goes
 
-A crowd compressed by any compressor SHALL, once that compressor stops acting, return within 900
-frames to the neighbourhood a fresh settle of the same world reaches, including a world of one
-self-attracting species at the matrix maximum.
+A world of one self-attracting species at the matrix maximum, compressed by the stacked bodies at
+their ceilings, SHALL return within 900 frames of their removal to within the ratio `B` of the
+neighbourhood a fresh settle of the same seed reaches. At the chosen stiffness it returns fully at
+128 000 particles (design D13). At 16 000 particles `B` is the chosen stiffness's own calibration
+ratio there plus its margin; at 128 000 particles `B` is 1 (design D10). Clumps of a mixed-matrix world that a
+hold merged below the onset MAY stay merged.
 
-Enforced by: `tests/test_balance_core.nim` suite "Compression Is Not Remembered", comparing the mean
-neighbour count 900 frames after the stacked bodies at their ceilings are removed against fresh
-settles of the same held-out seeds at the same frame count, within the spread of those fresh settles
-(test-held).
+Enforced by: `tests/test_balance_core.nim` suite "Compression Is Not Remembered": per held-out seed,
+the weighted neighbour count 900 frames after removal over a fresh settle's at the same frame count;
+at 16 000 particles the suite holds the mean ratio at most `B`, derived with its margin, and at
+128 000 particles at most `1 + t · s / √n`, each one-sided at a 5% false-fail rate. The 16 000-particle
+arm is held by the `just calibrate-balance` recipe run at change time. The 128 000-particle arm is held
+by the `just calibrate-balance-128k` recipe, run by the task that lands the term and on a change to `K`, the pressure law, the onset, the fine/coarse word split, or the crowd-density computation's dependence on particle count, not by
+every `just check`; that the recipe reruns on such a change is **unenforced**, the standing condition
+of the recipe's tier.
 
 #### Scenario: A self-attracting clump spreads back
 
 - **WHEN** a one-species world at the matrix maximum is compressed by the stacked bodies at their
   ceilings and the bodies are removed
-- **THEN** its mean neighbour count 900 frames later lies within the spread of its fresh settles
+- **THEN** its mean after-over-fresh neighbour ratio 900 frames later exceeds `B` by no more than the
+  recorded margin
 
 ### Requirement: Couplings are compared on one scale
 
 The response probes for coupling strengths that write the velocity delta SHALL report an impulse in
-`u0` at one shared reference configuration, and a native suite SHALL check each probe against its
-compressor's demand function. The suite SHALL report, for each compressor at its range maximum, the
-relative density at which the pressure's capacity meets its demand, and SHALL assert no bound on it:
-under the relative ceiling no absolute density exists to hold it under.
-`LONG_RANGE_STRENGTH_MAX` SHALL be the strength at which `MAX_PARTICLES` gathered into one disc at the
-onset density pull a particle one interaction radius past the disc's edge as hard as the pair force's
-peak edge impulse at that density, computed in `src/balance_core.nim` and recorded beside the
-constant.
+`u0` at one shared reference configuration, and a native suite SHALL check each probe against a
+one-frame stepped measurement of that compressor in the binned oracle world. The suite SHALL report,
+for each compressor at its range maximum, the relative density at which the pressure's capacity meets
+its demand, and SHALL assert no bound on it: under the relative ceiling no absolute density exists to
+hold it under. `LONG_RANGE_STRENGTH_MAX` SHALL be the strength at which `MAX_PARTICLES` gathered into
+one disc at the onset density pull a particle one interaction radius past the disc's edge as hard as
+the pair force's peak edge impulse at that density, computed in `src/balance_core.nim` and recorded
+beside the constant. Under `U(R)` that strength is the same at every interaction radius, and at a
+fixed strength the pull grows about as the square of the radius.
 
 Enforced by: `tests/test_response_probe.nim` suite "Couplings Are Compared On One Scale", which checks
-each probe's impulse against its demand function evaluated directly (test-held); the per-slider sweep
-at calibrated thresholds, unchanged (test-held); the long-range ceiling's derivation by a static
-assertion in `src/config_ranges.nim` (build-asserted). Whether a population visibly gathers within a
-few seconds at that ceiling is **agent-checkable**: an agent raises Long Range to its maximum over a
-settled world at 128 000 particles and watches distant groups draw together.
+each probe's impulse against the stepped measurement (test-held); the per-slider sweep at calibrated
+thresholds, unchanged (test-held); the long-range ceiling's derivation by a static assertion in
+`src/config_ranges.nim` (build-asserted). Whether a population visibly gathers within a few seconds at
+that ceiling is **agent-checkable**: an agent raises Long Range to its maximum over a settled world at
+128 000 particles and watches distant groups draw together.
 
-#### Scenario: A demand function drifts from its oracle
+#### Scenario: A probe drifts from what a step hands a particle
 
-- **WHEN** a compressor's demand function returns a value its oracle does not produce at the same
-  configuration
+- **WHEN** a probe reports an impulse that one stepped frame of its compressor does not hand a probe
+  particle at the same configuration
 - **THEN** the cross-coupling suite fails and names the coupling
 
 ### Requirement: A saved long-range world converts, then the clamp decides
 
 A preset written under a schema version before the unit change SHALL decode with its long-range
-strength multiplied by the saved mesh's cell area over `u0` times the saved interaction radius, and
-the descriptor clamp SHALL then apply. A preset with a long-range strength of zero SHALL decode to
-zero.
+strength multiplied by the saved mesh's cell area over `U` at the saved interaction radius, and the
+descriptor clamp SHALL then apply. A preset with a long-range strength of zero SHALL decode to zero.
+The onset ratio the current schema's long-range unit was defined at SHALL equal the live onset
+constant.
+
+Enforced by (the onset clause): a static assertion in `src/preset.nim` (build-asserted).
 
 Enforced by: `tests/test_preset.nim` suite for the version branch, which decodes a previous-version
 preset at each declared grid size and two interaction radii and compares the decoded strength with
@@ -293,7 +355,7 @@ the converted value clamped to the range (test-held); the clamp in `validateSett
 
 - **WHEN** a preset of the previous schema version carrying long-range strength 0.001, the 512 × 256
   mesh and interaction radius 50 is applied
-- **THEN** the decoded strength is 0.001 times the 512 × 256 cell area over `u0 · 50`, clamped to the
+- **THEN** the decoded strength is 0.001 times the 512 × 256 cell area over `U(50)`, clamped to the
   strength's range
 
 #### Scenario: A preset without the coupling loads unchanged
