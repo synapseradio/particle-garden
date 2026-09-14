@@ -127,9 +127,12 @@ constant, and do not carry a 16k field figure into a 128k budget.
 
 ## Per-frame figures and headroom
 
-Every pass except the field runs once per substep, so its per-frame cost is the raw figure times
-`substepCount`. The Field pass carries `fncOncePerFrame` and runs once whatever the substep count.
-Totals use the top of each range.
+Grid Build, Physics, Field Force, Long Range Force, Bodies and Integrate are the compute passes the
+substep loop (`src/webgpu_compute.nim:1243-1253`) re-encodes every substep, so their per-frame cost
+is the raw figure times `substepCount`. Long Range Solve and Field carry `fncOncePerFrame`
+(`src/sim_registry.nim:417,460`) and run once per frame; draw, present and bloom are render passes
+timed outside that loop (`src/webgpu_render.nim:1795,1905,1946,1857-1859`) and also run once per
+rendered frame whatever the substep count. Totals use the top of each range.
 
 | run | window | substeps | grid | physics | draw | present | field | bloom | per-frame total | headroom to 16.7 ms |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -138,9 +141,9 @@ Totals use the top of each range.
 | `w1-16k` | 30 s | 1 | 0.047 | 0.173 | 0.232 | 0.694 | 1.788 | 0 | 2.93 | 13.77 |
 | `w1-128k` | 30 s | 1 | 0.089 | 1.471 | 0.668 | 1.977 | 0.842 | 0 | 5.05 | 11.65 |
 | `w1-128k-150` | 150 s | 1 | 0.019 | 7.929 | 0.512 | 3.291 | 1.202 | 0 | **12.95** | **3.75** |
-| `w2-16k` | 30 s | 2 | 0.094 | 0.354 | 0.442 | 1.286 | 1.791 | 0 | 3.97 | 12.73 |
-| `w2-128k` | 30 s | 2 | 0.156 | 2.106 | 0.842 | 2.606 | 0.672 | 0 | 6.38 | 10.32 |
-| `w3-128k` | 30 s | 3 | 0.204 | 2.925 | 1.152 | 3.549 | 0.513 | 0 | 8.34 | 8.36 |
+| `w2-16k` | 30 s | 2 | 0.094 | 0.354 | 0.221 | 0.643 | 1.791 | 0 | 3.10 | 13.60 |
+| `w2-128k` | 30 s | 2 | 0.156 | 2.106 | 0.421 | 1.303 | 0.672 | 0 | 4.66 | 12.04 |
+| `w3-128k` | 30 s | 3 | 0.204 | 2.925 | 0.384 | 1.183 | 0.513 | 0 | 5.21 | 11.49 |
 | `w1-bloom-128k` | 30 s | 1 | 0.097 | 1.544 | 0.730 | 1.543 | 0.948 | 1.779 | 6.64 | 10.06 |
 
 No measured configuration exceeds the 16.7 ms interactive budget. The closest is `w1-128k-150` at
@@ -167,8 +170,10 @@ more when many particles share a cell is unmeasured. Record: `scratchpad/long-ra
 
 `w3-128k` raises `sphSubsteps` to 3 against `w2-128k`'s 2 with nothing else changed. Its raw
 per-pass physics figure, 0.805-0.975 ms, sits inside `w2-128k`'s 0.813-1.053 ms, which is what
-timestamps attaching on substep 0 only predicts. The per-frame total moves from 6.38 ms to 8.34 ms,
-about half again as large, and that whole movement is the multiplier.
+timestamps attaching on substep 0 only predicts. The per-frame total moves from 4.66 ms to 5.21 ms.
+Grid and physics, the two passes the substep loop scales, rise by 0.87 ms together; draw, present
+and field, which don't scale with substep count, fall by 0.32 ms over the same two runs, so the
+multiplier's effect is offset rather than the whole movement.
 
 ## Bloom
 
