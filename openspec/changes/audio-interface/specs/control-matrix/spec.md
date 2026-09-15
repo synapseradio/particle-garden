@@ -32,53 +32,50 @@ against this change's diff.
 - **WHEN** a stored matrix names audio sources in a build where the audio family declares nothing
 - **THEN** every row keeps its place and displaces nothing
 
-### Requirement: The default matrix ships six audio rows
+### Requirement: The default matrix ships four audio rows
 
-The shipped default matrix SHALL carry six audio rows, each touching exactly one target, and the six
-targets SHALL be distinct from one another so each source's effect reads alone. Three rows SHALL ship
-live and three SHALL ship at zero depth, so the first listen moves only the three whose cause and
-effect share a kind and a clock:
+The shipped default matrix SHALL carry four audio rows. Three SHALL ship live on two targets and one
+SHALL ship at zero depth, so the first listen moves only the rows whose cause and effect share a kind
+and a clock:
 
-| Source | Kind | Target | Depth |
-|---|---|---|---|
-| `audio:onset` | Touch | a one-cell grid over the visible view | the event's energy as blast strength |
-| `audio:bass` | Modulate | `fluidStrength` | +0.30 |
-| `audio:loudness` | Modulate | `forceStrength` | +0.25 |
-| `audio:high` | Modulate | `glowIntensity` | 0 |
-| `audio:mid` | Modulate | `rdDeposit` | 0 |
-| `audio:brightness` | Modulate | `rdFieldForce` | 0 |
+| Source | Kind | Target | Depth | Attack | Release |
+|---|---|---|---|---|---|
+| `audio:onset` | Modulate | `forceStrength` | +0.40 | 0 | 300 ms |
+| `audio:bass` | Modulate | `fluidStrength` | +0.30 | 0 | 80 ms |
+| `audio:loudness` | Modulate | `forceStrength` | +0.25 | 0 | 80 ms |
+| `audio:high` | Modulate | `glowIntensity` | 0 | 0 | 80 ms |
 
-> 2026-09-12: the `audio:mid` → `rdDeposit` and `audio:brightness` → `rdFieldForce` rows above no
-> longer ship; reaction-diffusion is decoupled from audio.
+`audio:onset` and `audio:loudness` share `forceStrength` and sum there, so a hit rides on the
+room's energy and reaches every particle. Every other row touches a target no other audio row
+touches. All six audio source declarations SHALL still register, so the two sources without a
+shipped row stay mappable.
 
-> 2026-09-12: the `audio:onset` row above ships as a Modulate impulse on `forceStrength`, depth
-> +0.40 and a 300 ms release, so a hit reaches every particle rather than a disc of them; its
-> target is the one `audio:loudness` holds, so the shipped targets are no longer all distinct and
-> the two rows sum on that parameter. The blast stays available to Touch rows, which is what the
-> shipped MIDI pad grid uses.
-
-Every Modulate row SHALL ship with a zero attack constant and an 80 ms release constant, starting
-values a test pins.
-
-The four simulation targets are the four couplings the world reads off its own parameters
+Both simulation targets are couplings the world reads off its own parameters
 (`src/ui/state/sim_config.nim:43-57`). `audio:high` lands on `glowIntensity`, which is in the picture
 whenever particles are (`src/ui/api/param_descriptor.nim:488-490`), rather than on `bloomIntensity`,
 which sits dormant while bloom is off (`src/ui/api/param_descriptor.nim:507-509`). Every depth SHALL
-have zero inside its range, so any shipped row can be neutralized without deleting it. Depths are
-shipped starting values a test pins, refined against the running world.
+have zero inside its range, so any shipped row can be neutralized without deleting it. Depths and
+envelopes are shipped starting values a test pins, refined against the running world.
+
+History, kept as recorded:
+
+> 2026-09-12: the `audio:mid` → `rdDeposit` and `audio:brightness` → `rdFieldForce` rows, which
+> once shipped at zero depth, no longer ship; reaction-diffusion is decoupled from audio.
+
+> 2026-09-12: the `audio:onset` row, first specified as a Touch blast at the center of the visible
+> view, ships as a Modulate impulse on `forceStrength`, depth +0.40 and a 300 ms release, so a hit
+> reaches every particle rather than a disc of them; its target is the one `audio:loudness` holds,
+> and the two rows sum on that parameter. The blast stays available to Touch rows, which is what the
+> shipped MIDI pad grid uses.
 
 Enforcement: the static gate on the shipped default matrix, which fails the Nim build when a shipped
-row names a descriptor id or a source id no declaration covers, plus a native test under `just test`
-pinning each row's source, kind, target, and depth.
+row names a descriptor id or a source id no declaration covers, plus "the four audio rows ship
+pinned by source, kind, target and depth" in `tests/test_control_matrix.nim` under `just test`.
 
-#### Scenario: A drum hit shoves the world where the eye rests
-- **WHEN** an onset event arrives with the shipped Touch row in place
-- **THEN** a blast lands at the center of the visible view, its strength taken from the event's
-  energy
-
-> 2026-09-12: the shipped onset row is a Modulate impulse on `forceStrength`, so a hit lifts the
-> force every particle reads and releases to base over 300 ms. This scenario holds for a Touch row
-> a user places on an onset source.
+#### Scenario: A hit lifts the force every particle reads
+- **WHEN** an onset event arrives with the shipped rows in place
+- **THEN** `forceStrength` lifts in proportion to the event's energy and the onset row's depth,
+  summed with any lift loudness holds, and releases toward base on the row's 300 ms release
 
 #### Scenario: A shipped row naming an absent target fails the build
 - **WHEN** a shipped audio row names a descriptor id or a source id no declaration covers
@@ -86,30 +83,20 @@ pinning each row's source, kind, target, and depth.
 
 #### Scenario: Silence leaves the authored world
 - **WHEN** no audio source has delivered a value
-- **THEN** all six rows displace nothing and the world runs at its stored parameter values
+- **THEN** all four audio rows displace nothing and the world runs at its stored parameter values
 
 #### Scenario: A shipped row is neutralized without deletion
 - **WHEN** a user sets a shipped audio row's depth to zero
 - **THEN** the row keeps its place in the matrix and displaces nothing
 
-#### Scenario: A first listen moves three targets
+#### Scenario: A first listen moves two targets
 - **WHEN** listening starts with the shipped default matrix and sound arrives
-- **THEN** `fluidStrength`, `forceStrength`, and the blast answer, while `glowIntensity`,
-  `rdDeposit`, and `rdFieldForce` hold their stored values until their rows' depths are raised
+- **THEN** `fluidStrength` and `forceStrength` answer, while `glowIntensity` holds its stored value
+  until the `audio:high` row's depth is raised
 
-> 2026-09-12: `rdDeposit` and `rdFieldForce` no longer name shipped rows; the `audio:mid` and
-> `audio:brightness` rows that once held their stored values here are decoupled from audio.
-
-> 2026-09-12: the blast named in this scenario is now a lift of `forceStrength`, the onset row
-> having shipped as a Modulate impulse on that parameter; the three answering targets are
-> `fluidStrength` and `forceStrength`, which onset and loudness share.
-
-#### Scenario: A dormant row is offered in the editor
+#### Scenario: The dormant row is offered in the editor
 - **WHEN** the user opens the mapping editor having never edited it
-- **THEN** the three zero-depth audio rows appear with their targets, ready to raise
-
-> 2026-09-12: one zero-depth row ships, `audio:high` into `glowIntensity`; the mid and brightness
-> rows no longer ship.
+- **THEN** the `audio:high` row appears at zero depth with its target, ready to raise
 
 #### Scenario: An audio row shares a target with a written value
 - **WHEN** the default matrix also carries a Write row on one of the four coupling strengths

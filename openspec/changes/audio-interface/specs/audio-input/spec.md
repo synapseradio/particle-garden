@@ -68,27 +68,31 @@ node, and the help file states the promise to the user in the same words
 - **WHEN** a capture chain is live
 - **THEN** no captured sample and no derived spectrum is written to storage or sent over a network
 
-### Requirement: The affordance reports one of five states
+### Requirement: The affordance reports one of six states
 
-The affordance SHALL report exactly one of five states, and the panel SHALL render the state's name
+The affordance SHALL report exactly one of six states, and the panel SHALL render the state's name
 while restating none of the thresholds behind it:
 
 - `Disconnected`: never asked, or turned off.
 - `Requesting`: the permission prompt is open.
-- `Connected`: the stream is live.
+- `Learning`: the stream is live and the core is learning the room, for the learning window of
+  heard audio after connecting.
+- `Connected`: the stream is live and the room is learned.
 - `Denied`: the request ended without a live stream, whether the user refused the prompt or the
   launched window offers no capture.
-- `Silent`: connected, with the loudness feature at the bottom of its room-gated window for three
-  seconds, the state that answers whether the room is quiet or the capture is broken.
+- `Silent`: connected, with the loudness level at or under its room edge for three seconds, the
+  state that answers whether the room is quiet or the capture is broken.
 
-A request SHALL leave `Requesting` when it settles, either way.
+A request SHALL leave `Requesting` when it settles, either way. The core's report SHALL be one value
+naming learning, sounding or silent, so no frame can report silent while the room is being learned.
 
 Enforcement: the states are one Nim enum, so a consumer that leaves a state unhandled fails the Nim
-build wherever it matches exhaustively (`just build-app`, `justfile:26-27`). The core's silence
-report, which decides `Silent` against `Connected`, is agent-checkable by native tests under
-`just test` (`tests/test_audio_core.nim`), including a room whose noise flickers by several decibels
-frame to frame. The transitions themselves are review-enforced and verified in a running app, since
-the capture chain is never mocked.
+build wherever it matches exhaustively (`just build-app`, `justfile:26-27`). The core's report, which
+decides `Learning`, `Connected` and `Silent`, is agent-checkable by native tests under `just test`
+(`tests/test_audio_core.nim`), including a room whose noise flickers by several decibels frame to
+frame and a soft passage held after music. That the switch reads checked in `Learning` is held by
+`web-ui/test/audio-section.test.ts` under `just test-ui`. The transitions themselves are
+review-enforced and verified in a running app, since the capture chain is never mocked.
 
 #### Scenario: The prompt is open
 - **WHEN** the user activates the listen control and the browser's permission prompt is open
@@ -98,19 +102,29 @@ the capture chain is never mocked.
 - **WHEN** the request ends without a live stream
 - **THEN** the affordance reports `Denied` and does not remain in `Requesting`
 
+#### Scenario: The room is learned before anything reads
+- **WHEN** a request settles with a live stream
+- **THEN** the affordance reports `Learning` until the learning window of heard audio has passed,
+  every feature reads zero and no onset fires meanwhile, and the switch reads checked
+
 #### Scenario: A quiet room is legible
-- **WHEN** a live capture reports loudness at the bottom of its window for three seconds
+- **WHEN** a live capture reports the loudness level at or under its room edge for three seconds
 - **THEN** the affordance reports `Silent` and the capture stays live
 
 #### Scenario: A flickering room still reaches Silent
-- **WHEN** the core, having heard a sounding passage, receives a room whose noise moves by several
-  decibels from frame to frame and never rises past its room gate
-- **THEN** the core reports silent within the silence window plus the margin its test pins
+- **WHEN** the core, having learned a room and heard a sounding passage, receives that room with its
+  noise moving by several decibels from frame to frame
+- **THEN** the core reports silent within the silence window plus the half-second margin its test pins
+
+#### Scenario: A soft legato passage never reads Silent
+- **WHEN** a held passage standing more than the loudness gate over the learned room sounds for
+  35 seconds after music, with no note boundary in it
+- **THEN** the core reports no silent frame after the passage's first half second
 
 #### Scenario: Sound returns
-- **WHEN** a `Silent` capture receives sound that rises above the room gate
-- **THEN** the core reports not silent on the first analysed frame whose loudness reads above its
-  room edge, which natively is the next frame and live arrives within one analyser window
+- **WHEN** a `Silent` capture receives sound whose level rises above the room edge
+- **THEN** the core reports not silent on the first analysed frame whose loudness level stands above
+  its room edge, which natively is the next frame and live arrives within one analyser window
 
 ### Requirement: The analyser window is fixed and the browser averages nothing
 
@@ -136,14 +150,14 @@ running app.
 Exactly five inputs SHALL cross into the feature core each frame: the frequency array of 1024
 decibel values, the time-domain array of 2048 samples, the sample rate, the frame's wall-clock
 delta, and the Room Gate offset in decibels. Every constant (band edges, window widths, room gates,
-noise-floor rates, thresholds, the refractory span) and every
+the learning window, thresholds, the refractory span) and every
 arithmetic step from arrays to feature values SHALL live inside that module, which SHALL read a
 decibel value of negative infinity as zero magnitude. No feature value SHALL be computed in
 JavaScript, in a shader, or in the panel, and the wiring around the core SHALL do nothing but poll,
 copy, read the Room Gate, and call.
 
 Every constant the core expresses in time SHALL be honored against that delta rather than counted in
-frames, so the refractory window, the adaptation and the noise floor's movement span the same
+frames, so the refractory window, the learning window, the held window and the ceiling's decay span the same
 wall-clock time at any frame rate.
 A constant counted in frames spans half the seconds at 120 fps that it spans at 60.
 
@@ -158,7 +172,8 @@ it under `just test`, the pattern the pure cores already follow (`src/climate_co
 
 #### Scenario: Time constants hold at any frame rate
 - **WHEN** the same signal is analysed twice, once at a 8.33 ms frame delta and once at 16.7 ms
-- **THEN** the refractory window and the gain adaptation span the same wall-clock time in both runs
+- **THEN** the refractory window and the learning window span the same wall-clock time in both runs,
+  and the first reading after learning lands one frame after the learning window in each
 
 #### Scenario: The panel computes no feature
 - **WHEN** the panel renders a meter
@@ -175,14 +190,14 @@ Five sources SHALL be delivered as continuous values, each defined from the fram
   its own window because spectral tilt reads one shared window as a permanently quiet high band.
 - `audio:brightness`: the spectral centroid over linear magnitudes between 20 Hz and 8000 Hz, placed
   by logarithmic frequency position between 200 Hz and 8000 Hz. The centroid is defined only on a
-  frame where at least one band reads above its room edge and the spectrum stands above the energy
+  frame where at least one band's level stands above its room edge and the spectrum stands above the energy
   floor. On any other frame the spectrum is the room's own timbre, so brightness SHALL decay toward
   zero across frames instead of jumping to a value.
 
 Enforcement: agent-checkable by native tests over the core under `just test`
-(`tests/test_audio_core.nim`): a single-bin spectrum at 440 Hz, heard over a room, held to its
-logarithmic position within tolerance; energy confined to one band, over a room, leading that band's
-feature while the others stay low; and a gated room in which brightness falls below 0.01.
+(`tests/test_audio_core.nim`): a single-bin spectrum at 440 Hz, heard over a learned room, held to its
+logarithmic position within tolerance; energy confined to one band, over a learned room, leading that band's
+feature while the others stay low; and a learned room in which brightness falls below 0.01.
 
 #### Scenario: A single tone lands where its frequency says
 - **WHEN** the core receives a spectrum with all energy in the bin nearest 440 Hz
@@ -194,7 +209,7 @@ feature while the others stay low; and a gated room in which brightness falls be
 - **THEN** that band's feature leads and the other two stay low
 
 #### Scenario: Brightness fades instead of jumping
-- **WHEN** every band falls to its room edge, where the centroid is undefined
+- **WHEN** every band's level falls to its room edge, where the centroid is undefined
 - **THEN** brightness decays toward zero across frames, neither snapping to zero in one frame nor
   holding its last value
 
@@ -207,7 +222,7 @@ feature while the others stay low; and a gated room in which brightness falls be
 `audio:onset` SHALL be delivered as an event source. The core SHALL compute half-wave rectified
 spectral flux, the sum of per-bin magnitude increases since the previous frame, normalized by a
 running median. A flux crossing of the threshold SHALL fire exactly one event carrying its energy
-clamped to [0, 1], and only on a frame whose loudness reads above its room edge, so the room's own
+clamped to [0, 1], and only on a frame whose loudness level stands above its room edge, so the room's own
 flicker fires nothing. For 100 ms after a firing, no further event SHALL fire however the flux moves.
 
 Enforcement: agent-checkable by native tests under `just test` (`tests/test_audio_core.nim`): a click
@@ -223,7 +238,7 @@ refractory window, and a flickering room asserting no event across its whole run
 - **THEN** only the first fires an event
 
 #### Scenario: The room fires nothing
-- **WHEN** the core receives a room whose noise flickers frame to frame under its room gate
+- **WHEN** the core receives a learned room whose noise flickers frame to frame under its room edge
 - **THEN** no onset event fires across the run, though the room's flux crosses the threshold
 
 #### Scenario: Steady sound fires nothing
@@ -250,64 +265,99 @@ silence case and a fuzz sweep over random finite arrays and Room Gate offsets ac
 - **THEN** every feature is exactly zero, no onset fires, and the following sounding frame produces
   finite values
 
-### Requirement: Normalization adapts to unknown gain and reads the room as zero
+### Requirement: The room is learned once at Listen start and read as zero
 
-Each normalized feature SHALL track three levels in decibels: a window floor that falls instantly
-and rises slowly, holding the recent quiet; a ceiling that rises instantly and decays slowly, holding
-recent peaks; and a noise floor that falls quickly and rises slowly, never stepping past the level,
-placed by the first analysed frame and settling near the level's quietest twentieth.
+For the learning window after a fresh analysis state, the core SHALL gather each normalized
+feature's level while every feature reads zero and no onset fires. The window counts heard seconds:
+each frame adds its wall-clock delta, capped at one analyser window of audio. When it closes, each
+feature's room level SHALL be the median of what it gathered. No room level SHALL move again, up or
+down, until the analysis state is re-initialized, which turning Listen off does, so turning Listen
+on again learns anew.
 
-The window's lower edge SHALL be the higher of the window floor and the noise floor plus that
-feature's room gate plus the Room Gate offset. The feature is the level's clamped position between
-the lower edge and the ceiling, over a span of at least the minimum window width, so silence divides
-by nothing. Each feature's room gate SHALL be a constant carrying beside it the condition it was
-measured under: the excursion of that feature's level above its noise floor that stationary room
-noise does not exceed.
+Each feature's lower edge SHALL stand at its room level plus that feature's room gate plus the Room
+Gate offset, and SHALL rise above that only to 24 dB under the feature's held level, so a meter
+spreads over the top 24 dB of what it recently heard. The held level is the median of the last
+second of heard audio, so a sound held for less than half a second SHALL NOT raise the lower edge.
+The ceiling rises instantly and decays toward the larger of the held level and the level with a
+1 s time constant. The
+feature is the level's clamped position between the lower edge and the ceiling, over a span of at
+least the minimum window width, so silence divides by nothing. No window floor SHALL follow the level, so a
+sound held at a steady level keeps its reading for as long as it sounds. The learning window, the
+statistic, the held window, the ceiling decay and each room gate SHALL be constants carrying beside
+them the conditions they were measured under. For a gate, that is the excursion of that feature's
+level above the learned median that stationary room noise does not exceed. For the held window, it
+is the longest hit it disregards.
 
-An input gain applied before this window moves no feature, because every step of it commutes with a
-constant decibel offset. No input-gain control SHALL ship.
+An input gain applied before learning moves no feature, because the median, the held level, the
+ceiling and every level shift together under a constant decibel offset. A gain applied after learning moves levels
+against the room edge, which the Room Gate already does. No input-gain control SHALL ship.
 
 Enforcement: agent-checkable by native tests under `just test` (`tests/test_audio_core.nim`):
-- A 20 dB step up and back down over a heard room, asserting every feature returns inside (0, 1)
-  within a bounded frame count the test pins.
-- A flickering room reading zero on every level feature at its 99th percentile.
-- A sound whose quietest frames stand above the widest room gate over a heard room reading the same
-  at a Room Gate of zero and at the range minimum.
-- Every level shifted by one decibel offset changing no level feature.
+- A sound more than 24 dB under a level held for one second reading zero, and one less than 24 dB
+  under it reading above zero.
+- A drone through one analyser window at full scale never reading zero, and returning within 10% of
+  its reading within 2.5 s, two and a half ceiling-decay time constants.
+- A sound 20 dB under a held drone reading above zero after a sound 20 dB over the drone covered
+  0.4 s of the last second, which a mean of the second would not give.
+- The same at 8.33 ms deltas, after a sound 12 dB over the drone covered 0.3 s, with the probe
+  16 dB under it, which a window counted in frames would not give.
+- A drone held 60 s after a learned room, whose loudness reading at 60 s stays within 0.01 of its
+  reading at 1 s.
+- A flickering room after a sounding passage, reading zero on every level feature at its 99th
+  percentile.
+- Zero readings and no onset while the room is learned.
+- A burst shorter than half the learning window not learned as room.
+- A fresh state learning a louder room as zero.
+- Lowering the Room Gate never lowering a reading.
+- Every level, learning included, shifted by one decibel offset changing no feature.
 
 That no other audio control ships is held by `tests/test_param_descriptor.nim`, which pins
 `audioRoomGate` as the only descriptor routed through the audio store.
 
-#### Scenario: A gain step is absorbed
-- **WHEN** the input level steps 20 dB up or down over a room the core has heard, and holds there
-  with a room's ordinary movement around it (a perfectly flat level sits on its own instantly-falling
-  floor and reads zero by construction)
-- **THEN** every feature returns inside (0, 1) within the bounded frame count the test pins
+#### Scenario: A drone held after a learned room keeps its reading
+- **WHEN** a steady tone 12 dB over a learned room sounds for 60 seconds
+- **THEN** its loudness reading at 60 seconds is within 0.01 of its reading at 1 second, and above
+  0.1
+
+#### Scenario: A single loud hit leaves a held sound its reading
+- **WHEN** a steady tone 12 dB over a learned room is interrupted by one analyser window at full
+  scale, and then sounds again
+- **THEN** its loudness never reads zero, and it returns within 10% of its reading before the hit
+  within 2.5 seconds
+
+#### Scenario: A quiet room reads as zero
+- **WHEN** the core, having learned a room, receives only that room's noise flickering by several
+  decibels from frame to frame
+- **THEN** loudness, bass, mid and high read zero on at least 99 frames in 100
+
+#### Scenario: A burst at Listen start is not learned as room
+- **WHEN** a sound covering less than half the learning window arrives while the room is learned
+- **THEN** that sound, heard again after learning, reads above zero
+
+#### Scenario: Turning Listen off and on learns the room again
+- **WHEN** a fresh analysis state learns a room louder than the one learned before
+- **THEN** that louder room reads zero and reaches silent
 
 #### Scenario: A narrow window never divides by zero
 - **WHEN** the level sits inside a window narrower than the minimum width
 - **THEN** the feature value is finite, computed against the minimum width
 
-#### Scenario: A quiet room reads as zero
-- **WHEN** the core receives only room noise that flickers by several decibels from frame to frame
-- **THEN** loudness, bass, mid and high read zero on at least 99 frames in 100
+#### Scenario: Microphone gain before learning moves nothing
+- **WHEN** every bin and sample of a whole run, learning included, is scaled by one constant gain
+  that keeps it above the level floor
+- **THEN** every feature reads the same on every frame as the unscaled run
 
-#### Scenario: A sound heard over a room keeps its range
-- **WHEN** a sound whose quietest frames stand more than the widest room gate above a room the core
-  has heard is analysed at a Room Gate of zero and again at the range minimum
-- **THEN** every level feature reads the same on every frame of both runs
-
-#### Scenario: Microphone gain moves nothing
-- **WHEN** every bin and sample of a sounding signal is scaled by one constant gain that keeps it
-  above the level floor
-- **THEN** every level feature reads the same on every frame as the unscaled signal
+#### Scenario: Lowering the Room Gate never lowers a reading
+- **WHEN** the same run is analysed at two Room Gate offsets inside the range
+- **THEN** no level feature reads lower on any frame at the lower offset
 
 ### Requirement: One Room Gate control sets how far above the room a sound must rise
 
 The audio section SHALL offer exactly one slider, the Room Gate, the decibel offset added to every
 feature's room gate. It is the parameter descriptor `audioRoomGate`, labelled "Room Gate", in the
 descriptor group `audio`, routed through a store of its own that never reaches `CONFIG`:
-- Its range SHALL come from `src/config_ranges.nim`, its minimum being the negated widest room gate.
+- Its range SHALL come from `src/config_ranges.nim`, its minimum being the negated widest room gate
+  and its maximum 120 dB.
 - Its default of zero SHALL come from `src/ui/input/audio_core.nim` beside the room gates, marked by
   a default notch.
 - The panel SHALL restate none of its numbers.
@@ -318,14 +368,14 @@ remembered on this browser across reloads, under the storage key the boundary se
 never be written into or read from a preset. No audio source's row SHALL write it, and a controller's
 row may.
 
-Raising the offset makes a louder room read as zero and reach `Silent`. Lowering it lets quieter
+Raising the offset makes a louder room read as zero and reach `Silent`, which is how a room that
+changed after Listen started is answered without relearning. Lowering it lets quieter
 sounds through with the room's flicker. Below zero, `Silent` may not be reachable, and the help file
 says so.
 
 This control reverses an earlier rule that the audio section offer no numbers to tune. A quiet room
-observed live read loudness far above zero and never reached `Silent`, and live sets run in loud
-rooms whose noise no automatic gate measured on a quiet one can tell from a steady sound the
-performer means.
+observed live read loudness far above zero and never reached `Silent`, and live sets run in rooms
+whose noise changes after the room was learned.
 
 Enforcement: agent-checkable by:
 - `tests/test_param_descriptor.nim` under `just test`, pinning the descriptor's group, store and
@@ -343,7 +393,8 @@ Next-frame landing, survival across a stop, and survival across a reload are rev
 `src/audio_input.nim` and `web-ui/src/components/Panel.tsx`, and verified in a running app.
 
 #### Scenario: Raising the gate silences a steady sound
-- **WHEN** the Room Gate is raised above a steady sound that stands a few decibels over the room
+- **WHEN** the Room Gate is raised above a steady sound that stands a few decibels over the learned
+  room
 - **THEN** every level feature reads zero and the core reports silent within the silence window
   plus its pinned margin
 
@@ -458,7 +509,8 @@ stop and on denial. Test-held in `tests/test_control_matrix.nim`.
 makes a group, so the key leaves `ReservedHelpKeys` (`src/ui/api/help_content.nim:42`). It SHALL cover
 what the listen control does, that captured sound never leaves the application, the permission
 prompt and how to revisit a refusal, the six sources in the room's terms, what the meters show, what
-the Room Gate does and when to raise or lower it, and what the shipped rows do. It SHALL name
+the `Learning` state and that turning Listen off and on learns the room again, what the Room Gate
+does and when to raise or lower it, and what the four shipped rows do. It SHALL name
 `audioRoomGate` on a code-span line.
 
 The file SHALL keep the four coverage relations green, including the relation that no help file

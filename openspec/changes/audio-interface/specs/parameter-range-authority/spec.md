@@ -5,15 +5,16 @@
 `src/config_ranges.nim` SHALL define `AUDIO_ROOM_GATE_MIN_DB` and `AUDIO_ROOM_GATE_MAX_DB`, the Room
 Gate's range in decibels, under the standard static non-emptiness assertion, with zero inside the
 range. Each carries the condition it was chosen under beside it:
-- The minimum is the negated widest per-feature room gate, the offset below which no feature's
-  lower edge opens further.
+- The minimum is the negated widest per-feature room gate, -6.0 dB (the bass gate), the offset
+  below which no feature's lower edge opens further.
 - The maximum is 0 minus the core's level floor, 120 dB. The float frequency data the core reads is
   unclipped decibels (`minDecibels` bounds only the byte data), the core clamps every level at or
   above -120 dB, and a full-scale input bounds every level at or below 0 dBFS. So at the maximum
   every lower edge stands above full scale and every feature reads zero.
 
-The descriptor SHALL travel on the power curve, so the low offsets where measured rooms sit keep
-most of the travel.
+The descriptor SHALL travel on the power curve with the exponent that gives the first widest gate
+above the default, 0 to +6 dB, its widest share of travel among exponents 1 to 6 in half steps:
+2.5, which gives that span 9.5% of the travel and places the default at 29.6%.
 
 The descriptor table SHALL consume both like every other range, and the default SHALL come from
 `ROOM_GATE_DEFAULT_DB` in `src/ui/input/audio_core.nim`, the way the camera's default comes from
@@ -29,7 +30,7 @@ Enforcement: agent-checkable by:
 - `tests/test_audio_core.nim`, holding the minimum equal to the negated widest room gate and the
   maximum equal to 0 minus the level floor.
 - `tests/test_param_descriptor.nim` under `just test`, pinning the audio-store set, the descriptor's
-  range and its default.
+  range, its default and its curve exponent.
 
 #### Scenario: A write clamps at the authority's bounds
 - **WHEN** a slider drag or a Write row drives the Room Gate beyond either bound

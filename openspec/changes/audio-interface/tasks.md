@@ -13,8 +13,12 @@ source-family registration land when it does. Source anchors are named by symbol
 The live verification of 13-09-26 found a quiet room reading loudness 8-35% and never reaching
 `Silent`, and the user chose both an automatic fix (the room reads as zero) and one Room Gate
 control. The user then chose to accept the mid-music cost, to remember the gate on this browser, and
-to refuse audio rows on it. Tasks 2.5-2.11, 4.8-4.17 and 5.4-5.6 carry them, and group 6 gains their live checks. The
-numbers behind them come from `scratchpad/audio-interface/room-gate-design__13-09-26-1800.md`.
+to refuse audio rows on it. A critique then measured the noise floor designed for it fading held
+notes, and the user chose to learn the room only at Listen start and freeze it. A second critique
+measured one loud frame zeroing a held drone, and the range now hangs from a held level. Tasks 2.5-2.12,
+4.8-4.17 and 5.4-5.6 carry these decisions, and group 6 gains their live checks. The numbers behind
+them come from `scratchpad/audio-interface/frozen-room-design__13-09-26-2032.md` and
+`scratchpad/audio-interface/held-level-design__14-09-26-1623.md`.
 
 ## 1. Prove the rig and gate the microphone
 
@@ -104,39 +108,106 @@ feature core in group 2 waits on nothing here.
       reading the table
 - [x] 2.4 `just happen` builds and `just check` is green
 
-Tasks 2.5-2.8 write red tests against the shipped core, 2.9 moves nine existing stimuli onto a
-heard room with their oracles unchanged, and 2.10 changes the mechanism. A shared test helper
-generates a room: bins drawn as Rayleigh magnitudes around an 80 Hz rumble at -60 dBFS and white
-hiss at -75 dBFS, samples as Gaussian noise of the matching RMS, from a fixed seed, so every red
-reads the same on every run.
+Tasks 2.5-2.8 write red tests, 2.9 moves the existing tests onto a learned room, 2.10 changes the
+mechanism, and 2.11 carries the new `Learning` state to the panel. Two shared test helpers:
+- `roomFrame(rng, dt)`: bins drawn as Rayleigh magnitudes around an 80 Hz rumble at
+  `ROOM_RUMBLE_DB = -60` dBFS and white hiss at -75 dBFS, and samples as Gaussian noise at the rumble's RMS, from a fixed seed, so
+  every red reads the same on every run.
+- `learnRoom(state, dt)`: `roomFrame` for 5 s, which is longer than `ROOM_LEARN_SECONDS` and runs
+  on the shipped core too, where the constant does not exist yet.
 
-- [ ] 2.5 **Red first.** In `tests/test_audio_core.nim`, write
-      "the core reports silent in a flickering room when a sounding passage stops". Drive a
-      sounding passage, then the room helper, at 60 fps.
-      - Assert loudness, bass, mid and high each read zero on at least 99 frames in 100 of the room.
-      - Assert silent arrives within `SILENCE_SECONDS` plus a pinned margin of 0.5 s.
-      - Assert a 300 Hz tone 12 dB over the room's RMS clears silent on its next frame.
+Every test below was run against a scratch copy of the core carrying 2.10's mechanism, and against
+an unmodified copy: `scratchpad/audio-interface/probe/core_frozen/` and `core_shipped/`, with their
+outputs beside them.
 
-      Run it and confirm it fails at the silent assertion. The wrong code it catches is `track` in
-      `src/ui/input/audio_core.nim`: its lower edge is the window floor, which falls instantly to
-      the quietest recent frame, so the room's several-dB flicker reads 0.19 loudness at p50 and
-      every frame over 0.24 dB above the floor resets the silence clock. Task 2.5 absorbs the
-      earlier text of this task, found live 13-09-26
-- [ ] 2.6 **Red first.** Write two relations.
-      - "a sound heard over a room reads the same at a room gate of zero and at the minimum": the
-        room helper for 5 s, then a note sequence whose quietest frames stand more than 11 dB above
-        the room, analysed twice. Compare every level feature frame by frame within 1e-9. It fails
-        to compile for want of `AudioFrame.roomGateDb` and `AUDIO_ROOM_GATE_MIN_DB`, and after 2.10
-        it catches a gate added over the window floor rather than the noise floor, which reads
-        music's bottom gate as room (measured loudness p50 0.38 to 0.00).
-      - "no level feature moves when every level shifts by one decibel offset": the same stimulus
-        with bins +12 dB and samples ×10^(12/20), compared within 1e-9. It passes on the shipped
-        core. Watch it fail once against a local mutation that tracks the noise floor in linear
-        magnitude, then revert the mutation. It catches a noise floor or gate that stops commuting
-        with a gain.
-- [ ] 2.7 **Red first.** Write four tests.
-      - "every level feature reads zero and the core reports silent when the room gate rises
-        above a steady sound": a tone 3 dB over the room after the room helper, gate raised to
+- [ ] 2.5 **Red first.** In `tests/test_audio_core.nim` add the suite "Audio Core Holds A Learned
+      Room" with six tests. The first three and the last two compile against the shipped core. Each names the wrong code it
+      catches.
+      - "a drone held 60 s after a learned room keeps its reading". `learnRoom`, then a flat tone
+        (one bin near 300 Hz and the sample RMS both at -48 dB, 12 dB over the room's rumble) for
+        60 s at 60 fps. Assert the loudness reading at 1 s is above 0.1, and the reading at 60 s is
+        within 0.01 of it. The oracle is the definition: a steady level against a fixed edge and a
+        ceiling that has closed on it reads one constant value. Red on the shipped core, which
+        catches `track`'s window floor climbing toward a held level at `FLOOR_RISE_SECONDS`, and
+        any room estimate that keeps learning while a sound holds.
+      - "a soft legato passage never reads silent after music". `learnRoom`, then 10 s of
+        music: 100 ms of `soundingFrame(QUIET_DB)` every 250 ms, `roomFrame` between, then a flat tone 8 dB over
+        the room for 35 s. Assert no frame reports silent after the passage's first 0.5 s. Red on
+        the shipped core, which catches silence judged on the feature
+        (`result.loudness <= SILENCE_LOUDNESS` in `analyse`): the floor closes on a held level,
+        and the level then reads zero.
+      - "the core reports silent in a flickering room when a sounding passage stops". `learnRoom`,
+        then five seconds of `holdDithered` at `QUIET_DB`, then `roomFrame` for 10 s from a new
+        seed. Assert loudness, bass, mid and high each read exactly zero on at least 99 frames in
+        100 of the room. Assert silent first arrives within `SILENCE_SECONDS + 0.5` s, and that a
+        tone 12 dB over the room clears it on its next frame. Red on the shipped core at the
+        zero-frame and silent assertions, which catches a lower edge on the quietest recent frame:
+        the room's flicker reads above `SILENCE_LOUDNESS` and resets the silence clock.
+      - "a held drone keeps its reading through a single loud hit". `learnRoom`, then the flat tone
+        12 dB over the room for 2 s, then `toneFrame(0.0)` for `ANALYSER_FFT_SIZE / sampleRate`
+        seconds (the span one click covers in the analyser), then the tone again for three
+        `CEILING_DECAY_SECONDS` (export it). Assert no loudness reading after the hit is zero, and
+        the last reading more than 10% from the pre-hit reading falls within 2.5
+        `CEILING_DECAY_SECONDS`. The oracle is decision 5's arithmetic. A hit under half of
+        `HELD_SECONDS` leaves the held level and so the lower edge, and the ceiling's gap over the
+        tone, 48 dB, must close to 6.7 dB, which takes ln(48 / 6.7) = 1.97 time constants. It
+        catches a range hung from a frame peak (`ceiling - RANGE_DB`): red on the frame-peak
+        scratch core with 124 zero frames (`scratchpad/audio-interface/probe/core_frozen/held_red_output.txt`).
+        It compiles against the shipped core only once 2.10 exports `CEILING_DECAY_SECONDS`, so
+        write it with 2.6's compile-red set.
+      - "a sound 20 dB under a held drone still reads when a sound 20 dB over it covered 40% of
+        the last second". `learnRoom`, then a flat tone 40 dB over the room's rumble for 2 s, the
+        tone 20 dB louder for 0.4 s, then one frame 20 dB under the drone. Assert its loudness is
+        above zero. The oracle is decision 5's arithmetic: a sound covering under half of
+        `HELD_SECONDS` leaves the median on the drone, so the lower edge sits 24 dB under the
+        drone and the probe 4 dB over it. It catches a held level taken as a time-weighted mean,
+        which the 0.4 s at +20 dB pulls 8 dB up, putting the probe 4 dB under the edge. The hit
+        test above stays green under a mean. Red on a mean mutant and on the shipped core, green
+        on the median (`scratchpad/audio-interface/probe/mutant_runs/mean/suite_top1000_output.txt`,
+        `scratchpad/audio-interface/probe/mutant_runs/core_shipped/`,
+        `scratchpad/audio-interface/probe/core_held/suite_bare_output.txt`).
+      - "a sound 16 dB under a held drone still reads at 8.33 ms deltas when a sound 12 dB over it
+        covered 30% of the last second". The same shape at `FRAME_120`, with the louder tone 12 dB
+        over the drone for 0.3 s and the probe 16 dB under it. Assert its loudness is above zero.
+        The oracle is the same arithmetic: under a wall-clock second the median stays on the drone
+        and the probe sits 8 dB over the edge. It catches a held window counted in frames: 60
+        frames span 0.5 s at 120 fps, the 0.3 s tone is their majority, and the edge rises to 12 dB
+        under the drone, 4 dB over the probe. A mean moves the edge 3.6 dB and leaves the probe
+        4.4 dB over it, so this test goes red for the window alone. Red on a frame-count mutant and
+        on the shipped core, green on the median
+        (`scratchpad/audio-interface/probe/mutant_runs/framecount/suite_top1000_output.txt`). Both
+        mutants also fail the existing wall-clock test by 0.0013 and 0.026, which names no held
+        level; these two name it.
+- [ ] 2.6 **Red first.** Write four learning tests. The file fails to compile for want of
+      `ROOM_LEARN_SECONDS`. The burst and fresh-state tests pass on the shipped core by its own
+      window; they hold the mechanism after 2.10.
+      - "every feature reads zero and nothing fires while the room is learned". From a fresh state,
+        loud frames every 15 frames over silence, for `ROOM_LEARN_SECONDS` less one and a half
+        frames. Assert every frame reads loudness, bass and brightness at exactly zero, with no
+        onset and no silent. It catches a feature published before the room exists.
+      - "the room learns over the same wall-clock seconds at 8.33 ms and 16.7 ms deltas". At each
+        delta: silence to 2 s, `QUIET_DB` to 6 s, `QUIET_DB - 6` to 7 s. Assert the first nonzero
+        loudness lands at `ROOM_LEARN_SECONDS + dt` within half a frame. Assert the final
+        readings, inside (0, 1), agree within 1e-6. This replaces "the gain window adapts the same
+        amount at 8.33 ms and 16.7 ms deltas", whose window floor 2.10 deletes. It catches
+        learning counted in frames.
+      - "a burst shorter than half the learning window is not learned as room". Silence with
+        `QUIET_DB` from 0.5 s to 1.7 s, 5 s in all. Assert a `QUIET_DB` frame then reads loudness
+        above 0.5. It catches a p90 or maximum statistic in place of the median.
+      - "a fresh state learns a louder room as zero". Hold `QUIET_DB` for 5 s, then 2 s more.
+        Assert loudness is exactly zero and silent is reported. It catches a room carried across
+        re-initialization, which is how turning Listen off and on relearns.
+- [ ] 2.7 **Red first.** Write the relations and the Room Gate tests.
+      - "no reading falls when the room gate falls". The dithered passage after `learnRoom`,
+        analysed at offsets 0 and `AUDIO_ROOM_GATE_MIN_DB`. Assert every level feature at the
+        minimum is at least its reading at 0, frame by frame. The oracle is that a lower edge
+        which falls, over a span that grows by no more than the edge falls, never lowers a clamped
+        position. It catches an offset applied with the wrong sign, or to the ceiling.
+      - "no feature moves when every level, learning included, shifts by one decibel offset". The
+        same run with bins +12 dB and samples ×10^(12/20), compared within 1e-9. It catches a room
+        or gate computed in linear magnitude.
+      - "every level feature reads zero and the core reports silent when the room gate rises above
+        a steady sound". A tone 3 dB over the room after `learnRoom`, with the gate raised to
         `ROOM_GATE_BASS_DB`.
       - "the sound returns when the room gate falls back below it".
       - Widen "every feature stays finite and in range when the arrays are random" to draw
@@ -144,67 +215,130 @@ reads the same on every run.
       - "the room gate minimum cancels the widest per-feature gate": `AUDIO_ROOM_GATE_MIN_DB ==
         -max(ROOM_GATE_LOUDNESS_DB, ROOM_GATE_BASS_DB, ROOM_GATE_MID_DB, ROOM_GATE_HIGH_DB)`.
       - "the room gate maximum spans the level floor to full scale": `AUDIO_ROOM_GATE_MAX_DB ==
-        0.0 - LEVEL_FLOOR_DB` (export `LEVEL_FLOOR_DB`). Also: a full-scale square wave (samples at ±1,
-        bins from its analysed spectrum) reads zero on every feature at the maximum.
+        0.0 - LEVEL_FLOOR_DB` (export `LEVEL_FLOOR_DB`). Also assert that a full-scale square wave
+        (samples at ±1, bins from its analysed spectrum) reads zero on every feature at the maximum.
+      - "a sound reads zero once it stands more than the range under a held level": after
+        `learnRoom`, `QUIET_DB` held for `HELD_SECONDS`, then one frame at `QUIET_DB - RANGE_DB - 6`
+        reads loudness exactly zero, and a fresh run with `QUIET_DB - RANGE_DB + 6` second reads
+        above zero. The oracle is the definition of the lower edge. It catches a missing or
+        misplaced `RANGE_DB`: on the frame-peak scratch core, with one `QUIET_DB` frame, it passed
+        at 24 dB and failed with no range
+        (`scratchpad/audio-interface/probe/core_frozen/range24_test_output.txt`). With the 1 s hold
+        it passes on the held-level core (`scratchpad/audio-interface/probe/core_held/`).
       - "the room gate storage key sits apart from the preset and mapping keys":
         `AUDIO_ROOM_GATE_STORAGE_KEY` does not start with `pg.presets.` and differs from
         `MAPPING_STORAGE_KEY`.
 
-      They fail to compile for want of the constants. The wrong code they catch after 2.10 is:
+      They fail to compile for want of `AudioFrame.roomGateDb` and the constants. The wrong code
+      they catch after 2.10 is:
       - an offset read once into `AnalysisState` instead of from each frame;
       - a range minimum or maximum restated apart from the quantities it is derived from;
-      - a storage key that a preset clear would delete
+      - a storage key that a preset clear would delete.
 - [ ] 2.8 **Red first.** Write two tests.
-      - "brightness settles below 0.01 when only a room sounds": the room helper for 5 s.
-      - "onset fires nothing when a room flickers under its gate": the room helper for 25 s,
-        counting fired onsets.
+      - "brightness settles below 0.01 when only a learned room sounds": `learnRoom`, then
+        `roomFrame` for 5 s.
+      - "onset fires nothing when a learned room flickers under its edge": `learnRoom`, then
+        `roomFrame` for 25 s, counting fired onsets.
 
-      Run them and confirm both fail: measured on the shipped core, brightness p90 0.44 and two
-      onsets in 25 s. The wrong code is the centroid gated only by `BRIGHTNESS_FLOOR_MAGNITUDE` and
-      the onset gated only by flux in `analyse`
-- [ ] 2.9 Give each of these existing tests the room helper for 5 s ahead of its stimulus, oracles
-      and pinned frame counts unchanged:
-      - "brightness reports a tone's logarithmic position when one bin at 440 Hz sounds"
-      - "each band feature leads when energy is confined to that band"
-      - "brightness decays toward zero when energy falls below the floor"
-      - "onset fires nothing when a loud steady spectrum stops increasing"
-      - "every feature stays finite and in range when the arrays are random"
-      - "every feature returns inside its open range when the level steps 20 dB up and back down"
-      - "a feature stays finite when its window closes narrower than the minimum"
-      - "the level features read their silent values when a loud frame is followed by a silent one"
-      - "the gain window adapts the same amount at 8.33 ms and 16.7 ms deltas"
+      Run them and confirm both fail. On the shipped core through the analyser emulation,
+      brightness read p90 0.44 and two onsets fired in 25 s. The wrong code is the centroid gated
+      only by `BRIGHTNESS_FLOOR_MAGNITUDE`, and the onset gated only by flux in `analyse`.
+- [ ] 2.9 With 2.10, give every existing test in `tests/test_audio_core.nim` a `learnRoom` ahead
+      of its stimulus. Unchanged but for the preamble, all fifteen fail against the mechanism,
+      because the first `ROOM_LEARN_SECONDS` read zero (`scratchpad/audio-interface/probe/core_frozen/existing_tests_range0_output.txt`).
+      With the preamble, ten pass with oracles unchanged. Five change their stimulus, each for a
+      reason the mechanism states (`scratchpad/audio-interface/probe/core_frozen/learned_preamble_output.txt`):
+      - "onset fires nothing when a loud steady spectrum stops increasing": count firings only
+        after the first loud frame, since the step in from the room is itself an onset.
+      - "a feature stays finite when its window closes narrower than the minimum": hold the level
+        at `ROOM_RUMBLE_DB + ROOM_GATE_LOUDNESS_DB + MIN_WINDOW_DB / 2` (export `MIN_WINDOW_DB`).
+        A flat level at its own ceiling, more than `MIN_WINDOW_DB` above the edge, reads 1.0 by
+        construction.
+      - "onset spans the same refractory window at 8.33 ms and 16.7 ms deltas": learn at the
+        loop's own delta, and start the clicks at -40 dB, above the room edge. At -110 dB the first
+        clicks sit under the edge and are gated.
+      - "the gain window adapts the same amount at 8.33 ms and 16.7 ms deltas": replaced by 2.6's
+        learning test.
+      - "the core reports silent when loudness sits at its floor for three seconds": rename to
+        "... sits at or under its room edge for three seconds", and put one `QUIET_DB` frame after
+        `learnRoom`, so the silence clock starts from sound.
 
-      Run the suite and confirm those nine stay green on the shipped core. Under the mechanism of
-      2.10, each fails without a room, because its first sounding frame places the noise floor on
-      the sound and reads the sound as room (measured against a scratch copy,
-      `scratchpad/audio-interface/probe/core_c_existing_tests_output.txt`)
+      "every feature returns inside its open range when the level steps 20 dB up and back down"
+      keeps `DITHER_DB` 6 and 120 settle frames: at `RANGE_DB` 24 it passed unchanged on the
+      scratch core. The full 21-test set ran green on
+      the frame-peak scratch core at 0 and 24 dB, and at 12 dB with that one exception
+      (`scratchpad/audio-interface/probe/core_frozen/frozen_suite_output.txt`). With 2.5's hit test
+      and 2.7's range test, 23 tests ran green on the held-level scratch core at
+      `CEILING_DECAY_SECONDS` 3, 1 and 0.25 s
+      (`scratchpad/audio-interface/probe/core_held/suite_top3000_output.txt`, `suite_top1000_output.txt`,
+      `suite_top250_output.txt`).
 - [ ] 2.10 Change the mechanism in `src/ui/input/audio_core.nim`.
       - Add `roomGateDb*: float` to `AudioFrame`.
-      - Add a noise floor per normalized feature to `AnalysisState`, seeded above any level.
-      - Step the noise floor toward the level at `NOISE_FLOOR_FALL_DB_PER_SECOND = 20.0` and
-        `NOISE_FLOOR_RISE_DB_PER_SECOND = 1.0`, never past the level. The condition: it settles
-        where 1/21 of frames sit below it, and 1 dB/s keeps it under music heard after a room for
-        30 s.
-      - Set the lower edge to `max(window floor, noise floor + gate + frame.roomGateDb)`.
-      - Add `ROOM_GATE_LOUDNESS_DB = 6.2`, `ROOM_GATE_BASS_DB = 10.4`, `ROOM_GATE_MID_DB = 4.6` and
-        `ROOM_GATE_HIGH_DB = 2.1`. The condition: the p99.9 excursion above the noise floor over
-        stationary rumble-plus-hiss and white-hiss rooms, at fftSize 2048, 48 kHz, 60 and 120 fps.
-      - Add `ROOM_GATE_DEFAULT_DB = 0.0`.
-      - Define the centroid only while a band reads above zero, and fire onset only while loudness
-        reads above zero.
-      - Rewrite the `SILENCE_LOUDNESS` comment, which claims the room settles there in a frame.
+      - Replace `LevelWindow`'s floor with a `RoomEstimate` object variant over the four normalized
+        features: `learning` holding each feature's heard levels and the heard seconds, and
+        `learned` holding one room level per feature. Delete `FLOOR_RISE_SECONDS`.
+      - While learning, append each level and add `min(dtSeconds, ANALYSER_FFT_SIZE / sampleRate)`
+        to the heard seconds. Every feature reads zero and no onset fires. The flux median keeps
+        tracking. When the heard seconds reach `ROOM_LEARN_SECONDS`, set each room level to the
+        median of its levels and drop them.
+      - Give each feature's window `recent: seq[HeardFrame]` (level, heard seconds). Each frame with
+        nonzero heard seconds appends, and the oldest drop while the rest still cover
+        `HELD_SECONDS`, keeping at least one. The held level is the time-weighted median of
+        `recent`, or the frame's level while `recent` is empty.
+      - The ceiling rises instantly to a level above it. Otherwise it decays toward
+        `max(held, level)` at `CEILING_DECAY_SECONDS`.
+      - Read each feature as `clamp((level - lower) / max(ceiling - lower, MIN_WINDOW_DB), 0, 1)`,
+        with `lower = max(room + gate + frame.roomGateDb, held - RANGE_DB)`.
+      - Add `HELD_SECONDS = 1.0`. The condition: a median disregards what covers under half its
+        window. Through the emulated analyser, 1 and 20 ms clicks, 80 ms kicks 20 and 30 dB over, a
+        150 ms snare 30 dB over and a 250 ms tone 24 dB over never zero a drone 12 dB over the
+        room at 60 or 120 fps, and at 0.5 s the 250 ms tone drops it to 0.06.
+      - Set `CEILING_DECAY_SECONDS = 1.0`, exported. The condition: the user's choice among
+        measured decays. At 1 s, synthetic music after a room reads loudness 0.74/0.84/0.97, bass
+        0.00/0.74/0.93 and high 0.00/0.00/0.60 (p10/p50/p90). A full-scale click holds a drone
+        under half its reading for 1.00 s, and the drone is back within 10% by 1.95 s.
+      - Add `RANGE_DB = 24.0`. The condition: the user's choice among measured spreads on synthetic
+        music after a room. At 24 dB under frame peaks, loudness read p10-p90 0.66-0.95, bass median
+        0.59, high up to 0.43, and a soft pad after loud music read zero for 1.33 s. Under the held
+        level at the 1 s ceiling decay, loudness reads 0.74-0.97 and bass median 0.74.
+      - Add the constants with their conditions.
+        - `ROOM_LEARN_SECONDS = 3.0`: median gates agree within 0.15 dB from 2 s to 10 s, the
+          bass median's seed spread is 0.78 dB at 3 s, and a median ignores a burst under half the
+          window.
+        - `ROOM_GATE_LOUDNESS_DB = 5.4`: p99.9 excess over the learned median plus the largest
+          calibration excess over that edge, so no room frame resets the silence clock.
+        - `ROOM_GATE_BASS_DB = 6.0`, `ROOM_GATE_MID_DB = 2.6`, `ROOM_GATE_HIGH_DB = 1.4`: p99.9
+          excess over the median at a 3 s window, rounded up to 0.1 dB.
+        - All from stationary rumble-plus-hiss and white-hiss rooms, fftSize 2048, 48 kHz, the
+          larger of 60 and 120 fps.
+        - `ROOM_GATE_DEFAULT_DB = 0.0`.
+      - Replace `AudioFeatures.silent: bool` with `reading: RoomReading`
+        (`rrLearning`, `rrSounding`, `rrSilent`). Silent is loudness's level at or under its lower
+        edge for `SILENCE_SECONDS`. Delete `SILENCE_LOUDNESS`. The tests' `features.silent` reads
+        become `features.reading == rrSilent`.
+      - Define the centroid only while some band's level stands above its edge, and fire onset
+        only while loudness's level stands above its edge.
+      - Add `lsLearning = "Learning"` to `ListenState`, and update its doc comment to six states.
 
       Add `AUDIO_ROOM_GATE_STORAGE_KEY* = "pg.audio.roomGate"` beside the default. In
       `src/config_ranges.nim` add the range with its conditions, the non-emptiness assertion, and
       zero inside:
-      - `AUDIO_ROOM_GATE_MIN_DB = -10.4`: cancels the widest gate.
+      - `AUDIO_ROOM_GATE_MIN_DB = -6.0`: cancels the widest gate, the bass gate.
       - `AUDIO_ROOM_GATE_MAX_DB = 120.0`: 0 dBFS minus the core's -120 dB level floor. The float
         frequency data is unclipped, since `minDecibels` bounds only byte data, so at this offset
         every lower edge stands above full scale.
 
-      `src/audio_input.nim` sets `roomGateDb` to `ROOM_GATE_DEFAULT_DB` until 4.13. Run `nim c -r tests/test_audio_core.nim` green, all of
-      2.5-2.9 included
-- [ ] 2.11 `just happen` builds and `just check` is green
+      In `src/audio_input.nim`, `pollAudioFrame` maps `rrLearning`, `rrSounding` and `rrSilent`
+      to `lsLearning`, `lsConnected` and `lsSilent`. Its live-chain guard and `startListening`'s
+      guard include `lsLearning`, and `onMicrophoneGranted` settles to `lsLearning`. It sets
+      `roomGateDb` to `ROOM_GATE_DEFAULT_DB` until 4.13. Run `nim c -r tests/test_audio_core.nim`
+      green, all of 2.5-2.9 included, and `just build-app`
+- [ ] 2.11 **Red first.** In `web-ui/test/audio-section.test.ts`, assert that `listenChecked("Learning")`
+      is true. Run `just test-ui` and confirm it fails to type-check for want of the name. Add
+      `"Learning"` to `ListenState` in `web-ui/src/garden-api.ts` and to `CHECKED_STATES` in
+      `web-ui/src/lib/audio-section.ts`, and run green. The wrong code it catches is a switch that
+      reads unchecked for three seconds after every connect
+- [ ] 2.12 `just happen` builds and `just check` is green
 
 ## 3. The per-frame poll and the matrix hand-off
 
@@ -219,19 +353,21 @@ reads the same on every run.
       reading the loop that the call precedes the flush
 - [x] 3.2 **Red first.** In the shipped-mapping suite of `tests/test_control_matrix.nim` (the
       shipped default lives in `src/ui/input/shipped_mapping.nim`, not in `control_matrix.nim`, as
-      `midi-interface` built it), pin six audio rows by source, kind, target and depth:
-      `audio:onset` Touch on a one-cell grid with `baseNote` 0; `audio:bass` Modulate
+      `midi-interface` built it), pin four audio rows by source, kind, target, depth and envelope:
+      `audio:onset` Modulate `forceStrength` +0.40, attack 0, release 300 ms; `audio:bass` Modulate
       `fluidStrength` +0.30; `audio:loudness` Modulate `forceStrength` +0.25; `audio:high`
-      Modulate `glowIntensity` 0; `audio:mid` Modulate `rdDeposit` 0; `audio:brightness`
-      Modulate `rdFieldForce` 0; every Modulate row at a zero attack and an 80 ms release; the
-      six targets distinct. Run it and confirm it fails. Add the six declarations as
-      `SHIPPED_AUDIO_SOURCES` in `src/ui/input/shipped_mapping.nim`, registered by
-      `shippedMatrixState()` beside the MIDI family so the static gate sees the audio rows
-      resolved, and add the rows to `DEFAULT_MAPPING` there; `src/audio_input.nim` registers the
-      same constant, so the labels have one home. Run green; `just build-app` passes the static
-      gate on the shipped rows. Widen the help relation in `tests/test_help_content.nim` so a
-      shipped row's target may be named by any help file, since the audio rows are documented in
-      `65-audio.md` rather than `70-midi.md`
+      Modulate `glowIntensity` 0; the last three at a zero attack and an 80 ms release. Onset and
+      loudness share `forceStrength`; every other target is held by one audio row. Run it and
+      confirm it fails. Add the six declarations as `SHIPPED_AUDIO_SOURCES` in
+      `src/ui/input/shipped_mapping.nim`, registered by `shippedMatrixState()` beside the MIDI
+      family so the static gate sees the audio rows resolved, and add the four rows to
+      `DEFAULT_MAPPING` there; `src/audio_input.nim` registers the same constant, so the labels
+      have one home. Run green ("the four audio rows ship pinned by source, kind, target and
+      depth"); `just build-app` passes the static gate on the shipped rows. Widen the help relation
+      in `tests/test_help_content.nim` so a shipped row's target may be named by any help file,
+      since the audio rows are documented in `65-audio.md` rather than `70-midi.md`
+> 2026-09-13: the body of 3.2 above now states the rows that shipped. It first read six rows with
+> distinct targets, the onset row a Touch blast; the two notes below record why that changed.
 > 2026-09-12: the `audio:onset` pin in 3.2 now reads a Modulate impulse on `forceStrength`, depth
 > +0.40 and a 300 ms release, sharing loudness's target; the shipped audio targets are no longer
 > all distinct.
@@ -300,7 +436,7 @@ reads the same on every run.
       - Add "the room gate descriptor takes its range from config_ranges and its default from
         audio_core": group `audio`, min `AUDIO_ROOM_GATE_MIN_DB`, max `AUDIO_ROOM_GATE_MAX_DB`,
         default `ROOM_GATE_DEFAULT_DB`, a notch at the default, and curve `cPower` with exponent
-        2.0.
+        2.5.
 
       It fails to compile for want of `psAudio`. The wrong code it catches is a Room Gate routed
       through `psRender` or `psSimulation`, which would put it into every preset, and a second
@@ -328,8 +464,10 @@ reads the same on every run.
         the room is not the world, so the value never reaches CONFIG or a preset. Add
         `floatParam("audioRoomGate", "Room Gate", "audio", AUDIO_ROOM_GATE_MIN_DB,
         AUDIO_ROOM_GATE_MAX_DB, ROOM_GATE_DEFAULT_DB, 1, psAudio, probe = "audio.roomEdge",
-        curve = cPower, curveExponent = 2.0, hint = ...)` with `.withDefaultNotch(0)`. The exponent's
-        condition: half the travel spans the minimum to about +22 dB, twice the widest gate. The hint names no numerals, since the
+        curve = cPower, curveExponent = 2.5, hint = ...)` with `.withDefaultNotch(0)`. The exponent's
+        condition: over -6..120 dB it gives 0..+6 dB, the first widest gate above the default, its
+        widest share of travel among exponents 1 to 6 (9.5%), with the default at 29.6%. The hint
+        names no numerals, since the
         reachability test reads a numeral as a slider position.
       - `web-ui/src/garden-api.ts`: add `"audio"` to `ParamStore`.
       - `src/web_api.nim`: add a `roomGateDb` var beside the audio hooks. Give `"audioRoomGate"` a
@@ -340,7 +478,7 @@ reads the same on every run.
       - `tests/test_dormancy.nim`: add `psAudio` to "every render-store parameter answers
         instantly".
       - `src/ui/api/response_probe.nim`: register `"audio.roomEdge"` as a `pbClosedForm` probe
-        returning the lower edge in dB over a fixed noise floor.
+        returning the lower edge in dB over a fixed learned room.
 
       Run `tests/test_param_descriptor.nim`, `tests/test_response_probe.nim` and
       `tests/test_dormancy.nim` green, one at a time, and confirm the Modulate half of
@@ -382,11 +520,15 @@ reads the same on every run.
 
 - [x] 5.1 Fill `docs/help/65-audio.md`: what Listen does and that captured sound never leaves
       the app, the permission prompt and how to revisit a refusal in the browser's site
-      settings, the six sources in the room's terms, what the meters show, what the three live
-      rows do, and the three rows waiting at zero depth with the invitation to raise and remap
-      them. Name each source in bold, the form `bindingReferenceBody` uses, since
+      settings, the six sources in the room's terms, what the meters show, what the four shipped
+      rows do (bass into `fluidStrength`, loudness and onset together into `forceStrength`), and
+      `audio:high` into `glowIntensity` waiting at zero depth with the invitation to raise and
+      remap it. Name each source in bold, the form `bindingReferenceBody` uses, since
       `namedControlIds` reads only code-span lines and a source id resolves to no descriptor or
       catalog entry. Run `nim c -r tests/test_help_content.nim` green
+> 2026-09-13: the body of 5.1 above now names the four rows that shipped; it first read three live
+> rows and three at zero depth. `docs/help/65-audio.md` already describes the four.
+
 - [x] 5.2 In `docs/enforcement.md` add `src/ui/input/audio_core.nim` to "Where authority
       lives" and three guarantee rows: every feature finite and in [0, 1] with silence reading
       zero (Test-held, `tests/test_audio_core.nim`); the capture chain created inside the listen
@@ -400,14 +542,23 @@ reads the same on every run.
       In `docs/help/65-audio.md` add a `` - `audioRoomGate` `` line saying what the Room Gate does:
       raise it in a loud room until the meters rest, lower it for a quiet instrument, and below its
       default Silent may never come. Say too that this browser remembers it, that loading a preset
-      leaves it where it is, that a controller can map it but an audio source cannot, and that after
-      pressing Listen mid-music the quietest part reads as room until a pause. Run the help
+      leaves it where it is, and that a controller can map it but an audio source cannot. In the
+      Listen paragraph, say that the line reads Learning for the first seconds after connecting,
+      while the room is learned; that Listen is best pressed with the room as it will be, fans or
+      fridges running and the music not yet playing; that pressed mid-music, the music reads as
+      room; and that turning Listen off and on learns the room again. In the meters paragraph,
+      say that each meter spreads over the loudest stretch of what it recently heard, so a soft
+      passage right after a loud one reads empty for a moment. Say too that a single hit shrinks a
+      held sound's meter for about a second and never empties it. Run the help
       suite green, "every declared key is a descriptor group or reserved" included
-- [ ] 5.5 In `docs/enforcement.md` add three guarantee rows:
-      - A quiet room reads zero on every level feature and reaches silence (Test-held,
-        `tests/test_audio_core.nim`, synthetic rooms only).
+- [ ] 5.5 In `docs/enforcement.md` add five guarantee rows:
+      - A quiet room reads zero on every level feature and reaches silence, and a held sound keeps
+        its reading, including through a hit shorter than half a second (Test-held,
+        `tests/test_audio_core.nim`, synthetic rooms and hits only).
       - The Room Gate is absent from presets (Test-held, `tests/test_param_descriptor.nim`).
       - No audio source's row writes the Room Gate (Test-held, `tests/test_control_matrix.nim`).
+      - The room is relearned when Listen is turned off and on (Unenforced, review of
+        `stopListening` in `src/audio_input.nim`, which re-initializes the analysis state).
       - The Room Gate lands on the next analysed frame, survives a stop, and survives a reload
         (Unenforced, review of `pollAudioFrame` and `stopListening` in `src/audio_input.nim` and
         the restore in `web-ui/src/components/Panel.tsx`).
@@ -426,15 +577,42 @@ clicks are the user's, for the reason group 1 states.
       `aria-checked` false, a state line reading `Disconnected`, five meters at zero, and one
       slider named Room Gate at its default notch, with no other slider in the section
 - [ ] 6.2 Press Listen and snapshot before the user answers: `aria-checked` true and the line
-      reading `Requesting`. After the user allows: `Connected`, the meters moving with sound in
-      the room. **Quiet-room check, with the Room Gate at its default.** Ask the user to keep the
-      room quiet, with no music, for ten seconds, and snapshot every second.
-      - Prediction, if the synthetic gates hold in this room: the line reads `Silent` within
-        about three seconds, and every meter reads under 0.05 from then on.
-      - Then make a sound: back to `Connected` within one analyser window.
-      - Kill condition: `Silent` has not come after ten seconds, or any meter holds above 0.05
-        at rest. Stop there and record which meter reads what. The synthetic gates then stand
-        refuted for this room, and the next step re-derives the constant from a live excursion log.
+      reading `Requesting`. Ask the user, before allowing, to leave the room as it will be (any fan,
+      fridge or heating running as usual, no music), then allow. Snapshot every second for the
+      first ten seconds, then every ten seconds.
+      **Quiet-room check, with the Room Gate at its default, five minutes.** The run is longer
+      than the 180 s compressor cycle the critique modelled, so one appliance cycle can fall
+      inside it. Ask the user to note the time of anything that switches on or off.
+      - Prediction, if the synthetic gates and the learned room hold in this room: the line reads
+        `Learning` for about three seconds, then `Connected`. It reads `Silent` about three seconds
+        later, and every meter reads under 0.05 for the rest of the run, save while a noted
+        appliance changes state.
+      - Then ask the user to hum or hold one note for 30 s: the line reads `Connected` throughout,
+        and the loudness meter never falls under 0.05 while the note sounds. When the note stops:
+        `Silent` again within about three seconds.
+      - Then make a short sound: back to `Connected` within one analyser window.
+      - If an appliance switched on during the run and moved the meters: record the Room Gate
+        position that rests them. Then turn Listen off and on with the appliance running, and
+        record whether the meters rest at the default. Decision 5 predicts both.
+      - Kill condition, stop and record: with no appliance changing state, a meter holds above
+        0.05 at rest, or `Silent` has not come 20 s after `Learning` ends. The synthetic gates
+        then stand refuted for this room. Record which meter reads what; the next step re-derives
+        the constant from a live excursion log.
+      - Kill condition, stop and record: the held note reads `Silent`, or its loudness meter falls
+        to zero while it sounds. The frozen room then stands refuted live.
+      - **Hit over a held sound, under a minute.** Ask the user to hold a note again (hummed, sung,
+        or a sustained synth), wait two seconds, clap once or strike one drum hit near the
+        microphone, and keep the note sounding for five seconds. Snapshot as fast as the tool
+        returns from the clap on, and ask the user whether the loudness meter emptied at any
+        moment. Twice is enough.
+        - Prediction, if the held level holds live: the loudness meter drops after the clap but
+          never reaches zero, and is back within 10% of its pre-clap reading about two seconds
+          after (1.95 s on the synthetic full-scale click, decision 5).
+        - Kill condition, stop and record: the meter reads zero in a snapshot or the user saw it
+          empty, or it is still more than 10% under its pre-clap reading 2.5 s after the clap. The
+          held level then stands refuted live; record the clap's peak meter reading and how long
+          the dip lasted.
+      - Budget: ten minutes of the user's time, the hit check included.
 
       Record in `scratchpad/audio-interface/live-states__<DD-MM-YY-HHmm>.md`
 - [ ] 6.3 With sound playing, read the Fluid Strength and Force Strength sliders' excursion
@@ -467,11 +645,12 @@ clicks are the user's, for the reason group 1 states.
       - Snapshot the meters.
       - Drag the Room Gate up in steps until every meter rests between phrases, and record the
         position.
-      - Prediction, if the power curve's split holds: the meters rest within the first half of the
-        travel (at most about +22 dB), and loudness still moves on each phrase.
-      - Kill condition: the meters need more than half the travel to rest, or still read above 0.05 at
-        the maximum. Record the position, and note that the exponent's condition, or the full-scale
-        bound, stands refuted for this room.
+      - Prediction, if the curve places measured rooms where it gives them travel: the meters rest
+        by +12 dB, twice the widest gate (45.9% of the travel), and loudness still moves on each
+        phrase.
+      - Kill condition: the meters need more than half the travel (+16.3 dB) to rest, or still read
+        above 0.05 at the maximum. Record the position, and note that the exponent's condition, or
+        the full-scale bound, stands refuted for this room.
 
       Append to the 6.2 record
 - [ ] 6.9 Move the Room Gate off its default, save a preset, move the gate again, and load the
