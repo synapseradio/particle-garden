@@ -1,2 +1,2 @@
 [pre-start]
-bootstrap = "just deps"
+bootstrap = "just deps; test -f nimble.paths || { echo 'bootstrap: nimble.paths was not produced' >&2; exit 1; }"
