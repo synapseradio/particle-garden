@@ -516,12 +516,12 @@ func bodyRadiusProbe(value: float; ctx: ProbeContext): float =
 
 func bodyBandProbe(value: float; ctx: ProbeContext): float =
   ## bodyBand: the impulse a particle collects crossing outward from the
-  ## surface, over a path fixed at the widest reach the range admits. A wider
-  ## band acts over more of that one path, which is the whole of what this
-  ## control buys.
+  ## surface, over a path fixed at the widest reach the range admits — twice
+  ## the widest band, where the hold of the widest body ends. A wider band acts
+  ## over more of that one path, which is the whole of what this control buys.
   let body = probeBody(ctx.sim.bodyRadius, value, ctx.sim.bodyProximity,
     ctx.sim.bodyEnclosure)
-  let step = BODY_BAND_MAX / float(RefBodySamples)
+  let step = 2.0 * BODY_BAND_MAX / float(RefBodySamples)
   for i in 0 ..< RefBodySamples:
     result += abs(bodyOutwardForce(body, (float(i) + 0.5) * step,
       ctx.sim.bodiesStrength)) * step
@@ -535,16 +535,19 @@ func bodyProximityProbe(value: float; ctx: ProbeContext): float =
 
 func bodyEnclosureProbe(value: float; ctx: ProbeContext): float =
   ## bodyEnclosure: the net hold across the surface — the outward-signed force
-  ## half a band outside plus the one half a band inside. The hold acts on one
-  ## side per sign, so either side alone is dead over half the track; proximity
-  ## acts oppositely on the two sides and cancels in the sum, leaving the hold.
+  ## integrated over a window reaching the hold's whole reach, twice the band,
+  ## each side of the surface. The hold acts on one side per sign, so either
+  ## side alone is dead over half the track; proximity acts oppositely on the
+  ## two sides and cancels over the symmetric window, leaving the hold.
   let body = probeBody(ctx.sim.bodyRadius, ctx.sim.bodyBand,
     ctx.sim.bodyProximity, value)
-  # Halved against the radius too, so the inner sample stays inside the body
-  # on a slice where the band is wider than the body is big.
-  let half = min(body.bandWidth, body.radius) * 0.5
-  bodyOutwardForce(body, half, ctx.sim.bodiesStrength) +
-    bodyOutwardForce(body, -half, ctx.sim.bodiesStrength)
+  # Held to the radius too, so the inner half stays inside the body on a slice
+  # where the reach is wider than the body is big.
+  let reach = min(2.0 * body.bandWidth, body.radius)
+  let step = 2.0 * reach / float(RefBodySamples)
+  for i in 0 ..< RefBodySamples:
+    result += bodyOutwardForce(body, -reach + (float(i) + 0.5) * step,
+      ctx.sim.bodiesStrength) * step
 
 func bodyLifetimeProbe(value: float; ctx: ProbeContext): float =
   ## bodyLifetime: the presence one body delivers over its whole life, the

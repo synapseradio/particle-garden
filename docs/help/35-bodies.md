@@ -20,14 +20,18 @@ makes.
   size it was born with, so this is a setting for the next one.
   Interacts with: Body Reach (measured from this surface).
 - `bodyBand` — how far from its surface a body reaches. The size says
-  where the surface is; this says how far the forces carry from it.
+  where the surface is; this says how far the forces carry from it. The
+  pull toward the surface carries this far. The hold is strongest this far
+  out and gone at twice it, and past that a body does nothing at all.
   Interacts with: Body Size; Skin Pull and Hold (act inside this reach).
 - `bodyProximity` — the pull toward the surface, from either side.
   Positive gathers particles into a skin on it; negative clears a gap
   either side of it.
   Interacts with: Hold (both act together inside Body Reach); Bodies.
-- `bodyEnclosure` — the hold across the surface. Positive keeps particles
-  in, negative keeps them out, zero does neither.
+- `bodyEnclosure` — the hold across the surface, which resists crossing.
+  Positive pushes back what has got out and does nothing inside; negative
+  pushes back what has got in; zero does neither. A particle carried past
+  twice Body Reach is let go.
   Interacts with: Skin Pull (both act together inside Body Reach); Bodies.
 - `bodyLifetime` — how many seconds the next body lives, fading in through
   fading out. It is fixed when the body is born.

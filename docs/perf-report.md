@@ -329,6 +329,33 @@ The bodies passes' GPU cost is measured only with no live body so far: the `pass
 152.0.7977.82. With no live body, every one of the 32 slots takes the zero-envelope early-out. The
 figure with live bodies is pending the in-app run.
 
+**Re-run, 2026-09-18: enclosure's finite reach and the widened wedge.** Premise 3 moved. The hold
+now rises over the band, peaks at its edge and falls to exactly zero at twice it, where it once
+held at full strength out to the whole world. The crowd's wedge was widened from ±0.9 of a band
+about the surface to 0.9 inside through 1.9 outside, so the falloff lies inside the measured space.
+Same machine, Nim 2.2.12.
+
+| | |
+|---|---|
+| Whole file | 3.56 s wall for the built test binary, 62 tests, all passing |
+| Coordinates | 864, unchanged |
+| Still gaining at 480 frames | 22 of 864, each settled when run four times as long |
+| Peak body speed | 776.56, against the 3-substep ceiling of 793.43 (crowd 128 000, strength 0.5, proximity −10, enclosure 0, band 600, radius 40, round, 3 substeps) |
+| Peak angular speed | 0.5950724, against the 3-substep ceiling of 0.5950752 (crowd 1 000, strength 1, proximity 0, enclosure +10, band 600, radius 40, anisotropy 4, 3 substeps) |
+
+**Result.** No coordinate diverges, and the ceilings hold at the shipped range. The spin ceiling is
+reached to within 5 parts in a million. That is the geometric sum attained, not passed.
+
+**What the widening found under the old law.** With the wedge widened and the force law not yet
+changed, the settling test failed at one coordinate: crowd 1 000, strength 1, proximity −10,
+enclosure −10, band 25, radius 40, anisotropy 4, 1 substep. Run four times as long, its spin's
+half-window peaks went 0.034737 then 0.078191. The speed and spin ceilings still held there, so it
+was a wander that did not settle inside the window, not a divergence. The finite reach clears it.
+
+The peak and gaining figures come from a throwaway copy of the suite that printed them. The suite
+itself asserts only the bounds. The GPU cost with live bodies is still outstanding, and it waits
+on the in-app run.
+
 ## Evidence
 
 Every run's full trace and stderr log is retained under `scratchpad/main/perf-harness/runs/`, one

@@ -60,7 +60,7 @@ Span, live fraction, and cliff per declared slice, at the calibrated thresholds 
 | fieldOpacity | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | bodiesStrength | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | bodyRadius | default | 1.9000 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
-| bodyBand | default | 0.9586 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
+| bodyBand | default | 0.9573 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | bodyProximity | default | 2.0000 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | bodyEnclosure | default | 2.0000 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | bodyLifetime | default | 0.9917 | 1.000 | 0.004 | none | 0.00-1.00 | pass |

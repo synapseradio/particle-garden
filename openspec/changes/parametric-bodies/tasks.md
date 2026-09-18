@@ -266,7 +266,7 @@ D13 (the gate's blind spot) and D16 (the bound as an interface). Every red test 
 watched failing for its stated reason before 10.5 touches the law. The shader and the mirror change
 in one diff (`docs/engineering-principles.md`, article 5).
 
-- [ ] 10.1 **Red first.** In `tests/test_body_core.nim`, suite "One Evaluation Yields Both Proximity
+- [x] 10.1 **Red first.** In `tests/test_body_core.nim`, suite "One Evaluation Yields Both Proximity
       And Enclosure", add "a positive hold moves no particle beyond twice its band". The force from a
       body with proximity and enclosure both at `BODY_FORCE_CEILING` is exactly zero, in both axes, at
       offsets `2·BAND`, `2·BAND + 1`, `5·BAND`, and half the world away. Hold the mirror too: a
@@ -283,7 +283,7 @@ in one diff (`docs/engineering-principles.md`, article 5).
       The oracle is the stated reach, not `bodyForceAt`. Verify: fails today at every outside offset,
       with the force at `-enclosure` (the diagnosis probe measured 10.000 at 1800 from the centre,
       `scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`, section 2)
-- [ ] 10.2 **Red first.** Beside 10.1, add the profile's shape as relations:
+- [x] 10.2 **Red first.** Beside 10.1, add the profile's shape as relations:
       - "enclosure peaks at the band edge": the force there is `-enclosure` at strength and envelope
         one, and smaller at `0.9·BAND` and at `1.1·BAND`.
       - "enclosure meets the surface, the band edge and the reach end without a corner": at 1% of a
@@ -299,7 +299,7 @@ in one diff (`docs/engineering-principles.md`, article 5).
         enclosure over 1% of a band. At the reach end it passes vacuously today, and 10.1 is its red.
       - The ceiling test fails near the surface, where `smoothstep(1 - u) + u` exceeds one for
         `u < 0.5` (at `u = 0.25`, a sum of about 1.09 ceilings).
-- [ ] 10.3 **Red first.** Add a suite "A Body Is Blind Past Its Reach" with the test "two holding
+- [x] 10.3 **Red first.** Add a suite "A Body Is Blind Past Its Reach" with the test "two holding
       bodies stay put when the crowd lies beyond both reaches". Two bodies sit at the enclosure and
       strength ceilings, default radius and band, far enough apart that their shells do not overlap.
       A weighted-sample clump sits on the line between them, beyond both shells. Close the loop with
@@ -326,7 +326,7 @@ in one diff (`docs/engineering-principles.md`, article 5).
       holds the summing by review like every shader expression (`docs/enforcement.md`, Reference
       oracles). The test holds the part the mirror owns: nothing out of reach enters the sum. Verify:
       the test fails today on the third body, which the world-wide hold gives `-enclosure`
-- [ ] 10.4 **Red first where it can be.** Correct the tests that assert the old law:
+- [x] 10.4 **Red first where it can be.** Correct the tests that assert the old law:
       - Replace "enclosure reaches beyond the band at the strength it ramped to"
         (`tests/test_body_core.nim:358-369`) with "enclosure fades to zero over a second band past
         the band edge". The force at `1.5·BAND` has half the peak's magnitude, from
@@ -339,9 +339,11 @@ in one diff (`docs/engineering-principles.md`, article 5).
       - In the stability sweep, widen `runCrowdPush`'s wedge from `±0.9` of a band to span
         `[-0.9, +1.9]` bands so the falloff is measured.
       Verify: the replaced test and the half-floor test fail today for the stated reason. The widened
-      sweep still passes today, since the old law is also bounded in speed; that is recorded, not
-      treated as red
-- [ ] 10.5 Change the law in one diff:
+      sweep's ceiling test passes under the old law, which is bounded in speed. Its settling test
+      failed under the old law on 18-09-26 at one coordinate (crowd 1000, strength 1.00, proximity
+      -10, enclosure -10, band 25, radius 40, anisotropy 4, 1 substep: the fourfold run's spin rose
+      from 0.0347 to 0.0782), and passes after 10.5 (`docs/perf-report.md`, the group 2 re-run)
+- [x] 10.5 Change the law in one diff:
       - In `src/body_core.nim`'s `bodyForceAt`, `holding` becomes
         `-enclosure * actingSide * smoothstepUnit(1.0 - abs(spanned - 1.0))`, and its doc comment is
         corrected to the finite reach.
@@ -353,26 +355,26 @@ in one diff (`docs/engineering-principles.md`, article 5).
       No range in `src/config_ranges.nim` moves.
       Verify: 10.1–10.4 pass, the stability sweep passes at the shipped range with its premise 3
       re-run, `just shaders` bundles and `tests/test_wgsl_lint.nim` passes
-- [ ] 10.6 In `src/ui/api/response_probe.nim`:
+- [x] 10.6 In `src/ui/api/response_probe.nim`:
       - `bodyEnclosureProbe` (`bodies.netHold`) integrates the outward-signed force over a window
         symmetric about the surface, `min(2·bandWidth, radius)` each side, at `RefBodySamples`.
       - `bodyBandProbe`'s path lengthens to `2·BODY_BAND_MAX`.
       Both docstrings say what the window reads (design D16). Verify: `tests/test_response_probe.nim`
       passes with both controls still legible, and the rewritten
       `docs/control-legibility-report.md` shows the two rows' verdicts
-- [ ] 10.7 In `docs/help/35-bodies.md`, rewrite the `bodyBand` line to state both reaches: the pull
+- [x] 10.7 In `docs/help/35-bodies.md`, rewrite the `bodyBand` line to state both reaches: the pull
       toward the surface carries this far, and the hold is strongest this far out and gone at twice
       it. The `bodyEnclosure` line stops saying "keeps particles in" and says the hold resists
       crossing. Positive pushes back what has got out and does nothing inside. Negative pushes back
       what has got in. A particle carried past twice the band is let go. Verify:
       `tests/test_help_content.nim` passes
-- [ ] 10.8 In `docs/enforcement.md`, add the guarantee "a body's pull on a particle is bounded in size
+- [x] 10.8 In `docs/enforcement.md`, add the guarantee "a body's pull on a particle is bounded in size
       and in region" as Test-held by the 10.1–10.2 relations and 10.3's overlap test, with the summing
       loop recorded as unenforced across the shader and mirror pair. Correct the accumulator overflow row to
       the single-ceiling contribution. Annotate the group 2 entry in `docs/perf-report.md` with the
       re-run under the changed force law and the widened wedge, appended under the original rather
       than rewriting it (article 12). Verify: every new row names its tier
-- [ ] 10.9 `just happen` builds and `just check` is green
+- [x] 10.9 `just happen` builds and `just check` is green
 
 ## 9. In-app verification and the records
 

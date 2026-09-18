@@ -355,18 +355,22 @@ suite "One Evaluation Yields Both Proximity And Enclosure":
       check abs(held.y + kept.y) < EPSILON_LOOSE
       check abs(held.x) > 0.0
 
-  test "enclosure reaches beyond the band at the strength it ramped to":
-    # The band is the ramp, not the reach: past it the hold is at full
-    # strength, which is why an escaped particle is always brought back.
+  test "enclosure fades to zero over a second band past the band edge":
+    # ORACLE: the ease itself at its midpoint, smoothstep(0.5) = 0.5, so half a
+    # band past the edge carries half the peak; two bands out it carries none.
     let body = shaped(0.0, 5.0)
     let (edgeX, edgeY) = atRadius(body, BAND)
-    let (farX, farY) = atRadius(body, BAND * 5.0)
+    let (midX, midY) = atRadius(body, BAND * 1.5)
+    let (endX, endY) = atRadius(body, BAND * 2.0)
     let atEdge = bodyForceAt(body, edgeX, edgeY, TEST_WORLD_W, TEST_WORLD_H,
       1.0, 1.0)
-    let farOut = bodyForceAt(body, farX, farY, TEST_WORLD_W, TEST_WORLD_H,
+    let midway = bodyForceAt(body, midX, midY, TEST_WORLD_W, TEST_WORLD_H,
+      1.0, 1.0)
+    let atEnd = bodyForceAt(body, endX, endY, TEST_WORLD_W, TEST_WORLD_H,
       1.0, 1.0)
     check abs(atEdge.x + body.enclosure) < EPSILON_LOOSE
-    check abs(farOut.x - atEdge.x) < EPSILON_LOOSE
+    check abs(midway.x - atEdge.x * 0.5) < EPSILON_LOOSE
+    check atEnd.x == 0.0
 
   test "both forces scale linearly in the envelope and in the strength":
     let body = shaped(8.0, 5.0)
@@ -381,6 +385,125 @@ suite "One Evaluation Yields Both Proximity And Enclosure":
       let scaled = bodyForceAt(body, px, py, TEST_WORLD_W, TEST_WORLD_H,
         1.0, strength)
       check abs(scaled.x - full.x * strength) < EPSILON_LOOSE
+
+  # ORACLE for the reach tests: the stated reach, twice the band in the
+  # evaluation's own distance, and nothing bodyForceAt computes.
+  test "a positive hold moves no particle beyond twice its band":
+    let body = shaped(BODY_FORCE_CEILING, BODY_FORCE_CEILING)
+    for offset in [BAND * 2.0, BAND * 2.0 + 1.0, BAND * 5.0,
+        TEST_WORLD_W * 0.5 - RADIUS]:
+      let (px, py) = atRadius(body, offset)
+      let force = bodyForceAt(body, px, py, TEST_WORLD_W, TEST_WORLD_H,
+        1.0, 1.0)
+      checkpoint(&"outside the surface by {offset:.0f}: force {force.x:.4f}")
+      check force.x == 0.0
+      check force.y == 0.0
+
+  test "a negative hold moves nothing at twice its band inside the surface or deeper":
+    # The body is wider than the deepest depth sampled, so every point below
+    # lies inside it on the same side of the centre.
+    var body = shaped(BODY_FORCE_CEILING, -BODY_FORCE_CEILING)
+    body.radius = BODY_RADIUS_CEILING
+    for depth in [BAND * 2.0, BAND * 2.0 + 1.0, BAND * 3.0,
+        BODY_RADIUS_CEILING - 10.0]:
+      let force = bodyForceAt(body, body.centerX + body.radius - depth,
+        body.centerY, TEST_WORLD_W, TEST_WORLD_H, 1.0, 1.0)
+      checkpoint(&"inside the surface by {depth:.0f}: force {force.x:.4f}")
+      check force.x == 0.0
+      check force.y == 0.0
+
+  test "a hold reaches across a world edge no farther than twice its band":
+    # A body one band from the right edge: its outward side lies across the
+    # seam, so each particle below sits at the far left of the world and is
+    # reached only through the minimum image.
+    var body = shaped(BODY_FORCE_CEILING, BODY_FORCE_CEILING)
+    body.centerX = TEST_WORLD_W - BAND
+    for offset in [BAND * 2.0, BAND * 2.0 + 1.0, BAND * 3.0]:
+      let px = wrapToTorus(body.centerX + RADIUS + offset, TEST_WORLD_W)
+      check px < body.centerX - TEST_WORLD_W * 0.5
+      let force = bodyForceAt(body, px, body.centerY, TEST_WORLD_W,
+        TEST_WORLD_H, 1.0, 1.0)
+      checkpoint(&"across the seam by {offset:.0f}: force {force.x:.4f}")
+      check force.x == 0.0
+      check force.y == 0.0
+
+  test "an elongated hold reaches its band times its elongation along the long axis":
+    # Radius 100 and band 50 keep the long semi-axis plus the reach (800)
+    # inside half the world's height, so the minimum image never wraps the
+    # shell onto the body's far side. Along the long axis the evaluated
+    # distance is the true one divided by the elongation.
+    const ELONGATED_RADIUS = 100.0
+    const ELONGATED_BAND = 50.0
+    let body = Body(centerX: 1920.0, centerY: 1080.0, radius: ELONGATED_RADIUS,
+      anisotropy: BODY_ANISOTROPY_CEILING, bandWidth: ELONGATED_BAND,
+      proximity: BODY_FORCE_CEILING, enclosure: BODY_FORCE_CEILING,
+      invMass: 1.0, invInertia: 1.0)
+    let longSemiAxis = ELONGATED_RADIUS * BODY_ANISOTROPY_CEILING
+    let trueReach = 2.0 * ELONGATED_BAND * BODY_ANISOTROPY_CEILING
+    check body.centerY + longSemiAxis + trueReach * 1.25 <
+      body.centerY + TEST_WORLD_H * 0.5
+    for beyond in [trueReach, trueReach + 1.0, trueReach * 1.25]:
+      let force = bodyForceAt(body, body.centerX,
+        body.centerY + longSemiAxis + beyond, TEST_WORLD_W, TEST_WORLD_H,
+        1.0, 1.0)
+      checkpoint(&"along the long axis by {beyond:.0f}: force {force.y:.4f}")
+      check force.x == 0.0
+      check force.y == 0.0
+    # Just inside the reach in evaluated distance: still held.
+    let justInside = (2.0 * ELONGATED_BAND - 1.0) * BODY_ANISOTROPY_CEILING
+    let held = bodyForceAt(body, body.centerX,
+      body.centerY + longSemiAxis + justInside, TEST_WORLD_W, TEST_WORLD_H,
+      1.0, 1.0)
+    check held.y < 0.0
+
+  test "enclosure peaks at the band edge":
+    let body = shaped(0.0, BODY_FORCE_CEILING)
+    proc outward(offset: float): float =
+      let (px, py) = atRadius(body, offset)
+      bodyForceAt(body, px, py, TEST_WORLD_W, TEST_WORLD_H, 1.0, 1.0).x
+    check abs(outward(BAND) + body.enclosure) < EPSILON_LOOSE
+    checkpoint(&"at 0.9 bands {outward(BAND * 0.9):.4f}, at the edge " &
+      &"{outward(BAND):.4f}, at 1.1 bands {outward(BAND * 1.1):.4f}")
+    check abs(outward(BAND * 0.9)) < abs(outward(BAND))
+    check abs(outward(BAND * 1.1)) < abs(outward(BAND))
+
+  test "enclosure meets the surface, the band edge and the reach end without a corner":
+    # The ratio the proximity edge test uses: a linear ramp moves one percent
+    # of the strength over one percent of a band, an ease with zero slope three
+    # parts in ten thousand.
+    let body = shaped(0.0, BODY_FORCE_CEILING)
+    proc outward(offset: float): float =
+      let (px, py) = atRadius(body, offset)
+      bodyForceAt(body, px, py, TEST_WORLD_W, TEST_WORLD_H, 1.0, 1.0).x
+    let nearby = BAND * 0.01
+    # Each point, with the side of it on which the hold acts.
+    for (named, at, beside) in [("surface", 0.0, nearby),
+        ("band edge, inner side", BAND, BAND - nearby),
+        ("band edge, outer side", BAND, BAND + nearby),
+        ("reach end", BAND * 2.0, BAND * 2.0 - nearby)]:
+      let moved = abs(outward(beside) - outward(at))
+      checkpoint(&"{named}: moves {moved:.6f} over a hundredth of a band")
+      check moved < 0.001 * body.enclosure
+
+  test "proximity and enclosure at the ceiling never sum past one ceiling":
+    const SAMPLES = 400
+    for proximity in [-BODY_FORCE_CEILING, BODY_FORCE_CEILING]:
+      for enclosure in [-BODY_FORCE_CEILING, BODY_FORCE_CEILING]:
+        let body = shaped(proximity, enclosure)
+        var worst = 0.0
+        var worstAt = 0.0
+        for sample in 0 .. SAMPLES:
+          let offset = -2.0 * BAND + 4.0 * BAND * sample.float / SAMPLES.float
+          let (px, py) = atRadius(body, offset)
+          let force = bodyForceAt(body, px, py, TEST_WORLD_W, TEST_WORLD_H,
+            1.0, 1.0)
+          let size = sqrt(force.x * force.x + force.y * force.y)
+          if size > worst:
+            worst = size
+            worstAt = offset
+        checkpoint(&"proximity {proximity:.0f}, enclosure {enclosure:.0f}: " &
+          &"largest {worst:.4f} at {worstAt:.0f} from the surface")
+        check worst <= BODY_FORCE_CEILING + EPSILON_LOOSE
 
 suite "Nim Owns Ignition And Slots, And Knows Them From The Clock Alone":
   # ORACLE: the lifetime argument. A slot's occupancy is a statement about time
@@ -677,6 +800,19 @@ suite "A Body Is Pushed By The Particles It Pushes":
     check abs(coarse.velX) < 40.0
     check abs(coarse.velX) > 0.0
 
+const CROWD_SAMPLES = 24
+  ## A crowd is carried by this many weighted samples rather than by
+  ## MAX_PARTICLES individuals: a body reads only the SUM of the reactions,
+  ## and a sample standing for `crowd / CROWD_SAMPLES` particles at one point
+  ## contributes exactly what those particles would if they were together.
+  ## Together is the worst case — spread out they cancel — so a run measures
+  ## the coherent crowd and covers the scattered one.
+const SWEEP_FRAMES = 480
+  ## Rendered frames per closed-loop run. At the largest frame that is 40
+  ## seconds of wall clock, long enough that a body under a steady crowd
+  ## reaches its terminal speed several times over and a divergent one has
+  ## left the world.
+
 suite "A Crowd Cannot Drive A Body Unstable":
   # The measurement gate for BODY_DENSITY, the two damping constants and the two
   # per-substep change caps. Feedback is the part of this capability whose
@@ -697,17 +833,6 @@ suite "A Crowd Cannot Drive A Body Unstable":
   # A shorter frame is strictly gentler on an explicit step, so a bound earned
   # here covers every frame the app can run.
 
-  const CROWD_SAMPLES = 24
-    ## The crowd is carried by this many weighted samples rather than by
-    ## MAX_PARTICLES individuals: the body reads only the SUM of the reactions,
-    ## and a sample standing for `crowd / CROWD_SAMPLES` particles at one point
-    ## contributes exactly what those particles would if they were together.
-    ## Together is the worst case — spread out they cancel — so the sweep
-    ## measures the coherent crowd and covers the scattered one.
-  const SWEEP_FRAMES = 480
-    ## Rendered frames per run. At the largest frame that is 40 seconds of
-    ## wall clock, long enough that a body under a steady crowd reaches its
-    ## terminal speed several times over and a divergent one has left the world.
   const SETTLING_TOLERANCE = 2.0
     ## How much larger the second half's peak may be than the first half's
     ## before the run counts as still growing. A body under a steady crowd
@@ -775,13 +900,14 @@ suite "A Crowd Cannot Drive A Body Unstable":
       invMass: masses.invMass, invInertia: masses.invInertia)
     let weight = crowd / CROWD_SAMPLES.float
     # A wedge off the body's +x side straddling the surface: one-sided, so the
-    # reactions add instead of cancelling, and spanning the band so both force
-    # laws act at once.
+    # reactions add instead of cancelling, and spanning from 0.9 of a band
+    # inside to 1.9 outside, so both force laws act and the hold's falloff is
+    # measured.
     var px, py, vx, vy: array[CROWD_SAMPLES, float]
     for sample in 0 ..< CROWD_SAMPLES:
       let bearing = -0.5 + sample.float / (CROWD_SAMPLES - 1).float
       let reach = radius - band * 0.9 +
-        1.8 * band * ((sample.float * 0.6180339887) mod 1.0)
+        2.8 * band * ((sample.float * 0.6180339887) mod 1.0)
       px[sample] = body.centerX + reach * cos(bearing)
       py[sample] = body.centerY + reach * sin(bearing)
     # Two clocks, as the step keeps them: seconds for travel, reference frames
@@ -948,16 +1074,134 @@ suite "A Crowd Cannot Drive A Body Unstable":
     check whole > 0.0
     check max(whole, cut) / min(whole, cut) < 2.0
 
+suite "A Body Is Blind Past Its Reach":
+  # ORACLE: the stated reach. A particle more than twice the band from a
+  # body's surface neither receives anything from it nor hands it anything
+  # back, so a crowd out there cannot move it however large.
+  const SEPARATION = 1200.0
+    ## Far enough apart at the default radius and band that the two reach
+    ## shells (240 + 2 * 120 each side) leave a 240-wide gap between them.
+  const CLUMP_SPREAD = 40.0
+
+  func holding(centerX: float): Body =
+    let masses = bodyInverseMasses(BODY_DEFAULT_RADIUS, 1.0)
+    Body(centerX: centerX, centerY: BODY_WORLD_H * 0.5,
+      radius: BODY_DEFAULT_RADIUS, anisotropy: 1.0,
+      bandWidth: BODY_DEFAULT_BAND, proximity: BODY_DEFAULT_PROXIMITY,
+      enclosure: BODY_FORCE_CEILING,
+      invMass: masses.invMass, invInertia: masses.invInertia)
+
+  type PairRun = object
+    startA, startB, endA, endB: Body
+    fastestA, fastestB: float     ## Largest speed either body reached.
+    firstFrameVelA: float         ## Body A's x velocity after frame one.
+    clumpImpulse: float           ## Summed magnitude the clump received.
+
+  proc runPairAgainstClump(clumpX: float): PairRun =
+    ## Two holding bodies and one weighted clump, the loop closed at the
+    ## largest frame in the shape of the stability sweep's runCrowdPush.
+    var bodies = [holding(BODY_WORLD_W * 0.5 - SEPARATION * 0.5),
+      holding(BODY_WORLD_W * 0.5 + SEPARATION * 0.5)]
+    result.startA = bodies[0]
+    result.startB = bodies[1]
+    let weight = MAX_PARTICLES.float / CROWD_SAMPLES.float
+    var px, py, vx, vy: array[CROWD_SAMPLES, float]
+    for sample in 0 ..< CROWD_SAMPLES:
+      let bearing = TAU * sample.float / CROWD_SAMPLES.float
+      let spread = CLUMP_SPREAD * ((sample.float * 0.6180339887) mod 1.0)
+      px[sample] = clumpX + spread * cos(bearing)
+      py[sample] = BODY_WORLD_H * 0.5 + spread * sin(bearing)
+    let strength = BODY_STRENGTH_CEILING * BODY_LARGEST_FRAME_FACTOR
+    for frame in 0 ..< SWEEP_FRAMES:
+      var accumulators: array[2, BodyAccumulator]
+      for sample in 0 ..< CROWD_SAMPLES:
+        for slot in 0 .. 1:
+          let impulse = bodyForceAt(bodies[slot], px[sample], py[sample],
+            BODY_WORLD_W, BODY_WORLD_H, 1.0, strength)
+          accumulators[slot].addBodyReaction(bodies[slot], px[sample],
+            py[sample], BODY_WORLD_W, BODY_WORLD_H, impulse.x * weight,
+            impulse.y * weight)
+          vx[sample] += impulse.x
+          vy[sample] += impulse.y
+          result.clumpImpulse += abs(impulse.x) + abs(impulse.y)
+        px[sample] = wrapToTorus(px[sample] + vx[sample] *
+          BODY_LARGEST_SUBSTEP_DT, BODY_WORLD_W)
+        py[sample] = wrapToTorus(py[sample] + vy[sample] *
+          BODY_LARGEST_SUBSTEP_DT, BODY_WORLD_H)
+      for slot in 0 .. 1:
+        let received = accumulators[slot].decoded()
+        bodies[slot] = bodyRigidStep(bodies[slot], received.forceX,
+          received.forceY, received.torque, BODY_LARGEST_SUBSTEP_DT,
+          BODY_WORLD_W, BODY_WORLD_H)
+      if frame == 0:
+        result.firstFrameVelA = bodies[0].velX
+      result.fastestA = max(result.fastestA, sqrt(bodies[0].velX *
+        bodies[0].velX + bodies[0].velY * bodies[0].velY))
+      result.fastestB = max(result.fastestB, sqrt(bodies[1].velX *
+        bodies[1].velX + bodies[1].velY * bodies[1].velY))
+    result.endA = bodies[0]
+    result.endB = bodies[1]
+
+  test "two holding bodies stay put when the crowd lies beyond both reaches":
+    let reach = BODY_DEFAULT_RADIUS + 2.0 * BODY_DEFAULT_BAND
+    let clumpX = BODY_WORLD_W * 0.5
+    let run = runPairAgainstClump(clumpX)
+    # The clump's nearest point is outside both shells.
+    check clumpX - CLUMP_SPREAD - run.startA.centerX > reach
+    check run.startB.centerX - (clumpX + CLUMP_SPREAD) > reach
+    checkpoint(&"fastest {run.fastestA:.4f} / {run.fastestB:.4f}, clump " &
+      &"impulse {run.clumpImpulse:.4f}, ends at {run.endA.centerX:.2f} / " &
+      &"{run.endB.centerX:.2f}")
+    check run.fastestA == 0.0
+    check run.fastestB == 0.0
+    check run.endB.centerX - run.endA.centerX ==
+      run.startB.centerX - run.startA.centerX
+    check run.clumpImpulse == 0.0
+
+  test "a crowd inside one body's reach moves that body toward it":
+    # The control: the same rig sees motion once the clump sits a band outside
+    # body A's surface, inside its reach.
+    let run = runPairAgainstClump(BODY_WORLD_W * 0.5 - SEPARATION * 0.5 +
+      BODY_DEFAULT_RADIUS + BODY_DEFAULT_BAND)
+    check run.firstFrameVelA > 0.0
+    check run.endA.centerX > run.startA.centerX
+
+  test "overlapping bodies add and a body out of reach adds nothing":
+    let first = holding(1500.0)
+    let second = holding(2340.0)
+    # Out of reach: its surface lies over a thousand units from the particle.
+    let third = holding(600.0)
+    let atX = 1900.0
+    let atY = BODY_WORLD_H * 0.5 + 70.0
+    let fromFirst = bodyForceAt(first, atX, atY, BODY_WORLD_W, BODY_WORLD_H,
+      1.0, 1.0)
+    let fromSecond = bodyForceAt(second, atX, atY, BODY_WORLD_W,
+      BODY_WORLD_H, 1.0, 1.0)
+    let fromThird = bodyForceAt(third, atX, atY, BODY_WORLD_W, BODY_WORLD_H,
+      1.0, 1.0)
+    checkpoint(&"out of reach: ({fromThird.x:.4f}, {fromThird.y:.4f})")
+    check fromThird.x == 0.0
+    check fromThird.y == 0.0
+    check abs(fromFirst.x) + abs(fromFirst.y) > 0.0
+    check abs(fromSecond.x) + abs(fromSecond.y) > 0.0
+    # Summed in slot order, as body-force.wgsl's loop sums.
+    var totalX = 0.0
+    var totalY = 0.0
+    for force in [fromFirst, fromSecond, fromThird]:
+      totalX = totalX + force.x
+      totalY = totalY + force.y
+    check totalX == fromFirst.x + fromSecond.x
+    check totalY == fromFirst.y + fromSecond.y
+
 suite "An Enclosing Body Cannot Be Tunnelled":
   # The band floor's warrant. It is a relation, not a choice: the fastest
   # particle the world admits must land on the enclosure ramp on the substep
   # that carries it across the surface, or it meets the wall at full strength
   # as a step in the force.
   #
-  # NOTE ON WHAT "TUNNELLED" MEANS HERE. Enclosure saturates rather than
-  # vanishing past the band (design D4's `saturate`), so an escaped particle is
-  # always brought back however far it got — escape is not the failure a
-  # narrower band buys. Skipping the ramp is.
+  # NOTE ON WHAT "TUNNELLED" MEANS HERE. The hold peaks at the band edge and is
+  # gone at twice the band, so a particle carried past the reach in one substep
+  # is let go: skipping the ramp is skipping the hold entirely.
 
   const RADIUS = 400.0
 
@@ -995,27 +1239,27 @@ suite "An Enclosing Body Cannot Be Tunnelled":
   test "the fastest particle crossing an enclosing surface lands on the ramp":
     # Passes at the derived floor.
     check crossingDepth(BODY_BAND_FLOOR) < 1.0
-    # And the force it meets there is a fraction of the wall, not the whole of
-    # it: the ramp did its job.
+    # And the hold has it there: the crossing lands at the band's edge, where
+    # the rise peaks, and nothing past the ceiling acts.
     let body = wall(BODY_BAND_FLOOR)
     let landedX = body.centerX + RADIUS - 1e-6 +
       BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
     let met = bodyForceAt(body, landedX, body.centerY,
       BODY_WORLD_W, BODY_WORLD_H, 1.0, 1.0)
-    check abs(met.x) > 0.0
-    check abs(met.x) < body.enclosure
+    check met.x < 0.0
+    check abs(met.x) <= body.enclosure
 
   test "at half the derived floor the same particle skips the ramp":
     # Fails at half of it, which is what makes the floor a bound rather than a
-    # preference. At half the band the crossing lands past the ramp's end and
-    # the particle meets the wall at its full strength in one step.
-    check crossingDepth(BODY_BAND_FLOOR * 0.5) >= 1.0
+    # preference. At half the band the crossing lands at the reach's end, twice
+    # the band out, where the hold has fallen to nothing.
+    check crossingDepth(BODY_BAND_FLOOR * 0.5) > 2.0 - EPSILON_LOOSE
     let body = wall(BODY_BAND_FLOOR * 0.5)
     let landedX = body.centerX + RADIUS - 1e-6 +
       BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
     let met = bodyForceAt(body, landedX, body.centerY,
       BODY_WORLD_W, BODY_WORLD_H, 1.0, 1.0)
-    check abs(abs(met.x) - body.enclosure) < EPSILON_LOOSE
+    check abs(met.x) < EPSILON_LOOSE
 
 suite "The Body Oracle Names The World It Is Measured In":
   const CONFIG_FILE = "src" / "config.nim"

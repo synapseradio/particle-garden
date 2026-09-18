@@ -132,11 +132,12 @@ fn applyBodyForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
       smoothstep(0.0, 1.0, 1.0 - spanned);
     // ENCLOSURE is one signed strength read against the distance's sign:
     // positive acts on what is outside and pushes it in, negative acts on what
-    // is inside and pushes it out. The band is its ramp, not its reach — past
-    // the band the hold is at full strength, which is what brings an escaped
-    // particle back however far it got.
+    // is inside and pushes it out. It rises to full at the band's edge and
+    // falls to exactly zero at twice the band, with zero slope at the surface,
+    // the edge and the reach's end; past that a body hands a particle nothing.
     let actingSide = select(0.0, 1.0, distance * sign(body.enclosure) >= 0.0);
-    let holding = -body.enclosure * actingSide * min(spanned, 1.0);
+    let holding = -body.enclosure * actingSide *
+      smoothstep(0.0, 1.0, 1.0 - abs(spanned - 1.0));
 
     let contribution = normal * (towardSurface + holding) * presence * strength;
     total = total + contribution;

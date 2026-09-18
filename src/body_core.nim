@@ -39,7 +39,9 @@ type
     angle*, angVel*: float
     radius*: float              ## Semi-axis along the body's own x.
     anisotropy*: float          ## Semi-axis along y, as a multiple of radius.
-    bandWidth*: float           ## Proximity's reach either side of the surface.
+    bandWidth*: float
+      ## Proximity's reach either side of the surface, and where enclosure
+      ## peaks; enclosure's own reach is twice this.
     proximity*: float           ## Signed: toward the surface.
     enclosure*: float           ## Signed: positive holds in, negative keeps out.
     invMass*, invInertia*: float
@@ -186,17 +188,19 @@ const
     ## DERIVED, not chosen: the distance a particle at the speed cap covers in
     ## the largest substep. A particle crossing an enclosing surface has to land
     ## inside the band on the substep that carries it across, or it skips the
-    ## ramp entirely and meets the wall at full strength as a step — the corner
-    ## in the force the easing elsewhere in this module exists to prevent. At
-    ## this floor the fastest particle the world admits still lands on the ramp.
+    ## hold's rise; at half this floor it lands at the reach's end, where the
+    ## hold is zero, and is let go in one step. At this floor the fastest
+    ## particle the world admits still lands on the rise.
     ## Re-derive when the speed ceiling, the frame cap or the time-scale ceiling
     ## moves.
 
   BODY_MAX_FORCE_PER_PARTICLE* =
-    2.0 * BODY_FORCE_CEILING * BODY_STRENGTH_CEILING * BODY_LARGEST_FRAME_FACTOR
+    BODY_FORCE_CEILING * BODY_STRENGTH_CEILING * BODY_LARGEST_FRAME_FACTOR
     ## The largest velocity impulse one body may hand one particle in one
-    ## substep. Twice the force ceiling because proximity and enclosure come out
-    ## of one evaluation and can point the same way.
+    ## substep. One ceiling, not two: where proximity and enclosure push the
+    ## same way their eases sum to one, smoothstep(x) + smoothstep(1 - x) = 1,
+    ## and past the band only the hold acts. tests/test_body_core.nim sweeps
+    ## bodyForceAt under it.
 
   BODY_FIXED_POINT_SCALE* = 16.0
     ## The per-body force accumulator's own scale, far coarser than
@@ -395,9 +399,11 @@ func bodyForceAt*(body: Body; atX, atY, worldW, worldH, envelope,
   ##
   ## ENCLOSURE is one signed strength read against the distance's sign: positive
   ## acts on what is outside and pushes it in, negative acts on what is inside
-  ## and pushes it out, and zero does neither. The band is its ramp, not its
-  ## reach — past the band the hold is at full strength, which is what brings an
-  ## escaped particle back however far it got.
+  ## and pushes it out, and zero does neither. It rises from zero at the
+  ## surface to full at the band's edge and falls back to exactly zero at twice
+  ## the band, with zero slope at all three, so past that reach a body hands a
+  ## particle nothing. Where the two forces push the same way their eases sum
+  ## to at most the larger strength, since smoothstep(x) + smoothstep(1 - x) = 1.
   ##
   ## The band is a divisor, so what keeps this finite is a band range whose
   ## floor is above zero, exactly as the SPH smoothing radius's floor keeps the
@@ -408,7 +414,8 @@ func bodyForceAt*(body: Body; atX, atY, worldW, worldH, envelope,
     smoothstepUnit(1.0 - spanned)
   let actingSide =
     if sample.distance * float(sgn(body.enclosure)) >= 0.0: 1.0 else: 0.0
-  let holding = -body.enclosure * actingSide * min(spanned, 1.0)
+  let holding = -body.enclosure * actingSide *
+    smoothstepUnit(1.0 - abs(spanned - 1.0))
   let along = (towardSurface + holding) * envelope * strength
   (x: sample.normalX * along, y: sample.normalY * along)
 
