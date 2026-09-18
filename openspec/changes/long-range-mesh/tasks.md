@@ -211,7 +211,11 @@ held by review — change a shader and its oracle in the same diff or the pair d
 - [ ] 5.7 Add an `EXPECTED_BIND_GROUP_ENTRIES_*` constant per pipeline, a case per key in
       `getExpectedEntryCount`, and bind-group creation ending in `validateBindGroupEntryCount` in
       `src/webgpu_compute.nim`. Verify: `just happen` builds, and a deliberately wrong count in one
-      constant is caught by that call rather than by the browser
+      constant is caught by that call rather than by the browser. The code half is in
+      (`src/webgpu_compute.nim:77-82`, `:103-111`, every long-range bind group validated at
+      `:655-748`; counts re-derived from each entry point's bindings on 18-09-26). What stays open is
+      the in-app observation: flip one constant, load the page, and read the named mismatch in the
+      console ahead of any WebGPU validation error. It runs with 6.2
 - [x] 5.8 `just happen` builds and `just check` is green
 
 ## 6. In-app verification, the remaining budget, and the records
