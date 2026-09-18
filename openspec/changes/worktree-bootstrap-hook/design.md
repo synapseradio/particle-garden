@@ -162,9 +162,12 @@ reported. Rejected: trusting `just deps`'s exit code alone, which is the failure
 ## Risks / Trade-offs
 
 **`nimble install -d -y` may reach the network on a checkout whose cache is cold** → the bootstrap
-runs once per checkout. What is unmeasured is whether `nimble install -d -y` succeeds offline
-against a warm `~/.nimble/pkgs2`. Task 1.3 measures it, and the finding changes no requirement
-either way.
+runs once per checkout. Measured (task 1.3, M10 in
+`scratchpad/worktree-bootstrap-hook/measurements__30-08-26-1700.md`): with the network cut by a
+`sandbox-exec` profile denying `network*`, `nimble install -d -y` exits 0 in 0.315 s against a warm
+`~/.nimble/pkgs2`. It reads the machine-global cache and does not reach the network when every
+dependency the lock names is already there. The finding changes no requirement; it closes the open
+clause on a cold-cache checkout still needing the network, which stays true and unmeasured here.
 
 **The approval prompt fires again on every edit to the hook command** → the command is `just deps`
 and stays that string. The authority it delegates to lives in the `justfile`, which approval does

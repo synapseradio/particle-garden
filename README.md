@@ -117,6 +117,11 @@ just happen
 ./main
 ```
 
+A [worktrunk](https://worktrunk.dev/) worktree (`wt switch --create`) bootstraps itself: the
+committed `.config/wt.toml` runs `just deps` before the worktree is handed back, so `just happen`
+builds there without the two `nimble` commands above. A `git clone` or a plain `git worktree add`
+still needs them.
+
 `just serve` builds and runs it with no window; open `http://127.0.0.1:8089` in your own Chrome or Edge.
 
 Requires [Nim](https://nim-lang.org/) 2.0+, [Bun](https://bun.sh/) for the control panel bundle, and [just](https://github.com/casey/just).
