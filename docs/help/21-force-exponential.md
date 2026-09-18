@@ -11,5 +11,11 @@ any joints to place. Both controls dim while the species force is off.
 
 - `expRepulsionAlpha` — how fast the repulsion decays. Higher values
   shrink the hard core each particle defends.
+  Interacts with: Attraction β (the force is their difference);
+  Interaction Radius (distances are measured against it); Force Strength
+  (dims it at zero).
 - `expAttractionBeta` — how fast the attraction decays. Lower values let
   the pull reach further across the interaction radius.
+  Interacts with: Repulsion α (the force is their difference); Crowding
+  (weakens this pull where crowds are dense); Interaction Radius; Force
+  Strength (dims it at zero).

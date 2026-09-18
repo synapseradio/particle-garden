@@ -12,9 +12,13 @@ far enough in any direction and the view comes back around.
   the zero key reframes the whole world, and while you drag this slider the
   world's edges draw as a frame so you can see how much of it you are
   looking at.
+  Interacts with: Particle Size, Trail Length and Halo Radius (all scale
+  with it); the mouse's reach (shrinks as you zoom in); Drift (breathes
+  it).
 - `cameraDriftSpeed` — view widths the camera travels per minute while Drift
   is on. One screen a minute is the notch; the floor takes twenty minutes to
   cross a screen, and the ceiling crosses one every fifteen seconds.
+  Interacts with: Zoom (Drift breathes it); the Drift toggle (dims it).
 
 Drift sends the camera on a slow tour of its own. The view slides along a
 heading that never retraces its path, and the zoom breathes between the level

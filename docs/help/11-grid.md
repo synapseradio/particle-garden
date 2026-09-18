@@ -12,3 +12,6 @@ forces and the fluid both search inside it.
   so you can compare it against the structures on screen. Small radii make
   tight local rules; large radii let distant clusters tug on each other,
   and cost more to simulate.
+  Interacts with: the force shape (its joints are fractions of this);
+  Crowding (density counts inside it); Fluid Scale (a fraction of it);
+  Stiffness (its safe ceiling); Force Weather (moves it).
