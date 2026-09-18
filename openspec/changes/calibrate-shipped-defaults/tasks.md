@@ -1,15 +1,15 @@
 ## 1. Correct the two false comments
 
-- [ ] 1.1 Read `src/preset.nim:243-248` and confirm `sphRadiusFraction: 1.0` is the shipped default,
-      matching `src/ui/state/simulation_state.nim:116`; the check is that both literals read `1.0`
-- [ ] 1.2 Rewrite the comment at `src/preset.nim:244-247` so it states what the code does: the
+- [x] 1.1 Read `src/preset.nim:263-268` and confirm `sphRadiusFraction: 1.0` is the shipped default,
+      matching `src/ui/state/simulation_state.nim:158`; the check is that both literals read `1.0`
+- [x] 1.2 Rewrite the comment at `src/preset.nim:263-267` so it states what the code does: the
       shipped default is the whole interaction radius, and the v1 branch pins `1.0` because that is
       the kernel a v1 fluid ran. Remove the claim that the default sits below 1 and the reference to
-      a superseded change. Verify no sentence beside the field contradicts `:248`
-- [ ] 1.3 Rewrite the comment at `src/preset.nim:639-644` the same way: drop "not the shipped
+      a superseded change. Verify no sentence beside the field contradicts `:266`
+- [x] 1.3 Rewrite the comment at `src/preset.nim:714-719` the same way: drop "not the shipped
       default, which sits below 1", keep the pinning rationale, which stands on its own. Verify by
-      reading `:645` against the new comment
-- [ ] 1.4 `just happen` builds and `just check` is green; `grep -n 'below 1' src/preset.nim` returns
+      reading `:720` against the new comment
+- [x] 1.4 `just happen` builds and `just check` is green; `grep -n 'below 1' src/preset.nim` returns
       nothing
 
 ## 2. Build and prove the measurement rig

@@ -261,10 +261,8 @@ func defaultSettings*(): PresetSettings =
     sphRestDensity: 3.0,
     sphStiffness: 8.0,
     # Mirrors simulation_state.initSimulationState's sphRadiusFraction: the
-    # whole interaction radius, which is the kernel every fluid world runs.
-    # One-world moves this below 1 for fresh worlds; presets
-    # older than this schema version get 1.0 pinned in the v1 branch below,
-    # never the shipped default.
+    # whole interaction radius. The v1 branch below pins 1.0 on its own,
+    # because that is the kernel a v1 fluid ran.
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
     sphSubsteps: 2,
@@ -715,10 +713,10 @@ proc migrate*(node: JsonNode; fromVersion: int): JsonNode =
       settings["crowdingStrength"] = %0.0
       # Pinned for the same reason, at the other end of its range. A v1 file's
       # smoothing radius is always the whole interaction radius — the only
-      # kernel a v1 fluid describes — not the shipped default, which sits
-      # below 1. Defaulting instead would rescale every migrated fluid the
-      # moment that default changes. Written unconditionally, so a v1 file
-      # that somehow carries the key is overwritten rather than trusted.
+      # kernel a v1 fluid describes. Defaulting instead would rescale every
+      # migrated fluid the moment that default changes. Written
+      # unconditionally, so a v1 file that somehow carries the key is
+      # overwritten rather than trusted.
       settings["sphRadiusFraction"] = %1.0
   if fromVersion < 3:
     # v2 -> v3: the species ceiling grew from 6 to 8, so the flattened
