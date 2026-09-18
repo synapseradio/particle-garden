@@ -170,8 +170,8 @@ dependency the lock names is already there. The finding changes no requirement; 
 clause on a cold-cache checkout still needing the network, which stays true and unmeasured here.
 
 **The approval prompt fires again on every edit to the hook command** → the command is `just deps`
-and stays that string. The authority it delegates to lives in the `justfile`, which approval does
-not gate.
+followed by the `nimble.paths` guard task 3.3 added, and stays that string. The dependency
+authority it delegates to lives in the `justfile`, which approval does not gate.
 
 **A route no `wt` hook fires on still fails** → this is D1's stated price, not a surprise. Task 5.1
 records which routes stay red, so the record of what shipped names them.
