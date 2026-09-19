@@ -40,7 +40,7 @@ beside a constant, one or two lines satisfy it.
   by hand.
 - Run the narrowest bats target that covers the change: `bats tests/shell/<file>.bats`, `bats -f '<name>' <file>`, or `bats --filter-tags unit tests/shell`. The whole shell suite runs once, at the end.
 - The shell suite needs `bats-support`, `bats-assert` and `bats-file` on the machine, or every assertion dies as `assert_output: command not found` and `just check` goes red on a clean tree. Install with `brew tap bats-core/bats-core`, then `brew trust --formula bats-core/bats-core/{bats-support,bats-assert,bats-file}` (homebrew refuses to load formulae from an untrusted tap, and the suite's own error message omits this step), then `brew install bats-support bats-assert bats-file`.
-- When subagents carry the work, tests run once at the end by the integrator, and never per subagent.
+- When subagents carry the work, each may run the test subsets relevant to its task. No subagent runs a whole suite (`just test`, `just check`, `just happen`, or the full shell suite); the integrator runs those once, at the end.
 - Generated outputs (`web/app.js`, `web/ui-bundle.*`, top-level `web/shaders/*.wgsl`) are never edited by hand.
 - `./main` serves the page over plain HTTP at `http://127.0.0.1:8089` with COOP/COEP headers and
   opens a webui window at that URL. The page loads only `app.js` and `ui-bundle.js` and calls
