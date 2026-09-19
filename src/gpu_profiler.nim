@@ -15,41 +15,50 @@ from std/jsffi import JsObject, toJs, `[]`, `[]=`
 import std/asyncjs
 import bindings/webgpu
 import webgpu_init
+import profiler_slots
 
 const
-  passGridBuild* = 0
-  passPhysics* = 1
-  passDraw* = 2
-  passPresent* = 3
-  passBloom* = 4
+  passGridBuild* = PROFILER_SLOT_GRID_BUILD
+  passPhysics* = PROFILER_SLOT_PHYSICS
+  passDraw* = PROFILER_SLOT_DRAW
+  passPresent* = PROFILER_SLOT_PRESENT
+  passBloom* = PROFILER_SLOT_BLOOM
     ## One span bucket across the three bloom passes (glow-HDR, blur-H,
     ## blur-V): the begin edge is written by the first pass, the end edge by
     ## the last (attachBeginTimestamp/attachEndTimestamp), so the delta is
     ## the whole bloom chain including any inter-pass gap. Only written when
     ## bloom is enabled.
-  passField* = 5
-    ## The reaction-diffusion field pass (deposit, resolve, the Gray-Scott
-    ## substeps, field force). Its own slot rather than passGridBuild's:
-    ## reaction-diffusion dispatches no grid-build passes at all, so folding
-    ## field time into "GPU grid" would make the two modes' numbers mean
-    ## different things under one label. Grid time reads 0 in
-    ## reaction-diffusion, which is what it genuinely is.
-  passIntegrate* = 6
+  passField* = PROFILER_SLOT_FIELD
+    ## The world-intrinsic field pass (resolve, the Gray-Scott substeps).
+    ## Its own slot rather than passGridBuild's: reaction-diffusion
+    ## dispatches no grid-build passes at all, so folding field time into
+    ## "GPU grid" would make the two modes' numbers mean different things
+    ## under one label. Grid time reads 0 in reaction-diffusion, which is
+    ## what it genuinely is.
+  passIntegrate* = PROFILER_SLOT_INTEGRATE
     ## The integrate pass. It must run after the field passes, and the field
     ## passes must run after forces, so it needs a node — and therefore a
     ## slot — of its own, separate from passPhysics. app.nim adds this back
     ## into the physics figure it reports, so the stat keeps meaning what it
     ## says: total physics time.
-  passLongRange* = 7
+  passLongRange* = PROFILER_SLOT_LONG_RANGE
     ## The long-range mesh solve (deposit, the four transform dispatches, the
-    ## kernel mix). Its own slot because the solve's cost is what the mesh-size
-    ## control is chosen against, and a slot shared with any other pass could
-    ## only report a sum. The force pass it feeds writes no timestamps.
-  passBodies* = 8
+    ## kernel mix), once per frame. Its own slot because the solve's cost is
+    ## what the mesh-size control is chosen against, and a slot shared with
+    ## any other pass could only report a sum.
+  passBodies* = PROFILER_SLOT_BODIES
     ## The bodies pass (bodyForce, bodyIntegrate). Per substep, and timestamps
     ## attach on substep 0 only, so like passPhysics it reports one substep's
     ## span; per-frame cost is that times the substep count.
-  numPasses* = 9
+  passFluid* = PROFILER_SLOT_FLUID
+    ## forcesSph, in its own per-substep node apart from the sweep.
+  passScent* = PROFILER_SLOT_SCENT
+    ## fieldForce.
+  passLrForce* = PROFILER_SLOT_LR_FORCE
+    ## lrForce, apart from the solve passLongRange reports.
+  passDeposit* = PROFILER_SLOT_DEPOSIT
+    ## fieldDeposit, once per frame, ahead of the field pass.
+  numPasses* = PROFILER_SLOT_COUNT
   numQueries = numPasses * 2
 
 proc createJsObject(): JsObject {.importjs: "({})".}

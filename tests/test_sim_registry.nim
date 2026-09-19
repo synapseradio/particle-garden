@@ -10,8 +10,11 @@
 
 import std/unittest
 import std/sets
+import std/tables
 import ../src/sim_registry
 import ../src/field_core
+import ../src/config_ranges
+import ../src/ui/api/param_descriptor
 import coupling_space  # the corners of the strength space, ALL_COUPLINGS
 
 const SIM_REGISTRY_TESTS_LOADED* = true
@@ -494,6 +497,31 @@ suite "Profiler Slot Constants":
           check node.profilerSlot notin seenSlots
           seenSlots.incl node.profilerSlot
 
+  test "every velocity-delta or field writer holds a timed slot apart from the world-intrinsic sequence":
+    # The five coupling-owned writers (forcesSph, fieldForce, lrForce,
+    # bodyForce, fieldDeposit) may not share a node with a world-intrinsic
+    # dispatch: that would fold a coupling's cost into a slot that never
+    # skips. "forces" is the neighbour sweep itself, so it may keep
+    # world-intrinsic company (binScatter); its own slot must still be timed.
+    const ALL_WRITERS = ["forces", "forcesSph", "fieldForce", "lrForce",
+      "bodyForce", "fieldDeposit"]
+    const COUPLING_OWNED = ["forcesSph", "fieldForce", "lrForce", "bodyForce",
+      "fieldDeposit"]
+    for couplings in ALL_COUPLINGS:
+      for node in buildFrame(couplings):
+        if node.kind != fnkComputePass: continue
+        for step in node.dispatches:
+          if step.pipelineKey notin ALL_WRITERS: continue
+          checkpoint(step.pipelineKey & " sits in node \"" & node.label &
+            "\" at slot " & $node.profilerSlot)
+          check node.profilerSlot != PROFILER_SLOT_NONE
+          if step.pipelineKey notin COUPLING_OWNED: continue
+          for sibling in node.dispatches:
+            if sibling.pipelineKey == step.pipelineKey: continue
+            checkpoint(step.pipelineKey & " shares its node with the " &
+              "world-intrinsic " & sibling.pipelineKey)
+            check sibling.pipelineKey notin WORLD_INTRINSIC_SEQUENCE
+
 suite "The Field Chemistry Runs Once Per Rendered Frame":
   # The executor encodes this description once per substep, so before cadences
   # existed a fluid world multiplied the chemistry: three substeps meant three
@@ -590,3 +618,95 @@ suite "The Field Chemistry Runs Once Per Rendered Frame":
         if node.kind == fnkComputePass and node.cadence == fncEverySubstep:
           for step in node.dispatches:
             check step.pipelineKey notin LONG_RANGE_SOLVE_KEYS
+
+
+suite "Every Writer Belongs To One Coupling":
+  # coupling-contract, "Every coupling is declared once": every pass that
+  # writes the velocity delta or the field belongs to exactly one
+  # declaration's `passes`, or is the neighbour sweep, which belongs to none.
+
+  proc owningCouplings(pipelineKey: string): seq[Coupling] =
+    for coupling in Coupling:
+      for p in COUPLINGS[coupling].passes:
+        if p.pipeline == pipelineKey:
+          result.add coupling
+
+  test "every velocity-delta or field writer in every world maps to one declaration or is the neighbour sweep":
+    const WRITERS = ["forces", "forcesSph", "fieldForce", "lrForce",
+      "bodyForce", "fieldDeposit"]
+    for couplings in ALL_COUPLINGS:
+      for node in buildFrame(couplings):
+        if node.kind != fnkComputePass: continue
+        for step in node.dispatches:
+          if step.pipelineKey notin WRITERS: continue
+          let owners = owningCouplings(step.pipelineKey)
+          if step.pipelineKey == "forces":
+            checkpoint("forces is the neighbour sweep and must own no declaration")
+            check owners.len == 0
+          else:
+            checkpoint(step.pipelineKey & " maps to " & $owners)
+            check owners.len == 1
+
+
+suite "Bounds Read Only Declared Parameters":
+  # coupling-contract, "No coupling's range reads another coupling's
+  # ceiling": for each registered ceiling, the CeilingInputs fields it is
+  # actually sensitive to must equal its coupling's declared boundsRead.
+  # Sensitivity is measured behaviourally — moving one field at a time off a
+  # baseline — rather than by reading the case arm's source, since a Nim
+  # `case` body admits no such introspection.
+
+  const CEILING_COUPLING = {pcStableStiffness: cpFluid}.toTable
+    ## Which coupling owns each registered ceiling. Hand-maintained, the same
+    ## way param_descriptor.ceilingName and .ceilingReason are.
+
+  proc baselineInputs(): CeilingInputs =
+    CeilingInputs(interactionRadius: INTERACTION_RADIUS_MIN,
+      sphRadiusFraction: SPH_RADIUS_FRACTION_MIN, sphSubsteps: SPH_SUBSTEPS_MIN,
+      timeScale: TIME_SCALE_MIN)
+
+  test "each registered ceiling's sensitive inputs equal its coupling's declared boundsRead":
+    for id in ParamCeilingId:
+      let boundsRead = COUPLINGS[CEILING_COUPLING[id]].boundsRead
+      let base = evaluateCeiling(id, baselineInputs())
+
+      template checkSensitivity(fieldName: string; moved: CeilingInputs) =
+        let sensitive = evaluateCeiling(id, moved) != base
+        checkpoint(fieldName & " sensitivity " & $sensitive & ", declared " &
+          $(fieldName in boundsRead))
+        check sensitive == (fieldName in boundsRead)
+
+      var moved = baselineInputs()
+      moved.interactionRadius = INTERACTION_RADIUS_MAX
+      checkSensitivity("interactionRadius", moved)
+
+      moved = baselineInputs()
+      moved.sphRadiusFraction = SPH_RADIUS_FRACTION_MAX
+      checkSensitivity("sphRadiusFraction", moved)
+
+      moved = baselineInputs()
+      moved.sphSubsteps = SPH_SUBSTEPS_MAX
+      checkSensitivity("sphSubsteps", moved)
+
+      moved = baselineInputs()
+      moved.timeScale = TIME_SCALE_MAX
+      checkSensitivity("timeScale", moved)
+
+
+suite "Every Size Names Its Space":
+  # coupling-contract, "Every size names its space": a length-valued
+  # descriptor is named by exactly one declaration (or RENDER_SIZES), which is
+  # what "carries exactly one space" comes to for a (string, SizeSpace) pair —
+  # two entries for the same name could only disagree or duplicate.
+
+  test "no length-valued descriptor is named more than once across the declarations":
+    var seen: Table[string, SizeSpace]
+    for coupling in Coupling:
+      for (name, space) in COUPLINGS[coupling].sizes:
+        checkpoint(name & " already named by another declaration")
+        check name notin seen
+        seen[name] = space
+    for (name, space) in RENDER_SIZES:
+      checkpoint(name & " already named by a coupling declaration")
+      check name notin seen
+      seen[name] = space

@@ -42,6 +42,7 @@ import test_meta_vacuity
 import test_build_flags
 import test_panel_reachability
 import test_agreements
+import test_balance_core
 
 # Reference exported symbols to satisfy UnusedImport warning
 # (unittest modules run tests as a side effect of import)
@@ -90,3 +91,4 @@ static:
   discard test_build_flags.BUILD_FLAGS_TESTS_LOADED
   discard test_panel_reachability.PANEL_REACHABILITY_TESTS_LOADED
   discard test_agreements.AGREEMENTS_TESTS_LOADED
+  discard test_balance_core.BALANCE_CORE_TESTS_LOADED

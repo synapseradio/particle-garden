@@ -387,6 +387,11 @@ func sampleBody*(body: Body; atX, atY, worldW, worldH: float): BodySample =
     normalX: gradientX * cosA - gradientY * sinA,
     normalY: gradientX * sinA + gradientY * cosA)
 
+func bodyFrameStrength*(strength, frames: float): float =
+  ## body-force.wgsl:81: the slider's strength times the substep's share of a
+  ## reference frame, the strength bodyForceAt receives.
+  strength * frames
+
 func bodyForceAt*(body: Body; atX, atY, worldW, worldH, envelope,
     strength: float): tuple[x, y: float] =
   ## The velocity impulse this body gives a particle at that point, both forces

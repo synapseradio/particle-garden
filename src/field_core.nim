@@ -176,10 +176,14 @@ const
     ## rests on that identity — tests/test_field_core.nim derives its harness
     ## geometry from FIELD_W for exactly this reason.
     ##
-    ## MEASURED (128x128 torus, settled at the Pearson defaults, central
-    ## difference): mean inhibitor gradient 0.0364 per cell, peak 0.0868. At 30
-    ## against the original grid that is roughly 1.5 velocity units per frame
-    ## against a maxVelocity of 50.
+    ## At the gradients RD_INHIBITOR_GRADIENT_PEAK records, 30 against the
+    ## original grid is roughly 1.5 velocity units per frame against a
+    ## maxVelocity of 50.
+  RD_INHIBITOR_GRADIENT_PEAK* = 0.0868
+    ## The largest inhibitor gradient per cell the field presents to
+    ## field-force.wgsl's central difference, at diffusion scale 1.
+    ## MEASURED (128x128 torus, settled at the Pearson defaults): peak 0.0868,
+    ## mean 0.0364. One regime only; other feed and kill points are unmeasured.
 
 func rdStepsForTimeScale*(timeScale, referenceTimeScale: float): int =
   ## Field steps a rendered frame runs at this Time Scale.
@@ -251,11 +255,16 @@ func patternDiameterCells*(diffusionA: float): float =
   ## diffusion coefficient, so quartering the rate halves the pattern.
   RD_DIAMETER_CELLS_AT_UNIT_DIFFUSION * sqrt(diffusionA)
 
+func worldUnitsPerCell*(fieldExtent, worldExtent: float): float =
+  ## The world length one field cell spans along an axis: field-deposit.wgsl
+  ## maps the whole world rect onto the field.
+  worldExtent / fieldExtent
+
 func patternDiameterWorld*(diffusionA, fieldExtent, worldExtent: float): float =
   ## Mean spot diameter in WORLD units — what the eye actually judges. Takes the
   ## field and world extents rather than reading FIELD_W, so the shipped
   ## geometry can be compared against another one.
-  patternDiameterCells(diffusionA) * (worldExtent / fieldExtent)
+  patternDiameterCells(diffusionA) * worldUnitsPerCell(fieldExtent, worldExtent)
 
 static:
   # Field cells must be square in world units. field-deposit.wgsl maps the whole

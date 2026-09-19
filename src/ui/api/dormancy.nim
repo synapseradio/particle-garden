@@ -48,6 +48,9 @@ func evalDepositOff(values: Table[string, float]): bool =
 func evalTropismOff(values: Table[string, float]): bool =
   values["rdFieldForce"] == 0.0
 
+func evalBodiesOff(values: Table[string, float]): bool =
+  values["bodiesStrength"] == 0.0
+
 func evalCameraDriftOff(values: Table[string, float]): bool =
   values["cameraDrift"] == 0.0
 
@@ -83,6 +86,9 @@ proc dormancyRegistry*(): Table[string, DormancyPredicate] =
     "tropismOff": DormancyPredicate(id: "tropismOff",
       line: "the field pushes nothing",
       simFields: @["rdFieldForce"], eval: evalTropismOff),
+    "bodiesOff": DormancyPredicate(id: "bodiesOff",
+      line: "no body's push reaches the world",
+      simFields: @["bodiesStrength"], eval: evalBodiesOff),
     "cameraDriftOff": DormancyPredicate(id: "cameraDriftOff",
       line: "the camera holds still",
       renderFields: @["cameraDrift"], eval: evalCameraDriftOff),

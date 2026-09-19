@@ -15,7 +15,8 @@ makes.
 - `bodiesStrength` — how much of a body's push reaches the particles. Zero
   removes bodies from the world without removing the bodies in it.
   Interacts with: Time Scale; Friction and Max Velocity (shared with every
-  push). The six below do not dim at zero, and Wild Bodies keep igniting.
+  push). Body Size, Body Reach, Skin Pull, Hold and Body Lifetime dim with
+  Bodies at zero; Wild Bodies keeps igniting regardless.
 - `bodyRadius` — how big the next body is born. A living body keeps the
   size it was born with, so this is a setting for the next one.
   Interacts with: Body Reach (measured from this surface).

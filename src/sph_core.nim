@@ -17,6 +17,7 @@
 # ==============================================================================
 
 import std/math
+import physics_core
 
 const
   SPH_DENSITY_HEADROOM* = 2.0
@@ -130,6 +131,31 @@ func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
   ## caller sums the per-neighbor corrections to form the full term.
   let weight = max(0.0, min(1.0, neighborWeight))
   epsilon * weight * (velocityNeighbor - velocitySelf) * frameFactor
+
+func sphPairVelocityDelta*(pressureThis, pressureDensityThis, pressureOther,
+    pressureDensityOther, gradientWeight, densityWeight, laggedDensityThis,
+    laggedDensityOther, viscosity, fluidStrength, dt: float;
+    direction, velocityDiff: tuple[x, y: float]): tuple[x, y: float] =
+  ## One pair's velocity delta on THIS particle, forces-sph.wgsl:250-278 in
+  ## the same order: the symmetrized pressure, scaled by SPH_FORCE_SCALE and
+  ## clamped to SPH_MAX_PRESSURE_ACCEL, pushes along -`direction` over `dt`;
+  ## the velocity blend moves along `velocityDiff` (other minus this) over the
+  ## frame factor. `direction` is the unit vector from this particle to the
+  ## other; the pressures and their densities arrive already clamped the way
+  ## the shader clamps them. The weights are the self-normalized kernels.
+  let pairPressure =
+    pressureThis / (pressureDensityThis * pressureDensityThis) +
+    pressureOther / (pressureDensityOther * pressureDensityOther)
+  let pressureAccel = clamp(SPH_FORCE_SCALE * pairPressure * gradientWeight,
+    -SPH_MAX_PRESSURE_ACCEL, SPH_MAX_PRESSURE_ACCEL)
+  let smoothDenominator = max(max(laggedDensityThis, laggedDensityOther), 1.0)
+  let smoothCoefficient =
+    (viscosity + SPH_XSPH_EPSILON) * densityWeight / smoothDenominator
+  let frameFactor = dt * (1.0 / FRAME_DT_REFERENCE)
+  (x: fluidStrength * ((-pressureAccel * direction.x) * dt +
+     smoothCoefficient * velocityDiff.x * frameFactor),
+   y: fluidStrength * ((-pressureAccel * direction.y) * dt +
+     smoothCoefficient * velocityDiff.y * frameFactor))
 
 const
   SPH_STABILITY_COEFFICIENT* = 0.0025

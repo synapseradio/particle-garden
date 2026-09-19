@@ -429,6 +429,66 @@ func exponentialForce*(normalizedDist, attraction, alpha, beta,
   let crowding = (if attraction > 0.0'f32: attenuation else: 1.0'f32)
   -repulsion + attraction * attract * 2.0'f32 * crowding
 
+func mouseForce*(offsetX, offsetY, mouseRange, buttonSign: float32):
+    tuple[x, y: float32] =
+  ## forces.wgsl's held-pointer term. `offset` runs from the particle to the
+  ## pointer, already minimum-imaged; `buttonSign` is +1 for the left button,
+  ## -1 for the right and 0 for both. The magnitude is 300 at the pointer
+  ## easing to zero at `mouseRange`, per unit of time before params.dt.
+  let distSq = offsetX * offsetX + offsetY * offsetY
+  if distSq > 0.0'f32 and distSq < mouseRange * mouseRange:
+    let dist = sqrt(distSq)
+    let force = 300.0'f32 * (1.0'f32 - dist / mouseRange) / dist
+    (x: offsetX * force * buttonSign, y: offsetY * force * buttonSign)
+  else:
+    (x: 0.0'f32, y: 0.0'f32)
+
+func blastForce*(offsetX, offsetY, blastStrength, blastRange: float32):
+    tuple[x, y: float32] =
+  ## forces.wgsl's blast term. `offset` runs from the blast centre to the
+  ## particle, already minimum-imaged. The divisor is floored at 10, so the
+  ## magnitude peaks at distance 10 rather than at the centre.
+  let distSq = offsetX * offsetX + offsetY * offsetY
+  if blastStrength > 0.01'f32 and distSq > 0.0'f32 and
+      distSq < blastRange * blastRange:
+    let dist = sqrt(distSq)
+    let force = blastStrength * 3000.0'f32 * (1.0'f32 - dist / blastRange) /
+      max(dist, 10.0'f32)
+    (x: offsetX * force, y: offsetY * force)
+  else:
+    (x: 0.0'f32, y: 0.0'f32)
+
+func encodeVelocityDelta*(value, fixedPointScale: float32): int32 =
+  ## The word a velocity-delta writer adds, WGSL's truncating `i32(value *
+  ## FIXED_POINT_SCALE)`: forces.wgsl:297-298,377-378,
+  ## forces-sph.wgsl:302-303, field-force.wgsl:81-84, lr-force.wgsl:88-91,
+  ## body-force.wgsl:162-165.
+  int32(value * fixedPointScale)
+
+func forcesVelocityDeltaFixed*(force, dt, fixedPointScale: float32): int32 =
+  ## forces.wgsl:297 and 377: the pair force, or a particle's summed pair,
+  ## mouse and blast force, times params.dt, encoded.
+  encodeVelocityDelta(force * dt, fixedPointScale)
+
+func integrateVelocity*(velocity: tuple[x, y: float32];
+    deltaFixed: tuple[x, y: int32];
+    invFixedPointScale, friction, maxVelocity: float32): tuple[x, y: float32] =
+  ## integrate.wgsl:55-99: the single word decoded and added to the velocity,
+  ## friction applied, then the soft cap postStepSpeed states for the speed.
+  var newVelX = (velocity.x + float32(deltaFixed.x) * invFixedPointScale) *
+    friction
+  var newVelY = (velocity.y + float32(deltaFixed.y) * invFixedPointScale) *
+    friction
+  let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
+  let softCapThreshold = maxVelocity * 0.5'f32
+  if speed > softCapThreshold and speed > 0.0'f32:
+    let excess = speed - softCapThreshold
+    let cappedSpeed = min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity)
+    let scale = cappedSpeed / speed
+    newVelX *= scale
+    newVelY *= scale
+  (x: newVelX, y: newVelY)
+
 func postStepSpeed*(speed, friction, maxVelocity: float32): float32 =
   ## integrate.wgsl. Friction multiplies the post-delta velocity (it is
   ## a retention factor, not a drag), then speeds above half maxVelocity are

@@ -1,6 +1,11 @@
 import std/math
 import std/unittest
 import ../src/physics_core
+import ../src/sph_core
+import ../src/field_core
+import ../src/long_range_core
+import ../src/body_core
+import ../src/shader_config
 import ../src/config_ranges
 import ../src/preset
 
@@ -513,6 +518,17 @@ suite "Post-Step Speed Mirror":
   test "no speed escapes the hard cap":
     check postStepSpeed(1.0e6'f32, 1.0'f32, 60.0'f32) <= 60.0'f32
 
+  test "integrate adds the decoded word to the velocity before friction and the soft cap":
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let word = (x: int32(2 * 65536), y: int32(1 * 65536))
+    for maxVelocity in [6.0'f32, 100.0'f32]:
+      let stepped = integrateVelocity((x: 3.0'f32, y: -4.0'f32), word,
+        invScale, 0.9'f32, maxVelocity)
+      # The decoded word is (2, 1), so friction and the cap act on (5, -3).
+      let expectedSpeed = postStepSpeed(sqrt(34.0'f32), 0.9'f32, maxVelocity)
+      check abs(hypot(stepped.x, stepped.y) - expectedSpeed) < 1e-5
+      check abs(stepped.x * -3.0'f32 - stepped.y * 5.0'f32) < 1e-5
+
 suite "Frame Reference":
   # params.dt is a gain, not a timestep: integrate.wgsl advances position by the
   # velocity itself. frameFactor turns a frame's dt into a multiple of the frame
@@ -536,3 +552,101 @@ suite "Frame Reference":
 
   test "frameFactor is zero at a stopped clock":
     check frameFactor(0.0) == 0.0
+
+const FRAME_FACTORS_OFF_REFERENCE = [2.0, 30.0]
+
+proc judgeScaling(verdicts: var seq[string]; label: string;
+    atOne, atFactor: int32; factor: float) =
+  # Truncation drops under one quantum per conversion, and the integer at
+  # frame factor 1 carries its drop multiplied by the factor, so the two can
+  # disagree by up to the factor in quanta and no more.
+  let expected = factor * atOne.float
+  if not (abs(atFactor.float - expected) <= factor):
+    verdicts.add label & " at frame factor " & $factor & ": the word is " &
+      $atFactor & " against " & $factor & " times " & $atOne & " = " &
+      $expected
+
+template checkNoVerdicts(verdicts: seq[string]) =
+  for message in verdicts[0 ..< min(verdicts.len, 4)]:
+    checkpoint message
+  check verdicts.len == 0
+
+suite "Today's Writers Each Scale By Their Own Time Factor":
+  # Each writer's word at a frame factor, through the oracle that carries that
+  # writer's own time factor today: params.dt in forces.wgsl, dt and the frame
+  # factor in forces-sph.wgsl, the CPU-scaled field force, the CPU-scaled
+  # long-range force and the bodies' frames.
+  let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+
+  test "the pair, mouse and blast words scale by params.dt":
+    let pointer = mouseForce(100.0'f32, 0.0'f32, 300.0'f32, 1.0'f32)
+    let blast = blastForce(10.0'f32, 0.0'f32, 1.0'f32, 200.0'f32)
+    var verdicts: seq[string]
+    for (label, force) in [("pair", 37.7'f32), ("repelling pair", -61.3'f32),
+        ("mouse", pointer.x), ("blast", blast.x)]:
+      let atOne = forcesVelocityDeltaFixed(force,
+        FRAME_DT_REFERENCE.float32, fixedScale)
+      for factor in FRAME_FACTORS_OFF_REFERENCE:
+        verdicts.judgeScaling(label, atOne, forcesVelocityDeltaFixed(force,
+          (factor * FRAME_DT_REFERENCE).float32, fixedScale), factor)
+    checkNoVerdicts(verdicts)
+
+  test "the fluid pair word scales its pressure by dt and its blend by the frame factor":
+    let pressure = flooredTaitPressure(1.5, 1.0, 10.0, SPH_DEFAULT_GAMMA)
+    proc pairWord(gradientWeight: float; velocityDiff: tuple[x, y: float];
+        dt: float): int32 =
+      let delta = sphPairVelocityDelta(pressure, 1.5, pressure, 1.5,
+        gradientWeight, 0.6, 1.5, 1.5, 0.3, 1.0, dt, (x: 0.6, y: 0.8),
+        velocityDiff)
+      encodeVelocityDelta(delta.x.float32, fixedScale)
+    var verdicts: seq[string]
+    for (label, gradientWeight, velocityDiff) in [
+        ("pressure alone", 0.8, (x: 0.0, y: 0.0)),
+        ("blend alone", 0.0, (x: 3.0, y: -2.0)),
+        ("pressure and blend", 0.8, (x: 3.0, y: -2.0))]:
+      let atOne = pairWord(gradientWeight, velocityDiff, FRAME_DT_REFERENCE)
+      for factor in FRAME_FACTORS_OFF_REFERENCE:
+        verdicts.judgeScaling(label, atOne, pairWord(gradientWeight,
+          velocityDiff, factor * FRAME_DT_REFERENCE), factor)
+    checkNoVerdicts(verdicts)
+
+  test "the scent word scales by the frame-scaled field force":
+    proc scentWord(gradient, factor: float): int32 =
+      let forceScale = frameScaledFieldForce(7.5, factor).float32
+      encodeVelocityDelta(
+        speciesTropismForce(gradient, forceScale.float, -1.0).float32,
+        fixedScale)
+    var verdicts: seq[string]
+    for gradient in [0.05, -0.0868]:
+      let atOne = scentWord(gradient, 1.0)
+      for factor in FRAME_FACTORS_OFF_REFERENCE:
+        verdicts.judgeScaling("scent gradient " & $gradient, atOne,
+          scentWord(gradient, factor), factor)
+    checkNoVerdicts(verdicts)
+
+  test "the long-range word scales by the frame factor folded into its force scale":
+    proc longRangeWord(gradient, factor: float): int32 =
+      encodeVelocityDelta(
+        gradient.float32 * lrForceScale(0.5, factor).float32, fixedScale)
+    var verdicts: seq[string]
+    for gradient in [0.02, -0.37]:
+      let atOne = longRangeWord(gradient, 1.0)
+      for factor in FRAME_FACTORS_OFF_REFERENCE:
+        verdicts.judgeScaling("long range gradient " & $gradient, atOne,
+          longRangeWord(gradient, factor), factor)
+    checkNoVerdicts(verdicts)
+
+  test "the bodies word scales by the frames folded into its strength":
+    let body = Body(centerX: 1000.0, centerY: 800.0, radius: 200.0,
+      anisotropy: 1.0, bandWidth: 120.0, proximity: 4.0, enclosure: 5.0)
+    proc bodyWord(atX, factor: float): int32 =
+      let push = bodyForceAt(body, atX, 800.0, BODY_WORLD_W, BODY_WORLD_H,
+        0.8, bodyFrameStrength(0.7, factor))
+      encodeVelocityDelta(push.x.float32, fixedScale)
+    var verdicts: seq[string]
+    for atX in [1250.0, 1320.0, 1150.0]:
+      let atOne = bodyWord(atX, 1.0)
+      for factor in FRAME_FACTORS_OFF_REFERENCE:
+        verdicts.judgeScaling("body at x " & $atX, atOne, bodyWord(atX, factor),
+          factor)
+    checkNoVerdicts(verdicts)

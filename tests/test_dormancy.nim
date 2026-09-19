@@ -10,6 +10,7 @@ import std/[sets, tables, unittest]
 const DORMANCY_TESTS_LOADED* = true
 
 import ../src/config_ranges
+import ../src/sim_registry
 import ../src/ui/api/dormancy
 import ../src/ui/api/param_descriptor
 import ../src/ui/api/response_probe
@@ -18,6 +19,11 @@ import ../src/ui/state/simulation_state
 
 let descriptors = buildParamDescriptors()
 let predicates = dormancyRegistry()
+
+proc descriptorById(id: string): ParamDescriptor =
+  for d in descriptors:
+    if d.id == id: return d
+  raiseAssert "no descriptor named " & id
 
 proc recordFieldNames[T](record: T): HashSet[string] =
   for name, value in fieldPairs(record):
@@ -85,6 +91,32 @@ suite "Dormancy Predicates Name Real State":
     for predicate in predicates.values:
       check predicate.line.len > 0
 
+suite "Every Coupling Declares A Sound Dormancy Predicate":
+  # coupling-contract, "A coupling's controls dim with its strength": each
+  # declaration's predicate must exist, read only that coupling's own
+  # strength, and every descriptor the declaration names as its own must
+  # cite it — closing the gap a predicate-exists check alone leaves (a
+  # descriptor could cite nothing and still pass one).
+  test "each declaration's predicate is registered, reads only its own strength, and is cited by every descriptor in ownParams":
+    for coupling in Coupling:
+      let decl = COUPLINGS[coupling]
+      checkpoint(decl.dormancy & " (coupling " & $coupling &
+        ") is not a registered dormancy predicate")
+      check decl.dormancy in predicates
+
+      let predicate = predicates[decl.dormancy]
+      let inputs = predicate.simFields & predicate.renderFields &
+        predicate.statsFields
+      checkpoint(decl.dormancy & " reads " & $inputs & ", expected only [" &
+        decl.strengthParam & "]")
+      check inputs == @[decl.strengthParam]
+
+      for ownId in decl.ownParams:
+        let descriptor = descriptorById(ownId)
+        checkpoint(ownId & " does not cite " & decl.dormancy &
+          " (cites \"" & descriptor.dormantWhen & "\")")
+        check descriptor.dormantWhen == decl.dormancy
+
 proc witness(pairs: openArray[(string, float)]): Table[string, float] =
   for (key, value) in pairs:
     result[key] = value
@@ -94,7 +126,8 @@ suite "Each Predicate Distinguishes Dormant From Awake":
     for (id, fieldName) in [("forceOff", "forceStrength"),
         ("fluidOff", "fluidStrength"), ("depositOff", "rdDeposit"),
         ("tropismOff", "rdFieldForce"),
-        ("longRangeOff", "longRangeStrength")]:
+        ("longRangeOff", "longRangeStrength"),
+        ("bodiesOff", "bodiesStrength")]:
       check predicates[id].eval(witness({fieldName: 0.0}))
       check not predicates[id].eval(witness({fieldName: 0.4}))
 

@@ -140,6 +140,26 @@ func lrSofteningWorld*(gridW, gridH: int; worldW, worldH: float): float =
   ## wide, and it is the coarser axis whose aliasing needs suppressing.
   LR_SOFTENING_CELLS * max(worldW / float(gridW), worldH / float(gridH))
 
+func lrForceScale*(strength, frameFactor: float): float =
+  ## The LR_FORCE_SCALE the CPU writes (src/webgpu_compute.nim:1125-1126):
+  ## the strength with the substep's frame folded in. lr-force.wgsl:86
+  ## multiplies the gradient by it.
+  strength * frameFactor
+
+func lrCellArea*(gridW, gridH: int; worldW, worldH: float): float =
+  ## World area one mesh cell covers.
+  (worldW / float(gridW)) * (worldH / float(gridH))
+
+func lrDiscPull*(strength, entry, cellArea, mass, distance: float): float =
+  ## The pull the mesh hands a particle `distance` from the centre of a uniform
+  ## disc of `mass` particles, outside the disc: `strength * entry * cellArea *
+  ## mass / (2 pi distance)`. The field is the 2D Green's function of the
+  ## disc's charge; the cellArea is there because lrKernel folds in 1/(W*H)
+  ## against a density counted per cell. Unscreened and unsoftened: the
+  ## limit of lr-force.wgsl's read at a reach far past `distance` and a
+  ## distance far past the softening.
+  strength * entry * cellArea * mass / (2.0 * PI * distance)
+
 func lrFoldBin*(index, extent: int): int =
   ## A bin index folded into [-extent/2, extent/2), which is the signed
   ## wavenumber index the bin stands for. Bins above the half point are the

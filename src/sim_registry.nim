@@ -19,9 +19,14 @@
 #
 # ==============================================================================
 
-# field_core is itself pure (no FFI), so importing it for RD_STEPS_PER_FRAME
-# keeps this module's own purity guarantee intact.
+# field_core and balance_core are themselves pure (no FFI), so importing them
+# keeps this module's own purity guarantee intact. profiler_slots is
+# re-exported: webgpu_compute and the tests read the PROFILER_SLOT_*
+# constants through sim_registry, as they did when they were declared here.
 import field_core
+import balance_core
+import profiler_slots
+export profiler_slots
 
 # ==============================================================================
 # SECTION 1: COUPLING STRENGTHS
@@ -248,36 +253,9 @@ type
 
   FrameDescription* = seq[FrameNode]
 
-const
-  PROFILER_SLOT_GRID_BUILD* = 0
-    ## Mirrors gpu_profiler.passGridBuild (that module is JS-only, so the
-    ## value is duplicated here; both sides document the pairing).
-    ## TODO(2026-07-29T19:17:40Z): no test pins the pairing — gpu_profiler cannot
-    ## compile natively, so an equality check needs the pass constants
-    ## extracted to a pure module first.
-  PROFILER_SLOT_PHYSICS* = 1
-    ## Mirrors gpu_profiler.passPhysics.
-  PROFILER_SLOT_FIELD* = 5
-    ## Mirrors gpu_profiler.passField — the Gray-Scott field pass. Distinct
-    ## from PROFILER_SLOT_GRID_BUILD because both passes run every frame, so
-    ## one slot could only report their sum.
-  PROFILER_SLOT_NONE* = -1
-    ## A pass that writes no timestamps. gpu_profiler holds one query slot per
-    ## pass, so two passes sharing a slot in one encoder would overwrite each
-    ## other's query; a pass with no slot of its own carries this instead.
-  PROFILER_SLOT_LONG_RANGE* = 7
-    ## Mirrors gpu_profiler.passLongRange — the mesh solve. Its own slot
-    ## because the solve's cost is the number the grid-size control is chosen
-    ## against, and a slot shared with any other pass could only report a sum.
-  PROFILER_SLOT_BODIES* = 8
-    ## Mirrors gpu_profiler.passBodies. Reports the first substep's span, as
-    ## PROFILER_SLOT_PHYSICS does.
-  PROFILER_SLOT_INTEGRATE* = 6
-    ## Mirrors gpu_profiler.passIntegrate. integrate sits outside the physics
-    ## pass because it must run after the field passes and the field passes
-    ## must run after forces — three orderings that no single pass can hold.
-    ## app.nim adds this slot into the reported physics time, so the number the
-    ## stats show covers forces and integrate together.
+# The PROFILER_SLOT_* constants live in profiler_slots, imported above: both
+# this module and gpu_profiler (JS-only) read the same values, closing the
+# pairing a comment alone used to promise.
 
 func resolveOneDimensional*(size: DispatchSize;
     particleWorkgroups, scanBlocks: int): int =
@@ -386,13 +364,17 @@ func buildFrame*(couplings: WorldCouplings;
   # strength scales. `couplings.forces` reaches it as a uniform and scales the
   # species force inside, which is how that term reaches zero continuously
   # without the frame changing shape.
-  var forceDispatches = @[
+  result.add computePassNode("Physics", PROFILER_SLOT_PHYSICS, @[
     dispatch("binScatter", dsParticleWorkgroups),
     dispatch("forces", dsParticleWorkgroups),
-  ]
+  ])
+
+  # The fluid's own node, apart from the sweep: its cost is a coupling's, and
+  # a slot shared with the world-intrinsic sweep could only report their sum.
   if acts(couplings.fluid):
-    forceDispatches.add dispatch("forcesSph", dsParticleWorkgroups)
-  result.add computePassNode("Physics", PROFILER_SLOT_PHYSICS, forceDispatches)
+    result.add computePassNode("Fluid", PROFILER_SLOT_FLUID, @[
+      dispatch("forcesSph", dsParticleWorkgroups),
+    ])
 
   # The mesh solve reads particle positions and nothing else, so it follows
   # Physics; its placement against the field passes is free, and it goes first
@@ -416,15 +398,21 @@ func buildFrame*(couplings: WorldCouplings;
       dispatch("lrFftRowsInv", dsLrRowWorkgroups),
     ], fncOncePerFrame)
 
+  # The deposit is a coupling's own writer into the field, and its own node
+  # ahead of the field: sharing the field's slot would fold its cost into a
+  # pass that runs whether or not anything deposits. fieldResolve consumes
+  # this buffer, so the node must precede the field node that holds it.
+  if acts(couplings.deposit):
+    result.add computePassNode("Deposit", PROFILER_SLOT_DEPOSIT, @[
+      dispatch("fieldDeposit", dsParticleWorkgroups),
+    ], fncOncePerFrame)
+
   # The field belongs to the world, not to a coupling: it evolves whether or not
   # particles write to it or read from it. A field frozen mid-pattern at zero
   # deposit and breathing again one epsilon above it would be a mode, and a
   # visible one. What chemistry's strengths own is the two couplings BETWEEN
   # particles and field — the deposit going in, the gradient force coming out.
-  var fieldDispatches: seq[Dispatch]
-  if acts(couplings.deposit):
-    fieldDispatches.add dispatch("fieldDeposit", dsParticleWorkgroups)
-  fieldDispatches.add dispatch("fieldResolve", dsFieldWorkgroups)
+  var fieldDispatches = @[dispatch("fieldResolve", dsFieldWorkgroups)]
 
   # rdSteps Gray-Scott substeps, alternating which of the two
   # field-texture copies is read from vs. written to each substep (the ping-pong
@@ -465,7 +453,7 @@ func buildFrame*(couplings: WorldCouplings;
   # dispatch is cheap, and the frame scale webgpu_compute writes into
   # FieldParams already divides a frame's worth of push across the substeps.
   if acts(couplings.fieldForce):
-    result.add computePassNode("Field Force", PROFILER_SLOT_NONE, @[
+    result.add computePassNode("Field Force", PROFILER_SLOT_SCENT, @[
       dispatch("fieldForce", dsParticleWorkgroups),
     ])
 
@@ -475,7 +463,7 @@ func buildFrame*(couplings: WorldCouplings;
   # Substeps read that potential without writing it, sound the same way
   # fieldForce reading the field texture across substeps is sound.
   if acts(couplings.longRange):
-    result.add computePassNode("Long Range Force", PROFILER_SLOT_NONE, @[
+    result.add computePassNode("Long Range Force", PROFILER_SLOT_LR_FORCE, @[
       dispatch("lrForce", dsParticleWorkgroups),
     ])
 
@@ -506,3 +494,151 @@ func buildFrame*(couplings: WorldCouplings;
   result.add computePassNode("Integrate", PROFILER_SLOT_INTEGRATE, @[
     dispatch("integrate", dsParticleWorkgroups),
   ])
+
+# ==============================================================================
+# SECTION 3: THE COUPLING DECLARATIONS
+# ==============================================================================
+#
+# One declaration per coupling: the strength parameter that gates it, the unit
+# function that states its impulse (balance_core.UnitFnId), which passes it
+# owns and at what cadence, slot and cost, its dimming predicate, the
+# parameters its bounds read, the descriptors it alone shapes, the space each
+# of its sizes is measured in, and whether it can raise the crowd density the
+# neighbour sweep iterates over.
+#
+# Declarations as an array indexed by Coupling, not a seq: a coupling added to
+# the enum without an entry here fails to compile, rather than passing a
+# native suite that could miss it.
+
+type
+  Coupling* = enum
+    cpSpecies, cpFluid, cpScent, cpDeposit, cpLongRange, cpBodies
+
+  SizeSpace* = enum
+    ssWorld, ssFieldCell, ssScreenPx
+
+  CostScaling* = enum
+    csPerParticle, csPerFieldCell, csPerMeshCell
+
+  SubstepNeedId* = enum
+    ## What a coupling's live values ask of the substep count. Only the
+    ## member a declaration below needs exists; group 3 adds substepPlan and
+    ## reads this field.
+    snNone
+    snFluidStiffness
+
+  PassDecl* = object
+    pipeline*: string          ## pipeline key, e.g. "forcesSph"
+    cadence*: FrameNodeCadence
+    slot*: int                 ## a PROFILER_SLOT_* constant
+    cost*: CostScaling
+
+  CouplingDecl* = object
+    strengthParam*: string     ## descriptor id
+    unit*: UnitFnId            ## balance_core enum
+    passes*: seq[PassDecl]     ## the gate is acts(strength) over all of them
+    dormancy*: string          ## dormancy predicate id (ui/api/dormancy.nim)
+    boundsRead*: seq[string]   ## param ids its registered ceilings read
+    ownParams*: seq[string]    ## descriptors that shape only this coupling
+    sizes*: seq[(string, SizeSpace)]
+    raisesCrowd*: bool
+    substepNeed*: SubstepNeedId
+
+const COUPLINGS*: array[Coupling, CouplingDecl] = [
+  cpSpecies: CouplingDecl(
+    strengthParam: "forceStrength",
+    unit: ufSpecies,
+    # No PassDecl: the species term lives inside forces.wgsl, the
+    # world-intrinsic neighbour sweep, and belongs to no declaration.
+    dormancy: "forceOff",
+    ownParams: @["crowdingStrength", "repulsionEnd", "attractionPeak",
+      "expRepulsionAlpha", "expAttractionBeta"],
+    sizes: @[("interactionRadius", ssWorld)],
+    raisesCrowd: true,
+    substepNeed: snNone),
+  cpFluid: CouplingDecl(
+    strengthParam: "fluidStrength",
+    unit: ufFluid,
+    passes: @[PassDecl(pipeline: "forcesSph", cadence: fncEverySubstep,
+      slot: PROFILER_SLOT_FLUID, cost: csPerParticle)],
+    dormancy: "fluidOff",
+    # sph_core.stableStiffnessCeiling multiplies by the substep count.
+    boundsRead: @["interactionRadius", "sphRadiusFraction", "sphSubsteps",
+      "timeScale"],
+    ownParams: @["sphRadiusFraction", "sphRestDensity", "sphStiffness",
+      "sphViscosity", "sphSubsteps"],
+    raisesCrowd: false,
+    substepNeed: snFluidStiffness),
+  cpScent: CouplingDecl(
+    strengthParam: "rdFieldForce",
+    unit: ufScent,
+    passes: @[PassDecl(pipeline: "fieldForce", cadence: fncEverySubstep,
+      slot: PROFILER_SLOT_SCENT, cost: csPerParticle)],
+    dormancy: "tropismOff",
+    boundsRead: @["rdPatternScale"],
+    ownParams: @["tropism"],
+    sizes: @[("rdPatternScale", ssFieldCell)],
+    raisesCrowd: true,
+    substepNeed: snNone),
+  cpDeposit: CouplingDecl(
+    strengthParam: "rdDeposit",
+    unit: ufDeposit,
+    passes: @[PassDecl(pipeline: "fieldDeposit", cadence: fncOncePerFrame,
+      slot: PROFILER_SLOT_DEPOSIT, cost: csPerParticle)],
+    dormancy: "depositOff",
+    ownParams: @["secretion"],
+    sizes: @[("rdDepositSplatRadius", ssFieldCell)],
+    raisesCrowd: false,
+    substepNeed: snNone),
+  cpLongRange: CouplingDecl(
+    strengthParam: "longRangeStrength",
+    unit: ufLongRange,
+    passes: @[
+      PassDecl(pipeline: "lrDeposit", cadence: fncOncePerFrame,
+        slot: PROFILER_SLOT_LONG_RANGE, cost: csPerParticle),
+      PassDecl(pipeline: "lrFftRows", cadence: fncOncePerFrame,
+        slot: PROFILER_SLOT_LONG_RANGE, cost: csPerMeshCell),
+      PassDecl(pipeline: "lrFftCols", cadence: fncOncePerFrame,
+        slot: PROFILER_SLOT_LONG_RANGE, cost: csPerMeshCell),
+      PassDecl(pipeline: "lrKernel", cadence: fncOncePerFrame,
+        slot: PROFILER_SLOT_LONG_RANGE, cost: csPerMeshCell),
+      PassDecl(pipeline: "lrFftColsInv", cadence: fncOncePerFrame,
+        slot: PROFILER_SLOT_LONG_RANGE, cost: csPerMeshCell),
+      PassDecl(pipeline: "lrFftRowsInv", cadence: fncOncePerFrame,
+        slot: PROFILER_SLOT_LONG_RANGE, cost: csPerMeshCell),
+      PassDecl(pipeline: "lrForce", cadence: fncEverySubstep,
+        slot: PROFILER_SLOT_LR_FORCE, cost: csPerParticle),
+    ],
+    dormancy: "longRangeOff",
+    boundsRead: @["interactionRadius", "longRangeGridIndex",
+      "longRangeReach"],
+    ownParams: @["longRangeReach", "longRangeGridIndex"],
+    sizes: @[("longRangeReach", ssWorld)],
+    raisesCrowd: true,
+    substepNeed: snNone),
+  cpBodies: CouplingDecl(
+    strengthParam: "bodiesStrength",
+    unit: ufBodies,
+    passes: @[
+      PassDecl(pipeline: "bodyForce", cadence: fncEverySubstep,
+        slot: PROFILER_SLOT_BODIES, cost: csPerParticle),
+      PassDecl(pipeline: "bodyIntegrate", cadence: fncEverySubstep,
+        slot: PROFILER_SLOT_BODIES, cost: csPerParticle),
+    ],
+    dormancy: "bodiesOff",
+    # bodyIgnitionRate is excluded from ownParams: a body keeps igniting at
+    # bodiesStrength 0 (docs/help/35-bodies.md), so it is not this
+    # coupling's alone to dim.
+    ownParams: @["bodyRadius", "bodyBand", "bodyProximity", "bodyEnclosure",
+      "bodyLifetime"],
+    sizes: @[("bodyBand", ssWorld), ("bodyRadius", ssWorld)],
+    raisesCrowd: true,
+    substepNeed: snNone),
+]
+
+const RENDER_SIZES*: seq[(string, SizeSpace)] = @[
+  ("particleSize", ssScreenPx),
+  ("glowRadiusScale", ssScreenPx),
+]
+  ## Screen-pixel lengths that belong to no coupling (design N1): Particle
+  ## Size and the glow halo radius.
