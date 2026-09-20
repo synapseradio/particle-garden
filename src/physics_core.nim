@@ -351,10 +351,10 @@ func blastForce*(offsetX, offsetY, blastStrength, blastRange: float32):
     (x: 0.0'f32, y: 0.0'f32)
 
 func encodeVelocityDelta*(value, fixedPointScale: float32): int32 =
-  ## The word a velocity-delta writer adds, WGSL's truncating `i32(value *
-  ## FIXED_POINT_SCALE)`: forces.wgsl:297-298,377-378,
-  ## forces-sph.wgsl:302-303, field-force.wgsl:81-84, lr-force.wgsl:88-91,
-  ## body-force.wgsl:162-165.
+  ## The word a velocity-delta writer adds, WGSL's truncating
+  ## `i32(value * FIXED_POINT_SCALE)`. Search that form to find the writers:
+  ## forces.wgsl, forces-sph.wgsl, field-force.wgsl, lr-force.wgsl,
+  ## body-force.wgsl.
   int32(value * fixedPointScale)
 
 func forcesVelocityDeltaFixed*(force, fixedPointScale: float32): int32 =
