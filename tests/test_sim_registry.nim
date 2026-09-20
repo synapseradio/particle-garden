@@ -10,6 +10,7 @@
 
 import std/unittest
 import std/sets
+import std/strutils
 import std/tables
 import ../src/sim_registry
 import ../src/field_core
@@ -218,11 +219,11 @@ suite "A Strength At Zero Skips Its Own Pass And Nothing Else":
 
 
 suite "Delta Buffers Have One Reset Owner":
-  test "every frame clears velocityDelta and densityDelta before any pass that writes them":
+  test "every frame clears both velocity words and densityDelta before any pass that writes them":
     # The invariant that makes composition possible: a contributor that
     # self-resets these buffers in its own prologue erases the work of whichever
-    # contributor ran before it in the frame. The frame owns the reset;
-    # forces.wgsl and forces-sph.wgsl accumulate only.
+    # contributor ran before it in the frame. The frame owns the reset; the
+    # five velocity writers accumulate only.
     for couplings in ALL_COUPLINGS:
       let frame = buildFrame(couplings)
       var clearedAt: array[SimBuffer, int]
@@ -231,14 +232,19 @@ suite "Delta Buffers Have One Reset Owner":
       for index, node in frame:
         if node.kind == fnkClearBuffer and clearedAt[node.clearTarget] < 0:
           clearedAt[node.clearTarget] = index
-      check clearedAt[sbVelocityDelta] >= 0
+      for word in [sbVelocityDelta, sbVelocityCoarse]:
+        checkpoint($word & " is cleared")
+        check clearedAt[word] >= 0
       check clearedAt[sbDensityDelta] >= 0
 
       for index, node in frame:
         if node.kind != fnkComputePass: continue
         for step in node.dispatches:
-          if step.pipelineKey in ["forces", "forcesSph", "fieldForce"]:
-            check clearedAt[sbVelocityDelta] < index
+          if step.pipelineKey in ["forces", "forcesSph", "fieldForce",
+              "lrForce", "bodyForce"]:
+            for word in [sbVelocityDelta, sbVelocityCoarse]:
+              checkpoint($word & " cleared before " & step.pipelineKey)
+              check clearedAt[word] in 0 ..< index
           if step.pipelineKey == "forces":
             check clearedAt[sbDensityDelta] < index
 
@@ -563,7 +569,8 @@ suite "The Field Chemistry Runs Once Per Rendered Frame":
     # substep that skipped them would integrate the previous substep's deltas.
     for couplings in ALL_COUPLINGS:
       let everySubstep = nodesWithCadence(couplings, fncEverySubstep)
-      for key in ["clear:sbVelocityDelta", "clear:sbDensityDelta",
+      for key in ["clear:sbVelocityDelta", "clear:sbVelocityCoarse",
+          "clear:sbDensityDelta",
           "clear:sbSphDensityDelta", "clear:sbCrowdDensityDelta",
           "clear:sbGridCounts", "binCount", "forces", "integrate"]:
         check key in everySubstep
@@ -646,6 +653,82 @@ suite "Every Writer Belongs To One Coupling":
           else:
             checkpoint(step.pipelineKey & " maps to " & $owners)
             check owners.len == 1
+
+
+suite "Only Integrate Reads The Frame Factor":
+  # coupling-contract, "Every velocity impulse accumulates per reference frame":
+  # every writer hands over its impulse per reference frame, and integrate
+  # alone multiplies by the frame factor. bodyIntegrate keeps its own clock
+  # because it integrates the bodies, not particle velocity. Read from source,
+  # since no native test can run a shader or the JS-only executor.
+
+  const TIME_TOKENS = ["dt", "frameFactor", "frames", "substepDt"]
+  const WRITER_SHADERS = [("forces", "forces.wgsl"),
+    ("forcesSph", "forces-sph.wgsl"), ("fieldForce", "field-force.wgsl"),
+    ("lrForce", "lr-force.wgsl"), ("bodyForce", "body-force.wgsl")]
+  const WRITER_PARAMS = [("simParamsData", "forces and forcesSph"),
+    ("fieldParamsData", "fieldForce"), ("lrParamsData", "lrForce")]
+    ## The CPU uniform each writer reads. bodyParams is absent: bodyIntegrate
+    ## shares it, so body-force's source is where its ban is read.
+
+  func identifiers(line: string): seq[string] =
+    var current = ""
+    for character in line & " ":
+      if character in {'a'..'z', 'A'..'Z', '0'..'9', '_'}:
+        current.add character
+      elif current.len > 0:
+        result.add current
+        current = ""
+
+  func codeOf(line, commentMarker: string): string =
+    let at = line.find(commentMarker)
+    if at < 0: line else: line[0 ..< at]
+
+  func indentOf(line: string): int =
+    while result < line.len and line[result] == ' ': inc result
+
+  test "no writer shader reads a time factor":
+    var verdicts: seq[string]
+    var writersSeen: seq[string]
+    for (pipelineKey, file) in WRITER_SHADERS:
+      let lines = readFile("web/shaders/src/" & file).splitLines
+      for number, line in lines:
+        let tokens = identifiers(line.codeOf("//"))
+        if "atomicAdd" in tokens and "velocityDeltaFixed" in tokens and
+            pipelineKey notin writersSeen:
+          writersSeen.add pipelineKey
+        for token in tokens:
+          if token in TIME_TOKENS:
+            verdicts.add pipelineKey & " (" & file & ":" & $(number + 1) &
+              ") reads " & token
+    for message in verdicts: checkpoint message
+    check verdicts.len == 0
+    checkpoint("writers found adding into velocityDeltaFixed: " & $writersSeen)
+    check writersSeen.len == WRITER_SHADERS.len
+
+  test "no writer's CPU parameters carry a time factor":
+    var verdicts: seq[string]
+    var arraysSeen: seq[string]
+    let lines = readFile("src/webgpu_compute.nim").splitLines
+    for number, line in lines:
+      for (paramsArray, writers) in WRITER_PARAMS:
+        let code = line.codeOf("#")
+        if not code.strip.startsWith(paramsArray & "["): continue
+        if paramsArray notin arraysSeen: arraysSeen.add paramsArray
+        var statement = code
+        var next = number + 1
+        while next < lines.len and lines[next].strip.len > 0 and
+            lines[next].indentOf > line.indentOf:
+          statement.add " " & lines[next].codeOf("#")
+          inc next
+        for token in identifiers(statement):
+          if token in TIME_TOKENS:
+            verdicts.add writers & " (src/webgpu_compute.nim:" & $(number + 1) &
+              ") writes " & token & " into " & paramsArray
+    for message in verdicts: checkpoint message
+    check verdicts.len == 0
+    checkpoint("parameter arrays assigned in src/webgpu_compute.nim: " & $arraysSeen)
+    check arraysSeen.len == WRITER_PARAMS.len
 
 
 suite "Bounds Read Only Declared Parameters":

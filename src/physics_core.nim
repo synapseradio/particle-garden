@@ -25,14 +25,21 @@ const
     ## 0.5. Every force constant in this codebase was measured against a frame
     ## worth this much, so it is the unit frameFactor reports multiples of.
 
+  VELOCITY_FIXED_POINT_SCALE* = 65536.0
+    ## The fine velocity word's quanta per unit of velocity, 2^16.
+
+  MOUSE_FORCE_PEAK* = 300.0
+    ## The held pointer's force at the pointer, per unit time.
+
+  BLAST_FORCE_PEAK* = 3000.0
+    ## The blast's force at strength 1 and distance 10, per unit time.
+
 func frameFactor*(dt: float): float =
   ## A frame's dt as a multiple of the reference frame.
   ##
-  ## integrate.wgsl advances position by the velocity itself, so params.dt acts
-  ## as a gain rather than a timestep. A layer that never multiplies by dt is
-  ## therefore deaf to Time Scale; multiplying it by this restores the response
-  ## the layers that do carry dt already have, without changing anything at the
-  ## reference frame.
+  ## Every velocity writer hands over its impulse per reference frame, and
+  ## integrate.wgsl multiplies the decoded sum by this once, so it is the one
+  ## place Time Scale reaches the particle velocity.
   dt / FRAME_DT_REFERENCE
 
 func calculateForce*(normalizedDistance, attr, fMul, invD: float32): float32 =
@@ -434,11 +441,12 @@ func mouseForce*(offsetX, offsetY, mouseRange, buttonSign: float32):
   ## forces.wgsl's held-pointer term. `offset` runs from the particle to the
   ## pointer, already minimum-imaged; `buttonSign` is +1 for the left button,
   ## -1 for the right and 0 for both. The magnitude is 300 at the pointer
-  ## easing to zero at `mouseRange`, per unit of time before params.dt.
+  ## easing to zero at `mouseRange`, per unit of time before the reference
+  ## frame multiplies it.
   let distSq = offsetX * offsetX + offsetY * offsetY
   if distSq > 0.0'f32 and distSq < mouseRange * mouseRange:
     let dist = sqrt(distSq)
-    let force = 300.0'f32 * (1.0'f32 - dist / mouseRange) / dist
+    let force = MOUSE_FORCE_PEAK.float32 * (1.0'f32 - dist / mouseRange) / dist
     (x: offsetX * force * buttonSign, y: offsetY * force * buttonSign)
   else:
     (x: 0.0'f32, y: 0.0'f32)
@@ -452,7 +460,8 @@ func blastForce*(offsetX, offsetY, blastStrength, blastRange: float32):
   if blastStrength > 0.01'f32 and distSq > 0.0'f32 and
       distSq < blastRange * blastRange:
     let dist = sqrt(distSq)
-    let force = blastStrength * 3000.0'f32 * (1.0'f32 - dist / blastRange) /
+    let force = blastStrength * BLAST_FORCE_PEAK.float32 *
+      (1.0'f32 - dist / blastRange) /
       max(dist, 10.0'f32)
     (x: offsetX * force, y: offsetY * force)
   else:
@@ -465,20 +474,60 @@ func encodeVelocityDelta*(value, fixedPointScale: float32): int32 =
   ## body-force.wgsl:162-165.
   int32(value * fixedPointScale)
 
-func forcesVelocityDeltaFixed*(force, dt, fixedPointScale: float32): int32 =
-  ## forces.wgsl:297 and 377: the pair force, or a particle's summed pair,
-  ## mouse and blast force, times params.dt, encoded.
-  encodeVelocityDelta(force * dt, fixedPointScale)
+func forcesVelocityDeltaFixed*(force, fixedPointScale: float32): int32 =
+  ## forces.wgsl: the pair force, or a particle's summed pair, mouse and blast
+  ## force, over one reference frame, encoded.
+  encodeVelocityDelta(force * FRAME_DT_REFERENCE.float32, fixedPointScale)
+
+func decodeVelocityDelta*(deltaFixed: int32;
+    invFixedPointScale, frameFactor: float32): float32 =
+  ## integrate.wgsl: the word decoded and multiplied by the substep's frame
+  ## factor, the one time factor a particle's velocity receives.
+  float32(deltaFixed) * invFixedPointScale * frameFactor
+
+type VelocityWords* = tuple[fine, coarse: int32]
+  ## A particle's velocity delta on one axis: fine quanta plus coarse units of
+  ## 2^coarseShift fine quanta each.
+
+func splitVelocityWord*(deltaFixed: int32; coarseShift: int): VelocityWords =
+  ## forces-sph.wgsl's per-pair split. The arithmetic shift rounds toward
+  ## negative infinity, so the fine remainder is never negative and the two
+  ## words sum back to `deltaFixed` exactly.
+  (fine: deltaFixed and int32((1 shl coarseShift) - 1),
+   coarse: ashr(deltaFixed, coarseShift))
+
+func splitVelocitySum*(value, fixedPointScale: float32;
+    coarseShift: int): VelocityWords =
+  ## forces-sph.wgsl's split of a particle's own register, which a full crowd
+  ## takes past any i32. Every step is exact in f32: the truncated value is an
+  ## integer, dividing by a power of two is exact, and the remainder lies in
+  ## [0, 2^coarseShift).
+  let scaled = trunc(value * fixedPointScale)
+  let unit = float32(1 shl coarseShift)
+  let coarse = floor(scaled / unit)
+  (fine: int32(scaled - coarse * unit), coarse: int32(coarse))
+
+func addVelocityWords*(sum, words: VelocityWords): VelocityWords =
+  ## Two atomicAdds, one per word, wrapping as WGSL's i32 atomics do.
+  (fine: cast[int32](cast[uint32](sum.fine) + cast[uint32](words.fine)),
+   coarse: cast[int32](cast[uint32](sum.coarse) + cast[uint32](words.coarse)))
+
+func decodeVelocityWords*(words: VelocityWords;
+    invFixedPointScale, frameFactor: float32; coarseShift: int): float32 =
+  ## integrate.wgsl: both words decoded, then the substep's frame factor.
+  (float32(words.fine) + float32(words.coarse) * float32(1 shl coarseShift)) *
+    invFixedPointScale * frameFactor
 
 func integrateVelocity*(velocity: tuple[x, y: float32];
     deltaFixed: tuple[x, y: int32];
-    invFixedPointScale, friction, maxVelocity: float32): tuple[x, y: float32] =
-  ## integrate.wgsl:55-99: the single word decoded and added to the velocity,
-  ## friction applied, then the soft cap postStepSpeed states for the speed.
-  var newVelX = (velocity.x + float32(deltaFixed.x) * invFixedPointScale) *
-    friction
-  var newVelY = (velocity.y + float32(deltaFixed.y) * invFixedPointScale) *
-    friction
+    invFixedPointScale, frameFactor, friction, maxVelocity: float32):
+    tuple[x, y: float32] =
+  ## integrate.wgsl: the decoded delta added to the velocity, friction
+  ## applied, then the soft cap postStepSpeed states for the speed.
+  var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
+    invFixedPointScale, frameFactor)) * friction
+  var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
+    invFixedPointScale, frameFactor)) * friction
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
   let softCapThreshold = maxVelocity * 0.5'f32
   if speed > softCapThreshold and speed > 0.0'f32:

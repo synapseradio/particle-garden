@@ -20,12 +20,10 @@
 // force constant in this repository was measured in, so a body settles over the
 // same wall clock at any frame rate and any substep count.
 //
-// THE ACCUMULATED REACTION IS AN IMPULSE, NOT A FORCE, so no timestep
-// multiplies it here. body-force hands each particle a velocity impulse with
-// the substep's frame already folded in and accumulates that impulse's
-// negation; multiplying by a timestep again would make a frame's effect on a
-// body scale as the square of the frame length over the substep count, which no
-// substep count leaves invariant.
+// THE ACCUMULATED REACTION IS AN IMPULSE PER REFERENCE FRAME. body-force
+// accumulates the negation of each particle's impulse before any clock touches
+// it, so params.frames multiplies it once at the decode, as integrate.wgsl's
+// frame factor multiplies a particle's delta.
 //
 // THE ACCUMULATOR IS READ, NEVER RESET. The frame clears it, exactly as it
 // clears velocityDelta, because one buffer with two reset owners loses whichever
@@ -69,8 +67,9 @@ fn integrateBodies(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   let force = vec2<f32>(
     f32(bodyAccum[slot * 3u]) / params.forceScale,
-    f32(bodyAccum[slot * 3u + 1u]) / params.forceScale);
-  let torque = f32(bodyAccum[slot * 3u + 2u]) / params.torqueScale;
+    f32(bodyAccum[slot * 3u + 1u]) / params.forceScale) * params.frames;
+  let torque = f32(bodyAccum[slot * 3u + 2u]) / params.torqueScale *
+    params.frames;
 
   // The caps bound what ONE substep may do to one body, without bounding what a
   // player may ask for: a larger crowd still pushes harder, it just cannot

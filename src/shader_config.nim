@@ -12,6 +12,8 @@
 # - Smaller workgroups = more flexible scheduling
 # =============================================================================
 
+from physics_core import VELOCITY_FIXED_POINT_SCALE
+
 type
   ShaderProfile* = enum
     spProduction    ## Validated defaults
@@ -114,7 +116,7 @@ const
     mouseRangeSq: 90000.0,        # 300px mouse interaction radius
     blastRangeSq: 40000.0,        # 200px blast radius
     densitySmoothFactor: 0.7,
-    fixedPointScale: 65536.0,     # 2^16 for atomic accumulation
+    fixedPointScale: VELOCITY_FIXED_POINT_SCALE,
     glowVelocityLogScale: 5.0,    # These eight are calibrated to match
     glowVelocityBase: 0.5,        # glow.wgsl's shipped curve exactly, so the
     glowDensityScale: 0.15,       # default appearance is unchanged.
@@ -240,6 +242,7 @@ static:
     "or dispatch more than one"
 
 from physics_core import FRAME_DT_REFERENCE
+from config_ranges import VELOCITY_COARSE_SHIFT
 # long_range_core is pure; it owns the mesh density accumulator's fixed point
 # and the transform's line length, so the five mesh shaders encode at the scale
 # the native oracle decodes and size their workgroup array from the same
@@ -374,12 +377,14 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["TUNABLE_INV_FIXED_POINT_SCALE"] =
     fmt"{1.0 / activeConfig.tuning.fixedPointScale:.16f}"
 
-  # forces-sph.wgsl multiplies params.dt by this to recover frameFactor, so the
-  # reciprocal is emitted rather than the reference frame itself. Derived from
-  # physics_core for the same reason the inverse above is derived: a shader-side
-  # literal would drift from the constant the Nim mirrors measure against.
-  result["TUNABLE_INV_FRAME_DT_REFERENCE"] =
-    fmt"{1.0 / FRAME_DT_REFERENCE:.6f}"
+  # The time every velocity writer accumulates its impulse over. Derived from
+  # physics_core, since a shader-side literal would drift from the constant the
+  # Nim mirrors measure against.
+  result["FRAME_DT_REFERENCE"] = fmt"{FRAME_DT_REFERENCE:.16f}"
+
+  # The shift the two velocity words split at, from the budget config_ranges
+  # asserts it against.
+  result["VELOCITY_COARSE_SHIFT"] = $VELOCITY_COARSE_SHIFT
 
   # Glow curve constants (consumed by glow.wgsl). Two decimal places keep
   # 0.15/0.05 exact while remaining unambiguous WGSL f32 literals.

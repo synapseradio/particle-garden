@@ -14,11 +14,8 @@
 // descends the gradient (away from its own deposits, spreading the species
 // across the pattern), positive climbs it.
 //
-// fieldForceScale arrives with the substep's frame already folded in
-// (src/field_core.nim's frameScaledFieldForce, written by webgpu_compute):
-// nothing here carries dt, and FieldParams holds no timestep to read, so the
-// frame reaches this pass through the scale or not at all. At the reference
-// frame the factor is 1 and the value is the slider's own.
+// The impulse is per reference frame, the slider's own value; integrate
+// applies the substep's frame factor to the summed delta.
 //
 // THE TWO SIGNS ARE NOT SYMMETRIC. Climbing a self-deposited gradient closes a
 // positive feedback loop — the deposit raises the peak, the peak steepens the
@@ -75,9 +72,9 @@ fn applyFieldForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // Direction lives in the tropism sign; magnitude in fieldForceScale.
   let force = gradient * params.fieldForceScale * tropism;
 
-  // ACCUMULATE, never overwrite. forces.wgsl and forces-sph.wgsl write the same
-  // buffer, and integrate must see the sum of all three. The frame clears
-  // velocityDelta once at the top, before any contributor runs.
+  // ACCUMULATE, never overwrite. Four other passes write the same buffer, and
+  // integrate must see the sum of all five. The frame clears velocityDelta
+  // once at the top, before any contributor runs.
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u],
     i32(force.x * FIXED_POINT_SCALE));
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u + 1u],

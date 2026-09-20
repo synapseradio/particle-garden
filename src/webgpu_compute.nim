@@ -58,9 +58,9 @@ const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_LOCAL* = 4
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_BLOCKS* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_PREFIX_FINAL* = 3
 const EXPECTED_BIND_GROUP_ENTRIES_BIN_SCATTER* = 6        # AoS: merged pass
-const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 8             # AoS: velocity + colony and crowd density deltas
-const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 7         # SPH: forces' slots, with its own density at 6
-const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 6          # AoS: + all three density deltas to resolve
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES* = 9             # AoS: both velocity words + colony and crowd density deltas
+const EXPECTED_BIND_GROUP_ENTRIES_FORCES_SPH* = 8         # SPH: forces' slots, its own density at 6, the coarse word at 7
+const EXPECTED_BIND_GROUP_ENTRIES_INTEGRATE* = 7          # AoS: + all three density deltas to resolve + the coarse word
 # Reaction-diffusion passes. See the four field shaders' binding manifests.
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_SEED* = 2         # dstField(storage) + fieldParams (for the nonce)
 const EXPECTED_BIND_GROUP_ENTRIES_FIELD_DEPOSIT* = 5      # gridParams + particles + deposit + fieldParams + speciesChemistry
@@ -451,6 +451,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard forcesEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.velocityDelta)))
   discard forcesEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.densityDelta)))  # Symmetric colony density
   discard forcesEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Species-blind crowd density
+  discard forcesEntries.push(createBindGroupEntry(8, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
   bindGroups["forces"] = await createBindGroupWithValidation(
@@ -472,6 +473,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard forcesSphEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.gridCounts)))
   discard forcesSphEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.velocityDelta)))
   discard forcesSphEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.sphDensityDelta)))
+  discard forcesSphEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(forcesSphEntries, "forcesSph", "bind group creation")
   bindGroups["forcesSph"] = await createBindGroupWithValidation(
@@ -490,6 +492,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard integrateEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.densityDelta)))  # Colony density
   discard integrateEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.sphDensityDelta)))  # Fluid's kernel density
   discard integrateEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Crowd density
+  discard integrateEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(integrateEntries, "integrate", "bind group creation")
   bindGroups["integrate"] = await createBindGroupWithValidation(
@@ -989,7 +992,6 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
 
   # Simulation parameters (used by forces)
   # Layout matches SimParamsLayout in gpu_types.nim
-  simParamsData[SIM_DT] = substepDt
   simParamsData[SIM_WORLD_WIDTH] = width
   simParamsData[SIM_WORLD_HEIGHT] = height
   simParamsData[SIM_INTERACTION_RADIUS] = rMax
@@ -1038,6 +1040,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsData[INTEG_FRICTION] = friction
   integrationParamsData[INTEG_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
   integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
+  # The one time factor a particle's velocity receives: every writer
+  # accumulates per reference frame.
+  integrationParamsData[INTEG_FRAME_FACTOR] = float32(frameFactor(substepDt))
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # Field parameters. feed, kill, deposit, and field force are the live UI
@@ -1061,9 +1066,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # second control on what it takes to ignite.
   fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(config.CONFIG.rdDeposit *
     depositFrameScale(activeRdSteps) / RD_DEPOSIT_FRAME_SCALE)
-  fieldParamsData[FIELD_FORCE_SCALE] =
-    float32(frameScaledFieldForce(config.CONFIG.rdFieldForce,
-      frameFactor(substepDt)))
+  fieldParamsData[FIELD_FORCE_SCALE] = float32(config.CONFIG.rdFieldForce)
   fieldParamsData[FIELD_SEED_NONCE] = float32(fieldSeedNonce)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["fieldParams"]), 0, fieldParamsData)
 
@@ -1092,8 +1095,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   bodyParamsData[BODY_STRENGTH] = float32(config.CONFIG.bodiesStrength)
   bodyParamsData[BODY_WORLD_W] = width
   bodyParamsData[BODY_WORLD_H] = height
-  # Both clocks: seconds is what a body travels over, frames is what its damping
-  # and its change caps were measured in.
+  # Both clocks, read only by body-integrate: seconds is what a body travels
+  # over, frames multiplies its per-reference-frame reaction, damping and caps.
   bodyParamsData[BODY_DT_SECONDS] = substepDt
   bodyParamsData[BODY_FRAMES] = float32(frameFactor(substepDt))
   # The accumulator's two scales, unchanged: body-force multiplies by them to
@@ -1119,11 +1122,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   lrParamsUint[LR_GRID_W] = uint32(lrSize.w)
   lrParamsUint[LR_GRID_H] = uint32(lrSize.h)
   lrParamsUint[LR_SPECIES_COUNT] = uint32(lrSpecies)
-  # The strength with the substep's frame folded in, the way the field force
-  # carries its own: n substeps then sum to one frame's worth of push, and
-  # nothing in lr-force reads a timestep.
-  lrParamsData[LR_FORCE_SCALE] =
-    float32(config.CONFIG.longRangeStrength * frameFactor(substepDt))
+  lrParamsData[LR_FORCE_SCALE] = float32(config.CONFIG.longRangeStrength)
   # 1/lambda^2 from the reach the user set. The reach's range floor is strictly
   # positive so this inverse always exists.
   lrParamsData[LR_INV_REACH_SQ] =
@@ -1155,6 +1154,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     of sbGridOffsets: cast[GPUBuffer](gpuBuffers.gridOffsets)
     of sbFillPointers: cast[GPUBuffer](gpuBuffers.fillPointers)
     of sbVelocityDelta: cast[GPUBuffer](gpuBuffers.velocityDelta)
+    of sbVelocityCoarse: cast[GPUBuffer](gpuBuffers.velocityCoarse)
     of sbDensityDelta: cast[GPUBuffer](gpuBuffers.densityDelta)
     of sbSphDensityDelta: cast[GPUBuffer](gpuBuffers.sphDensityDelta)
     of sbCrowdDensityDelta: cast[GPUBuffer](gpuBuffers.crowdDensityDelta)
@@ -1171,7 +1171,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   proc byteLengthFor(simBuffer: SimBuffer): int =
     case simBuffer
     of sbGridCounts, sbGridOffsets, sbFillPointers: numCells * 4
-    of sbVelocityDelta: particleCount * 8
+    of sbVelocityDelta, sbVelocityCoarse: particleCount * 8
       # TWO i32 per particle — x and y. Clearing only particleCount * 4 would
       # zero every x and leave every y holding the previous frame's impulse,
       # which reads as a world that drifts steadily downward.

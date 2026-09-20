@@ -911,7 +911,7 @@ suite "A Crowd Cannot Drive A Body Unstable":
       px[sample] = body.centerX + reach * cos(bearing)
       py[sample] = body.centerY + reach * sin(bearing)
     # Two clocks, as the step keeps them: seconds for travel, reference frames
-    # for the impulse the strength carries and for the damping.
+    # for the impulse integrate delivers and for the damping.
     let substepSeconds = BODY_LARGEST_SUBSTEP_DT / substeps.float
     let substepFrames = BODY_LARGEST_FRAME_FACTOR / substeps.float
     var speeds = newSeq[float](frames)
@@ -923,7 +923,7 @@ suite "A Crowd Cannot Drive A Body Unstable":
           let atX = px[sample]
           let atY = py[sample]
           let impulse = bodyForceAt(body, atX, atY,
-            BODY_WORLD_W, BODY_WORLD_H, 1.0, strength * substepFrames)
+            BODY_WORLD_W, BODY_WORLD_H, 1.0, strength)
           # Action and reaction are taken at the SAME point, which is what
           # body-force.wgsl does by construction: one invocation evaluates the
           # body once at the particle it holds. Taking the lever arm after the
@@ -931,8 +931,8 @@ suite "A Crowd Cannot Drive A Body Unstable":
           # radial and whose torque is therefore exactly zero.
           accumulator.addBodyReaction(body, atX, atY,
             BODY_WORLD_W, BODY_WORLD_H, impulse.x * weight, impulse.y * weight)
-          vx[sample] = vx[sample] + impulse.x
-          vy[sample] = vy[sample] + impulse.y
+          vx[sample] = vx[sample] + impulse.x * substepFrames
+          vy[sample] = vy[sample] + impulse.y * substepFrames
           # integrate.wgsl's own post-step: friction at its most permissive
           # setting (retention 1.0, the worst case for stability) and the speed
           # cap at its ceiling.
@@ -1111,7 +1111,7 @@ suite "A Body Is Blind Past Its Reach":
       let spread = CLUMP_SPREAD * ((sample.float * 0.6180339887) mod 1.0)
       px[sample] = clumpX + spread * cos(bearing)
       py[sample] = BODY_WORLD_H * 0.5 + spread * sin(bearing)
-    let strength = BODY_STRENGTH_CEILING * BODY_LARGEST_FRAME_FACTOR
+    let strength = BODY_STRENGTH_CEILING
     for frame in 0 ..< SWEEP_FRAMES:
       var accumulators: array[2, BodyAccumulator]
       for sample in 0 ..< CROWD_SAMPLES:
@@ -1121,9 +1121,10 @@ suite "A Body Is Blind Past Its Reach":
           accumulators[slot].addBodyReaction(bodies[slot], px[sample],
             py[sample], BODY_WORLD_W, BODY_WORLD_H, impulse.x * weight,
             impulse.y * weight)
-          vx[sample] += impulse.x
-          vy[sample] += impulse.y
-          result.clumpImpulse += abs(impulse.x) + abs(impulse.y)
+          vx[sample] += impulse.x * BODY_LARGEST_FRAME_FACTOR
+          vy[sample] += impulse.y * BODY_LARGEST_FRAME_FACTOR
+          result.clumpImpulse += (abs(impulse.x) + abs(impulse.y)) *
+            BODY_LARGEST_FRAME_FACTOR
         px[sample] = wrapToTorus(px[sample] + vx[sample] *
           BODY_LARGEST_SUBSTEP_DT, BODY_WORLD_W)
         py[sample] = wrapToTorus(py[sample] + vy[sample] *

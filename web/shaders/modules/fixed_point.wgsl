@@ -7,9 +7,13 @@
 //
 // TWO SCALES, BECAUSE THE TWO QUANTITIES WANT OPPOSITE THINGS.
 //
-// Velocity deltas are small and signed, and want resolution near zero. At 2^16
-// they carry 16 fractional bits over a span of +/-32768 — far more range than a
-// per-frame impulse ever needs.
+// Velocity deltas are signed and want resolution near zero. Every writer adds
+// its impulse per reference frame, and integrate.wgsl applies the frame factor
+// once. One word at 2^16 spans +/-32768, and a full crowd of fluid pairs
+// exceeds that 1 335 times over, so forces-sph.wgsl splits each integer into
+// this fine word and a coarse word counting 2^VELOCITY_COARSE_SHIFT fine
+// quanta; every other writer adds to the fine word alone. src/config_ranges.nim
+// asserts that both words hold a full crowd at the range maxima.
 //
 // Kernel density is a large positive count: forces-sph.wgsl normalizes each
 // neighbour's weight by the self-weight, so a neighbour adds at most 1.0 and
@@ -20,14 +24,23 @@
 // The density accumulator therefore takes a coarser scale, derived in
 // src/sph_core.nim from the particle budget with headroom to spare.
 //
-// INVARIANT: EACH SCALE HAS EXACTLY ONE ENCODER AND ONE DECODER.
-// forces.wgsl and integrate.wgsl share the velocity scale; forces-sph.wgsl and
-// integrate.wgsl share the density one. Encoding at one scale and decoding at
-// the other is silent: the numbers still arrive, wrong by the ratio.
+// INVARIANT: EACH SCALE HAS EXACTLY ONE DECODER.
+// The five velocity writers and integrate.wgsl share the velocity scale;
+// forces-sph.wgsl and integrate.wgsl share the density one. Encoding at one
+// scale and decoding at the other is silent: the numbers still arrive, wrong
+// by the ratio.
 // =============================================================================
 
 const FIXED_POINT_SCALE: f32 = {{TUNABLE_FIXED_POINT_SCALE}};           // Float-to-int conversion factor (2^16)
 const INV_FIXED_POINT_SCALE: f32 = {{TUNABLE_INV_FIXED_POINT_SCALE}};  // 1.0 / FIXED_POINT_SCALE (precomputed)
+
+// The time a velocity writer accumulates its impulse over.
+const FRAME_DT_REFERENCE: f32 = {{FRAME_DT_REFERENCE}};
+
+// The coarse velocity word counts 2^VELOCITY_COARSE_SHIFT fine quanta.
+const VELOCITY_COARSE_SHIFT: u32 = {{VELOCITY_COARSE_SHIFT}}u;
+const VELOCITY_FINE_MASK: i32 = (1i << VELOCITY_COARSE_SHIFT) - 1i;
+const VELOCITY_COARSE_UNIT: f32 = f32(1i << VELOCITY_COARSE_SHIFT);
 
 // SPH kernel density only. Derived from MAX_PARTICLES, not chosen.
 const SPH_DENSITY_FIXED_POINT_SCALE: f32 = {{SPH_DENSITY_FIXED_POINT_SCALE}};

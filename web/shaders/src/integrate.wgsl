@@ -4,7 +4,7 @@
 //
 // WHY THIS EXISTS:
 // Final integration step - applies all changes computed by the forces pass:
-// - Velocity deltas (from inter-particle forces and mouse interaction)
+// - Velocity deltas (from every velocity writer, per reference frame)
 // - Density deltas (symmetric accumulation from half-neighbor pairs)
 // - Position updates (velocity integration with toroidal wrapping)
 //
@@ -28,7 +28,7 @@ struct IntegrationParams {
   friction: f32,         // Friction coefficient (offset 8)
   maxVelocity: f32,      // Maximum velocity (offset 12)
   particleCount: u32,    // Active particle count (offset 16)
-  pad0: u32,             // Padding (offset 20)
+  frameFactor: f32,      // The substep as a multiple of the reference frame (offset 20)
   pad1: u32,             // Padding (offset 24)
   pad2: u32,             // Padding (offset 28)
 };
@@ -39,6 +39,7 @@ struct IntegrationParams {
 @group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
 @group(0) @binding(4) var<storage, read> sphDensityDeltaFixed: array<i32>;
 @group(0) @binding(5) var<storage, read> crowdDensityDeltaFixed: array<i32>;
+@group(0) @binding(6) var<storage, read> velocityCoarseFixed: array<i32>;
 
 const DENSITY_SMOOTH_FACTOR: f32 = {{TUNABLE_DENSITY_SMOOTH_FACTOR}};  // 70% old + 30% new for temporal smoothing
 
@@ -52,10 +53,14 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   var p = particles[particleIdx];
 
-  let deltaVxFixed = velocityDeltaFixed[particleIdx * 2u];
-  let deltaVyFixed = velocityDeltaFixed[particleIdx * 2u + 1u];
-  let deltaVx = f32(deltaVxFixed) * INV_FIXED_POINT_SCALE;
-  let deltaVy = f32(deltaVyFixed) * INV_FIXED_POINT_SCALE;
+  // Both words rejoined, then the one multiply by the substep's frame factor a
+  // particle's velocity receives: every writer accumulates per reference frame.
+  let deltaVx = (f32(velocityDeltaFixed[particleIdx * 2u]) +
+    f32(velocityCoarseFixed[particleIdx * 2u]) * VELOCITY_COARSE_UNIT) *
+    INV_FIXED_POINT_SCALE * params.frameFactor;
+  let deltaVy = (f32(velocityDeltaFixed[particleIdx * 2u + 1u]) +
+    f32(velocityCoarseFixed[particleIdx * 2u + 1u]) * VELOCITY_COARSE_UNIT) *
+    INV_FIXED_POINT_SCALE * params.frameFactor;
 
   let deltaDensityFixed = densityDeltaFixed[particleIdx];
   let deltaDensity = f32(deltaDensityFixed) * INV_FIXED_POINT_SCALE;

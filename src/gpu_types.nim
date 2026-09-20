@@ -149,7 +149,8 @@ const
     name: "SimParams",
     fields: @[
       # Core simulation parameters (0-15)
-      GpuField(name: "dt",              kind: gtF32, offset: 0,  size: 4, count: 1),
+      # No writer reads a timestep; integrate carries the frame factor.
+      GpuField(name: "pad0",            kind: gtF32, offset: 0,  size: 4, count: 1),
       GpuField(name: "worldWidth",      kind: gtF32, offset: 4,  size: 4, count: 1),
       GpuField(name: "worldHeight",     kind: gtF32, offset: 8,  size: 4, count: 1),
       GpuField(name: "interactionRadius", kind: gtF32, offset: 12, size: 4, count: 1),
@@ -486,7 +487,8 @@ const
   # TWO CLOCKS, both carried because the step needs both. `dtSeconds` is the
   # substep's own length, which is what a body TRAVELS over; `frames` is that
   # length in reference frames (physics_core.frameFactor), which is what the
-  # damping and the impulse caps are measured in. Folding them into one number
+  # accumulated reaction, the damping and the impulse caps are measured in, and
+  # which only body-integrate reads. Folding them into one number
   # is what makes a frame's effect scale as the square of its timestep.
   BodyParamsLayout* = GpuStruct(
     name: "BodyParams",
@@ -722,7 +724,7 @@ static:
 
   assert ScanParamsLayout.totalSize == 16, "ScanParams must be 16 bytes"
 
-  assert SimParamsLayout.fieldOffset("dt") == 0
+  assert SimParamsLayout.fieldOffset("pad0") == 0
   assert SimParamsLayout.fieldOffset("attractionMatrix") == 64
   # The matrix run holds exactly MAX_SPECIES^2 floats, and what follows it
   # starts where that run ends. Stated against MAX_SPECIES rather than as two
@@ -747,7 +749,7 @@ static:
 # SIMPARAMS FIELD INDICES (for type-safe buffer writes)
 # =============================================================================
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
-# emits SIM_DT=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
+# emits SIM_PAD0=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
 # _END=159, ... SIM_MOUSE_RANGE=165, SIM_CROWDING_STRENGTH=170,
 # SIM_SPH_RADIUS_FRACTION=171, and SIM_PARAMS_F32_COUNT=172, so
 # webgpu_compute.nim hand-writes no magic number.
@@ -782,7 +784,7 @@ const
   INTEG_FRICTION* = 2
   INTEG_MAX_VELOCITY* = 3
   INTEG_PARTICLE_COUNT* = 4  # u32 via aliased buffer
-  INTEG_PAD1* = 5
+  INTEG_FRAME_FACTOR* = 5
   INTEG_PAD2* = 6
   INTEG_PAD3* = 7
   INTEG_PARAMS_F32_COUNT* = 8

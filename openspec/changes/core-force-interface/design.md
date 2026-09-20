@@ -426,8 +426,8 @@ bound is therefore on each conversion and on each final sum, over a full crowd o
 | Mouse | 300/120 = 2.5 | 1.64 × 10⁵ |
 | Blast | 3000/120 = 25 | 1.64 × 10⁶ |
 | Fluid | pressure 5000/120 = 41.7 plus the blend (1 + 0.5) · 2 · 100 = 300, at `g_fluid` ≤ 1 | 2.87 × 10¹², 1 335× the span |
-| Bodies | 32 · 10 = 320 | 2.10 × 10⁷ |
-| Scent, long range | derived by their unit functions at strength 1 (N2) | must fit the 7 571 left at `k = 12` |
+| Bodies | 32 · `BODY_MAX_FORCE_PER_PARTICLE` 20 = 640 | 4.19 × 10⁷ |
+| Scent, long range | derived by their unit functions at strength 1 (N2) | must fit the 7 251 left at `k = 12` (`VELOCITY_FINE_ROOM`) |
 
 Remedies rejected:
 - Narrowing any range. That fixes the ceiling and not the mechanism.
@@ -443,8 +443,11 @@ once per particle. `forces.wgsl` reaches 8 storage bindings, the WebGPU default 
 (`webgpu_init.nim:351-358` does not raise it).
 
 **Derived constants.**
-- `k = 12`. The fine word's full-crowd sum is 1.651 × 10⁹, with headroom 1.30. At 13 it would be
-  2.70 × 10⁹, which does not fit. If scent and long range need more than 7 571, `k` falls to 11.
+- `k = 12`. The fine word's full-crowd sum is 1.672 × 10⁹, with headroom 1.28. At 13 it would be
+  2.68 × 10⁹, which does not fit. If scent and long range need more than 7 251, `k` falls to 11.
+  Long range at its live maxima is 2 589 (at `x_on` 6.3, grid 256 × 128, `R` 10). Scent is
+  37.5 · 1 per unit of inhibitor gradient, 18.75 while the inhibitor stays in [0, 1], and the room
+  left after long range admits a gradient up to 124. `k = 12` holds.
 - SPH takes `⌈341.7 · 2^16/2^k⌉ = 5 467` coarse units. `q_max = ⌊(2^31 − 1)/MAX_PARTICLES⌋ − 5 467 =
   11 310`, which is 706.9 velocity per reference frame per pair. The margin is 27 647, or 0.0013%.
 
@@ -1181,7 +1184,7 @@ Carried from coupling-balance:
 - [A writer left on the old convention writes up to 30× too hard] → Tests 4b and 11, and N3's single
   switch.
 - [`forces.wgsl` at 8 storage buffers] → Any further binding needs a raised limit or a merged buffer.
-- [Scent and long-range maxima may exceed 7 571] → `k` falls to 11 (C8).
+- [Scent and long-range maxima may exceed 7 251] → `k` falls to 11 (C8).
 - [The coarse word's cost is unmeasured] → G1.4.
 - [The 128k checks cost about 40 core-hours; nothing detects a skipped rerun] → Recorded in
   `docs/enforcement.md` at the recipe tier.

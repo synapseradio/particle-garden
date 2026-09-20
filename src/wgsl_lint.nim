@@ -153,9 +153,9 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   "prefix-sum-local": @[0, 1, 2, 3],
   "prefix-sum-blocks": @[0, 1, 2],
   "prefix-sum-final": @[0, 1, 2],
-  "forces": @[0, 1, 2, 3, 4, 5, 6, 7],  # binding 7 is the crowd-density accumulator
-  "forces-sph": @[0, 1, 2, 3, 4, 5, 6],
-  "integrate": @[0, 1, 2, 3, 4, 5],  # binding 5 resolves the crowd density
+  "forces": @[0, 1, 2, 3, 4, 5, 6, 7, 8],  # binding 7 is the crowd-density accumulator; 8 the coarse velocity word, the eighth storage binding
+  "forces-sph": @[0, 1, 2, 3, 4, 5, 6, 7],  # binding 7 is the coarse velocity word
+  "integrate": @[0, 1, 2, 3, 4, 5, 6],  # binding 5 resolves the crowd density; 6 is the coarse velocity word
   "field-seed": @[0, 1],
   "field-deposit": @[0, 1, 2, 3, 4],
   "field-resolve": @[0, 1, 2, 3],  # binding 3 is the one-word alive-cell counter the dormancy signal reads back

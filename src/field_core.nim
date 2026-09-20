@@ -210,15 +210,6 @@ func depositFrameScale*(steps: int): float =
   ## change what it takes to ignite.
   float(1 + steps) / float(RD_DEPOSIT_STEP_REFERENCE)
 
-func frameScaledFieldForce*(fieldForceScale, frameFactor: float): float =
-  ## The field-force scale a substep writes into FieldParams: the slider's value
-  ## carrying the frame it acts over.
-  ##
-  ## Composed here rather than in field-force.wgsl because the shader has no dt
-  ## to read — FieldParams holds eight floats and none of them is a timestep,
-  ## and adding one would move a binding. frameFactor is physics_core.frameFactor
-  ## of the substep's dt, so n substeps sum to what one whole frame delivers.
-  fieldForceScale * frameFactor
 # ==============================================================================
 # HOW BIG THE PATTERN DRAWS
 # ==============================================================================

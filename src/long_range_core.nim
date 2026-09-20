@@ -140,12 +140,6 @@ func lrSofteningWorld*(gridW, gridH: int; worldW, worldH: float): float =
   ## wide, and it is the coarser axis whose aliasing needs suppressing.
   LR_SOFTENING_CELLS * max(worldW / float(gridW), worldH / float(gridH))
 
-func lrForceScale*(strength, frameFactor: float): float =
-  ## The LR_FORCE_SCALE the CPU writes (src/webgpu_compute.nim:1125-1126):
-  ## the strength with the substep's frame folded in. lr-force.wgsl:86
-  ## multiplies the gradient by it.
-  strength * frameFactor
-
 func lrCellArea*(gridW, gridH: int; worldW, worldH: float): float =
   ## World area one mesh cell covers.
   (worldW / float(gridW)) * (worldH / float(gridH))

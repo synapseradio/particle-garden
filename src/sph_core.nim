@@ -113,36 +113,33 @@ func flooredTaitPressure*(density, restDensity, stiffness, gamma: float):
   taitPressure(max(density, restDensity), restDensity, stiffness, gamma)
 
 func xsphVelocityCorrection*(velocitySelf, velocityNeighbor, neighborWeight,
-    epsilon, frameFactor: float): float =
-  ## One neighbor's contribution to the XSPH velocity-smoothing term, evaluated
-  ## per velocity axis. The full XSPH correction is
+    epsilon: float): float =
+  ## One neighbor's contribution to the XSPH velocity-smoothing term per
+  ## reference frame, evaluated per velocity axis. The full XSPH correction is
   ##     ε Σⱼ (mⱼ/ρⱼ) (vⱼ - vᵢ) Wᵢⱼ,
-  ## and this returns one summand along one axis: ε · w · (vⱼ - vᵢ) · f, where w
-  ## is the normalized neighbor weight (mⱼ/ρⱼ)·Wᵢⱼ and f the frame factor.
-  ##
-  ## frameFactor is physics_core.frameFactor of the substep's dt. It is a
-  ## required argument because the pressure term this sums with already carries
-  ## dt, so a caller that omitted the frame would silently give one half of the
-  ## fluid a different response to Time Scale than the other.
+  ## and this returns one summand along one axis: ε · w · (vⱼ - vᵢ), where w
+  ## is the normalized neighbor weight (mⱼ/ρⱼ)·Wᵢⱼ. integrate.wgsl applies the
+  ## frame factor to the summed delta.
   ##
   ## w is clamped to [0, 1] so that at the reference frame a single neighbor
   ## pair can never move the velocity by more than ε times the velocity gap
   ## |vⱼ - vᵢ| — the bound that keeps the smoothing from overshooting. The
   ## caller sums the per-neighbor corrections to form the full term.
   let weight = max(0.0, min(1.0, neighborWeight))
-  epsilon * weight * (velocityNeighbor - velocitySelf) * frameFactor
+  epsilon * weight * (velocityNeighbor - velocitySelf)
 
 func sphPairVelocityDelta*(pressureThis, pressureDensityThis, pressureOther,
     pressureDensityOther, gradientWeight, densityWeight, laggedDensityThis,
-    laggedDensityOther, viscosity, fluidStrength, dt: float;
+    laggedDensityOther, viscosity, fluidStrength: float;
     direction, velocityDiff: tuple[x, y: float]): tuple[x, y: float] =
-  ## One pair's velocity delta on THIS particle, forces-sph.wgsl:250-278 in
-  ## the same order: the symmetrized pressure, scaled by SPH_FORCE_SCALE and
-  ## clamped to SPH_MAX_PRESSURE_ACCEL, pushes along -`direction` over `dt`;
-  ## the velocity blend moves along `velocityDiff` (other minus this) over the
-  ## frame factor. `direction` is the unit vector from this particle to the
-  ## other; the pressures and their densities arrive already clamped the way
-  ## the shader clamps them. The weights are the self-normalized kernels.
+  ## One pair's velocity delta on THIS particle per reference frame,
+  ## forces-sph.wgsl's pair term in the same order: the symmetrized pressure,
+  ## scaled by SPH_FORCE_SCALE and clamped to SPH_MAX_PRESSURE_ACCEL, pushes
+  ## along -`direction` over FRAME_DT_REFERENCE; the velocity blend moves along
+  ## `velocityDiff` (other minus this). `direction` is the unit vector from
+  ## this particle to the other; the pressures and their densities arrive
+  ## already clamped the way the shader clamps them. The weights are the
+  ## self-normalized kernels.
   let pairPressure =
     pressureThis / (pressureDensityThis * pressureDensityThis) +
     pressureOther / (pressureDensityOther * pressureDensityOther)
@@ -151,11 +148,10 @@ func sphPairVelocityDelta*(pressureThis, pressureDensityThis, pressureOther,
   let smoothDenominator = max(max(laggedDensityThis, laggedDensityOther), 1.0)
   let smoothCoefficient =
     (viscosity + SPH_XSPH_EPSILON) * densityWeight / smoothDenominator
-  let frameFactor = dt * (1.0 / FRAME_DT_REFERENCE)
-  (x: fluidStrength * ((-pressureAccel * direction.x) * dt +
-     smoothCoefficient * velocityDiff.x * frameFactor),
-   y: fluidStrength * ((-pressureAccel * direction.y) * dt +
-     smoothCoefficient * velocityDiff.y * frameFactor))
+  (x: fluidStrength * ((-pressureAccel * direction.x) * FRAME_DT_REFERENCE +
+     smoothCoefficient * velocityDiff.x),
+   y: fluidStrength * ((-pressureAccel * direction.y) * FRAME_DT_REFERENCE +
+     smoothCoefficient * velocityDiff.y))
 
 const
   SPH_STABILITY_COEFFICIENT* = 0.0025

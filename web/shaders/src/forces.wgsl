@@ -48,6 +48,12 @@
 // neighbour count needs the coarser of the two.
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
+// The coarse velocity word. This pass adds to the fine word only; an auto
+// layout keeps a binding only when the entry point statically accesses it,
+// hence the phony use in computeForces
+// (https://www.w3.org/TR/WGSL/#phony-assignment-section).
+@group(0) @binding(8) var<storage, read_write> velocityCoarseFixed: array<atomic<i32>>;
+
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};  // Prevents division-by-zero when particles overlap
 const BLAST_RANGE_SQ: f32 = {{TUNABLE_BLAST_RANGE_SQ}};  // Blast influence radius squared
 const BLAST_RANGE: f32 = {{TUNABLE_BLAST_RANGE}};        // Its root, for the linear falloff
@@ -94,6 +100,7 @@ fn crowdingAttenuation(density: f32, strength: f32) -> f32 {
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
+  _ = &velocityCoarseFixed;
   let thisSortedIdx = globalId.x;
 
   if (thisSortedIdx >= params.particleCount) {
@@ -294,8 +301,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // atomicAdd ensures all three contributions are correctly summed.
         let forceOnOtherX = -separationX * forceMagnitudeOnOther;  // Newton's 3rd: opposite direction
         let forceOnOtherY = -separationY * forceMagnitudeOnOther;
-        let deltaVxOtherFixed = i32(forceOnOtherX * params.dt * FIXED_POINT_SCALE);
-        let deltaVyOtherFixed = i32(forceOnOtherY * params.dt * FIXED_POINT_SCALE);
+        let deltaVxOtherFixed = i32(forceOnOtherX * FRAME_DT_REFERENCE * FIXED_POINT_SCALE);
+        let deltaVyOtherFixed = i32(forceOnOtherY * FRAME_DT_REFERENCE * FIXED_POINT_SCALE);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], deltaVxOtherFixed);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], deltaVyOtherFixed);
 
@@ -374,8 +381,9 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // Apply accumulated force to THIS particle via single atomic
   // Why atomic for THIS? Other threads might have added forces to us while we
   // were processing (half-neighbor symmetry works both ways).
-  let deltaVxThisFixed = i32(forceOnThisX * params.dt * FIXED_POINT_SCALE);
-  let deltaVyThisFixed = i32(forceOnThisY * params.dt * FIXED_POINT_SCALE);
+  // Per reference frame, like every writer: integrate applies the frame factor.
+  let deltaVxThisFixed = i32(forceOnThisX * FRAME_DT_REFERENCE * FIXED_POINT_SCALE);
+  let deltaVyThisFixed = i32(forceOnThisY * FRAME_DT_REFERENCE * FIXED_POINT_SCALE);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], deltaVxThisFixed);
   atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], deltaVyThisFixed);
 

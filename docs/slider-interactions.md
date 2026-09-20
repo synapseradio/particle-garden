@@ -124,14 +124,14 @@ the next frame; rkModulate moves only the effective copy through
 | 8 | maxVelocity — five velocity writers | sum | log soft cap above half | `web/shaders/src/integrate.wgsl:87-100` |
 | 9 | maxVelocity — velocityGlowScale | visual | `velNorm = speed/maxVelocity` | `web/shaders/src/glow.wgsl:89-90`, `src/webgpu_render.nim:1679` |
 | 10 | maxVelocity (range max) — bodyBand | bound | speed ceiling = `MAX_VELOCITY_MAX`, × largest substep dt → `BAND_FLOOR` 25 | `src/body_core.nim:135-149,184-193` |
-| 11 | timeScale — forceStrength | time | forces multiply by `dt` | `web/shaders/src/forces.wgsl:297-298,377-378` |
-| 12 | timeScale — fluid (pressure, viscosity) | time | pressure on `dt`, viscosity on `frameFactor` | `src/webgpu_compute.nim:992`, `src/physics_core.nim:23-36` |
+| 11 | timeScale — forceStrength | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
+| 12 | timeScale — fluid (pressure, viscosity) | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
 | 13 | timeScale — sphStiffness | bound | ceiling ÷ `(timeScale/60)` | `src/ui/api/param_descriptor.nim:242-254` |
 | 14 | timeScale — rdFeed, rdKill | time, cost | RD steps per frame, odd, cost `1 + steps` | `src/field_core.nim:184-197` |
 | 15 | timeScale — rdDeposit | time | `depositFrameScale(activeRdSteps)` | `src/webgpu_compute.nim:1051-1066` |
-| 16 | timeScale — rdFieldForce | time | `frameScaledFieldForce(…, frameFactor(substepDt))` | `src/webgpu_compute.nim:1051-1066` |
-| 17 | timeScale — longRangeStrength | time | force scale × `frameFactor` | `src/webgpu_compute.nim:1125-1132` |
-| 18 | timeScale — bodiesStrength | time | strength × frames in the shader | `web/shaders/src/body-force.wgsl:81`, `src/webgpu_compute.nim:1097-1098` |
+| 16 | timeScale — rdFieldForce | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
+| 17 | timeScale — longRangeStrength | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
+| 18 | timeScale — bodiesStrength | time | integrate multiplies the particle's delta by `frameFactor`, body-integrate the reaction by `frames` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042`, `web/shaders/src/body-integrate.wgsl:68-72`, `src/webgpu_compute.nim:1098` |
 | 19 | timeScale — tours, drift, audio, bodies' clock | absent | all advance on `cappedDt`, not scaled time | `src/app.nim:244-274` |
 | 20 | forceWeatherSpeed — forceStrength, interactionRadius, friction | write | rkTour | `src/climate_core.nim:154-158` |
 | 21 | interactionRadius — forceStrength | shape, cost | cutoff; `cellSize = max(r,16)`; 5-cell loop | `web/shaders/src/forces.wgsl:106-107,141,210-214`, `src/grid_core.nim:39` |
@@ -264,8 +264,7 @@ flowchart LR
     mod[MIDI / Audio / Presets]
     regime[Regime buttons]
   end
-  sim[simulation] -->|dt, substepDt| species
-  sim -->|dt| fluid
+  sim[simulation] -->|frameFactor| I
   sim -->|steps, deposit scale| rd
   grid[grid: radius] -->|cutoff, h| species
   grid -->|h, ceiling| fluid
@@ -398,11 +397,10 @@ U = no statement either way.
 | Trails lift to 25 | U | `src/ui/state/render_state.nim:60-70` |
 | glow, bloom, grade, palette, camera sliders | U | `src/ui/api/param_descriptor.nim:488-521,543-551,811-829` |
 
-Unit mismatch across the five velocity writers: forces use `dt` in the
-shader, SPH uses `dt` and `frameFactor`, field force and LR use
-`frameFactor` on the CPU, bodies use frames in the shader
-(`src/physics_core.nim:23-36`, `src/webgpu_compute.nim:1051-1132`,
-`web/shaders/src/body-force.wgsl:81`). Their strength ranges are 0-5, 0-1,
+The five velocity writers share one time unit: each hands integrate its
+impulse per reference frame, and integrate alone multiplies the summed delta
+by `frameFactor` (`web/shaders/src/integrate.wgsl:59-60`,
+`src/webgpu_compute.nim:1042`). Their strength ranges are 0-5, 0-1,
 0-37.5, provisional, and 0-1 × a ceiling of 10, so no slider position means
 the same push in two systems.
 
@@ -480,10 +478,6 @@ LR softening and tropism carry measurements.
 | `docs/help/51-glow.md:10-11`: speed brightens | speed also grows the halo | `web/shaders/src/glow.wgsl:96-103` |
 | `docs/help/53-palette.md`: sliders adjust every scheme | Open Color ignores both | `src/palette.nim:141-164` |
 | `docs/help/50-render.md:9`: size is the radius drawn | drawn size is `(size+1)·sizeMod` | `web/shaders/src/render.wgsl:55-59,102-104` |
-| `docs/one-world.md:167-169`: "Four passes" | lists five | `docs/one-world.md:167-169` |
-| `src/sim_registry.nim:126`: contributor comment | omits bodyForce | `src/sim_registry.nim:126` |
-| `web/shaders/src/field-force.wgsl:78-80`: "sum of all three" | five writers | `src/sim_registry.nim:355-372` |
-| `web/shaders/src/body-force.wgsl:159-160`: "three other passes" | four | `src/sim_registry.nim:355-372` |
 | `src/web_api.nim:318-319`: matrix in [-1, 1] | ±0.33 | `src/ui/state/matrix_state.nim:108-118` |
 
 ## Planned rewiring

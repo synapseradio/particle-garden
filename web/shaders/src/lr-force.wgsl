@@ -21,9 +21,8 @@
 // following +grad(Phi) accelerates TOWARD it. Attraction is a positive entry at
 // both ranges.
 //
-// forceScale arrives with the substep's frame already folded in (written by
-// webgpu_compute beside the other uniforms), exactly as fieldForceScale does:
-// nothing here carries dt, and LrParams holds no timestep to read.
+// The impulse is per reference frame; integrate applies the substep's frame
+// factor to the summed delta.
 //
 // OUTPUT: two atomicAdds into velocityDeltaFixed in ORIGINAL index space, the
 // space integrate.wgsl reads back. Never a store — the frame cleared the buffer

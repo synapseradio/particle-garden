@@ -152,7 +152,7 @@ Buffer Bindings (forces.wgsl):
 ┌───────┬──────────────────────────┬──────────────────────────────────────────┐
 │ Bind  │ Type                     │ Purpose                                  │
 ├───────┼──────────────────────────┼──────────────────────────────────────────┤
-│   0   │ uniform SimParams        │ dt, world size, mouse, attraction matrix │
+│   0   │ uniform SimParams        │ world size, mouse, attraction matrix     │
 │   1   │ storage Particle[]       │ particlesSorted (read)                   │
 │   2   │ storage u32[]            │ sortedToOriginal (read)                  │
 │   3   │ storage u32[]            │ cellStartOffsets (read)                  │
@@ -160,13 +160,16 @@ Buffer Bindings (forces.wgsl):
 │   5   │ storage atomic<i32>[]    │ velocityDeltaFixed (read/write)          │
 │   6   │ storage atomic<i32>[]    │ densityDeltaFixed (read/write)           │
 │   7   │ storage atomic<i32>[]    │ crowdDensityDeltaFixed (read/write)      │
+│   8   │ storage atomic<i32>[]    │ velocityCoarseFixed (layout only)        │
 └───────┴──────────────────────────┴──────────────────────────────────────────┘
 
 Fixed-Point Atomics (why integers instead of floats?):
   When multiple GPU threads update the same particle's velocity simultaneously,
   we need "atomic" operations that don't corrupt data. GPUs only support atomic
   integers, so we store velocities as integers (×65536), then convert back to
-  floats in the integrate pass. This is a common GPU programming pattern.
+  floats in the integrate pass. This is a common GPU programming pattern. The
+  fluid splits each integer across this fine word and a coarse word, since a
+  full crowd of fluid pairs exceeds one i32 (modules/fixed_point.wgsl).
 ```
 
 ### Performance
@@ -200,7 +203,8 @@ Before running force computation:
 **Pass 5** — See `integrate.wgsl`
 
 Key operations:
-- Convert fixed-point deltas (i32) back to floats (scale factor 65536)
+- Rejoin the fine and coarse velocity words, convert to floats (scale factor
+  65536), and multiply by the substep's frame factor
 - Apply velocity deltas and friction
 - Euler integration for position update
 - Toroidal wrap at world boundaries

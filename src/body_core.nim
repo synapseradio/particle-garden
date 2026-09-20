@@ -146,9 +146,8 @@ const
   BODY_LARGEST_FRAME_FACTOR* =
     BODY_LARGEST_SUBSTEP_DT / physics_core.FRAME_DT_REFERENCE
     ## That substep as a multiple of the reference frame every force constant
-    ## here was measured against. The bodies strength reaches the shader already
-    ## multiplied by this factor at its worst, the way field-force.wgsl receives
-    ## its scale, so it is what the per-particle contribution is bounded by.
+    ## here was measured against: the largest `frames` body-integrate
+    ## multiplies the decoded reaction, the change caps and the damping by.
 
   BODY_STRENGTH_CEILING* = 1.0
     ## One is the whole coupling: this multiplies the entire output of both
@@ -195,12 +194,10 @@ const
     ## moves.
 
   BODY_MAX_FORCE_PER_PARTICLE* =
-    BODY_FORCE_CEILING * BODY_STRENGTH_CEILING * BODY_LARGEST_FRAME_FACTOR
-    ## The largest velocity impulse one body may hand one particle in one
-    ## substep. One ceiling, not two: where proximity and enclosure push the
-    ## same way their eases sum to one, smoothstep(x) + smoothstep(1 - x) = 1,
-    ## and past the band only the hold acts. tests/test_body_core.nim sweeps
-    ## bodyForceAt under it.
+    2.0 * BODY_FORCE_CEILING * BODY_STRENGTH_CEILING
+    ## The largest velocity impulse one body may hand one particle per
+    ## reference frame: proximity and enclosure, each at its ceiling.
+    ## tests/test_body_core.nim sweeps bodyForceAt under it.
 
   BODY_FIXED_POINT_SCALE* = 16.0
     ## The per-body force accumulator's own scale, far coarser than
@@ -259,10 +256,10 @@ static:
   # may receive a contribution from EVERY particle in the world in a single
   # dispatch, where velocityDelta's word receives only that particle's own, so
   # the two scales are not the same number and this is what fixes theirs.
-  # Widening a bodies bound, raising the particle budget, lengthening the
-  # largest frame, or coarsening a scale all land here rather than wrapping
-  # around in the browser — where a wrapped word shows as a body flung across
-  # the world, a bug that looks like physics.
+  # Widening a bodies bound, raising the particle budget, or coarsening a
+  # scale all land here rather than wrapping around in the browser — where a
+  # wrapped word shows as a body flung across the world, a bug that looks like
+  # physics.
   doAssert float(MAX_PARTICLES) * BODY_MAX_FORCE_PER_PARTICLE *
     BODY_FIXED_POINT_SCALE < float(high(int32)),
     "the body force accumulator overflows int32 under a full crowd; widen " &
@@ -387,11 +384,6 @@ func sampleBody*(body: Body; atX, atY, worldW, worldH: float): BodySample =
     normalX: gradientX * cosA - gradientY * sinA,
     normalY: gradientX * sinA + gradientY * cosA)
 
-func bodyFrameStrength*(strength, frames: float): float =
-  ## body-force.wgsl:81: the slider's strength times the substep's share of a
-  ## reference frame, the strength bodyForceAt receives.
-  strength * frames
-
 func bodyForceAt*(body: Body; atX, atY, worldW, worldH, envelope,
     strength: float): tuple[x, y: float] =
   ## The velocity impulse this body gives a particle at that point, both forces
@@ -454,21 +446,21 @@ func decoded*(accumulator: BodyAccumulator): tuple[
 func bodyRigidStep*(body: Body; forceX, forceY, torque, dtSeconds,
     worldW, worldH: float): Body =
   ## Semi-implicit Euler: velocity first, then position from the new velocity.
-  ## The accumulated reaction is a velocity impulse that already carries the
-  ## substep's frame, so no timestep multiplies it. Damping and the change caps
-  ## run on the reference-frame count, the unit every force constant here is
-  ## measured in; position advances over `dtSeconds` as a particle's does.
+  ## The accumulated reaction is a velocity impulse per reference frame, so the
+  ## reference-frame count multiplies it at the decode, as integrate.wgsl's
+  ## frame factor multiplies a particle's. Damping and the change caps run on
+  ## the same count; position advances over `dtSeconds` as a particle's does.
   result = body
   let frames = frameFactor(dtSeconds)
-  var changeX = forceX * body.invMass
-  var changeY = forceY * body.invMass
+  var changeX = forceX * frames * body.invMass
+  var changeY = forceY * frames * body.invMass
   let allowance = BODY_MAX_SPEED_CHANGE * frames
   let asked = sqrt(changeX * changeX + changeY * changeY)
   if asked > allowance:
     changeX = changeX * allowance / asked
     changeY = changeY * allowance / asked
   let spinAllowance = BODY_MAX_SPIN_CHANGE * frames
-  let changeSpin = clamp(torque * body.invInertia,
+  let changeSpin = clamp(torque * frames * body.invInertia,
     -spinAllowance, spinAllowance)
   result.velX = (body.velX + changeX) * pow(BODY_LINEAR_DAMPING, frames)
   result.velY = (body.velY + changeY) * pow(BODY_LINEAR_DAMPING, frames)

@@ -11,7 +11,8 @@ import ../src/field_core
 import ../src/config_ranges
 # The wrap integrate.wgsl performs, taken from the suite's own tested oracle
 # rather than reimplemented beside it.
-from ../src/physics_core import wrapPosition, FRAME_DT_REFERENCE, frameFactor
+from ../src/physics_core import wrapPosition, FRAME_DT_REFERENCE, frameFactor,
+  encodeVelocityDelta, decodeVelocityDelta
 
 const FIELD_CORE_TESTS_LOADED* = true
 
@@ -1685,34 +1686,31 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
     let worst = heldMouseWorst(bounded = false, frames = 120)
     check worst > 1.0e6 or worst.classify in {fcNan, fcInf, fcNegInf}
 
-suite "The Field Force Answers To The Frame":
-  # field-force.wgsl reads a scale out of FieldParams and multiplies the
-  # inhibitor gradient by it. Nothing in that chain carries dt, so Time Scale
-  # never reached the field. Composing the frame into the scale on the CPU is
-  # what gives it the same response the species force already has, and it keeps
-  # FieldParams at the eight floats its binding declares.
+suite "The Field Force Carries No Time Factor":
+  # field-force.wgsl hands integrate the slider's scale times the gradient, an
+  # impulse per reference frame, and integrate applies the substep's frame
+  # factor once to the summed delta. These hold the field's impulse to the
+  # slider's value alone and the frame's response to that single decode.
 
-  test "the scale is unchanged at the reference frame":
-    check frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE,
-      frameFactor(FRAME_DT_REFERENCE)) == RD_DEFAULT_FIELD_FORCE
+  test "the field impulse is the slider's scale times the gradient":
+    for scale in [0.0, RD_DEFAULT_FIELD_FORCE, RD_FIELD_FORCE_MAX]:
+      check speciesTropismForce(0.08, scale, -1.0) == -0.08 * scale
 
-  test "the scale is proportional to the frame factor":
-    for factor in [0.0, 0.25, 1.0, 2.5, 10.0]:
-      check abs(frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE, factor) -
-        RD_DEFAULT_FIELD_FORCE * factor) < 1e-12
-
-  test "a frame split into substeps delivers the same total":
-    # The field force runs once per substep, so the substeps must sum to what
-    # one whole frame delivers rather than multiplying it by the substep count.
+  test "a frame split into substeps decodes to one frame's field impulse":
+    # The field force runs once per substep with the same per-reference-frame
+    # word, so n decodes at dt/n must sum to the one decode at dt.
+    let fixedScale = 65536'f32
+    let word = encodeVelocityDelta(
+      speciesTropismForce(0.08, RD_DEFAULT_FIELD_FORCE, -1.0).float32,
+      fixedScale)
+    let dt = 2.0 * FRAME_DT_REFERENCE
+    let whole = decodeVelocityDelta(word, 1'f32 / fixedScale,
+      frameFactor(dt).float32)
     for substeps in [1, 2, 3]:
-      let dt = 2.0 * FRAME_DT_REFERENCE
-      check abs(frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE,
-          frameFactor(dt / substeps.float)) * substeps.float -
-        frameScaledFieldForce(RD_DEFAULT_FIELD_FORCE, frameFactor(dt))) < 1e-12
-
-  test "a silent field stays silent at every frame":
-    for factor in [0.0, 1.0, 10.0]:
-      check frameScaledFieldForce(0.0, factor) == 0.0
+      let part = decodeVelocityDelta(word, 1'f32 / fixedScale,
+        frameFactor(dt / substeps.float).float32)
+      checkpoint("substeps " & $substeps)
+      check abs(part * substeps.float32 - whole) < 1e-5 * abs(whole)
 
 suite "Time Scale Sets How Fast The Pattern Runs":
   # The chemistry lives in field steps, not seconds, so the clock reaches it

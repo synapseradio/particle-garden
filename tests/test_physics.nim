@@ -3,11 +3,12 @@ import std/unittest
 import ../src/physics_core
 import ../src/sph_core
 import ../src/field_core
-import ../src/long_range_core
 import ../src/body_core
 import ../src/shader_config
 import ../src/config_ranges
 import ../src/preset
+from ../src/memory_layout import MAX_PARTICLES, MAX_BODIES
+from ../src/balance_core import UnitConfig, unitImpulse, ufLongRange, u0
 
 const
   EPSILON_TIGHT* = 1e-5f
@@ -523,17 +524,16 @@ suite "Post-Step Speed Mirror":
     let word = (x: int32(2 * 65536), y: int32(1 * 65536))
     for maxVelocity in [6.0'f32, 100.0'f32]:
       let stepped = integrateVelocity((x: 3.0'f32, y: -4.0'f32), word,
-        invScale, 0.9'f32, maxVelocity)
+        invScale, 1.0'f32, 0.9'f32, maxVelocity)
       # The decoded word is (2, 1), so friction and the cap act on (5, -3).
       let expectedSpeed = postStepSpeed(sqrt(34.0'f32), 0.9'f32, maxVelocity)
       check abs(hypot(stepped.x, stepped.y) - expectedSpeed) < 1e-5
       check abs(stepped.x * -3.0'f32 - stepped.y * 5.0'f32) < 1e-5
 
 suite "Frame Reference":
-  # params.dt is a gain, not a timestep: integrate.wgsl advances position by the
-  # velocity itself. frameFactor turns a frame's dt into a multiple of the frame
-  # the shipped constants were measured at, so a layer that carries no dt can be
-  # given the same response to Time Scale as one that does.
+  # frameFactor turns a substep's dt into a multiple of the frame the shipped
+  # constants were measured at; integrate.wgsl multiplies the decoded
+  # per-reference-frame delta by it.
 
   test "frameFactor returns 1 at the reference frame":
     check abs(frameFactor(FRAME_DT_REFERENCE) - 1.0) < 1e-12
@@ -543,7 +543,7 @@ suite "Frame Reference":
     check abs(frameFactor(0.25 * FRAME_DT_REFERENCE) - 0.25) < 1e-12
 
   test "a frame split into substeps carries the same factor in total":
-    # What makes the field force safe to scale inside the substep loop: n
+    # What makes integrate's multiply safe inside the substep loop: n
     # substeps of dt/n must deliver what one step of dt delivers.
     for substeps in [1, 2, 3, 5, 8]:
       let dt = 3.7 * FRAME_DT_REFERENCE
@@ -553,100 +553,205 @@ suite "Frame Reference":
   test "frameFactor is zero at a stopped clock":
     check frameFactor(0.0) == 0.0
 
-const FRAME_FACTORS_OFF_REFERENCE = [2.0, 30.0]
-
-proc judgeScaling(verdicts: var seq[string]; label: string;
-    atOne, atFactor: int32; factor: float) =
-  # Truncation drops under one quantum per conversion, and the integer at
-  # frame factor 1 carries its drop multiplied by the factor, so the two can
-  # disagree by up to the factor in quanta and no more.
-  let expected = factor * atOne.float
-  if not (abs(atFactor.float - expected) <= factor):
-    verdicts.add label & " at frame factor " & $factor & ": the word is " &
-      $atFactor & " against " & $factor & " times " & $atOne & " = " &
-      $expected
-
 template checkNoVerdicts(verdicts: seq[string]) =
   for message in verdicts[0 ..< min(verdicts.len, 4)]:
     checkpoint message
   check verdicts.len == 0
 
-suite "Today's Writers Each Scale By Their Own Time Factor":
-  # Each writer's word at a frame factor, through the oracle that carries that
-  # writer's own time factor today: params.dt in forces.wgsl, dt and the frame
-  # factor in forces-sph.wgsl, the CPU-scaled field force, the CPU-scaled
-  # long-range force and the bodies' frames.
-  let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+# Today's convention, kept test-local so the guard below compares the
+# per-reference-frame words against it after src/ moves on: each writer's
+# own time factor applied in the encode, and integrate's decode without one.
+func todayForcesWord(force, dt, fixedPointScale: float32): int32 =
+  int32(force * dt * fixedPointScale)
 
-  test "the pair, mouse and blast words scale by params.dt":
+func todaySphPairDelta(pressure, pressureDensity, gradientWeight,
+    densityWeight, laggedDensity, viscosity, dt: float;
+    direction, velocityDiff: tuple[x, y: float]): float =
+  let pairPressure = 2.0 * pressure / (pressureDensity * pressureDensity)
+  let pressureAccel = clamp(SPH_FORCE_SCALE * pairPressure * gradientWeight,
+    -SPH_MAX_PRESSURE_ACCEL, SPH_MAX_PRESSURE_ACCEL)
+  let smoothCoefficient = (viscosity + SPH_XSPH_EPSILON) * densityWeight /
+    max(laggedDensity, 1.0)
+  (-pressureAccel * direction.x) * dt +
+    smoothCoefficient * velocityDiff.x * (dt / FRAME_DT_REFERENCE)
+
+func todayDecode(word: int32; invFixedPointScale: float32): float32 =
+  float32(word) * invFixedPointScale
+
+suite "Today's Low Bits Move By Less Than The Frame Factor":
+  # coupling-contract: moving each writer's time factor into integrate's
+  # decode changes where truncation happens. Encoding x per reference frame
+  # and multiplying by ff at the decode, against encoding ff * x, differs by
+  # |e2 - ff * e1| for two truncation remainders in [0, 1): fewer than
+  # max(1, ff) quanta, and nothing at ff 1.
+  const FRAME_FACTORS = [1.0, 2.0, 30.0]
+  let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+  let invScale = 1.0'f32 / fixedScale
+
+  proc judgeLowBits(verdicts: var seq[string]; label: string;
+      perReferenceWord: int32; todayWord: int32; factor: float) =
+    let moved = abs(decodeVelocityDelta(perReferenceWord, invScale,
+      factor.float32).float -
+      todayDecode(todayWord, invScale).float) * fixedScale.float
+    let bound = max(1.0, factor)
+    if not (moved < bound) or (factor == 1.0 and moved != 0.0):
+      verdicts.add label & " at frame factor " & $factor & ": the decode moved " &
+        $moved & " quanta, the bound is fewer than " & $bound
+
+  test "the pair, mouse and blast words move by less than the frame factor":
     let pointer = mouseForce(100.0'f32, 0.0'f32, 300.0'f32, 1.0'f32)
     let blast = blastForce(10.0'f32, 0.0'f32, 1.0'f32, 200.0'f32)
     var verdicts: seq[string]
     for (label, force) in [("pair", 37.7'f32), ("repelling pair", -61.3'f32),
         ("mouse", pointer.x), ("blast", blast.x)]:
-      let atOne = forcesVelocityDeltaFixed(force,
-        FRAME_DT_REFERENCE.float32, fixedScale)
-      for factor in FRAME_FACTORS_OFF_REFERENCE:
-        verdicts.judgeScaling(label, atOne, forcesVelocityDeltaFixed(force,
+      for factor in FRAME_FACTORS:
+        verdicts.judgeLowBits(label, forcesVelocityDeltaFixed(force,
+          fixedScale), todayForcesWord(force,
           (factor * FRAME_DT_REFERENCE).float32, fixedScale), factor)
     checkNoVerdicts(verdicts)
 
-  test "the fluid pair word scales its pressure by dt and its blend by the frame factor":
+  test "the fluid pair word moves by less than the frame factor":
     let pressure = flooredTaitPressure(1.5, 1.0, 10.0, SPH_DEFAULT_GAMMA)
-    proc pairWord(gradientWeight: float; velocityDiff: tuple[x, y: float];
-        dt: float): int32 =
-      let delta = sphPairVelocityDelta(pressure, 1.5, pressure, 1.5,
-        gradientWeight, 0.6, 1.5, 1.5, 0.3, 1.0, dt, (x: 0.6, y: 0.8),
-        velocityDiff)
-      encodeVelocityDelta(delta.x.float32, fixedScale)
     var verdicts: seq[string]
     for (label, gradientWeight, velocityDiff) in [
         ("pressure alone", 0.8, (x: 0.0, y: 0.0)),
         ("blend alone", 0.0, (x: 3.0, y: -2.0)),
         ("pressure and blend", 0.8, (x: 3.0, y: -2.0))]:
-      let atOne = pairWord(gradientWeight, velocityDiff, FRAME_DT_REFERENCE)
-      for factor in FRAME_FACTORS_OFF_REFERENCE:
-        verdicts.judgeScaling(label, atOne, pairWord(gradientWeight,
-          velocityDiff, factor * FRAME_DT_REFERENCE), factor)
+      let perReference = sphPairVelocityDelta(pressure, 1.5, pressure, 1.5,
+        gradientWeight, 0.6, 1.5, 1.5, 0.3, 1.0, (x: 0.6, y: 0.8),
+        velocityDiff)
+      for factor in FRAME_FACTORS:
+        let today = todaySphPairDelta(pressure, 1.5, gradientWeight, 0.6, 1.5,
+          0.3, factor * FRAME_DT_REFERENCE, (x: 0.6, y: 0.8), velocityDiff)
+        verdicts.judgeLowBits(label,
+          encodeVelocityDelta(perReference.x.float32, fixedScale),
+          encodeVelocityDelta(today.float32, fixedScale), factor)
     checkNoVerdicts(verdicts)
 
-  test "the scent word scales by the frame-scaled field force":
-    proc scentWord(gradient, factor: float): int32 =
-      let forceScale = frameScaledFieldForce(7.5, factor).float32
-      encodeVelocityDelta(
-        speciesTropismForce(gradient, forceScale.float, -1.0).float32,
-        fixedScale)
-    var verdicts: seq[string]
-    for gradient in [0.05, -0.0868]:
-      let atOne = scentWord(gradient, 1.0)
-      for factor in FRAME_FACTORS_OFF_REFERENCE:
-        verdicts.judgeScaling("scent gradient " & $gradient, atOne,
-          scentWord(gradient, factor), factor)
-    checkNoVerdicts(verdicts)
-
-  test "the long-range word scales by the frame factor folded into its force scale":
-    proc longRangeWord(gradient, factor: float): int32 =
-      encodeVelocityDelta(
-        gradient.float32 * lrForceScale(0.5, factor).float32, fixedScale)
-    var verdicts: seq[string]
-    for gradient in [0.02, -0.37]:
-      let atOne = longRangeWord(gradient, 1.0)
-      for factor in FRAME_FACTORS_OFF_REFERENCE:
-        verdicts.judgeScaling("long range gradient " & $gradient, atOne,
-          longRangeWord(gradient, factor), factor)
-    checkNoVerdicts(verdicts)
-
-  test "the bodies word scales by the frames folded into its strength":
+  test "the scent, long-range and bodies words move by less than the frame factor":
     let body = Body(centerX: 1000.0, centerY: 800.0, radius: 200.0,
       anisotropy: 1.0, bandWidth: 120.0, proximity: 4.0, enclosure: 5.0)
-    proc bodyWord(atX, factor: float): int32 =
-      let push = bodyForceAt(body, atX, 800.0, BODY_WORLD_W, BODY_WORLD_H,
-        0.8, bodyFrameStrength(0.7, factor))
-      encodeVelocityDelta(push.x.float32, fixedScale)
     var verdicts: seq[string]
-    for atX in [1250.0, 1320.0, 1150.0]:
-      let atOne = bodyWord(atX, 1.0)
-      for factor in FRAME_FACTORS_OFF_REFERENCE:
-        verdicts.judgeScaling("body at x " & $atX, atOne, bodyWord(atX, factor),
-          factor)
+    for factor in FRAME_FACTORS:
+      for gradient in [0.05, -0.0868]:
+        let perReference = speciesTropismForce(gradient, 7.5, -1.0)
+        let today = speciesTropismForce(gradient, 7.5 * factor, -1.0)
+        verdicts.judgeLowBits("scent gradient " & $gradient,
+          encodeVelocityDelta(perReference.float32, fixedScale),
+          encodeVelocityDelta(today.float32, fixedScale), factor)
+      for gradient in [0.02, -0.37]:
+        verdicts.judgeLowBits("long range gradient " & $gradient,
+          encodeVelocityDelta(gradient.float32 * 0.5'f32, fixedScale),
+          encodeVelocityDelta(gradient.float32 * (0.5 * factor).float32,
+            fixedScale), factor)
+      for atX in [1250.0, 1320.0, 1150.0]:
+        let perReference = bodyForceAt(body, atX, 800.0, BODY_WORLD_W,
+          BODY_WORLD_H, 0.8, 0.7)
+        let today = bodyForceAt(body, atX, 800.0, BODY_WORLD_W, BODY_WORLD_H,
+          0.8, 0.7 * factor)
+        verdicts.judgeLowBits("body at x " & $atX,
+          encodeVelocityDelta(perReference.x.float32, fixedScale),
+          encodeVelocityDelta(today.x.float32, fixedScale), factor)
+    checkNoVerdicts(verdicts)
+
+suite "A Full Crowd Decodes To Its Impulse":
+  # WGSL i32 atomics wrap (https://www.w3.org/TR/WGSL/#atomic-rmw), so a
+  # particle's words must hold what MAX_PARTICLES neighbours and every other
+  # writer add at their maxima. Each crowd is encoded through its writer's
+  # oracle, summed with wrapping adds, and decoded through integrate's oracle;
+  # the decode must equal the crowd's impulse times the frame factor, to one
+  # quantum per add. Both signs run, since the coarse split rounds toward
+  # negative infinity.
+  const FRAME_FACTORS = [1.0, 2.0, 30.0]
+  const SIGNS = [1.0, -1.0]
+  const ONSET_RATIO = 6.3
+    ## Long range's onset, budgeted here until config_ranges carries it.
+  let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+  let invScale = 1.0'f32 / fixedScale
+
+  func speciesPair(sign: float): float32 =
+    ## The pair at contact under the widest matrix entry, forces.wgsl's
+    ## exponential model at the strength ceiling.
+    (sign * FORCE_STRENGTH_MAX * (1.0 + 2.0 * MATRIX_MAX_VALUE)).float32
+
+  func fluidPair(sign: float): float =
+    ## One fluid pair at its maxima: the pressure clamp along the pair and the
+    ## widest velocity gap under the viscosity ceiling, at the gain ceiling.
+    sphPairVelocityDelta(1.0e6, 1.0, 1.0e6, 1.0, 1.0, 1.0, 1.0, 1.0,
+      SPH_VISCOSITY_MAX, FLUID_STRENGTH_MAX, (x: -sign, y: 0.0),
+      (x: sign * 2.0 * MAX_VELOCITY_MAX, y: 0.0)).x
+
+  proc longRangeMax(): float =
+    for grid in LR_GRID_SIZES:
+      for radius in [INTERACTION_RADIUS_MIN.float, INTERACTION_RADIUS_MAX.float]:
+        result = max(result, unitImpulse(ufLongRange, UnitConfig(
+          particleCount: MAX_PARTICLES, interactionRadius: radius,
+          worldWidth: BODY_WORLD_W, worldHeight: BODY_WORLD_H,
+          onsetRatio: ONSET_RATIO, attraction: MATRIX_MAX_VALUE,
+          longRangeStrength: LONG_RANGE_STRENGTH_MAX, longRangeGrid: grid)) *
+          u0)
+
+  proc judge(verdicts: var seq[string]; label: string; words: VelocityWords;
+      impulse: float; adds: int) =
+    for factor in FRAME_FACTORS:
+      let decoded = decodeVelocityWords(words, invScale, factor.float32,
+        VELOCITY_COARSE_SHIFT).float
+      let expected = impulse * factor
+      let tolerance = adds.float * factor / fixedScale.float +
+        1.0e-6 * abs(expected)
+      if not (abs(decoded - expected) <= tolerance):
+        verdicts.add label & " at frame factor " & $factor & ": decoded " &
+          $decoded & ", the crowd's impulse is " & $expected
+
+  test "a full fluid crowd's per-pair adds decode to its impulse":
+    var verdicts: seq[string]
+    for sign in SIGNS:
+      let pair = fluidPair(sign)
+      let pairWords = splitVelocityWord(encodeVelocityDelta(pair.float32,
+        fixedScale), VELOCITY_COARSE_SHIFT)
+      var words: VelocityWords
+      for _ in 0 ..< MAX_PARTICLES:
+        words = addVelocityWords(words, pairWords)
+      verdicts.judge("fluid crowd, sign " & $sign, words,
+        pair.float32.float * MAX_PARTICLES.float, MAX_PARTICLES)
+    checkNoVerdicts(verdicts)
+
+  test "a particle's own fluid register splits once into both words":
+    var verdicts: seq[string]
+    for sign in SIGNS:
+      let register = fluidPair(sign).float32 * MAX_PARTICLES.float32
+      let words = splitVelocitySum(register, fixedScale, VELOCITY_COARSE_SHIFT)
+      verdicts.judge("fluid register, sign " & $sign, words, register.float, 1)
+    checkNoVerdicts(verdicts)
+
+  test "every writer at its maxima at once decodes to the summed impulse":
+    let longRange = longRangeMax()
+    var verdicts: seq[string]
+    for sign in SIGNS:
+      var words: VelocityWords
+      var impulse = 0.0
+      var adds = 0
+      let speciesWord = forcesVelocityDeltaFixed(speciesPair(sign), fixedScale)
+      let fluidWords = splitVelocityWord(encodeVelocityDelta(
+        fluidPair(sign).float32, fixedScale), VELOCITY_COARSE_SHIFT)
+      for _ in 0 ..< MAX_PARTICLES:
+        words = addVelocityWords(words, (fine: speciesWord, coarse: 0'i32))
+        words = addVelocityWords(words, fluidWords)
+      impulse += MAX_PARTICLES.float * ((speciesPair(sign) *
+        FRAME_DT_REFERENCE.float32).float + fluidPair(sign).float32.float)
+      adds += 2 * MAX_PARTICLES
+      let pointer = mouseForce(1.0e-3'f32, 0.0'f32, 300.0'f32, sign.float32)
+      let blast = blastForce(sign.float32 * 10.0'f32, 0.0'f32, 1.0'f32,
+        200.0'f32)
+      for single in [pointer.x * FRAME_DT_REFERENCE.float32,
+          blast.x * FRAME_DT_REFERENCE.float32,
+          (sign * MAX_BODIES.float * BODY_MAX_FORCE_PER_PARTICLE).float32,
+          (sign * speciesTropismForce(0.5, RD_FIELD_FORCE_MAX,
+            TROPISM_MIN)).float32,
+          (sign * longRange).float32]:
+        words = addVelocityWords(words,
+          (fine: encodeVelocityDelta(single, fixedScale), coarse: 0'i32))
+        impulse += single.float
+        inc adds
+      verdicts.judge("every writer, sign " & $sign, words, impulse, adds)
     checkNoVerdicts(verdicts)

@@ -176,7 +176,9 @@ default strength of zero means no frame dispatches it yet, so the app keeps runn
 - [x] 4.5 Write `LrParams` once per frame in `src/webgpu_compute.nim` beside the other uniform writes,
       folding the substep's frame into the force scale the way `frameScaledFieldForce` does
       (`src/field_core.nim`), and mapping the reach to the inverse squared screening length so nothing
-      in the shader divides. Verify: `just happen` builds
+      in the shader divides. Verify: `just happen` builds. `core-force-interface` task 2.3 removed
+      that fold and `frameScaledFieldForce`: every writer now accumulates per reference frame and
+      integrate alone multiplies by the frame factor
 - [x] 4.6 `just happen` builds and `just check` is green
 
 ## 5. The five passes

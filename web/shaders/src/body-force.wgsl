@@ -20,10 +20,9 @@
 // — the laws read the sign, the direction and the ordering, all of which that
 // scaling leaves exact.
 //
-// TWO CLOCKS, AND THE STRENGTH CARRIES ONE. The impulse is measured in reference
-// frames, so the substep's frame factor multiplies it here (params.frames), the
-// way field-force receives a scale with the frame already folded in. The other
-// clock, seconds, belongs to travel and is body-integrate's business.
+// NO CLOCK. Both impulses are per reference frame: integrate multiplies the
+// particle's by its frame factor and body-integrate the body's reaction by
+// params.frames.
 //
 // TWO ACCUMULATORS, ONE EVALUATION. The impulse goes to the particle and its
 // negation, with the torque it carries about the body's centre, goes to the
@@ -33,10 +32,10 @@
 // INDEXING + OUTPUT:
 // Reads particles[] and writes velocityDeltaFixed[] in ORIGINAL index space
 // (globalId.x) — the space integrate.wgsl reads back. Contributions ACCUMULATE
-// atomically, because forces, the fluid and the field write the same buffer and
-// integrate must see the sum; the frame clears it once before any of them
-// (sim_registry.buildFrame). A bodies-only world runs no bin-scatter, so the
-// sorted buffer is stale and never referenced here.
+// atomically, because forces, the fluid, the field and the mesh write the same
+// buffer and integrate must see the sum; the frame clears it once before any
+// of them (sim_registry.buildFrame). A bodies-only world runs no bin-scatter,
+// so the sorted buffer is stale and never referenced here.
 // =============================================================================
 
 //! import particle
@@ -77,9 +76,6 @@ fn applyBodyForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   let position = particles[particleIdx].pos;
   let world = vec2<f32>(params.worldW, params.worldH);
-  // The slider's own value times the substep's share of a frame.
-  let strength = params.strength * params.frames;
-
   var total = vec2<f32>(0.0, 0.0);
 
   for (var slot = 0u; slot < params.count; slot = slot + 1u) {
@@ -139,7 +135,7 @@ fn applyBodyForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
     let holding = -body.enclosure * actingSide *
       smoothstep(0.0, 1.0, 1.0 - abs(spanned - 1.0));
 
-    let contribution = normal * (towardSurface + holding) * presence * strength;
+    let contribution = normal * (towardSurface + holding) * presence * params.strength;
     total = total + contribution;
 
     // EQUAL AND OPPOSITE, before any damping or cap: the reaction is the
@@ -157,7 +153,7 @@ fn applyBodyForce(@builtin(global_invocation_id) globalId: vec3<u32>) {
         params.torqueScale));
   }
 
-  // ACCUMULATE, never overwrite: three other passes write this buffer and
+  // ACCUMULATE, never overwrite: four other passes write this buffer and
   // integrate must see the sum of all of them.
   atomicAdd(&velocityDeltaFixed[particleIdx * 2u],
     i32(total.x * FIXED_POINT_SCALE));

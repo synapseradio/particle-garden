@@ -107,7 +107,7 @@ suite "WGSL Struct Codegen Matches The Layout Table":
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
     let generated = toWgslStruct(SimParamsLayout)
     check generated.startsWith("struct SimParams {")
-    check "dt: f32," in generated
+    check "pad0: f32," in generated
     check "gridCellsX: u32," in generated
     check "attractionMatrix: array<vec4<f32>, 36>," in generated
     check "forceModel: u32," in generated
@@ -115,7 +115,7 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     check generated.strip.endsWith("}")
 
   test "toWgslType spells arrays and scalars the way WGSL expects":
-    check toWgslType(SimParamsLayout.fieldByName("dt")) == "f32"
+    check toWgslType(SimParamsLayout.fieldByName("pad0")) == "f32"
     check toWgslType(SimParamsLayout.fieldByName("gridCellsX")) == "u32"
     check toWgslType(SimParamsLayout.fieldByName("attractionMatrix")) ==
       "array<vec4<f32>, 36>"
@@ -126,7 +126,7 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
   # simParamsData[SIM_*]; a wrong index writes the wrong float into the uniform.
 
   test "each SIM_ index equals its field's byte offset divided by four":
-    check SIM_DT == SimParamsLayout.fieldOffset("dt") div 4
+    check SIM_WORLD_WIDTH == SimParamsLayout.fieldOffset("worldWidth") div 4
     check SIM_FORCE_MULTIPLIER == SimParamsLayout.fieldOffset("forceMultiplier") div 4
     check SIM_PARTICLE_COUNT == SimParamsLayout.fieldOffset("particleCount") div 4
     check SIM_ATTRACTION_MATRIX_START == SimParamsLayout.fieldOffset("attractionMatrix") div 4
@@ -134,7 +134,7 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_EXP_BETA == SimParamsLayout.fieldOffset("expBeta") div 4
 
   test "the generated indices sit where the layout puts them":
-    check SIM_DT == 0
+    check SIM_WORLD_WIDTH == 1
     check SIM_FLUID_STRENGTH == 15
     check SIM_ATTRACTION_MATRIX_START == 16
     check SIM_ATTRACTION_MATRIX_END == 159

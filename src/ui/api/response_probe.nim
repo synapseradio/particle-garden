@@ -351,7 +351,7 @@ func sphViscosityProbe(value: float; ctx: ProbeContext): float =
   ## and the XSPH epsilon into one symmetric diffusion coefficient, so the
   ## mirror's XSPH summand carries it with epsilon = viscosity + the constant.
   xsphVelocityCorrection(0.0, RefVelocityGap, RefNeighborWeight,
-    value + SPH_XSPH_EPSILON, frameFactor(FRAME_DT_REFERENCE))
+    value + SPH_XSPH_EPSILON)
 
 func sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
   ## sphRadiusFraction: the stable stiffness ceiling the fraction buys — the

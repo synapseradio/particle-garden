@@ -8,6 +8,7 @@ import ../src/shader_config
 import ../src/sph_core
 import ../src/field_core
 from ../src/physics_core import FRAME_DT_REFERENCE
+from ../src/config_ranges import VELOCITY_COARSE_SHIFT
 import ../src/bloom_core
 
 const SHADER_CONFIG_TESTS_LOADED* = true
@@ -195,16 +196,25 @@ suite "Reaction-Diffusion Field Dispatch Divides The Field Evenly":
     check placeholders["FIELD_H"] == $FIELD_H
 
 suite "The Reference Frame Reaches WGSL":
-  # forces-sph.wgsl multiplies params.dt by the reciprocal of the reference
-  # frame rather than dividing, so the bundler emits the reciprocal. Deriving it
-  # from physics_core here is what stops a hand-written 120.0 in the shader from
-  # drifting away from the constant the Nim mirrors are written against.
+  # forces.wgsl and forces-sph.wgsl accumulate every impulse over the
+  # reference frame. Deriving it from physics_core here is what stops a
+  # hand-written 1/120 in a shader from drifting away from the constant the Nim
+  # mirrors are written against.
 
-  test "the emitted reciprocal inverts FRAME_DT_REFERENCE":
-    let emitted = parseFloat(getPlaceholderMap()["TUNABLE_INV_FRAME_DT_REFERENCE"])
-    check abs(emitted * FRAME_DT_REFERENCE - 1.0) < 1e-9
+  test "the emitted reference frame equals FRAME_DT_REFERENCE":
+    let emitted = parseFloat(getPlaceholderMap()["FRAME_DT_REFERENCE"])
+    check abs(emitted / FRAME_DT_REFERENCE - 1.0) < 1e-9
 
-  test "the emitted reciprocal parses as a WGSL float literal":
+  test "the emitted reference frame parses as a WGSL float literal":
     # An integer-looking literal would be an i32 in WGSL and fail to compile
     # where it multiplies an f32.
-    check "." in getPlaceholderMap()["TUNABLE_INV_FRAME_DT_REFERENCE"]
+    check "." in getPlaceholderMap()["FRAME_DT_REFERENCE"]
+
+suite "The Coarse Velocity Shift Reaches WGSL":
+  # forces-sph.wgsl splits each velocity integer at this shift and integrate.wgsl
+  # rejoins the words at it, so both must read the shift the word budget in
+  # config_ranges was asserted at.
+
+  test "the emitted coarse shift equals VELOCITY_COARSE_SHIFT":
+    check parseInt(getPlaceholderMap()["VELOCITY_COARSE_SHIFT"]) ==
+      VELOCITY_COARSE_SHIFT

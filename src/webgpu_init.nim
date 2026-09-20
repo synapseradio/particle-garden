@@ -36,6 +36,8 @@ type
 
     # Velocity deltas for Newton's 3rd law
     velocityDelta* {.importjs: "velocityDelta".}: GPUBuffer  ## Interleaved i32 pairs
+    velocityCoarse* {.importjs: "velocityCoarse".}: GPUBuffer
+      ## The coarse velocity word, laid out like velocityDelta.
 
     # Density deltas for symmetric accumulation
     densityDelta* {.importjs: "densityDelta".}: GPUBuffer  ## i32 per particle (fixed-point)
@@ -94,6 +96,7 @@ type
     reverseIndices* {.importjs: "reverseIndices".}: int
     velocityDelta* {.importjs: "velocityDelta".}: int
       ## Two i32 per particle, interleaved [vx, vy].
+    velocityCoarse* {.importjs: "velocityCoarse".}: int
     densityDelta* {.importjs: "densityDelta".}: int
       ## Density delta buffer for symmetric accumulation via atomics.
       ## Half-neighbor iteration processes each pair once, but density must be
@@ -166,6 +169,7 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 
   # Velocity deltas: 2 i32s per particle (interleaved vx, vy)
   result.velocityDelta = memory_layout.MAX_PARTICLES * 2 * 4
+  result.velocityCoarse = memory_layout.MAX_PARTICLES * 2 * 4
 
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
@@ -407,6 +411,8 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
   buffers.reverseIndices = createBuf(sizes.reverseIndices, bufferUsage, "Reverse Indices (original -> sorted)")
 
   buffers.velocityDelta = createBuf(sizes.velocityDelta, bufferUsage, "Velocity Delta (interleaved i32)")
+  buffers.velocityCoarse = createBuf(sizes.velocityCoarse, bufferUsage,
+    "Velocity Coarse (interleaved i32)")
 
   buffers.densityDelta = createBuf(sizes.densityDelta, bufferUsage, "Density Delta (fixed-point i32)")
   buffers.sphDensityDelta = createBuf(

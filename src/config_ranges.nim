@@ -17,6 +17,7 @@
 #
 # ==============================================================================
 
+from std/math import ceil
 import memory_layout
 import sph_core
 import field_core
@@ -24,6 +25,8 @@ import bloom_core
 import colormap_core
 import body_core
 import long_range_core
+from physics_core import FRAME_DT_REFERENCE, VELOCITY_FIXED_POINT_SCALE,
+  MOUSE_FORCE_PEAK, BLAST_FORCE_PEAK
 
 const
   PARTICLE_COUNT_MIN* = 100
@@ -547,6 +550,56 @@ const
   FIELD_OPACITY_RANGE_MIN* = FIELD_OPACITY_MIN
   FIELD_OPACITY_RANGE_MAX* = FIELD_OPACITY_MAX
 
+# The largest impulse per reference frame, on one axis, each velocity writer
+# hands one particle at the range maxima. WGSL i32 atomics wrap
+# (https://www.w3.org/TR/WGSL/#atomic-rmw), so the velocity words must hold
+# the sum of these over a full crowd.
+const
+  SPECIES_PAIR_IMPULSE_MAX* = FORCE_STRENGTH_MAX *
+    (1.0 + 2.0 * MATRIX_MAX_VALUE) * FRAME_DT_REFERENCE
+    ## One pair at contact, forces.wgsl's exponential model.
+  FLUID_PAIR_IMPULSE_MAX* = FLUID_STRENGTH_MAX *
+    (SPH_MAX_PRESSURE_ACCEL * FRAME_DT_REFERENCE +
+      (SPH_VISCOSITY_MAX + SPH_XSPH_EPSILON) * 2.0 * MAX_VELOCITY_MAX)
+    ## One fluid pair: the pressure clamp plus the blend, whose normalized
+    ## weight is at most 1 over a density floored at 1, across a velocity gap
+    ## of at most twice the speed ceiling.
+  POINTER_IMPULSE_MAX* = (MOUSE_FORCE_PEAK + BLAST_FORCE_PEAK) *
+    FRAME_DT_REFERENCE
+    ## The held pointer and a blast at strength 1, once per particle.
+  BODIES_IMPULSE_MAX* = float(MAX_BODIES) * BODY_MAX_FORCE_PER_PARTICLE
+
+# THE TWO VELOCITY WORDS. The fluid's full crowd is 1 335 times the span of one
+# i32 at 2^16, so the fluid and the pressure split each integer between a fine
+# word and a coarse word counting 2^VELOCITY_COARSE_SHIFT fine quanta. Every
+# other writer adds to the fine word alone.
+const
+  VELOCITY_COARSE_SHIFT* = 12
+    ## The largest shift the fine word admits: each split writer leaves a
+    ## remainder below 2^shift per add, and at 13 the fine word's full crowd
+    ## no longer fits.
+  FLUID_COARSE_UNITS_PER_PAIR* = int(ceil(FLUID_PAIR_IMPULSE_MAX *
+    VELOCITY_FIXED_POINT_SCALE / float(1 shl VELOCITY_COARSE_SHIFT)))
+    ## 5 467 coarse units: one fluid pair at the gain ceiling.
+  PRESSURE_COARSE_MAX* = int(high(int32)) div MAX_PARTICLES -
+    FLUID_COARSE_UNITS_PER_PAIR
+    ## 11 310 coarse units, 706.9 velocity per reference frame: the largest
+    ## per-pair pressure the coarse word admits after the fluid's share.
+
+func fineWordCrowd(coarseShift: int): float =
+  ## The fine word's full crowd before scent and long range, in fine quanta:
+  ## the species pairs, a remainder below 2^coarseShift per add from each of
+  ## the two split writers, and the single-add writers.
+  float(MAX_PARTICLES) * SPECIES_PAIR_IMPULSE_MAX * VELOCITY_FIXED_POINT_SCALE +
+    2.0 * float(MAX_PARTICLES) * float((1 shl coarseShift) - 1) +
+    (POINTER_IMPULSE_MAX + BODIES_IMPULSE_MAX) * VELOCITY_FIXED_POINT_SCALE
+
+const
+  VELOCITY_FINE_ROOM* = (float(high(int32)) -
+    fineWordCrowd(VELOCITY_COARSE_SHIFT)) / VELOCITY_FIXED_POINT_SCALE
+    ## The velocity per reference frame the fine word has left for scent and
+    ## long range together, 7 251 at the shipped ranges.
+
 static:
   # Every range must be non-empty, or clamping inverts.
   doAssert PARTICLE_COUNT_MIN < PARTICLE_COUNT_MAX
@@ -757,3 +810,14 @@ static:
     COLORMAP_DEFAULT_INDEX <= COLORMAP_INDEX_MAX
   doAssert FIELD_OPACITY_DEFAULT >= FIELD_OPACITY_RANGE_MIN and
     FIELD_OPACITY_DEFAULT <= FIELD_OPACITY_RANGE_MAX
+  # The two velocity words each hold a full crowd at the range maxima.
+  doAssert FLUID_STRENGTH_MAX <= 1.0,
+    "the coarse word is budgeted at the fluid's gain ceiling of 1"
+  doAssert VELOCITY_FINE_ROOM > 0.0,
+    "a full crowd at the range maxima wraps the fine velocity word"
+  doAssert fineWordCrowd(VELOCITY_COARSE_SHIFT + 1) > float(high(int32)),
+    "a larger coarse shift fits the fine word; the shift is not the largest"
+  doAssert PRESSURE_COARSE_MAX > 0 and
+    MAX_PARTICLES * (FLUID_COARSE_UNITS_PER_PAIR + PRESSURE_COARSE_MAX) <=
+      int(high(int32)),
+    "a full crowd of fluid and pressure pairs wraps the coarse velocity word"

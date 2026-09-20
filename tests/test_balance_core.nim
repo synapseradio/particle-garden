@@ -169,8 +169,7 @@ suite "Every Writer Answers In The Pair Unit":
                         let delta = sphPairVelocityDelta(pressureThis,
                           densityThis, pressureOther, densityOther, weight,
                           weight, laggedThis, laggedOther, viscosity,
-                          fluidStrength, FRAME_DT_REFERENCE,
-                          (x: 1.0, y: 0.0),
+                          fluidStrength, (x: 1.0, y: 0.0),
                           (x: gap * cos(gapAngle), y: gap * sin(gapAngle)))
                         worst = max(worst,
                           hypot(delta.x, delta.y) / FRAME_DT_REFERENCE)
@@ -182,7 +181,7 @@ suite "Every Writer Answers In The Pair Unit":
             SPH_REST_DENSITY_MIN, SPH_STIFFNESS_MAX, SPH_DEFAULT_GAMMA)
           let own = sphPairVelocityDelta(pressure, ceilingDensity, pressure,
             ceilingDensity, 1.0, 1.0, 1.0, 1.0, viscosity, fluidStrength,
-            FRAME_DT_REFERENCE, (x: 1.0, y: 0.0),
+            (x: 1.0, y: 0.0),
             (x: -2.0 * maxVelocity, y: 0.0))
           verdicts.judge("fluid strength " & $fluidStrength & " viscosity " &
             $viscosity & " maxVelocity " & $maxVelocity, unit, worst,
@@ -198,8 +197,7 @@ suite "Every Writer Answers In The Pair Unit":
         cfg.patternScale = patternScale
         let unit = unitImpulse(ufScent, cfg)
         # Today's slider value is the gain in world units: it spans one cell.
-        let forceScale = frameScaledFieldForce(
-          scentGain * cfg.worldWidth / FIELD_W.float, 1.0)
+        let forceScale = scentGain * cfg.worldWidth / FIELD_W.float
         # The per-cell gradient grows as the pattern shrinks, as 1/sqrt(s).
         let gradientBound = RD_INHIBITOR_GRADIENT_PEAK / sqrt(patternScale)
         var worst = 0.0

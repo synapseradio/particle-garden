@@ -18,9 +18,9 @@
 // one force pass, so pressure reads the LAGGED density carried in each
 // particle's density field (bin-scatter copies the whole struct, so the sorted
 // buffer holds last frame's smoothed density), while this pass computes the
-// FRESH density for next frame. Lagging one frame — combined with integrate's
-// 0.7 temporal smoothing of the density field — is what damps the pressure
-// feedback loop into stability at gamma = 7.
+// FRESH density for next frame. Lagging one frame is what damps the pressure
+// feedback loop into stability at gamma = 7; integrate.wgsl stores the fresh
+// density unsmoothed.
 //
 // STABILITY CHOICES:
 //   - Density used for pressure is floored at rest density, so pressure is
@@ -29,9 +29,10 @@
 //   - Every pairwise term is equal-and-opposite, so the half-neighbor atomic
 //     scatter conserves momentum exactly (same pattern as forces.wgsl).
 //   - The velocity-diffusion coefficient is density-normalized and the pressure
-//     acceleration is clamped, bounding the per-frame fixed-point delta well
-//     inside the i32 range. The integrate pass's velocity soft-cap is the final
-//     backstop against NaN.
+//     acceleration is clamped, bounding each pair's delta. A full crowd of pairs
+//     still exceeds one i32, so each integer splits across the fine and coarse
+//     velocity words (fixed_point.wgsl). The integrate pass's velocity soft-cap
+//     is the final backstop against NaN.
 //
 // NORMALIZATION:
 //   - Density is normalized by the self-weight W(0, h): an isolated particle
@@ -65,6 +66,16 @@
 @group(0) @binding(4) var<storage, read> cellParticleCounts: array<u32>;
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> sphDensityDeltaFixed: array<atomic<i32>>;
+@group(0) @binding(7) var<storage, read_write> velocityCoarseFixed: array<atomic<i32>>;
+
+// A particle's own register, split once. A full crowd takes it past any i32,
+// so the split runs in f32, where each step is exact: the truncated value is an
+// integer, the divisor a power of two, and the remainder below the unit.
+fn velocityWordsOfSum(value: f32) -> vec2<i32> {
+  let scaled = trunc(value * FIXED_POINT_SCALE);
+  let coarse = floor(scaled / VELOCITY_COARSE_UNIT);
+  return vec2<i32>(i32(scaled - coarse * VELOCITY_COARSE_UNIT), i32(coarse));
+}
 
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};      // Prevents division-by-zero when particles overlap
 
@@ -263,30 +274,34 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let velocityDiffX = otherParticle.vel.x - thisParticle.vel.x;
         let velocityDiffY = otherParticle.vel.y - thisParticle.vel.y;
 
-        // Per-pair velocity delta for THIS particle: pressure repels along -dir
-        // (away from other, scaled by dt like every force), plus the velocity
-        // blend. The blend carries the frame as a multiple of the frame the
-        // stability bound was measured at, so both halves of what fluidStrength
-        // multiplies answer to Time Scale the same way; at the reference frame
-        // the factor is 1 and the blend is what it always was.
+        // Per-pair velocity delta for THIS particle over one reference frame:
+        // pressure repels along -dir (away from other), plus the velocity
+        // blend. integrate applies the frame factor to both halves at once.
         // The one site fluidStrength multiplies. Both terms are summed here, so
         // everything this pass does to a velocity passes through it.
-        let frameFactor = params.dt * {{TUNABLE_INV_FRAME_DT_REFERENCE}};
         let pairDeltaVelocityX = fluidStrength *
-          ((-pressureAccel * directionX) * params.dt + velocitySmoothCoeff * velocityDiffX * frameFactor);
+          ((-pressureAccel * directionX) * FRAME_DT_REFERENCE + velocitySmoothCoeff * velocityDiffX);
         let pairDeltaVelocityY = fluidStrength *
-          ((-pressureAccel * directionY) * params.dt + velocitySmoothCoeff * velocityDiffY * frameFactor);
+          ((-pressureAccel * directionY) * FRAME_DT_REFERENCE + velocitySmoothCoeff * velocityDiffY);
 
         deltaVelocityThisX += pairDeltaVelocityX;
         deltaVelocityThisY += pairDeltaVelocityY;
         densityAccum += densityWeight;
 
         // OTHER particle receives the exact negation (Newton's 3rd law — the
-        // pair conserves momentum) plus its share of this pair's density.
+        // pair conserves momentum) plus its share of this pair's density. The
+        // arithmetic shift rounds toward negative infinity, so the masked low
+        // bits are never negative and the two words sum back to the integer.
         let otherDeltaVxFixed = i32(-pairDeltaVelocityX * FIXED_POINT_SCALE);
         let otherDeltaVyFixed = i32(-pairDeltaVelocityY * FIXED_POINT_SCALE);
-        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], otherDeltaVxFixed);
-        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], otherDeltaVyFixed);
+        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u],
+          otherDeltaVxFixed & VELOCITY_FINE_MASK);
+        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u],
+          otherDeltaVyFixed & VELOCITY_FINE_MASK);
+        atomicAdd(&velocityCoarseFixed[otherOriginalIdx * 2u],
+          otherDeltaVxFixed >> VELOCITY_COARSE_SHIFT);
+        atomicAdd(&velocityCoarseFixed[otherOriginalIdx * 2u + 1u],
+          otherDeltaVyFixed >> VELOCITY_COARSE_SHIFT);
 
         // Kernel density carries NO fluidStrength: it feeds this pass's own
         // equation of state, and scaling it would change what kind of fluid
@@ -299,10 +314,12 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
     }
   }
 
-  let thisDeltaVxFixed = i32(deltaVelocityThisX * FIXED_POINT_SCALE);
-  let thisDeltaVyFixed = i32(deltaVelocityThisY * FIXED_POINT_SCALE);
-  atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], thisDeltaVxFixed);
-  atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], thisDeltaVyFixed);
+  let thisWordsX = velocityWordsOfSum(deltaVelocityThisX);
+  let thisWordsY = velocityWordsOfSum(deltaVelocityThisY);
+  atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u], thisWordsX.x);
+  atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u], thisWordsY.x);
+  atomicAdd(&velocityCoarseFixed[thisOriginalIdx * 2u], thisWordsX.y);
+  atomicAdd(&velocityCoarseFixed[thisOriginalIdx * 2u + 1u], thisWordsY.y);
 
   let thisDensityFixed =
     i32(densityAccum * SPH_DENSITY_FIXED_POINT_SCALE);

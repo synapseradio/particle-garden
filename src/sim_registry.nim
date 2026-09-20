@@ -127,12 +127,17 @@ type
     sbGridOffsets
     sbFillPointers
     sbVelocityDelta
-      ## The per-particle velocity accumulator, TWO i32 per particle (x and y).
-      ## Every contributor — forces, forcesSph, fieldForce, lrForce —
-      ## accumulates into it atomically, and the frame clears it once at the
-      ## top. That split is
+      ## The per-particle velocity accumulator's fine word, TWO i32 per
+      ## particle (x and y), per reference frame. All five writers — forces,
+      ## forcesSph, fieldForce, lrForce, bodyForce — accumulate into it
+      ## atomically, and the frame clears it once at the top. That split is
       ## what lets two contributors run in the same frame: if each pass
       ## self-reset the buffer, whichever ran second would erase the first.
+    sbVelocityCoarse
+      ## The velocity accumulator's coarse word, laid out like sbVelocityDelta
+      ## and counting 2^VELOCITY_COARSE_SHIFT fine quanta. forcesSph writes the
+      ## high bits of each integer here, integrate reads both words, and the
+      ## frame clears it beside the fine word.
     sbDensityDelta
     sbSphDensityDelta
       ## The fluid's own kernel-density accumulator, one i32 per particle.
@@ -332,6 +337,7 @@ func buildFrame*(couplings: WorldCouplings;
   # the previous frame left behind.
   result = @[
     clearBufferNode(sbVelocityDelta),
+    clearBufferNode(sbVelocityCoarse),
     clearBufferNode(sbDensityDelta),
     clearBufferNode(sbSphDensityDelta),
     clearBufferNode(sbCrowdDensityDelta),
