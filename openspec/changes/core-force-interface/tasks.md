@@ -119,11 +119,9 @@ Conventions every task below uses:
   - A live stiffness stepped with the body envelope turns the far-crowd check red.
   - The ff 30 arm and the jittered arms' draws of 13 and above fail with the substep trigger absent, and with a substep advancing `ff` instead of `ff/n`. At `FF_STABLE` 12 with no body live `substepPlan` asks for one substep at ff 1, 2, 10 and 12, so neither mutation reaches the ff 2 and ff 10 arms; those two hold the per-reference-frame reading at a frame factor the rule leaves unsubstepped.
   - `just test`'s output names none of these suites.
-- [ ] 4.4 **Gate G1.1, the onset; it gates 4.7.** Record the calibration and held-out seed sets (16 or more each) in `scratchpad/core-force-interface/seeds.md`. On the calibration seeds, settle worlds with no term through the binned oracle world in `src/balance_core.nim`:
-  - particle counts 100, 1 000, 16 000 and 128 000
-  - radii 10, 20, 50 and 150
-  - 1 (self-attracting), 4 and 12 species
-  - both force models
+- [ ] 4.4 **Gate G1.1, the onset; it gates 4.7.** Record the calibration and held-out seed sets (16 or more each) in `scratchpad/core-force-interface/seeds.md`. On the calibration seeds, settle worlds with no term through the binned oracle world in `src/balance_core.nim`, over 36 configurations:
+  - the cross, at 1 000 particles: radii 10, 20, 50 and 150, by 1 (self-attracting), 4 and 12 species, by both force models
+  - the count spine, at radius 50: particle counts 100, 16 000 and 128 000, by 1 and 12 species, by both force models
 
   Run each until its p99.9 changes less than its frame-to-frame spread. Record the peaks in `ρ` and `x`, the polynomial floor at the preset `repulsionEnd`, the exponential model's floor, `x_on` at the bottom of the self-attracting band, and the densest mixed particles' trim at that onset. Write them to `scratchpad/core-force-interface/g1-onset__<DD-MM-YY-HHmm>.md`.
 - [ ] 4.5 **Gates G1.2 and G1.5, stiffness and `ff_stable`; they gate 4.7.**
