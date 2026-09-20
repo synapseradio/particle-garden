@@ -29,8 +29,10 @@ import profiler_slots
 export profiler_slots
 from std/math import ceil
 # The substep plan reads the range authority's ceilings and the fluid's own
-# stiffness law. Both are pure, so importing them keeps this module's purity.
-from config_ranges import SUBSTEPS_MAX, FF_STABLE, SPH_STIFFNESS_MAX
+# stiffness law; the pressure onset reads the crowd onset ratio. Both modules
+# are pure, so importing them keeps this module's purity.
+from config_ranges import SUBSTEPS_MAX, FF_STABLE, SPH_STIFFNESS_MAX,
+  CROWD_ONSET_RATIO
 from sph_core import SPH_STABILITY_COEFFICIENT,
   SPH_CEILING_REFERENCE_FRAME_SECONDS, stableStiffnessCeiling
 from physics_core import FRAME_DT_REFERENCE
@@ -773,3 +775,29 @@ func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
     elif askedByCoupling == asked: scCouplingNeed
     elif askedByTravel == asked: scTravelBound
     else: scFrameFactor
+
+# ==============================================================================
+# SECTION 5: THE WORLD PRESSURE'S ONSET
+# ==============================================================================
+
+type
+  PressureWorld* = object
+    ## What the pressure onset reads: the live values the world's own mean
+    ## crowd density and the contact floor are measured from.
+    particleCount*: int
+    interactionRadius*: float
+    worldWidth*, worldHeight*: float
+    repulsionEnd*: float
+      ## The pair law's rest spacing, which the floor's lattice sits at.
+
+func pressureOnset*(world: PressureWorld): float =
+  ## The crowd density a particle's pressure turns on at,
+  ## max(x_on * mean, floor). The frame recomputes it each frame and writes it
+  ## as one uniform, the shape physics_core's pairImpulse reads an onset in.
+  crowdOnsetDensity(UnitConfig(
+    particleCount: world.particleCount,
+    interactionRadius: world.interactionRadius,
+    worldWidth: world.worldWidth,
+    worldHeight: world.worldHeight,
+    repulsionEnd: world.repulsionEnd,
+    onsetRatio: CROWD_ONSET_RATIO))

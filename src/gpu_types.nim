@@ -139,12 +139,12 @@ const
       "// numBlocks is the workgroup count (ceil(numCells / BLOCK_SIZE)).\n"
   )
 
-  # SimParams struct (688 bytes written, 688 allocated; matches forces.wgsl /
+  # SimParams struct (692 bytes written, 704 allocated; matches forces.wgsl /
   # forces-sph.wgsl)
   # Layout: 16 scalar fields (64 bytes) + 36 vec4 matrix (576 bytes) + 6 force-model
   # fields (24 bytes) + 4 SPH fields (16 bytes) + crowding (4 bytes) + the SPH
-  # radius fraction (4 bytes). The written size fills the allocation
-  # exactly, so the next field costs a 16-byte block rather than a pad.
+  # radius fraction (4 bytes) + the pressure onset (4 bytes). The onset opened a
+  # 16-byte block, so three more words cost nothing.
   SimParamsLayout* = GpuStruct(
     name: "SimParams",
     fields: @[
@@ -200,8 +200,13 @@ const
       # for the reason crowding was, rather than joining the SPH block above:
       # every write that exists keeps the offset it targets.
       GpuField(name: "sphRadiusFraction", kind: gtF32, offset: 684, size: 4, count: 1),
+      # The crowd density the world pressure turns on at (688-692), recomputed
+      # each frame from the live count, radius, world area and rest spacing
+      # (sim_registry.pressureOnset). forces.wgsl divides by it per pair, and
+      # the contact floor keeps it above zero.
+      GpuField(name: "pressureOnset",   kind: gtF32, offset: 688, size: 4, count: 1),
     ],
-    totalSize: 688
+    totalSize: 692
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
@@ -742,8 +747,8 @@ static:
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
         "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
-    assert SimParamsLayout.totalSize == 688, "SimParams writes 688 bytes"
-    assert SimParamsLayout.wgslUniformSize == 688, "SimParams allocates 688 bytes"
+    assert SimParamsLayout.totalSize == 692, "SimParams writes 692 bytes"
+    assert SimParamsLayout.wgslUniformSize == 704, "SimParams allocates 704 bytes"
 
 # =============================================================================
 # SIMPARAMS FIELD INDICES (for type-safe buffer writes)
@@ -751,8 +756,8 @@ static:
 # Generated from SimParamsLayout by genFieldIndices — see the macro above. This
 # emits SIM_PAD0=0, SIM_WORLD_WIDTH=1, ... SIM_ATTRACTION_MATRIX_START=16 /
 # _END=159, ... SIM_MOUSE_RANGE=165, SIM_CROWDING_STRENGTH=170,
-# SIM_SPH_RADIUS_FRACTION=171, and SIM_PARAMS_F32_COUNT=172, so
-# webgpu_compute.nim hand-writes no magic number.
+# SIM_SPH_RADIUS_FRACTION=171, SIM_PRESSURE_ONSET=172, and
+# SIM_PARAMS_F32_COUNT=173, so webgpu_compute.nim hand-writes no magic number.
 
 genFieldIndices(SimParamsLayout, "SIM")
 

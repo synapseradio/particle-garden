@@ -91,7 +91,8 @@ derivation beside it under the measured-bound rule. Neither SHALL change with an
   rate of 5%. A self-attracting world at friction 0 MAY settle warmer than without the term, up to
   `B_L`, an accepted cost.
 - Pure functions in `src/balance_core.nim` SHALL compute the uniform crowd density and the floor each
-  frame, and the frame SHALL write them as uniforms.
+  frame, and the frame SHALL write their maximum as one uniform. `x_on` does not cross to the shader:
+  `max(x_on · ρ̄, ρ_floor)` is the shape the pair law reads an onset in, and one value carries it.
 
 Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles". On 16 held-out seeds
 at 128 000 particles, it holds the mean `L` at most `B_L` at `FRICTION_MIN`, one-sided at a 5%
@@ -106,8 +107,10 @@ with the task that lands the term, and again on a change to any of:
 
 It does not run with every `just check`. That the recipe reruns on such a change is **unenforced**,
 the standing condition of the recipe's tier. `K = 1728` turns the suite red. That the frame writes the
-functions' values is **unenforced**, closed by a `tests/test_sim_registry.nim` check on the uniforms'
-producer.
+functions' value is **test-held**: `tests/test_sim_registry.nim` suite "The Pressure Onset Comes From
+The Density Functions" checks `sim_registry.pressureOnset` against the two `balance_core` functions on
+a world where the mean dominates and one where the floor does, and reads `src/webgpu_compute.nim`'s
+assignment to the onset slot for a call to that producer.
 
 #### Scenario: A dense crowd at friction 0 settles no warmer than the accepted bound
 

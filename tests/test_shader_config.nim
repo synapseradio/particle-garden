@@ -8,7 +8,8 @@ import ../src/shader_config
 import ../src/sph_core
 import ../src/field_core
 from ../src/physics_core import FRAME_DT_REFERENCE
-from ../src/config_ranges import VELOCITY_COARSE_SHIFT
+from ../src/config_ranges import VELOCITY_COARSE_SHIFT,
+  WORLD_PRESSURE_STIFFNESS, WORLD_PRESSURE_IMPULSE_MAX
 import ../src/bloom_core
 
 const SHADER_CONFIG_TESTS_LOADED* = true
@@ -218,3 +219,20 @@ suite "The Coarse Velocity Shift Reaches WGSL":
   test "the emitted coarse shift equals VELOCITY_COARSE_SHIFT":
     check parseInt(getPlaceholderMap()["VELOCITY_COARSE_SHIFT"]) ==
       VELOCITY_COARSE_SHIFT
+
+suite "The World Pressure's Two Constants Reach WGSL":
+  # No slider scales the world pressure, so its stiffness and its per-pair
+  # ceiling cross into forces.wgsl as placeholders rather than uniforms. Both
+  # come from config_ranges, where the calibration that settles them writes.
+
+  test "the emitted stiffness equals WORLD_PRESSURE_STIFFNESS":
+    let emitted = getPlaceholderMap()["WORLD_PRESSURE_STIFFNESS"]
+    # An integer-looking literal is an i32 in WGSL and fails to compile where
+    # it multiplies an f32.
+    require "." in emitted
+    check abs(parseFloat(emitted) / WORLD_PRESSURE_STIFFNESS - 1.0) < 1e-9
+
+  test "the emitted impulse ceiling equals WORLD_PRESSURE_IMPULSE_MAX":
+    let emitted = getPlaceholderMap()["WORLD_PRESSURE_IMPULSE_MAX"]
+    require "." in emitted
+    check abs(parseFloat(emitted) / WORLD_PRESSURE_IMPULSE_MAX - 1.0) < 1e-9

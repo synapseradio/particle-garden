@@ -13,6 +13,7 @@ import std/sets
 import std/strutils
 import std/tables
 import ../src/sim_registry
+import ../src/balance_core
 import ../src/field_core
 import ../src/config_ranges
 import ../src/sph_core
@@ -941,3 +942,82 @@ suite "Substeps Follow The Tightest Coupling":
     check plan.source == scCouplingNeed
     check live.sphStiffness == stiffness  # neither clamp touches a stored
       # value
+
+
+# The world in which the two onset tests below are read. Any world separating
+# the two branches serves; these are a dense one and a sparse one.
+const
+  PRESSURE_WORLD_W = 1920.0
+  PRESSURE_WORLD_H = 1080.0
+  PRESSURE_REST_SPACING = 0.5
+
+func pressureUnits(particleCount: int; radius: float): UnitConfig =
+  ## The test's world in the shape balance_core's two density functions read,
+  ## so the expected onset is composed from them rather than from the producer.
+  UnitConfig(
+    particleCount: particleCount,
+    interactionRadius: radius,
+    worldWidth: PRESSURE_WORLD_W,
+    worldHeight: PRESSURE_WORLD_H,
+    repulsionEnd: PRESSURE_REST_SPACING,
+    onsetRatio: CROWD_ONSET_RATIO)
+
+func pressureLive(particleCount: int; radius: float): PressureWorld =
+  ## The same world as the live values the frame holds.
+  PressureWorld(
+    particleCount: particleCount,
+    interactionRadius: radius,
+    worldWidth: PRESSURE_WORLD_W,
+    worldHeight: PRESSURE_WORLD_H,
+    repulsionEnd: PRESSURE_REST_SPACING)
+
+suite "The Pressure Onset Comes From The Density Functions":
+  # forces.wgsl reads one onset uniform, as physics_core's pairImpulse reads
+  # one pressureOnset. webgpu_compute.nim writes it per frame and cannot be
+  # imported natively (it opens on std/jsffi), so the check sits on the
+  # producer the executor calls.
+
+  test "the pressure onset takes x_on times the mean crowd density when the world is dense":
+    let cfg = pressureUnits(128_000, 50.0)
+    require CROWD_ONSET_RATIO * meanCrowdDensity(cfg) > contactFloorDensity(cfg)
+    check pressureOnset(pressureLive(128_000, 50.0)) ==
+      CROWD_ONSET_RATIO * meanCrowdDensity(cfg)
+
+  test "the pressure onset takes the contact floor when the world is sparse":
+    let cfg = pressureUnits(100, 10.0)
+    require CROWD_ONSET_RATIO * meanCrowdDensity(cfg) < contactFloorDensity(cfg)
+    check pressureOnset(pressureLive(100, 10.0)) == contactFloorDensity(cfg)
+
+  test "the pressure onset stays positive in the sparsest world the ranges allow":
+    # forces.wgsl divides by this uniform once per pair. The contact floor is
+    # what keeps it off zero, and the floor is positive only while
+    # REPULSION_END_MAX stays below one, where the hexagonal lattice's six
+    # nearest sites still fall inside the radius.
+    let world = PressureWorld(
+      particleCount: PARTICLE_COUNT_MIN,
+      interactionRadius: INTERACTION_RADIUS_MIN.float,
+      worldWidth: PRESSURE_WORLD_W,
+      worldHeight: PRESSURE_WORLD_H,
+      repulsionEnd: REPULSION_END_MAX)
+    check pressureOnset(world) > 0.0
+
+  test "the frame fills the onset uniform from the producer":
+    # An onset assembled inside the executor would be a second copy of the
+    # composition balance_core owns, free to drift from the one these tests
+    # and the oracle hold. Read from source, since the executor opens on
+    # std/jsffi and no native test can import it.
+    const SLOT = "simParamsData[SIM_PRESSURE_ONSET]"
+    let lines = readFile("src/webgpu_compute.nim").splitLines
+    var statement = ""
+    for number, line in lines:
+      if not line.strip.startsWith(SLOT): continue
+      let indent = line.len - line.strip(trailing = false).len
+      statement = line
+      var next = number + 1
+      while next < lines.len and lines[next].strip.len > 0 and
+          lines[next].len - lines[next].strip(trailing = false).len > indent:
+        statement.add " " & lines[next]
+        inc next
+      break
+    checkpoint("assignment found for " & SLOT & ": " & statement)
+    check "pressureOnset(" in statement

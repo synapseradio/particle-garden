@@ -209,6 +209,7 @@ const PlaceholderSources = [
   "src/memory_layout.nim",
   "src/physics_core.nim",
   "src/long_range_core.nim",
+  "src/config_ranges.nim",
 ]
   ## The Nim modules whose constants feed {{PLACEHOLDER}} substitution
   ## (shader_config.getPlaceholderMap and the pure modules it draws from).

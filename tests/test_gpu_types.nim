@@ -100,9 +100,9 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     # leave the tail of the struct unchecked there.
     check wgslComputedOffsets(SimParamsLayout).len == SimParamsLayout.fields.len
 
-  test "SimParams is 688 bytes written and 688 bytes allocated (no round-up left)":
-    check SimParamsLayout.totalSize == 688
-    check wgslUniformSize(SimParamsLayout) == 688
+  test "SimParams is 692 bytes written inside a 704-byte allocation":
+    check SimParamsLayout.totalSize == 692
+    check wgslUniformSize(SimParamsLayout) == 704
 
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
     let generated = toWgslStruct(SimParamsLayout)
@@ -142,28 +142,35 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_MOUSE_RANGE == 165
     check SIM_CROWDING_STRENGTH == 170
     check SIM_SPH_RADIUS_FRACTION == 171
-    check SIM_PARAMS_F32_COUNT == 172
+    check SIM_PRESSURE_ONSET == 172
+    check SIM_PARAMS_F32_COUNT == 173
+
+  test "the pressure onset has the word after the radius fraction":
+    # forces.wgsl reads params.pressureOnset per pair; a write landing on
+    # another slot would feed the pair law a density from elsewhere.
+    check SIM_PRESSURE_ONSET ==
+      SimParamsLayout.fieldOffset("pressureOnset") div 4
+    check SIM_PRESSURE_ONSET == SIM_SPH_RADIUS_FRACTION + 1
 
   test "the attraction matrix spans exactly its 144 float slots":
     check SIM_ATTRACTION_MATRIX_END - SIM_ATTRACTION_MATRIX_START + 1 ==
       MAX_SPECIES * MAX_SPECIES
 
-  test "SIM_PARAMS_F32_COUNT covers the whole 688-byte struct":
+  test "SIM_PARAMS_F32_COUNT covers every written word of the struct":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
-  test "the crowding and radius-fraction slots close the struct in order":
-    # Both were appended rather than folded into the pad word (since spent on
-    # mouseRange), so every offset that
-    # existed before them still points at the field it did. The radius fraction
-    # is last, and a slot that stopped being last would mean something else was
-    # appended without this test seeing it.
+  test "the crowding, radius-fraction and onset slots close the struct in order":
+    # All three were appended rather than folded into the pad word (since spent
+    # on mouseRange), so every offset that existed before them still points at
+    # the field it did. The onset is last, and a slot that stopped being last
+    # would mean something else was appended without this test seeing it.
     check SIM_CROWDING_STRENGTH ==
       SimParamsLayout.fieldOffset("crowdingStrength") div 4
     check SIM_CROWDING_STRENGTH == SIM_SPH_VISCOSITY + 1
     check SIM_SPH_RADIUS_FRACTION ==
       SimParamsLayout.fieldOffset("sphRadiusFraction") div 4
     check SIM_SPH_RADIUS_FRACTION == SIM_CROWDING_STRENGTH + 1
-    check SIM_SPH_RADIUS_FRACTION == SIM_PARAMS_F32_COUNT - 1
+    check SIM_PRESSURE_ONSET == SIM_PARAMS_F32_COUNT - 1
 
 
 suite "Generated SIM_ SPH Indices Follow The Force-Model Block":

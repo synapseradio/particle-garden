@@ -1047,6 +1047,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # exceed the sweep's reach.
   simParamsData[SIM_SPH_RADIUS_FRACTION] =
     float32(config.CONFIG.sphRadiusFraction)
+
+  # The crowd density the world pressure turns on at, recomputed here because
+  # the count, the radius and the world size all move under the user's hand.
+  # rMax is the radius the sweep uses, so the onset is measured over the same
+  # neighbourhood forces.wgsl counts.
+  simParamsData[SIM_PRESSURE_ONSET] = float32(pressureOnset(PressureWorld(
+    particleCount: particleCount,
+    interactionRadius: rMax,
+    worldWidth: width,
+    worldHeight: height,
+    repulsionEnd: float(config.CONFIG.repulsionEnd))))
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Layout matches IntegrationParams indices in gpu_types.nim

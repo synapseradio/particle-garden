@@ -48,15 +48,18 @@
 // neighbour count needs the coarser of the two.
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
-// The coarse velocity word. This pass adds to the fine word only; an auto
-// layout keeps a binding only when the entry point statically accesses it,
-// hence the phony use in computeForces
-// (https://www.w3.org/TR/WGSL/#phony-assignment-section).
+// The coarse velocity word, which the world pressure below splits into.
 @group(0) @binding(8) var<storage, read_write> velocityCoarseFixed: array<atomic<i32>>;
 
 const MIN_DISTANCE_SQ: f32 = {{TUNABLE_MIN_DISTANCE_SQ}};  // Prevents division-by-zero when particles overlap
 const BLAST_RANGE_SQ: f32 = {{TUNABLE_BLAST_RANGE_SQ}};  // Blast influence radius squared
 const BLAST_RANGE: f32 = {{TUNABLE_BLAST_RANGE}};        // Its root, for the linear falloff
+
+// The world pressure's stiffness and the largest impulse one pair may exchange.
+// No coupling strength scales either, so both arrive as substituted constants
+// rather than uniforms.
+const WORLD_PRESSURE_STIFFNESS: f32 = {{WORLD_PRESSURE_STIFFNESS}};
+const WORLD_PRESSURE_IMPULSE_MAX: f32 = {{WORLD_PRESSURE_IMPULSE_MAX}};
 
 // =============================================================================
 // EXPONENTIAL FORCE MODEL
@@ -98,9 +101,19 @@ fn crowdingAttenuation(density: f32, strength: f32) -> f32 {
   return 1.0 / (1.0 + strength * log(1.0 + density));
 }
 
+// =============================================================================
+// THE WORLD PRESSURE
+// =============================================================================
+// The pressure a particle at this smoothed crowd density carries. Mirrored by
+// physics_core.crowdPressure, which the native suite checks; read the square's
+// block there for what it buys over a step at the onset.
+fn crowdPressure(density: f32, onset: f32) -> f32 {
+  let excess = max(density - onset, 0.0) / onset;
+  return excess * excess;
+}
+
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
-  _ = &velocityCoarseFixed;
   let thisSortedIdx = globalId.x;
 
   if (thisSortedIdx >= params.particleCount) {
@@ -139,6 +152,11 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // computed per pair.
   let attenuationOnThis =
     crowdingAttenuation(thisParticle.crowdDensity, params.crowdingStrength);
+
+  // The world pressure THIS particle carries into the loop, hoisted for the
+  // same reason: its density is fixed while the loop runs.
+  let crowdPressureOnThis =
+    crowdPressure(thisParticle.crowdDensity, params.pressureOnset);
 
   var cellX = i32(thisParticle.pos.x * invCellWidth);
   var cellY = i32(thisParticle.pos.y * invCellHeight);
@@ -305,6 +323,44 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let deltaVyOtherFixed = i32(forceOnOtherY * FRAME_DT_REFERENCE * FIXED_POINT_SCALE);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u], deltaVxOtherFixed);
         atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u], deltaVyOtherFixed);
+
+        // The world pressure: the pair's resistance to compression, formed
+        // apart from the species product above so the force multiplier does not
+        // scale it. Mirrored by physics_core.pairImpulse, which the native
+        // suite checks, down to this expression's grouping.
+        //
+        // Quantized once for the pair and negated for the other side, so the
+        // two sides stay equal and opposite and the world gains no momentum
+        // from the rounding. It is already over one reference frame, hence no
+        // second FRAME_DT_REFERENCE at the atomics.
+        let crowdPressureOnOther =
+          crowdPressure(otherParticle.crowdDensity, params.pressureOnset);
+        let pressureMagnitude = min(
+          WORLD_PRESSURE_STIFFNESS * (crowdPressureOnThis + crowdPressureOnOther)
+            * (1.0 - normalizedDist) * FRAME_DT_REFERENCE,
+          WORLD_PRESSURE_IMPULSE_MAX);
+        let pressureVxFixed =
+          i32(-pressureMagnitude * separationX * invDistance * FIXED_POINT_SCALE);
+        let pressureVyFixed =
+          i32(-pressureMagnitude * separationY * invDistance * FIXED_POINT_SCALE);
+        // A pair's pressure integer outruns what one particle's fine word holds
+        // once the crowd is deep, so each side's goes into both words.
+        atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u],
+          pressureVxFixed & VELOCITY_FINE_MASK);
+        atomicAdd(&velocityDeltaFixed[thisOriginalIdx * 2u + 1u],
+          pressureVyFixed & VELOCITY_FINE_MASK);
+        atomicAdd(&velocityCoarseFixed[thisOriginalIdx * 2u],
+          pressureVxFixed >> VELOCITY_COARSE_SHIFT);
+        atomicAdd(&velocityCoarseFixed[thisOriginalIdx * 2u + 1u],
+          pressureVyFixed >> VELOCITY_COARSE_SHIFT);
+        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u],
+          (-pressureVxFixed) & VELOCITY_FINE_MASK);
+        atomicAdd(&velocityDeltaFixed[otherOriginalIdx * 2u + 1u],
+          (-pressureVyFixed) & VELOCITY_FINE_MASK);
+        atomicAdd(&velocityCoarseFixed[otherOriginalIdx * 2u],
+          (-pressureVxFixed) >> VELOCITY_COARSE_SHIFT);
+        atomicAdd(&velocityCoarseFixed[otherOriginalIdx * 2u + 1u],
+          (-pressureVyFixed) >> VELOCITY_COARSE_SHIFT);
 
         // Symmetric density accumulation into two channels, colony
         // (species-gated) and crowd (ungated); what each answers and why they

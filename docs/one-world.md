@@ -175,9 +175,11 @@ The velocity impulses accumulate per particle and per reference frame as
 fixed-point integers in two words, a fine `velocityDelta` and a coarse
 `velocityCoarse`, each two `i32` per particle. Five writers contribute:
 `forces`, `forcesSph`, `fieldForce`, `bodyForce` and `lrForce`. All five add to
-the fine word; `forcesSph` splits each integer and adds its high bits to the
-coarse word, since a full crowd of fluid pairs exceeds one `i32` 1 335 times
-over. `integrate` rejoins the words and applies the frame factor once
+the fine word. Two also split an integer and add its high bits to the coarse
+word: `forcesSph`, since a full crowd of fluid pairs exceeds one `i32` 1 335
+times over, and `forces` for its world-pressure impulse, whose summed integer
+outruns the fine word where the species integers in the same pass do not.
+`integrate` rejoins the words and applies the frame factor once
 (`web/shaders/src/integrate.wgsl`), and `src/config_ranges.nim` asserts that
 both words hold a full crowd at the range maxima.
 
