@@ -90,21 +90,25 @@ Conventions every task below uses:
 
 ## 4. World pressure and gates G1.1–G1.5
 
-- [ ] 4.1 **Red.** Add three suites to `tests/test_physics.nim`, each over a stub pressure oracle in `src/physics_core.nim` that returns zero:
+- [x] 4.1 **Red.** Add three suites to `tests/test_physics.nim`, each over a stub pressure oracle in `src/physics_core.nim` that returns zero:
   - "Pressure Past The Onset" (world-pressure: zero at and below the onset, strictly increasing to `q_max`, constant past it; per-component integers non-decreasing; the two particles' integers exactly opposite, so each sum over a sweep is zero; unchanged by Force Strength, matrix entry, crowding, friction and relative velocity)
   - "The Species Term Is Zero At Strength Zero"
   - "The Species Term Is Untouched Below The Onset", at pair gain × strength 0.7, 1, 2.5 and 5 (new Force Strength 0.14, 0.2, 0.5 and 1, C10 test 4) and frame factor 1
 
   Verify each goes red. The first two fail on values against the stub. "Pressure Past The Onset" also turns red under each of a per-component saturation, a `fMul` factor and a Tait law (mutations). The third turns red when the term is folded into `forceMultiplier * invDistance` (mutation).
-- [ ] 4.2 Write the pressure oracle in `src/physics_core.nim` (C4). In `src/balance_core.nim` add:
-  - the uniform crowd density `N·π·R²/(3A)`
-  - the contact floor from the pair-law shape, reading `CROWD_PACKING_CONSTANT` moved as it stands from `src/physics_core.nim:150-162`
+- [x] 4.2 Write the pressure oracle in `src/physics_core.nim` (C4). In `src/balance_core.nim` add:
+  - the uniform crowd density `N·π·R²/(3A)` — already there as `meanCrowdDensity` (`src/balance_core.nim:78`), so this bullet is read rather than written
+  - the contact floor from the pair-law shape, reading `CROWD_PACKING_CONSTANT` moved as it stands from `src/physics_core.nim:157-162`
   - the onset `max(x_on·ρ̄, ρ_floor)`
   - the `ufWorldPressure` arm `min(K·2φ/120, q_max)`
-  - the binned stepped oracle world with `parametric-bodies` D16 bodies
 
-  Delete the density-ceiling block at `src/physics_core.nim:108-224` and suite "The Density Ceiling" at `tests/test_physics.nim:192-245`. Rewrite the crowding-ceiling comments at `src/config_ranges.nim:37-41` and `:46-54` (N9.9, C9) to say that crowding shapes texture and bounds no compression. Verify 4.1 passes, and that 1.1 sweeps the pressure arm.
-- [ ] 4.3 **Red.** Add recipes `calibrate-balance` and `calibrate-balance-128k` to `justfile`. Each compiles `tests/test_balance_core.nim` with a define that `just test` does not set, because neither runs in `just check` (`design.md:498`). Under the recipes, add suites to `tests/test_balance_core.nim` at radius 50 on the held-out seeds:
+  The binned stepped oracle world with `parametric-bodies` D16 bodies moves to 4.3, which holds its
+  only readers. 4.1 writes no red against it, and 4.3's two suites state the bodies, particle counts
+  and frame holds it has to support, so building it here would fix an interface before the tests
+  that use it exist.
+
+  Delete the density-ceiling block at `src/physics_core.nim:116-231` (header at `:116-118`, `densityCeiling` at `:203`, ending before `calculateForceMagnitude` at `:233`) and suite "The Density Ceiling" at `tests/test_physics.nim:198-249`. Rewrite the crowding-ceiling comments at `src/config_ranges.nim:41-45` (under `FORCE_STRENGTH_MIN`, `:40`) and `:48-55` (under `CROWDING_STRENGTH_MIN`, `:47`, and `CROWDING_STRENGTH_MAX`, `:51`) (N9.9, C9) to say that crowding shapes texture and bounds no compression. Verify 4.1 passes, and that 1.1 sweeps the pressure arm.
+- [ ] 4.3 **Red.** Build the binned stepped oracle world with `parametric-bodies` D16 bodies in `src/balance_core.nim`, moved here from 4.2 because the suites below are its only readers and they state what it has to support. Then add recipes `calibrate-balance` and `calibrate-balance-128k` to `justfile`. Each compiles `tests/test_balance_core.nim` with a define that `just test` does not set, because neither runs in `just check` (`design.md:498`). Under the recipes, add suites to `tests/test_balance_core.nim` at radius 50 on the held-out seeds:
   - "A Compressed Crowd Stays Local And Below Its Collapse" (16 000 particles; 32 aligned D16 bodies at the ceilings for 100 held frames; held peak below the stiffness-zero control's at the same frame; far crowds' mean speed within the margin of a no-body run)
   - "Compression Is Not Remembered" (one self-attracting species; after-over-fresh neighbour ratio 900 frames after removal, at most `B_r` at 16 000 and at most `1 + t·s/√n` at 128 000)
   - "A Settling World Still Settles": the friction-0 arm at 128 000 and ff 1 against `B_L`, and the shipped-friction arms at ff 2, 10 and 30, uniform 8–16 and alternating 10/13, run through `substepPlan`
@@ -113,7 +117,7 @@ Conventions every task below uses:
   - With `K = 0`, the first two fail, the relaxation suite at both counts.
   - `K = 1728` turns the friction-0 arm red.
   - A live stiffness stepped with the body envelope turns the far-crowd check red.
-  - The ff arms fail with the substep trigger absent, and with a substep advancing `ff` instead of `ff/n`.
+  - The ff 30 arm and the jittered arms' draws of 13 and above fail with the substep trigger absent, and with a substep advancing `ff` instead of `ff/n`. At `FF_STABLE` 12 with no body live `substepPlan` asks for one substep at ff 1, 2, 10 and 12, so neither mutation reaches the ff 2 and ff 10 arms; those two hold the per-reference-frame reading at a frame factor the rule leaves unsubstepped.
   - `just test`'s output names none of these suites.
 - [ ] 4.4 **Gate G1.1, the onset; it gates 4.7.** Record the calibration and held-out seed sets (16 or more each) in `scratchpad/core-force-interface/seeds.md`. On the calibration seeds, settle worlds with no term through the binned oracle world in `src/balance_core.nim`:
   - particle counts 100, 1 000, 16 000 and 128 000
@@ -129,8 +133,8 @@ Conventions every task below uses:
   - Run the jittered arms through the substep rule at that `ff_stable`.
 
   A jittered arm warmer than frame factor 1 returns the trigger's hysteresis to the design, and 4.7 waits. Record in `scratchpad/core-force-interface/g1-stiffness__<DD-MM-YY-HHmm>.md`.
-- [ ] 4.6 **Gate G1.3, the stacked hold; it gates 4.7.** At the recorded `x_on`, `K` and `q_max`, run the 16 000-particle stacked hold on the calibration seeds, with its stiffness-zero control bounded to 100 held frames. Record the after-release neighbour ratios. A held peak that reaches the control's returns the design, and 4.7 waits.
-- [ ] 4.7 Record `X_ON`, `K = 540`, `B_L`, `B_r` and `FF_STABLE` (replacing 3.3's provisional value) in `src/config_ranges.nim`, each with one or two lines of conditions. Beside `FF_STABLE`, record that friction acts per step, the condition it was measured under. Verify `just happen` green, and that doubling `q_max` fails the build (mutation).
+- [ ] 4.6 **Gate G1.3, the stacked hold; it gates 4.7.** At the recorded `x_on`, `K` and `q_max`, run the 16 000-particle stacked hold on the calibration seeds, with its stiffness-zero control bounded to 100 held frames. Record the after-release neighbour ratios, and the margin the spec's far-world scenario names: the far crowd's mean speed under the hold over the same seed's no-body run. A held peak that reaches the control's returns the design, and 4.7 waits.
+- [ ] 4.7 Record `X_ON`, `K = 540`, `B_L`, `B_r` and `FF_STABLE` (replacing 3.3's provisional value) in `src/config_ranges.nim`, each with one or two lines of conditions. Beside `FF_STABLE`, record that friction acts per step, the condition it was measured under. Replace the four provisional bounds the calibration arms carry with the measured ones: `HELD_OUT_SEEDS`, `RELAXATION_BOUND_16K` (`B_r`), `FAR_SPEED_MARGIN` and `SETTLE_BOUND` (`B_L`) in `tests/test_balance_core.nim`, each reading the owner in `src/config_ranges.nim` where one holds it. Verify `just happen` green, and that doubling `q_max` fails the build (mutation).
 - [ ] 4.8 **Red, then wire the pressure** (design N3 step 5, C3):
   - **Red.** Add a uniform-producer check to `tests/test_sim_registry.nim`: the frame writes `ρ̄` and the floor from `src/balance_core.nim`'s functions. It fails first.
   - **Green.** `src/webgpu_compute.nim` computes `ρ̄` and the floor once per frame from the live count, radius, world area and pair-law shape, and writes them into the sim params (`src/gpu_types.nim`). `K`, `q_max` and the word constants reach `web/shaders/src/forces.wgsl` by placeholders in `src/shader_config.nim`, and any module those placeholders draw on joins `PlaceholderSources` in `tools/wgsl_bundle.nim`. The term is hoisted beside `attenuationOnThis`, formed apart from the species expression, and split across the two words.

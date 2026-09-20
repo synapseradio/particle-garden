@@ -24,12 +24,26 @@ const
     ## The velocity one touching neighbour's repulsion core hands a particle at
     ## pair gain 1 over one reference frame. No slider moves it.
 
+  CROWD_PACKING_CONSTANT* = 2.0 * PI / (3.0 * sqrt(3.0))
+    ## The crowd density a hexagonal lattice of separation `s` carries in the
+    ## continuum, `CROWD_PACKING_CONSTANT / s^2`, both in units of the
+    ## interaction radius.
+    ##
+    ## DERIVED, NOT MEASURED. A crowd at areal number density `n` contributes
+    ## `n * 2*PI * integral of u*(1-u) du over [0,1] = n*PI/3` to the signal,
+    ## because a neighbour is weighted by `1 - u`. Packing that crowd on a
+    ## hexagonal lattice of spacing `s` gives `n = 2/(sqrt(3)*s^2)`, the
+    ## tightest arrangement of equal disks in the plane. Composing the two
+    ## gives this constant, which latticeCrowdDensity meets as the spacing
+    ## shrinks and a lattice's few shells give way to a continuum.
+
 type
   UnitFnId* = enum
     ## One member per velocity writer, and one for the deposit, which writes
     ## the field. unitImpulse's exhaustive case makes a new member without an
     ## arm a compile error.
     ufSpecies
+    ufWorldPressure
     ufFluid
     ufScent
     ufLongRange
@@ -47,6 +61,13 @@ type
     worldWidth*, worldHeight*: float
     onsetRatio*: float
       ## x_on: the onset crowd density over the world's mean crowd density.
+    crowdRatio*: float
+      ## x: the crowd density the world pressure is stated at, over the
+      ## world's mean crowd density.
+    pressureStiffness*: float
+      ## K, the world pressure's stiffness.
+    pressureImpulseMax*: float
+      ## q_max, the largest impulse one pair may exchange.
     attraction*: float
       ## The largest self-attraction matrix entry.
     pairGain*: float
@@ -80,6 +101,43 @@ func meanCrowdDensity*(cfg: UnitConfig): float =
   cfg.particleCount.float * PI * cfg.interactionRadius *
     cfg.interactionRadius / (3.0 * cfg.worldWidth * cfg.worldHeight)
 
+func latticeCrowdDensity*(spacing: float): float =
+  ## The crowd density signal a hexagonal lattice of this separation produces,
+  ## counted site by site: every site inside the interaction radius carries the
+  ## proximity weight `1 - u` that forces.wgsl accumulates. Spacing and
+  ## distance are both in units of the interaction radius.
+  ##
+  ## Counted rather than integrated because at the separations the pair law
+  ## rests at, a handful of shells fit inside the radius and the continuum
+  ## value runs high: 4.84 against 3.80 at a spacing of 0.5.
+  # A site at lattice index (a, b) sits at spacing times sqrt(a^2 + ab + b^2),
+  # which is at least sqrt(3)/2 times the larger index, so no site past this
+  # ring reaches the radius.
+  let rings = int(ceil(2.0 / (sqrt(3.0) * spacing)))
+  for alongX in -rings .. rings:
+    for alongDiagonal in -rings .. rings:
+      if alongX == 0 and alongDiagonal == 0:
+        continue
+      let x = (alongX.float + 0.5 * alongDiagonal.float) * spacing
+      let y = alongDiagonal.float * spacing * sqrt(3.0) * 0.5
+      let distance = sqrt(x * x + y * y)
+      if distance < 1.0:
+        result += 1.0 - distance
+
+func contactFloorDensity*(cfg: UnitConfig): float =
+  ## rho_floor: the crowd density of a hexagonal lattice at the pair law's rest
+  ## spacing, where the polynomial repulsion ramp lands at zero and the
+  ## attraction bump starts. One neighbour resting there weighs `1 - spacing`
+  ## and the floor holds the six a lattice packs, so no lone pair reaches the
+  ## onset in a world too sparse for the density ratio to mean anything.
+  latticeCrowdDensity(cfg.repulsionEnd)
+
+func crowdOnsetDensity*(cfg: UnitConfig): float =
+  ## rho_on = max(x_on * rho-bar, rho_floor), the crowd density the world
+  ## pressure starts at: read in the world's own mean, with the contact floor
+  ## under it.
+  max(cfg.onsetRatio * meanCrowdDensity(cfg), contactFloorDensity(cfg))
+
 func edgeNeighbourSum*(cfg: UnitConfig): float =
   ## Neighbours in the inward half of the attraction annulus of a particle on
   ## the edge of a clump at the onset density. A crowd density rho counts
@@ -105,6 +163,15 @@ func unitImpulse*(id: UnitFnId; cfg: UnitConfig): float =
       cfg.attraction.float32, cfg.repulsionEnd.float32,
       cfg.attractionPeak.float32, 1.0'f32)
     inUnits(cfg.pairGain * atPeak.float * edgeNeighbourSum(cfg))
+  of ufWorldPressure:
+    # forces.wgsl, per pair: the impulse is largest where both particles carry
+    # the stated crowd density and the pair touches, so the proximity weight
+    # is 1 and the two pressures are equal. It saturates at q_max.
+    let onset = crowdOnsetDensity(cfg).float32
+    let pressure = crowdPressure(
+      (cfg.crowdRatio * meanCrowdDensity(cfg)).float32, onset)
+    worldPressureMagnitude(pressure, pressure, 0.0'f32,
+      cfg.pressureStiffness.float32, cfg.pressureImpulseMax.float32).float / u0
   of ufFluid:
     # forces-sph.wgsl, per pair: SPH_FORCE_SCALE times the pair pressure,
     # which reaches the clamp inside the ranges at the lowest rest density,
@@ -140,3 +207,390 @@ func unitImpulse*(id: UnitFnId; cfg: UnitConfig): float =
     # field-deposit.wgsl, per particle, at the reference field-step count
     # depositFrameScale holds the rate to.
     abs(speciesDeposit(cfg.depositGain, cfg.secretion))
+
+# ==============================================================================
+# THE STEPPED ORACLE WORLD
+# ==============================================================================
+# A torus of particles stepped frame by frame on the CPU, so a number the GPU
+# would have to be running to report can be read off a native run instead. Each
+# substep runs the passes the frame runs, in the frame's order: forces.wgsl's
+# pair block over a uniform bin grid, body-force.wgsl's body block, then
+# integrate.wgsl.
+#
+# Three differences from a GPU frame, each of which moves the low bits of a
+# result:
+#   - The GPU splits a pair by sorted cell position; this splits it by particle
+#     index. Which member of a pair plays "this" therefore differs, and with it
+#     which side of the pair is quantized per pair rather than once per
+#     particle.
+#   - Float summation order differs from the shader's, which accumulates in
+#     cell order.
+#   - The pair block here carries the world pressure, which forces.wgsl does
+#     not yet carry.
+
+type
+  OracleForceModel* = enum
+    ## The two arms forces.wgsl dispatches between on params.forceModel.
+    ofmPolynomial
+    ofmExponential
+
+  OracleParams* = object
+    ## Every number the stepped world reads. The caller supplies each one,
+    ## since this module cannot import the module that owns the ranges.
+    interactionRadius*: float32
+    worldWidth*, worldHeight*: float32
+    minDistanceSq*: float32
+    forceModel*: OracleForceModel
+    forceMultiplier*: float32
+    repulsionEnd*, attractionPeak*: float32
+    expAlpha*, expBeta*: float32
+    crowdingStrength*: float32
+    pressureOnset*: float32
+      ## rho_on. Zero stiffness leaves it unread.
+    pressureStiffness*: float32
+    pressureImpulseMax*: float32
+    friction*: float32
+      ## The retention factor the shader's `params.friction` holds, which is
+      ## one minus the slider's friction (src/app.nim:193). Retention 1 damps
+      ## nothing; retention 0 stops every particle each step.
+    maxVelocity*: float32
+    fixedPointScale*: float32
+    crowdDensityScale*: float32
+      ## The coarser scale a crowd neighbour count is encoded at, which
+      ## forces.wgsl:323 names CROWD_DENSITY_FIXED_POINT_SCALE.
+    densitySmoothFactor*: float32
+    bodiesStrength*: float
+
+  OracleWorld* = object
+    ## One world mid-flight. The caller reads and writes `bodies` between
+    ## frames; every other field belongs to the step.
+    params*: OracleParams
+    speciesCount*: int
+    matrix*: seq[float32]
+      ## Row-major, `matrix[a * speciesCount + b]` being what species `a` feels
+      ## toward species `b`.
+    posX*, posY*: seq[float32]
+    velX*, velY*: seq[float32]
+    species*: seq[int]
+    colonyDensity*, crowdDensity*: seq[float32]
+      ## Both smoothed, as integrate.wgsl:68-79 smooths them.
+    bodies*: seq[Body]
+    bodyEnvelopes*: seq[float]
+      ## One envelope per body, in the order `bodies` holds them.
+    gridW, gridH: int
+    cellStart, cursor: seq[int]
+    cellOf, ordered: seq[int]
+    deltaFixed: seq[int32]
+    colonyFixed, crowdFixed: seq[int32]
+    bodyAccumulators: seq[BodyAccumulator]
+    rngState: uint64
+
+func nextBits(state: var uint64): uint64 =
+  ## SplitMix64. A seed reproduces a world without a dependency on the
+  ## stdlib generator's version.
+  state = state + 0x9E3779B97F4A7C15'u64
+  var z = state
+  z = (z xor (z shr 30)) * 0xBF58476D1CE4E5B9'u64
+  z = (z xor (z shr 27)) * 0x94D049BB133111EB'u64
+  z xor (z shr 31)
+
+func nextUnit(state: var uint64): float32 =
+  ## A draw from [0, 1), 24 bits wide, so every value is exact in f32.
+  float32(float(nextBits(state) shr 40) / 16777216.0)
+
+func nextIndex(state: var uint64; bound: int): int =
+  int(nextBits(state) mod uint64(bound))
+
+func wrapAdd(sum, word: int32): int32 =
+  ## One atomicAdd on an i32, wrapping as WGSL's do.
+  cast[int32](cast[uint32](sum) + cast[uint32](word))
+
+proc initOracleWorld*(params: OracleParams; particleCount, speciesCount: int;
+    matrix: seq[float32]; seed: int): OracleWorld =
+  ## A world of `particleCount` particles at rest, placed uniformly at random
+  ## from `seed` and assigned species from the same stream.
+  doAssert matrix.len == speciesCount * speciesCount,
+    "the matrix holds one entry per ordered species pair"
+  let gridW = int(params.worldWidth / params.interactionRadius)
+  let gridH = int(params.worldHeight / params.interactionRadius)
+  # Below three cells on a side, the nine-cell stencil reaches the same cell
+  # twice across the wrap and counts those pairs twice.
+  doAssert gridW >= 3 and gridH >= 3,
+    "the world spans fewer than three interaction radii on a side"
+  result = OracleWorld(params: params, speciesCount: speciesCount,
+    matrix: matrix,
+    posX: newSeq[float32](particleCount), posY: newSeq[float32](particleCount),
+    velX: newSeq[float32](particleCount), velY: newSeq[float32](particleCount),
+    species: newSeq[int](particleCount),
+    colonyDensity: newSeq[float32](particleCount),
+    crowdDensity: newSeq[float32](particleCount),
+    gridW: gridW, gridH: gridH,
+    cellStart: newSeq[int](gridW * gridH + 1),
+    cursor: newSeq[int](gridW * gridH + 1),
+    cellOf: newSeq[int](particleCount),
+    ordered: newSeq[int](particleCount),
+    deltaFixed: newSeq[int32](particleCount * 2),
+    colonyFixed: newSeq[int32](particleCount),
+    crowdFixed: newSeq[int32](particleCount),
+    rngState: cast[uint64](seed.int64))
+  for i in 0 ..< particleCount:
+    result.posX[i] = nextUnit(result.rngState) * params.worldWidth
+    result.posY[i] = nextUnit(result.rngState) * params.worldHeight
+    result.species[i] = nextIndex(result.rngState, speciesCount)
+
+proc rebin(world: var OracleWorld) =
+  ## A counting sort of the particles into cells one interaction radius wide.
+  let cells = world.gridW * world.gridH
+  let invCellW = float32(world.gridW) / world.params.worldWidth
+  let invCellH = float32(world.gridH) / world.params.worldHeight
+  for cell in 0 .. cells:
+    world.cellStart[cell] = 0
+  for i in 0 ..< world.posX.len:
+    let coords = computeCellCoords(world.posX[i], world.posY[i],
+      world.gridW, world.gridH, invCellW, invCellH)
+    world.cellOf[i] = cellCoordsToIndex(coords.cx, coords.cy, world.gridW)
+    world.cellStart[world.cellOf[i] + 1] += 1
+  for cell in 1 .. cells:
+    world.cellStart[cell] += world.cellStart[cell - 1]
+  for cell in 0 .. cells:
+    world.cursor[cell] = world.cellStart[cell]
+  for i in 0 ..< world.cellOf.len:
+    let cell = world.cellOf[i]
+    world.ordered[world.cursor[cell]] = i
+    world.cursor[cell] += 1
+
+proc sweepPairs(world: var OracleWorld) =
+  ## forces.wgsl's neighbour loop: both density channels and both force terms,
+  ## each pair visited once.
+  let p = world.params
+  let radiusSq = p.interactionRadius * p.interactionRadius
+  let invRadius = 1.0'f32 / p.interactionRadius
+  let invCellW = float32(world.gridW) / p.worldWidth
+  let invCellH = float32(world.gridH) / p.worldHeight
+  let pairParams = PairImpulseParams(
+    forceMultiplier: p.forceMultiplier,
+    pressureOnset: p.pressureOnset,
+    pressureStiffness: p.pressureStiffness,
+    pressureImpulseMax: p.pressureImpulseMax,
+    fixedPointScale: p.fixedPointScale)
+  for this in 0 ..< world.posX.len:
+    let thisX = world.posX[this]
+    let thisY = world.posY[this]
+    let thisSpecies = world.species[this]
+    let crowdThis = world.crowdDensity[this]
+    # forces.wgsl:140-141 hoists the receiving particle's attenuation out of
+    # the neighbour loop.
+    let attenuationOnThis = crowdingAttenuation(crowdThis, p.crowdingStrength)
+    var forceOnThisX = 0.0'f32
+    var forceOnThisY = 0.0'f32
+    var colonyAccum = 0.0'f32
+    var crowdAccum = 0.0'f32
+    let coords = computeCellCoords(thisX, thisY, world.gridW, world.gridH,
+      invCellW, invCellH)
+    for dy in -1 .. 1:
+      for dx in -1 .. 1:
+        let neighbour = getNeighborCell(coords.cx, coords.cy, dx, dy,
+          world.gridW, world.gridH, p.worldWidth, p.worldHeight)
+        for slot in world.cellStart[neighbour.cell] ..<
+            world.cellStart[neighbour.cell + 1]:
+          let other = world.ordered[slot]
+          if other <= this:
+            continue
+          let separationX = world.posX[other] + neighbour.wrapX - thisX
+          let separationY = world.posY[other] + neighbour.wrapY - thisY
+          let distanceSq = separationX * separationX + separationY * separationY
+          if distanceSq <= 0.0'f32 or distanceSq >= radiusSq:
+            continue
+          let distance = sqrt(max(distanceSq, p.minDistanceSq))
+          let invDistance = 1.0'f32 / distance
+          let normalizedDist = distance * invRadius
+          let otherSpecies = world.species[other]
+          let crowdOther = world.crowdDensity[other]
+          let attenuationOnOther = crowdingAttenuation(crowdOther,
+            p.crowdingStrength)
+          let attractionOnThis =
+            world.matrix[thisSpecies * world.speciesCount + otherSpecies]
+          let attractionOnOther =
+            world.matrix[otherSpecies * world.speciesCount + thisSpecies]
+          var magnitudeOnThis, magnitudeOnOther: float32
+          case p.forceModel
+          of ofmPolynomial:
+            magnitudeOnThis = polynomialForce(normalizedDist, attractionOnThis,
+              p.repulsionEnd, p.attractionPeak, attenuationOnThis)
+            magnitudeOnOther = polynomialForce(normalizedDist,
+              attractionOnOther, p.repulsionEnd, p.attractionPeak,
+              attenuationOnOther)
+          of ofmExponential:
+            magnitudeOnThis = exponentialForce(normalizedDist, attractionOnThis,
+              p.expAlpha, p.expBeta, attenuationOnThis)
+            magnitudeOnOther = exponentialForce(normalizedDist,
+              attractionOnOther, p.expAlpha, p.expBeta, attenuationOnOther)
+          let impulse = pairImpulse(pairParams, separationX, separationY,
+            invDistance, normalizedDist, magnitudeOnThis, magnitudeOnOther,
+            crowdThis, crowdOther)
+          forceOnThisX += impulse.speciesOnThis.x
+          forceOnThisY += impulse.speciesOnThis.y
+          world.deltaFixed[other * 2] = wrapAdd(world.deltaFixed[other * 2],
+            forcesVelocityDeltaFixed(impulse.speciesOnOther.x,
+              p.fixedPointScale))
+          world.deltaFixed[other * 2 + 1] =
+            wrapAdd(world.deltaFixed[other * 2 + 1],
+              forcesVelocityDeltaFixed(impulse.speciesOnOther.y,
+                p.fixedPointScale))
+          # The pressure is quantized once for the pair and negated, so the two
+          # sides cannot disagree.
+          let onOther = pressureOnOther(impulse)
+          world.deltaFixed[this * 2] = wrapAdd(world.deltaFixed[this * 2],
+            impulse.pressureOnThis.x)
+          world.deltaFixed[this * 2 + 1] =
+            wrapAdd(world.deltaFixed[this * 2 + 1], impulse.pressureOnThis.y)
+          world.deltaFixed[other * 2] = wrapAdd(world.deltaFixed[other * 2],
+            onOther.x)
+          world.deltaFixed[other * 2 + 1] =
+            wrapAdd(world.deltaFixed[other * 2 + 1], onOther.y)
+          let proximityWeight = 1.0'f32 - normalizedDist
+          crowdAccum += proximityWeight
+          world.crowdFixed[other] = wrapAdd(world.crowdFixed[other],
+            int32(proximityWeight * p.crowdDensityScale))
+          if otherSpecies == thisSpecies:
+            colonyAccum += proximityWeight
+            world.colonyFixed[other] = wrapAdd(world.colonyFixed[other],
+              int32(proximityWeight * p.fixedPointScale))
+    world.deltaFixed[this * 2] = wrapAdd(world.deltaFixed[this * 2],
+      forcesVelocityDeltaFixed(forceOnThisX, p.fixedPointScale))
+    world.deltaFixed[this * 2 + 1] = wrapAdd(world.deltaFixed[this * 2 + 1],
+      forcesVelocityDeltaFixed(forceOnThisY, p.fixedPointScale))
+    world.colonyFixed[this] = wrapAdd(world.colonyFixed[this],
+      int32(colonyAccum * p.fixedPointScale))
+    world.crowdFixed[this] = wrapAdd(world.crowdFixed[this],
+      int32(crowdAccum * p.crowdDensityScale))
+
+proc applyBodies(world: var OracleWorld; dtSeconds: float) =
+  ## body-force.wgsl: every live body's pull on every particle, summed and
+  ## encoded once per particle, with the negated sum taken by the body.
+  if world.bodies.len == 0:
+    return
+  let p = world.params
+  let worldW = p.worldWidth.float
+  let worldH = p.worldHeight.float
+  world.bodyAccumulators.setLen(world.bodies.len)
+  for slot in 0 ..< world.bodyAccumulators.len:
+    world.bodyAccumulators[slot] = BodyAccumulator()
+  for i in 0 ..< world.posX.len:
+    let atX = world.posX[i].float
+    let atY = world.posY[i].float
+    var totalX = 0.0
+    var totalY = 0.0
+    for slot in 0 ..< world.bodies.len:
+      let envelope = world.bodyEnvelopes[slot]
+      if envelope == 0.0:
+        continue
+      let force = bodyForceAt(world.bodies[slot], atX, atY, worldW, worldH,
+        envelope, p.bodiesStrength)
+      if force.x == 0.0 and force.y == 0.0:
+        continue
+      totalX += force.x
+      totalY += force.y
+      addBodyReaction(world.bodyAccumulators[slot], world.bodies[slot],
+        atX, atY, worldW, worldH, force.x, force.y)
+    # A body's pull is already a velocity per reference frame, so no dt meets
+    # it at the encode.
+    world.deltaFixed[i * 2] = wrapAdd(world.deltaFixed[i * 2],
+      encodeVelocityDelta(totalX.float32, p.fixedPointScale))
+    world.deltaFixed[i * 2 + 1] = wrapAdd(world.deltaFixed[i * 2 + 1],
+      encodeVelocityDelta(totalY.float32, p.fixedPointScale))
+  for slot in 0 ..< world.bodies.len:
+    let reaction = decoded(world.bodyAccumulators[slot])
+    world.bodies[slot] = bodyRigidStep(world.bodies[slot], reaction.forceX,
+      reaction.forceY, reaction.torque, dtSeconds, worldW, worldH)
+
+proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
+  ## integrate.wgsl: both densities smoothed, the delta decoded once against
+  ## the substep's frame factor, friction, the speed cap, then the position.
+  let p = world.params
+  let invFixed = 1.0'f32 / p.fixedPointScale
+  let invCrowd = 1.0'f32 / p.crowdDensityScale
+  let carried = p.densitySmoothFactor
+  let arriving = 1.0'f32 - carried
+  for i in 0 ..< world.posX.len:
+    world.colonyDensity[i] = world.colonyDensity[i] * carried +
+      float32(world.colonyFixed[i]) * invFixed * arriving
+    world.crowdDensity[i] = world.crowdDensity[i] * carried +
+      float32(world.crowdFixed[i]) * invCrowd * arriving
+    let stepped = integrateVelocity((x: world.velX[i], y: world.velY[i]),
+      (x: world.deltaFixed[i * 2], y: world.deltaFixed[i * 2 + 1]),
+      invFixed, subFrameFactor, p.friction, p.maxVelocity)
+    world.velX[i] = stepped.x
+    world.velY[i] = stepped.y
+    world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)
+    world.posY[i] = wrapPosition(world.posY[i] + stepped.y, p.worldHeight)
+
+proc stepFrame*(world: var OracleWorld; frameFactor: float; substeps: int) =
+  ## One frame, taken in `substeps` equal substeps. Each advances
+  ## `frameFactor / substeps` reference frames and runs every pass, which is
+  ## what a substep is for.
+  let taken = max(substeps, 1)
+  let subFrameFactor = frameFactor / taken.float
+  for _ in 0 ..< taken:
+    for i in 0 ..< world.deltaFixed.len:
+      world.deltaFixed[i] = 0
+    for i in 0 ..< world.colonyFixed.len:
+      world.colonyFixed[i] = 0
+      world.crowdFixed[i] = 0
+    rebin(world)
+    sweepPairs(world)
+    applyBodies(world, subFrameFactor * FRAME_DT_REFERENCE)
+    integrateParticles(world, subFrameFactor.float32)
+
+func meanSpeed*(world: OracleWorld): float =
+  ## The mean of |v| over every particle, in world units per reference frame.
+  if world.posX.len == 0:
+    return 0.0
+  for i in 0 ..< world.posX.len:
+    result += sqrt(world.velX[i].float * world.velX[i].float +
+      world.velY[i].float * world.velY[i].float)
+  result /= world.posX.len.float
+
+func meanSpeedBeyond*(world: OracleWorld; bodies: seq[Body];
+    clearance: float): float =
+  ## The mean of |v| over the particles no body in `bodies` reaches within
+  ## `clearance` of its surface. With no body, every particle.
+  var counted = 0
+  for i in 0 ..< world.posX.len:
+    var reached = false
+    for body in bodies:
+      let sample = sampleBody(body, world.posX[i].float, world.posY[i].float,
+        world.params.worldWidth.float, world.params.worldHeight.float)
+      if abs(sample.distance) < clearance:
+        reached = true
+        break
+    if reached:
+      continue
+    result += sqrt(world.velX[i].float * world.velX[i].float +
+      world.velY[i].float * world.velY[i].float)
+    counted += 1
+  if counted > 0:
+    result /= counted.float
+
+func peakCrowdDensity*(world: OracleWorld): float =
+  ## The busiest particle's smoothed crowd density.
+  for value in world.crowdDensity:
+    result = max(result, value.float)
+
+func meanWeightedNeighbours*(world: OracleWorld): float =
+  ## The mean smoothed crowd density, which is a neighbour count weighted by
+  ## the proximity weight forces.wgsl:319 gives each neighbour.
+  if world.crowdDensity.len == 0:
+    return 0.0
+  for value in world.crowdDensity:
+    result += value.float
+  result /= world.crowdDensity.len.float
+
+func summedVelocityDelta*(world: OracleWorld): tuple[x, y: float] =
+  ## The last substep's velocity delta summed over every particle, per
+  ## component, in fixed-point quanta. At force multiplier zero with no body
+  ## live, the only writer left is the world pressure, whose pair integer is
+  ## negated for the other side, so the sum reads exactly zero.
+  for i in 0 ..< world.posX.len:
+    result.x += world.deltaFixed[i * 2].float
+    result.y += world.deltaFixed[i * 2 + 1].float

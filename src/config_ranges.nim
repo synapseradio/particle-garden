@@ -40,23 +40,24 @@ const
   FORCE_STRENGTH_MIN* = 0.0
     ## Zero is an ordinary value of a coupling strength.
     ## `fMul` scales BOTH force zones (`src/physics_core.nim`), so zero
-    ## removes short-range repulsion too and particles pass through each other
-    ## — at that point the crowding cap is vacuous rather than wrong, since
-    ## there is no attraction left to attenuate.
+    ## removes short-range repulsion too and a pair below the onset passes
+    ## through. The world pressure is not scaled by it: a crowd past the onset
+    ## still pushes itself apart here.
   FORCE_STRENGTH_MAX* = 5.0
   CROWDING_STRENGTH_MIN* = 0.0
     ## Zero is today's force law exactly — `1 / (1 + 0 * log(1 + density))` is 1
     ## at every density — so it must stay reachable, and any regression the
-    ## crowding term introduces bisects to this one number.
+    ## crowding term introduces bisects to this one number. It is also the
+    ## shipped default: crowding shapes how attraction thins in a crowd, and
+    ## the bound on compression is the world pressure's, at every crowding
+    ## strength including this one.
   CROWDING_STRENGTH_MAX* = 2.0
-    ## PROVISIONAL, pending the calibration. That
-    ## task measures the strength at which a collapsing single-species world
-    ## stops tightening and the strength at which ordinary colonies visibly
-    ## soften, sets the default between them, and sets this ceiling above the
-    ## second — with the conditions recorded here, per the measured-bound rule.
-    ## Until then this is a working bound, not a measured one, and the ceiling
-    ## sweep in tests/test_physics.nim reads it from here so the calibration
-    ## re-scopes that sweep without a second edit. [?]
+    ## PROVISIONAL, pending the calibration. That task measures the strength at
+    ## which ordinary colonies visibly soften and sets this ceiling above it,
+    ## with the conditions recorded here, per the measured-bound rule. Until
+    ## then this is a working bound, not a measured one. What it bounds is
+    ## texture, not collapse: the world pressure holds compression at every
+    ## crowding strength.
   FLUID_STRENGTH_MIN* = 0.0
   FLUID_STRENGTH_MAX* = 1.0
     ## One is the whole fluid. Nothing above it: this multiplies the pass's
@@ -608,6 +609,33 @@ const
     fineWordCrowd(VELOCITY_COARSE_SHIFT)) / VELOCITY_FIXED_POINT_SCALE
     ## The velocity per reference frame the fine word has left for scent and
     ## long range together, 7 251 at the shipped ranges.
+
+# THE WORLD PRESSURE. A resistance to compression no coupling strength scales
+# and no slider reaches. Its onset is read in the world's own mean crowd
+# density, so it follows the live particle count and interaction radius.
+const
+  CROWD_ONSET_RATIO* = 6.3
+    ## x_on: the crowd density the pressure starts at, in multiples of the
+    ## world's uniform crowd density.
+    ## PROVISIONAL. It rests on settled worlds at 16 000 and 128 000 particles
+    ## and radii 50 and 100, whose peaks spread 60x in absolute crowd density
+    ## yet sit in one band of this ratio: 2.2-6.6 for mixed matrices and
+    ## 9.7-11.3 for a self-attracting species. 6.3 is the bottom of the
+    ## self-attracting band on 3 seeds. The calibration that settles it sweeps
+    ## 100 to 128 000 particles and radii 10 to 150 on the recorded seeds and
+    ## records the band's floor past the contact floor.
+  WORLD_PRESSURE_STIFFNESS* = 540.0
+    ## K: the pair impulse's stiffness, fixed at every live value.
+    ## PROVISIONAL. It rests on a 128 000-particle trade on 3 seeds: at 540 a
+    ## friction-0 world settles 1.163-1.175 times as warm as the same seed
+    ## without the term and relaxes fully after a hold, where 1728 settles
+    ## 1.360-1.393 as warm. The calibration that settles it re-derives that
+    ## ratio's bound on the recorded seeds.
+  WORLD_PRESSURE_IMPULSE_MAX* = float(PRESSURE_COARSE_MAX *
+    (1 shl VELOCITY_COARSE_SHIFT)) / VELOCITY_FIXED_POINT_SCALE
+    ## q_max as a velocity per reference frame, 706.9: the coarse word's
+    ## per-pair ceiling after the fluid's share, in the units the pair impulse
+    ## saturates at.
 
 static:
   # Every range must be non-empty, or clamping inverts.

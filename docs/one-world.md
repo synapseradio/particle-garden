@@ -73,12 +73,19 @@ Three densities keep that split clean. `density` at particle offset 20 measures
 same-species proximity and leaves the physics through the intrinsic sweep alone;
 `sphDensity` at offset 24 is the fluid's kernel-weighted, species-blind reading,
 private to its equation of state; `crowdDensity` at offset 28 counts every
-neighbour the spatial hash counts, and the crowding cap reads it. One field
-carrying two of them would make the glow track the fluid, and zeroing the fluid
-would then drop the density the renderer needs — the jump-at-zero reappearing in
-the density channel. The crowd channel splits off the colony one for a different
-reason: a cell filled by a mixed blob costs exactly what a cell filled by one
-species costs, so a cap on that cost cannot read a species-gated signal.
+neighbour the spatial hash counts, and both the world pressure and the crowding
+attenuation read it. One field carrying two of them would make the glow track the
+fluid, and zeroing the fluid would then drop the density the renderer needs — the
+jump-at-zero reappearing in the density channel. The crowd channel splits off the
+colony one for a different reason: a cell filled by a mixed blob costs exactly what
+a cell filled by one species costs, so a reading of that cost cannot come from a
+species-gated signal.
+
+The two readers answer different questions of the same number. The world pressure
+asks whether the crowd is compressed past its onset, and resists if it is; no
+coupling strength scales that answer. Crowding asks how much of its attraction a
+particle keeps at this density, and a slider scales that one. Compression is
+bounded by the first, never by the second.
 
 ### The field belongs to the world
 

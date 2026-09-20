@@ -113,123 +113,6 @@ func calculateAttenuatedForce*(normalizedDistance, attr, fMul, invD, density,
     plain
 
 
-# ==============================================================================
-# THE DENSITY CEILING
-# ==============================================================================
-#
-# WHAT THE CEILING IS. A crowd tightens while attraction still beats the
-# repulsion the crowd's own packing supplies. Attenuated attraction falls as the
-# crowd densifies and packing repulsion rises, so the two cross at one density,
-# and past it the crowd cannot tighten further. That crossing is what
-# densityCeiling returns, in the units the density signal itself carries — the
-# proximity-weighted neighbour sum forces.wgsl accumulates.
-#
-# WHAT THE CLAIM DOES NOT COVER. The spec requires this stated where the ceiling
-# is defined, so it cannot be over-read:
-#
-#   - EQUILIBRIUM, NOT PER FRAME. The ceiling is where tightening stops, not a
-#     bound the simulation holds every frame. Momentum carries particles past it
-#     transiently; what the ceiling forbids is SETTLING tighter, never ARRIVING
-#     tighter.
-#   - THE SIGNAL IS SPECIES-BLIND (crowd density). forces.wgsl accumulates every
-#     neighbour into the crowd channel the attenuation reads, so the per-cell
-#     occupancy this bounds carries no species factor: a mixed blob and a
-#     single-species blob of the same total density attenuate identically. The
-#     COLONY channel beside it stays same-species and feeds the renderer; the
-#     two are not interchangeable.
-#   - IT BOUNDS WHAT ATTRACTION CONCENTRATES, AND NOTHING ELSE. The mouse, the
-#     blast, and positive field tropism compress from outside the force law and
-#     are outside its reach. The tropism side carries its own measured bound
-#     (tests/test_field_core.nim, "Chemotactic Collapse Bound").
-#   - IT BOUNDS A CELL, NOT A REGION. A region holds many cells, so global
-#     clumping stays reachable; what is ruled out is the unbounded per-cell
-#     concentration that degrades the neighbour sweep toward quadratic.
-#
-# Within that scope a finite ceiling bounds per-cell occupancy up to geometric
-# constants, because grid cells are sized to the interaction radius
-# (src/grid.nim) and the density weight spans that same radius.
-
-const
-  REPULSION_ZONE_END* = 1.0 / float(INV_03)
-    ## Where repulsion ends and attraction begins, as a fraction of the
-    ## interaction radius. Derived from INV_03 rather than written again, so the
-    ## force law and this analysis cannot come to disagree about the boundary.
-  CROWD_PACKING_CONSTANT* = 2.0 * PI / (3.0 * sqrt(3.0))
-    ## Converts a nearest-neighbour separation into the density signal it
-    ## produces: `density = CROWD_PACKING_CONSTANT / separation^2`, both in units
-    ## of the interaction radius.
-    ##
-    ## DERIVED, NOT MEASURED. A crowd at areal number density `n` contributes
-    ## `n * 2*PI * integral of u*(1-u) du over [0,1] = n*PI/3` to the signal,
-    ## because accumulateDensity weights a neighbour by `1 - u`. Packing that
-    ## crowd on a hexagonal lattice of spacing `s` gives `n = 2/(sqrt(3)*s^2)`,
-    ## the tightest arrangement of equal disks in the plane. Composing the two
-    ## gives this constant. A looser arrangement carries a smaller constant, so
-    ## the separation this reports is the optimistic one and the occupancy bound
-    ## it implies is the conservative one.
-  DENSITY_CEILING_SEARCH_FLOOR = 1.0e-9
-    ## The bisection's lower bracket. Packing repulsion diverges as density
-    ## approaches zero (the separation grows without bound), so attraction wins
-    ## here for every reachable parameter set.
-  DENSITY_CEILING_SEARCH_ROOF = 1.0e12
-    ## The bisection's upper bracket. A balance still positive here means no
-    ## crossing exists and the ceiling is infinite — which happens only at
-    ## crowding strength zero, the uncapped force law.
-  DENSITY_CEILING_STEPS = 120
-    ## Bisection steps. Halving the bracket 120 times takes it far below the
-    ## precision a float64 can carry, so the result is converged rather than
-    ## approximate.
-
-func packingSeparation*(density: float): float =
-  ## The nearest-neighbour separation a crowd holds at this density signal, as a
-  ## fraction of the interaction radius. The inverse of CROWD_PACKING_CONSTANT's
-  ## relation.
-  sqrt(CROWD_PACKING_CONSTANT / density)
-
-func crowdingBalance*(density, attraction, strength: float): float =
-  ## Attenuated attraction minus the repulsion a crowd at this density supplies,
-  ## both as force-law envelope magnitudes. Positive means the crowd still
-  ## tightens; negative means repulsion has taken over.
-  ##
-  ## Force strength scales both terms and so appears in neither: the attenuation
-  ## is a fraction of the attraction that survives `fMul`, which is exactly what
-  ## keeps the crossing from drifting across the force-strength range.
-  ##
-  ## Strictly decreasing in density — the first term falls, the second rises —
-  ## so the crossing is unique and bisection finds it.
-  attraction / (1.0 + strength * ln(1.0 + density)) -
-    (1.0 - packingSeparation(density) / REPULSION_ZONE_END)
-
-func densityCeiling*(attr, fMul, strength: float): float =
-  ## The density past which attenuated attraction cannot further tighten a
-  ## crowd — read the scope block above before quoting this number.
-  ##
-  ## attr - the pair's attraction-matrix entry. A negative entry is repulsive
-  ##        and the crowding term never touches it, so it enters here as no
-  ##        attraction at all.
-  ## fMul - the force strength. Zero removes every force
-  ##        (`src/config_ranges.nim`), so attraction concentrates nothing
-  ##        at any density and the ceiling degenerates to zero: vacuous rather
-  ##        than wrong, exactly as described above.
-  ## strength - the crowding strength. Zero reproduces calculateForce's
-  ##            attraction unmodified, where nothing caps a strong enough
-  ##            attraction and the ceiling is infinite.
-  if fMul == 0.0:
-    return 0.0
-  let attraction = max(attr, 0.0)
-  if crowdingBalance(DENSITY_CEILING_SEARCH_ROOF, attraction, strength) > 0.0:
-    return Inf
-  var tightening = DENSITY_CEILING_SEARCH_FLOOR
-  var resisting = DENSITY_CEILING_SEARCH_ROOF
-  for _ in 0 ..< DENSITY_CEILING_STEPS:
-    let middle = 0.5 * (tightening + resisting)
-    if crowdingBalance(middle, attraction, strength) > 0.0:
-      tightening = middle
-    else:
-      resisting = middle
-  0.5 * (tightening + resisting)
-
-
 func calculateForceMagnitude*(normalizedDistance, attr: float32): float32 =
   ## Calculate raw force magnitude without scaling.
   ##
@@ -558,3 +441,83 @@ func postStepSpeed*(speed, friction, maxVelocity: float32): float32 =
       maxVelocity)
   else:
     damped
+
+# ==============================================================================
+# THE WORLD PRESSURE
+# ==============================================================================
+# The world's resistance to compression: a repulsive impulse a pair exchanges
+# once its own crowd density passes the onset. It is part of the pair law, so
+# no coupling strength scales it and no slider reaches it.
+
+func crowdPressure*(density, onset: float32): float32 =
+  ## The pressure a particle at this smoothed crowd density carries:
+  ## `(max(density - onset, 0) / onset)^2`.
+  ##
+  ## The square is what keeps the onset from being a step. Its local stiffness,
+  ## `2 K (x - x_on)/x_on^2`, starts at zero and rises with the excess, where a
+  ## Tait law's jump at the onset boiled the settle it is meant to hold: mean
+  ## speed 4.02 against the square law's 1.47 on the same world.
+  let excess = max(density - onset, 0.0'f32) / onset
+  excess * excess
+
+func worldPressureMagnitude*(pressureThis, pressureOther, normalizedDistance,
+    stiffness, impulseMax: float32): float32 =
+  ## The repulsive impulse a pair exchanges over one reference frame: the
+  ## stiffness times the sum of both pressures, times the proximity weight
+  ## `1 - r/R`, over one reference frame, saturating at `impulseMax`.
+  ##
+  ## The saturation acts on the magnitude, before any direction is applied, so
+  ## a saturated pair still pushes along its own separation.
+  min(stiffness * (pressureThis + pressureOther) *
+    (1.0'f32 - normalizedDistance) * FRAME_DT_REFERENCE.float32, impulseMax)
+
+type
+  PairImpulseParams* = object
+    ## What forces.wgsl's pair block reads past the force model's own shape.
+    forceMultiplier*: float32
+    pressureOnset*: float32
+      ## rho_on, the crowd density the pressure starts at.
+    pressureStiffness*: float32
+    pressureImpulseMax*: float32
+      ## q_max, the largest impulse one pair may exchange.
+    fixedPointScale*: float32
+
+  PairImpulse* = object
+    ## One pair's contribution over one reference frame. The species force
+    ## lands in each particle's own float register; the world pressure is
+    ## quantized once for the pair, added to this particle and subtracted from
+    ## the other, so the two sides cannot disagree.
+    speciesOnThis*, speciesOnOther*: tuple[x, y: float32]
+    pressureOnThis*: tuple[x, y: int32]
+
+func pairImpulse*(params: PairImpulseParams;
+    separationX, separationY, invDistance, normalizedDistance: float32;
+    speciesMagnitudeOnThis, speciesMagnitudeOnOther: float32;
+    crowdDensityThis, crowdDensityOther: float32): PairImpulse =
+  ## forces.wgsl's pair block. `separation` runs from this particle to the
+  ## other, minimum-imaged; each species magnitude is its force model's output
+  ## with the receiving particle's crowding attenuation already applied.
+  ##
+  ## The species magnitude keeps forces.wgsl:289-290's grouping,
+  ## `magnitude *= params.forceMultiplier * invDistance`, and the pressure is
+  ## formed apart from that product: below the onset the species integers are
+  ## the ones today's code writes, at every force multiplier.
+  let forceOnThis = speciesMagnitudeOnThis * (params.forceMultiplier * invDistance)
+  let forceOnOther = speciesMagnitudeOnOther * (params.forceMultiplier * invDistance)
+  let magnitude = worldPressureMagnitude(
+    crowdPressure(crowdDensityThis, params.pressureOnset),
+    crowdPressure(crowdDensityOther, params.pressureOnset),
+    normalizedDistance, params.pressureStiffness, params.pressureImpulseMax)
+  PairImpulse(
+    speciesOnThis: (x: separationX * forceOnThis, y: separationY * forceOnThis),
+    speciesOnOther: (x: -separationX * forceOnOther,
+      y: -separationY * forceOnOther),
+    pressureOnThis: (
+      x: encodeVelocityDelta(-magnitude * separationX * invDistance,
+        params.fixedPointScale),
+      y: encodeVelocityDelta(-magnitude * separationY * invDistance,
+        params.fixedPointScale)))
+
+func pressureOnOther*(impulse: PairImpulse): tuple[x, y: int32] =
+  ## The other particle receives the integer this one received, negated.
+  (x: -impulse.pressureOnThis.x, y: -impulse.pressureOnThis.y)

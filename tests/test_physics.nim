@@ -1,4 +1,5 @@
 import std/math
+import std/sequtils
 import std/unittest
 import ../src/physics_core
 import ../src/sph_core
@@ -194,60 +195,6 @@ const
   SWEPT_FORCE_STRENGTHS = sweepPoints(FORCE_STRENGTH_MIN, FORCE_STRENGTH_MAX, 5)
   SWEPT_CROWDING_STRENGTHS = sweepPoints(
     CROWDING_STRENGTH_MIN, CROWDING_STRENGTH_MAX, 6)
-
-suite "The Density Ceiling":
-  test "a density ceiling exists":
-    for attr in SWEPT_MATRIX_VALUES:
-      for forceStrength in SWEPT_FORCE_STRENGTHS:
-        for crowding in SWEPT_CROWDING_STRENGTHS:
-          if crowding == 0.0:
-            continue  # the force law caps nothing; the endpoint below
-          let ceiling = densityCeiling(attr, forceStrength, crowding)
-          checkpoint("attr " & $attr & " force " & $forceStrength &
-            " crowding " & $crowding)
-          check ceiling >= 0.0
-          check classify(ceiling) notin {fcInf, fcNegInf, fcNan}
-
-  test "the ceiling degenerates at force strength zero":
-    # Zero sits inside the force-strength range, and when no force acts,
-    # species attraction concentrates nothing at any density. The bound on
-    # what attraction concentrates is therefore zero — vacuous rather than
-    # wrong, and swept rather than excluded.
-    for attr in SWEPT_MATRIX_VALUES:
-      for crowding in SWEPT_CROWDING_STRENGTHS:
-        check densityCeiling(attr, FORCE_STRENGTH_MIN, crowding) == 0.0
-
-  test "the ceiling decreases monotonically in crowding strength":
-    for attr in SWEPT_MATRIX_VALUES:
-      for forceStrength in SWEPT_FORCE_STRENGTHS:
-        for strengthIndex in 1 ..< SWEPT_CROWDING_STRENGTHS.len:
-          let looser = densityCeiling(attr, forceStrength,
-            SWEPT_CROWDING_STRENGTHS[strengthIndex - 1])
-          let firmer = densityCeiling(attr, forceStrength,
-            SWEPT_CROWDING_STRENGTHS[strengthIndex])
-          checkpoint("attr " & $attr & " force " & $forceStrength)
-          check firmer <= looser
-          # Strict decrease is asserted only for AUTHORABLE attractions — at
-          # least one editor step. The sweep's midpoint is float noise
-          # (~1e-17, the representation error of the band's endpoints), and
-          # an attraction that small moves the crossing by less than one ulp
-          # of the ceiling, so equality there is the vacuous zero case.
-          if forceStrength > 0.0 and attr >= MATRIX_VALUE_STEP:
-            check firmer < looser
-
-  test "the ceiling is the same at every non-zero force strength":
-    # The attenuation is a fraction of the attraction that survives fMul,
-    # never an absolute force. So force strength scales both sides of the
-    # balance and cancels out of the ceiling entirely, and the cap means the
-    # same thing across the whole force-strength range.
-    for attr in SWEPT_MATRIX_VALUES:
-      for crowding in SWEPT_CROWDING_STRENGTHS:
-        let atMax = densityCeiling(attr, FORCE_STRENGTH_MAX, crowding)
-        for forceStrength in SWEPT_FORCE_STRENGTHS:
-          if forceStrength == 0.0:
-            continue
-          check densityCeiling(attr, forceStrength, crowding) == atMax
-
 
 suite "Distance Normalization":
   test "normalizes distance to [0,1] range":
@@ -713,8 +660,9 @@ suite "A Full Crowd Decodes To Its Impulse":
   # negative infinity.
   const FRAME_FACTORS = [1.0, 2.0, 30.0]
   const SIGNS = [1.0, -1.0]
-  const ONSET_RATIO = 6.3
-    ## Long range's onset, budgeted here until config_ranges carries it.
+  const ONSET_RATIO = CROWD_ONSET_RATIO
+    ## The onset the colony radius is read at, the same ratio the world
+    ## pressure starts at.
   let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
   let invScale = 1.0'f32 / fixedScale
 
@@ -803,4 +751,425 @@ suite "A Full Crowd Decodes To Its Impulse":
         impulse += single.float
         inc adds
       verdicts.judge("every writer, sign " & $sign, words, impulse, adds)
+    checkNoVerdicts(verdicts)
+
+# ==============================================================================
+# THE WORLD PRESSURE
+# ==============================================================================
+# A pair's repulsive impulse per reference frame is the stiffness times the sum
+# of both particles' pressures, times the proximity weight 1 - r/R, over 120,
+# saturating at q_max, quantized once per component and exchanged. A particle's
+# pressure is (max(rho - rho_on, 0) / rho_on)^2 over its smoothed crowd
+# density. Nothing a player moves enters that expression.
+
+const
+  PRESSURE_ONSETS = [3.804, 40.0, 254.4]
+    ## Three onsets the live world reaches: the contact floor at the preset
+    ## rest spacing of 0.5, a middling world's, and a 128 000-particle world's
+    ## at the shipped radius.
+  PRESSURE_RADIUS = 50.0'f32
+  PRESSURE_SEPARATIONS = [(3.0'f32, 4.0'f32), (-12.0'f32, 5.0'f32),
+    (30.0'f32, 0.0'f32), (0.0'f32, -18.0'f32), (-9.0'f32, -9.0'f32)]
+  BELOW_ONSET_RATIOS = [0.0, 0.25, 0.5, 0.9, 1.0]
+  PAST_ONSET_RATIOS = [1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 9.5, 12.0, 20.0, 30.0]
+    ## Past 9.86 times the onset the magnitude saturates at q_max, so this
+    ## sweep covers the rise and the saturated tail at once.
+
+let pressureScale = PRODUCTION_TUNING.fixedPointScale.float32
+let invPressureScale = 1.0'f32 / pressureScale
+
+func pressureParams(onset, forceMultiplier: float): PairImpulseParams =
+  PairImpulseParams(forceMultiplier: forceMultiplier.float32,
+    pressureOnset: onset.float32,
+    pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
+    pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+    fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32)
+
+func pairGeometry(separation: (float32, float32)):
+    tuple[invDistance, normalizedDistance: float32] =
+  let distance = sqrt(separation[0] * separation[0] +
+    separation[1] * separation[1])
+  (invDistance: 1.0'f32 / distance,
+   normalizedDistance: distance / PRESSURE_RADIUS)
+
+func pairAt(params: PairImpulseParams; separation: (float32, float32);
+    densityThis, densityOther: float; speciesMagnitude: float32 = 0.0'f32):
+    PairImpulse =
+  let geometry = pairGeometry(separation)
+  pairImpulse(params, separation[0], separation[1], geometry.invDistance,
+    geometry.normalizedDistance, speciesMagnitude, speciesMagnitude,
+    densityThis.float32, densityOther.float32)
+
+func pressureWords(impulse: PairImpulse): tuple[x, y: VelocityWords] =
+  ## The pair's pressure integer as the two words it is split across.
+  (x: splitVelocityWord(impulse.pressureOnThis.x, VELOCITY_COARSE_SHIFT),
+   y: splitVelocityWord(impulse.pressureOnThis.y, VELOCITY_COARSE_SHIFT))
+
+func magnitudeAt(onset, densityThis, densityOther: float;
+    normalizedDistance: float32): float32 =
+  worldPressureMagnitude(crowdPressure(densityThis.float32, onset.float32),
+    crowdPressure(densityOther.float32, onset.float32), normalizedDistance,
+    WORLD_PRESSURE_STIFFNESS.float32, WORLD_PRESSURE_IMPULSE_MAX.float32)
+
+suite "Pressure Past The Onset":
+  test "the magnitude is zero at and below the onset":
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      for ratioThis in BELOW_ONSET_RATIOS:
+        for ratioOther in BELOW_ONSET_RATIOS:
+          for normalizedDistance in [0.0'f32, 0.2'f32, 0.5'f32, 0.99'f32]:
+            let magnitude = magnitudeAt(onset, onset * ratioThis,
+              onset * ratioOther, normalizedDistance)
+            if magnitude != 0.0'f32:
+              verdicts.add "onset " & $onset & " at " & $ratioThis & " and " &
+                $ratioOther & " of it, r/R " & $normalizedDistance &
+                ": the magnitude is " & $magnitude & ", not zero"
+    checkNoVerdicts(verdicts)
+
+  test "the magnitude rises strictly past the onset and holds at q_max":
+    let ceilingMagnitude = WORLD_PRESSURE_IMPULSE_MAX.float32
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      var previous = -1.0'f32
+      var saturatedAt = -1
+      for index, ratio in PAST_ONSET_RATIOS:
+        let magnitude = magnitudeAt(onset, onset * ratio, onset * ratio, 0.0'f32)
+        let label = "onset " & $onset & " at " & $ratio & " of it"
+        if magnitude > ceilingMagnitude:
+          verdicts.add label & ": the magnitude is " & $magnitude &
+            ", past the per-pair ceiling of " & $ceilingMagnitude
+        if saturatedAt < 0 and magnitude == ceilingMagnitude:
+          saturatedAt = index
+        if saturatedAt < 0:
+          if not (magnitude > previous):
+            verdicts.add label & ": the magnitude is " & $magnitude &
+              ", not past the previous " & $previous
+        elif magnitude != ceilingMagnitude:
+          verdicts.add label & ": the magnitude fell to " & $magnitude &
+            " after saturating at " & $ceilingMagnitude
+        previous = magnitude
+      if saturatedAt < 2:
+        verdicts.add "onset " & $onset & ": the sweep saturated at index " &
+          $saturatedAt & ", so it shows no rise before the ceiling"
+    checkNoVerdicts(verdicts)
+
+  test "the magnitude grows as the square of the excess over the onset":
+    # The square law's local stiffness is zero at the onset and rises with the
+    # excess. A law with a step there - a Tait pressure for one - boils the
+    # settle it is meant to hold (mean speed 4.02 against 1.47).
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      for excess in [0.01, 0.05, 0.2, 0.5, 1.0]:
+        let single = magnitudeAt(onset, onset * (1.0 + excess),
+          onset * (1.0 + excess), 0.0'f32)
+        let doubled = magnitudeAt(onset, onset * (1.0 + 2.0 * excess),
+          onset * (1.0 + 2.0 * excess), 0.0'f32)
+        if not (single > 0.0'f32):
+          verdicts.add "onset " & $onset & " at excess " & $excess &
+            ": the magnitude is " & $single & ", so the ratio says nothing"
+        elif not approxEq(doubled / single, 4.0'f32, 1e-3'f32):
+          verdicts.add "onset " & $onset & " at excess " & $excess &
+            ": doubling the excess multiplied the magnitude by " &
+            $(doubled / single) & ", not by 4"
+    checkNoVerdicts(verdicts)
+
+  test "each component is zero at and below the onset and grows with density":
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      let params = pressureParams(onset, FORCE_STRENGTH_MAX)
+      for separation in PRESSURE_SEPARATIONS:
+        var previous = (x: 0'i32, y: 0'i32)
+        for ratio in BELOW_ONSET_RATIOS:
+          let words = pairAt(params, separation, onset * ratio,
+            onset * ratio).pressureOnThis
+          if words != (x: 0'i32, y: 0'i32):
+            verdicts.add "onset " & $onset & " separation " & $separation &
+              " at " & $ratio & " of the onset: the integers are " & $words &
+              ", not zero"
+        for ratio in PAST_ONSET_RATIOS:
+          let words = pairAt(params, separation, onset * ratio,
+            onset * ratio).pressureOnThis
+          if abs(words.x) < abs(previous.x) or abs(words.y) < abs(previous.y):
+            verdicts.add "onset " & $onset & " separation " & $separation &
+              " at " & $ratio & " of the onset: the integers fell from " &
+              $previous & " to " & $words
+          previous = words
+        if previous == (x: 0'i32, y: 0'i32):
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": the densest pair still writes nothing"
+    checkNoVerdicts(verdicts)
+
+  test "a saturated pair keeps the direction of its separation":
+    # Saturating each component on its own would turn every saturated pair
+    # toward a diagonal, so the magnitude saturates before the direction is
+    # applied.
+    let ceilingMagnitude = WORLD_PRESSURE_IMPULSE_MAX.float32
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      let params = pressureParams(onset, 1.0)
+      for separation in PRESSURE_SEPARATIONS:
+        let geometry = pairGeometry(separation)
+        let words = pairAt(params, separation, onset * 30.0,
+          onset * 30.0).pressureOnThis
+        let expected = (
+          x: encodeVelocityDelta(-ceilingMagnitude * separation[0] *
+            geometry.invDistance, pressureScale),
+          y: encodeVelocityDelta(-ceilingMagnitude * separation[1] *
+            geometry.invDistance, pressureScale))
+        if words != expected:
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": the saturated integers are " & $words & ", not " & $expected
+    checkNoVerdicts(verdicts)
+
+  test "the two particles take exactly opposite integers and sum to zero":
+    # The pair's integer is formed once and exchanged, and the magnitude is
+    # symmetric in the two pressures, so reading the pair from the other side
+    # returns the same integer negated.
+    var verdicts: seq[string]
+    var sum = (x: 0'i64, y: 0'i64)
+    var written = (x: 0'i64, y: 0'i64)
+    for onset in PRESSURE_ONSETS:
+      let params = pressureParams(onset, 1.0)
+      for separation in PRESSURE_SEPARATIONS:
+        for ratioThis in PAST_ONSET_RATIOS:
+          for ratioOther in [0.5, 1.0, 3.0, 12.0]:
+            let fromThis = pairAt(params, separation, onset * ratioThis,
+              onset * ratioOther)
+            let fromOther = pairAt(params,
+              (-separation[0], -separation[1]), onset * ratioOther,
+              onset * ratioThis)
+            if fromOther.pressureOnThis != fromThis.pressureOnOther():
+              verdicts.add "onset " & $onset & " separation " & $separation &
+                " at " & $ratioThis & " and " & $ratioOther &
+                ": the other particle reads " & $fromOther.pressureOnThis &
+                ", against the " & $fromThis.pressureOnOther() & " this one hands it"
+            sum = (x: sum.x + fromThis.pressureOnThis.x +
+                fromThis.pressureOnOther().x,
+              y: sum.y + fromThis.pressureOnThis.y +
+                fromThis.pressureOnOther().y)
+            written = (x: written.x + abs(fromThis.pressureOnThis.x.int64),
+              y: written.y + abs(fromThis.pressureOnThis.y.int64))
+    if sum != (x: 0'i64, y: 0'i64):
+      verdicts.add "the swept pairs' integers sum to " & $sum & ", not zero"
+    if written.x == 0 or written.y == 0:
+      verdicts.add "the sweep wrote " & $written &
+        " in total, so a zero sum says nothing"
+    checkNoVerdicts(verdicts)
+
+  test "the term is unchanged by force strength, the matrix entry and crowding":
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      for separation in PRESSURE_SEPARATIONS:
+        let geometry = pairGeometry(separation)
+        var reference = (x: 0'i32, y: 0'i32)
+        var speciesSeen: seq[float32]
+        var first = true
+        for forceMultiplier in [0.0, 0.7, 1.0, FORCE_STRENGTH_MAX]:
+          for entry in [MATRIX_MIN_VALUE, 0.0, MATRIX_MAX_VALUE]:
+            for crowdingStrength in [0.0, 1.0, CROWDING_STRENGTH_MAX]:
+              let attenuation = crowdingAttenuation((onset * 12.0).float32,
+                crowdingStrength.float32)
+              let speciesMagnitude = polynomialForce(
+                geometry.normalizedDistance, entry.float32, 0.5'f32, 0.75'f32,
+                attenuation)
+              let impulse = pairAt(pressureParams(onset, forceMultiplier),
+                separation, onset * 12.0, onset * 12.0, speciesMagnitude)
+              if first:
+                reference = impulse.pressureOnThis
+                first = false
+              elif impulse.pressureOnThis != reference:
+                verdicts.add "onset " & $onset & " separation " & $separation &
+                  " at force " & $forceMultiplier & " entry " & $entry &
+                  " crowding " & $crowdingStrength & ": the integers are " &
+                  $impulse.pressureOnThis & ", against " & $reference
+              # Both components, since a separation along one axis leaves the
+              # other at zero however the species force moves.
+              speciesSeen.add impulse.speciesOnThis.x + impulse.speciesOnThis.y
+        if reference == (x: 0'i32, y: 0'i32):
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": the term writes nothing, so the sweep holds nothing"
+        if speciesSeen.len > 0 and speciesSeen.allIt(it == speciesSeen[0]):
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": the sweep left the species term at " & $speciesSeen[0] &
+            " throughout, so it moves nothing the term could have followed"
+    checkNoVerdicts(verdicts)
+
+  test "the term is unchanged by the friction and the pair's relative velocity":
+    # Integrate receives the friction as the retention factor 1 - slider
+    # (src/app.nim:193), so the swept retentions are the slider's two ends.
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      let params = pressureParams(onset, 1.0)
+      for separation in PRESSURE_SEPARATIONS:
+        var reference = (x: 0'i32, y: 0'i32)
+        var speeds: seq[float32]
+        var first = true
+        for retention in [1.0 - FRICTION_MIN, 0.8, 1.0 - FRICTION_MAX]:
+          for velocity in [(0.0'f32, 0.0'f32), (7.5'f32, -3.25'f32),
+              (-40.0'f32, 40.0'f32)]:
+            let impulse = pairAt(params, separation, onset * 12.0, onset * 12.0)
+            let words = pressureWords(impulse)
+            if first:
+              reference = impulse.pressureOnThis
+              first = false
+            elif impulse.pressureOnThis != reference:
+              verdicts.add "onset " & $onset & " separation " & $separation &
+                " at retention " & $retention & " velocity " & $velocity &
+                ": the integers are " & $impulse.pressureOnThis &
+                ", against " & $reference
+            let moved = (
+              x: velocity[0] + decodeVelocityWords(words.x, invPressureScale,
+                1.0'f32, VELOCITY_COARSE_SHIFT),
+              y: velocity[1] + decodeVelocityWords(words.y, invPressureScale,
+                1.0'f32, VELOCITY_COARSE_SHIFT))
+            speeds.add postStepSpeed(sqrt(moved.x * moved.x +
+              moved.y * moved.y), retention.float32,
+              MAX_VELOCITY_MAX.float32)
+        if reference == (x: 0'i32, y: 0'i32):
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": the term writes nothing, so the sweep holds nothing"
+        if speeds.len > 0 and speeds.allIt(it == speeds[0]):
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": every swept friction and velocity left the same speed " &
+            $speeds[0] & ", so the sweep moves nothing"
+    checkNoVerdicts(verdicts)
+
+suite "The Species Term Is Zero At Strength Zero":
+  test "the species force is exactly zero on both particles":
+    var verdicts: seq[string]
+    for separation in PRESSURE_SEPARATIONS:
+      let geometry = pairGeometry(separation)
+      for entry in SWEPT_MATRIX_VALUES:
+        for normalizedDistance in [0.0'f32, 0.2'f32, 0.6'f32, 0.99'f32]:
+          let magnitude = polynomialForce(normalizedDistance, entry.float32,
+            0.5'f32, 0.75'f32, 1.0'f32)
+          let impulse = pairImpulse(pressureParams(254.4, FORCE_STRENGTH_MIN),
+            separation[0], separation[1], geometry.invDistance,
+            normalizedDistance, magnitude, magnitude, 0.0'f32, 0.0'f32)
+          if impulse.speciesOnThis.x != 0.0'f32 or
+              impulse.speciesOnThis.y != 0.0'f32 or
+              impulse.speciesOnOther.x != 0.0'f32 or
+              impulse.speciesOnOther.y != 0.0'f32:
+            verdicts.add "separation " & $separation & " entry " & $entry &
+              " at r/R " & $normalizedDistance & ": the species force is " &
+              $impulse.speciesOnThis & " and " & $impulse.speciesOnOther
+    checkNoVerdicts(verdicts)
+
+  test "a crowd past the onset still resists compression at strength zero":
+    # The pressure is part of the pair law, not a coupling: turning the species
+    # force off leaves the world's resistance to compression where it was.
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      for separation in PRESSURE_SEPARATIONS:
+        let atZero = pairAt(pressureParams(onset, FORCE_STRENGTH_MIN),
+          separation, onset * 12.0, onset * 12.0).pressureOnThis
+        let atFull = pairAt(pressureParams(onset, FORCE_STRENGTH_MAX),
+          separation, onset * 12.0, onset * 12.0).pressureOnThis
+        if atZero == (x: 0'i32, y: 0'i32):
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": a pair at 12 times the onset receives nothing at strength zero"
+        elif atZero != atFull:
+          verdicts.add "onset " & $onset & " separation " & $separation &
+            ": strength zero writes " & $atZero & ", against " & $atFull &
+            " at the strength ceiling"
+    checkNoVerdicts(verdicts)
+
+  test "a pair below the onset passes through at strength zero":
+    var verdicts: seq[string]
+    for onset in PRESSURE_ONSETS:
+      for separation in PRESSURE_SEPARATIONS:
+        for ratio in BELOW_ONSET_RATIOS:
+          let impulse = pairAt(pressureParams(onset, FORCE_STRENGTH_MIN),
+            separation, onset * ratio, onset * ratio)
+          if impulse.pressureOnThis != (x: 0'i32, y: 0'i32) or
+              impulse.speciesOnThis != (x: 0.0'f32, y: 0.0'f32):
+            verdicts.add "onset " & $onset & " separation " & $separation &
+              " at " & $ratio & " of the onset: the pair writes " &
+              $impulse.speciesOnThis & " and " & $impulse.pressureOnThis
+    checkNoVerdicts(verdicts)
+
+# Today's species expression, kept test-local so the suite below compares the
+# pair against forces.wgsl's convention rather than against the oracle under
+# test: the magnitude scaled by `params.forceMultiplier * invDistance`
+# (`:289`), projected on the separation, encoded once per reference frame
+# (`:385`).
+func todaySpeciesForce(separationComponent, speciesMagnitude, forceMultiplier,
+    invDistance: float32): float32 =
+  separationComponent * (speciesMagnitude * (forceMultiplier * invDistance))
+
+func todaySpeciesWord(separationComponent, speciesMagnitude, forceMultiplier,
+    invDistance, fixedPointScale: float32): int32 =
+  int32(todaySpeciesForce(separationComponent, speciesMagnitude,
+    forceMultiplier, invDistance) * FRAME_DT_REFERENCE.float32 *
+    fixedPointScale)
+
+suite "The Species Term Is Untouched Below The Onset":
+  # Force Strength runs 0.14, 0.2, 0.5 and 1 on the new scale, behind a pair
+  # gain of 5. 0.14 is swept beyond the three the law names because the
+  # measured falsifier - a regrouped product moving 35 207 of 100 000 low bits
+  # - was taken at the multiplier 0.7 it stands for.
+  const SPECIES_MULTIPLIERS = [0.7, 1.0, 2.5, 5.0]
+
+  test "the velocity delta is bit-identical with and without the term":
+    var verdicts: seq[string]
+    for forceMultiplier in SPECIES_MULTIPLIERS:
+      for onset in PRESSURE_ONSETS:
+        let params = pressureParams(onset, forceMultiplier)
+        for separation in PRESSURE_SEPARATIONS:
+          let geometry = pairGeometry(separation)
+          for ratio in BELOW_ONSET_RATIOS:
+            let density = onset * ratio
+            for entry in SWEPT_MATRIX_VALUES:
+              for crowdingStrength in SWEPT_CROWDING_STRENGTHS:
+                let attenuation = crowdingAttenuation(density.float32,
+                  crowdingStrength.float32)
+                for magnitude in [
+                    polynomialForce(geometry.normalizedDistance,
+                      entry.float32, 0.5'f32, 0.75'f32, attenuation),
+                    exponentialForce(geometry.normalizedDistance,
+                      entry.float32, 4.0'f32, 2.0'f32, attenuation)]:
+                  let impulse = pairAt(params, separation, density, density,
+                    magnitude)
+                  let pressure = pressureWords(impulse)
+                  let withTerm = (
+                    x: addVelocityWords((fine: forcesVelocityDeltaFixed(
+                      impulse.speciesOnThis.x, pressureScale), coarse: 0'i32),
+                      pressure.x),
+                    y: addVelocityWords((fine: forcesVelocityDeltaFixed(
+                      impulse.speciesOnThis.y, pressureScale), coarse: 0'i32),
+                      pressure.y))
+                  let without = (
+                    x: todaySpeciesWord(separation[0], magnitude,
+                      forceMultiplier.float32, geometry.invDistance,
+                      pressureScale),
+                    y: todaySpeciesWord(separation[1], magnitude,
+                      forceMultiplier.float32, geometry.invDistance,
+                      pressureScale))
+                  let decoded = (
+                    x: decodeVelocityWords(withTerm.x, invPressureScale,
+                      1.0'f32, VELOCITY_COARSE_SHIFT),
+                    y: decodeVelocityWords(withTerm.y, invPressureScale,
+                      1.0'f32, VELOCITY_COARSE_SHIFT))
+                  let todayDecoded = (
+                    x: decodeVelocityDelta(without.x, invPressureScale, 1.0'f32),
+                    y: decodeVelocityDelta(without.y, invPressureScale, 1.0'f32))
+                  # The register the shader accumulates in, as well as the
+                  # integer it encodes: a regrouped product moves the register
+                  # on every pair, where truncation hides it on most.
+                  let todayForce = (
+                    x: todaySpeciesForce(separation[0], magnitude,
+                      forceMultiplier.float32, geometry.invDistance),
+                    y: todaySpeciesForce(separation[1], magnitude,
+                      forceMultiplier.float32, geometry.invDistance))
+                  let label = "force " & $forceMultiplier & " onset " &
+                    $onset & " separation " & $separation & " at " & $ratio &
+                    " of the onset, entry " & $entry & " crowding " &
+                    $crowdingStrength
+                  if impulse.speciesOnThis != todayForce:
+                    verdicts.add label & ": the species register is " &
+                      $impulse.speciesOnThis & ", against today's " &
+                      $todayForce
+                  if decoded != todayDecoded:
+                    verdicts.add label & ": the delta is " & $decoded &
+                      ", against today's " & $todayDecoded
     checkNoVerdicts(verdicts)
