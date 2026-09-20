@@ -138,7 +138,6 @@ type
     ## panel and the CONFIG mirror evaluate any of them from the same snapshot.
     interactionRadius*: int
     sphRadiusFraction*: float
-    sphSubsteps*: int
     timeScale*: float
 
   ParamNotch* = object
@@ -236,7 +235,6 @@ func ceilingInputs*(sim: SimulationState): CeilingInputs =
   CeilingInputs(
     interactionRadius: sim.interactionRadius,
     sphRadiusFraction: sim.sphRadiusFraction,
-    sphSubsteps: sim.sphSubsteps,
     timeScale: sim.timeScale)
 
 func evaluateCeiling*(id: ParamCeilingId; inputs: CeilingInputs): float =
@@ -244,12 +242,13 @@ func evaluateCeiling*(id: ParamCeilingId; inputs: CeilingInputs): float =
   case id
   of pcStableStiffness:
     # The smoothing radius the shader forms (forces-sph.wgsl multiplies these
-    # two), and the timestep app.nim's loop hands the substepped frame, taken
-    # against sph_core's reference frame rather than the one the browser
-    # happened to deliver.
+    # two), and the frame taken against sph_core's reference rather than the one
+    # the browser happened to deliver. SUBSTEPS_MAX is the count
+    # sim_registry.substepPlan serves the fluid when this ceiling binds, so the
+    # panel offers exactly the stiffness the integrator can then run.
     stableStiffnessCeiling(
       inputs.interactionRadius.float * inputs.sphRadiusFraction,
-      inputs.sphSubsteps,
+      SUBSTEPS_MAX,
       inputs.timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS,
       SPH_STIFFNESS_MAX)
 
@@ -266,7 +265,8 @@ func ceilingReason*(id: ParamCeilingId): string =
   ## panel restates neither the claim nor the number behind it.
   case id
   of pcStableStiffness:
-    "above the stable ceiling at the current fluid radius and substeps"
+    "above the stable ceiling at the current interaction radius, fluid " &
+      "radius and time scale"
 
 func ceilingInputBox*(): seq[CeilingInputs] =
   ## Every corner of the box the ceiling inputs range over, plus the shipped
@@ -275,13 +275,11 @@ func ceilingInputBox*(): seq[CeilingInputs] =
   ## configuration a fresh world actually runs.
   for interactionRadius in [INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX]:
     for fraction in [SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX]:
-      for substeps in [SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX]:
-        for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
-          result.add CeilingInputs(
-            interactionRadius: interactionRadius,
-            sphRadiusFraction: fraction,
-            sphSubsteps: substeps,
-            timeScale: timeScale)
+      for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
+        result.add CeilingInputs(
+          interactionRadius: interactionRadius,
+          sphRadiusFraction: fraction,
+          timeScale: timeScale)
   result.add ceilingInputs(initSimulationState())
 
 func minimumCeiling*(id: ParamCeilingId): float =
@@ -290,14 +288,13 @@ func minimumCeiling*(id: ParamCeilingId): float =
   ## notch above it names a position some reachable world can never honour.
   ##
   ## Read off one corner rather than swept, because every registered ceiling
-  ## rises with the interaction radius, the radius fraction and the substep
-  ## count and falls as the time scale lengthens the frame. That monotonicity is
-  ## what makes a corner the answer, and tests/test_param_descriptor.nim sweeps
-  ## the box to hold this corner to it.
+  ## rises with the interaction radius and the radius fraction and falls as the
+  ## time scale lengthens the frame. That monotonicity is what makes a corner
+  ## the answer, and tests/test_param_descriptor.nim sweeps the box to hold this
+  ## corner to it.
   evaluateCeiling(id, CeilingInputs(
     interactionRadius: INTERACTION_RADIUS_MIN,
     sphRadiusFraction: SPH_RADIUS_FRACTION_MIN,
-    sphSubsteps: SPH_SUBSTEPS_MIN,
     timeScale: TIME_SCALE_MAX))
 
 func effectiveSimulation*(sim: SimulationState): SimulationState =
@@ -581,32 +578,19 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
     # The one derived bound this mechanism serves. The envelope below is still
     # the whole of what can be STORED — a preset carrying 40 loads as 40 — while
-    # how much of it the fluid can honour depends on the three controls around
-    # it, so the descriptor cites the ceiling instead of claiming its maximum is
-    # always available.
+    # how much of it the fluid can honour depends on the interaction radius,
+    # the radius fraction and the time scale, so the descriptor cites the
+    # ceiling instead of claiming its maximum is always available.
     floatParam("sphStiffness", "Stiffness", "fluid",
       SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, sim.sphStiffness, 1,
       psSimulation,
-      hint = "how hard the fluid resists compression; a narrower kernel, " &
-        "fewer substeps or a faster world hold less of it",
+      hint = "how hard the fluid resists compression; a smaller interaction " &
+        "radius, a narrower kernel or a faster world hold less of it",
       bound = derivedBound(pcStableStiffness), probe = "sph.pressureGain",
       horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
     floatParam("sphViscosity", "Viscosity", "fluid",
       SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX, sim.sphViscosity, 2,
       psSimulation, probe = "sph.velocityBlend",
-      horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
-    intParam("sphSubsteps", "Substeps", "fluid",
-      SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX, sim.sphSubsteps, psSimulation,
-      exemption = "a three-position integer count of whole physics passes: " &
-        "every step legitimately moves the stable ceiling by its share, so " &
-        "the cliff bar — written for divisible travel — cannot hold " &
-        "(measured cliff 0.60 for a uniform-as-possible three-point " &
-        "response). The remedy ladder ran dry: no dead end to re-range, no " &
-        "curve moves a count, re-stepping a whole pass is meaningless, and " &
-        "no partner shapes it. Its ceiling consequence stays measured " &
-        "through sphStiffness's deriving-box corner slices, and the count " &
-        "itself is pinned by the measured stability fit " &
-        "(sph_core.stableStiffnessCeiling)",
       horizon = rhSettling, horizonReview = true, dormantWhen = "fluidOff"),
 
     # Long-range mesh. The strength leads for the reason fluidStrength does:

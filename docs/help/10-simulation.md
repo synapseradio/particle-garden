@@ -27,9 +27,12 @@ These controls set how much world there is and how fast it runs.
   ceiling); the field (more steps, more cost). Weather and Drift keep
   real time.
 - `maxVelocity` — a soft cap on how fast any particle may travel. Lower it
-  if fast movers streak past the structures you want to watch.
+  if fast movers streak past the structures you want to watch. On a long
+  frame with a live body, the world serves a lower cap than the one you set,
+  so nothing crosses a body's band without meeting it.
   Interacts with: every push at once (the cap applies to their sum);
-  Velocity Sweep (glow measures speed against it).
+  Velocity Sweep (glow measures speed against it); Band (a narrow band lowers
+  the cap the world serves on a long frame).
 - `forceWeatherSpeed` — how fast Force Weather walks its waypoints, in tours
   per minute. It appears once Force Weather is on.
   Interacts with: Force Strength, Interaction Radius and Friction (Force

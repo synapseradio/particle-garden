@@ -74,7 +74,7 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       # measured in: the smoothing radius as a fraction of the interaction
       # radius, capped at 1 so it can never outrun the neighbour sweep.
       "sphRadiusFraction",
-      "sphRestDensity", "sphStiffness", "sphViscosity", "sphSubsteps",
+      "sphRestDensity", "sphStiffness", "sphViscosity",
       "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "fieldOpacity",
       # bodiesStrength is the coupling strength; the six below it say what a
       # body is. The three a body is ALSO born with — anisotropy, envelope
@@ -207,11 +207,11 @@ suite "Every Descriptor Is Internally Coherent":
         else:
           check abs(descriptor.step - pow(10.0, -float(descriptor.precision))) < 1e-12
 
-  test "integer parameters are exactly the six integer CONFIG fields":
+  test "integer parameters are exactly the five integer CONFIG fields":
     for descriptor in descriptors:
       let expectInt = descriptor.id in [
         "particleCount", "speciesCount", "interactionRadius", "particleSize",
-        "sphSubsteps", "longRangeGridIndex"]
+        "longRangeGridIndex"]
       check (descriptor.kind == pkInt) == expectInt
 
 suite "Descriptors Agree With The Range Authority":
@@ -256,7 +256,6 @@ suite "Descriptors Agree With The Range Authority":
     ("sphRestDensity", SPH_REST_DENSITY_MIN, SPH_REST_DENSITY_MAX),
     ("sphStiffness", SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX),
     ("sphViscosity", SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX),
-    ("sphSubsteps", SPH_SUBSTEPS_MIN.float, SPH_SUBSTEPS_MAX.float),
     ("rdFeed", RD_FEED_MIN, RD_FEED_MAX),
     ("rdKill", RD_KILL_MIN, RD_KILL_MAX),
     ("rdDeposit", RD_DEPOSIT_MIN, RD_DEPOSIT_MAX),
@@ -318,7 +317,6 @@ suite "Descriptors Agree With The Default Authority":
     ("sphRestDensity", simDefaults.sphRestDensity),
     ("sphStiffness", simDefaults.sphStiffness),
     ("sphViscosity", simDefaults.sphViscosity),
-    ("sphSubsteps", simDefaults.sphSubsteps.float),
     ("rdFeed", simDefaults.rdFeed),
     ("rdKill", simDefaults.rdKill),
     ("rdDeposit", simDefaults.rdDeposit),
@@ -718,11 +716,21 @@ suite "Notches Mark Only Reachable Positions":
 
 
 # Most bounds are the envelope in the descriptor and nothing else. One is not:
-# the stiffness the fluid can hold depends on how far its kernel reaches, how
-# many substeps it takes, and how long a frame is, so the descriptor cites a
-# registered ceiling function instead of pretending its declared maximum is the
-# whole story. The envelope constants do not move — store-time clamping still
+# the stiffness the fluid can hold depends on how far its kernel reaches and how
+# long a frame is, so the descriptor cites a registered ceiling function instead
+# of pretending its declared maximum is the whole story. The envelope constants do not move — store-time clamping still
 # runs against them — and the ceiling applies where the value takes effect.
+
+proc ceilingInputBoxWithoutSubsteps(): seq[CeilingInputs] =
+  ## The ceiling reads only the interaction radius, the fluid radius
+  ## fraction and the time scale — no substep axis.
+  for interactionRadius in [INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX]:
+    for fraction in [SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX]:
+      for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
+        result.add CeilingInputs(
+          interactionRadius: interactionRadius,
+          sphRadiusFraction: fraction,
+          timeScale: timeScale)
 
 suite "A Derived Bound Cites A Registered Ceiling":
   test "every descriptor carries a bound, and only the fluid's stiffness derives":
@@ -741,11 +749,10 @@ suite "A Derived Bound Cites A Registered Ceiling":
     # usable number everywhere its inputs can go.
     for descriptor in descriptors:
       if descriptor.bound.kind != bDerived: continue
-      for inputs in ceilingInputBox():
+      for inputs in ceilingInputBoxWithoutSubsteps():
         let ceiling = evaluateCeiling(descriptor.bound.ceilingId, inputs)
         checkpoint(descriptor.id & " at radius " & $inputs.interactionRadius &
           ", fraction " & $inputs.sphRadiusFraction &
-          ", substeps " & $inputs.sphSubsteps &
           ", time scale " & $inputs.timeScale)
         check ceiling > 0.0
         check ceiling <= descriptor.maxValue
@@ -759,10 +766,9 @@ suite "A Derived Bound Cites A Registered Ceiling":
     for id in ParamCeilingId:
       let floorValue = minimumCeiling(id)
       check floorValue > 0.0
-      for inputs in ceilingInputBox():
+      for inputs in ceilingInputBoxWithoutSubsteps():
         checkpoint($id & " at radius " & $inputs.interactionRadius &
           ", fraction " & $inputs.sphRadiusFraction &
-          ", substeps " & $inputs.sphSubsteps &
           ", time scale " & $inputs.timeScale)
         check evaluateCeiling(id, inputs) >= floorValue
 
@@ -820,7 +826,6 @@ suite "The Effective Value Is Bounded Without The Stored One Moving":
     var sim = initSimulationState()
     sim.sphStiffness = SPH_STIFFNESS_MAX
     sim.sphRadiusFraction = SPH_RADIUS_FRACTION_MAX
-    sim.sphSubsteps = SPH_SUBSTEPS_MAX
     let before = effectiveSimulation(sim).sphStiffness
     for fraction in [SPH_RADIUS_FRACTION_MIN, 0.3, 0.7,
         SPH_RADIUS_FRACTION_MAX]:
@@ -830,18 +835,12 @@ suite "The Effective Value Is Bounded Without The Stored One Moving":
     check sim.sphStiffness == SPH_STIFFNESS_MAX
 
   test "a ceiling input other than the fraction moves the effective value too":
-    # Substeps and time scale are inputs on the same footing, so each of them
-    # alone has to move the effect. Time scale runs the other way: a world run
+    # The fraction is one of three inputs, so another one alone has to move the
+    # effect. Time scale runs the other way from the fraction: a world run
     # faster has a longer timestep and holds less stiffness.
     var sim = initSimulationState()
     sim.sphStiffness = SPH_STIFFNESS_MAX
     sim.sphRadiusFraction = 0.5
-    sim.sphSubsteps = SPH_SUBSTEPS_MIN
-    let fewSubsteps = effectiveSimulation(sim).sphStiffness
-    sim.sphSubsteps = SPH_SUBSTEPS_MAX
-    let manySubsteps = effectiveSimulation(sim).sphStiffness
-    check manySubsteps > fewSubsteps
-
     sim.timeScale = TIME_SCALE_MIN
     let slowWorld = effectiveSimulation(sim).sphStiffness
     sim.timeScale = TIME_SCALE_MAX
@@ -857,7 +856,6 @@ suite "The Effective Value Is Bounded Without The Stored One Moving":
     let effective = effectiveSimulation(sim)
     check effective.interactionRadius == sim.interactionRadius
     check effective.sphRadiusFraction == sim.sphRadiusFraction
-    check effective.sphSubsteps == sim.sphSubsteps
     check effective.sphViscosity == sim.sphViscosity
     check effective.sphRestDensity == sim.sphRestDensity
     check effective.fluidStrength == sim.fluidStrength
@@ -865,13 +863,11 @@ suite "The Effective Value Is Bounded Without The Stored One Moving":
 
   test "the shipped default is never clamped in its own world":
     # A derived ceiling that bit the defaults would be shipping a fluid nobody
-    # chose. The default stiffness stays reachable at the default fraction and
-    # time scale whatever the substep slider is set to.
-    var sim = initSimulationState()
-    for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
-      sim.sphSubsteps = substeps
-      checkpoint("substeps " & $substeps)
-      check effectiveSimulation(sim).sphStiffness == sim.sphStiffness
+    # chose. The default stiffness stays reachable at the default interaction
+    # radius, fraction and time scale.
+    let sim = initSimulationState()
+    checkpoint("ceiling " & $evaluateCeiling(pcStableStiffness, ceilingInputs(sim)))
+    check effectiveSimulation(sim).sphStiffness == sim.sphStiffness
 
 suite "The Reference Frame Is The One The Ceilings Were Measured At":
   # Two modules name the frame the shipped constants were measured against, and

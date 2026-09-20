@@ -278,8 +278,11 @@ potential buffer per species — trading flat cost for per-particle cost in the 
 
 The deposit, transforms and kernel form one node at `fncOncePerFrame`; the force pass is its own node
 at `fncEverySubstep`. This is exactly the split the chemistry already makes and for the same reason:
-running the solve per substep would multiply its cost by `sphSubsteps` and make Fluid Strength a
-second, undeclared control over how hard the long-range force pulls (`src/sim_registry.nim:327-343`).
+running the solve per substep would multiply its cost by the substep count and make every coupling
+that raises that count a second, undeclared control over how hard the long-range force pulls. The
+count is `sim_registry.substepPlan`'s, derived per frame from the frame factor, a live body's travel
+bound and any coupling's own declared need, so the couplings that would reach the long-range force
+this way are not one slider but several (`src/sim_registry.nim:244-245,353-413`).
 
 Substeps read the same potential without writing it, which is sound in the way `fieldForce` reading
 the field texture across substeps is sound. The density accumulator therefore clears at

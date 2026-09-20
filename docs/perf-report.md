@@ -107,8 +107,8 @@ chemistry is world-intrinsic and only its two couplings to the particles are swi
 (`src/sim_registry.nim:307-319`).
 
 `fluidStrength` at 1.0 is the descriptor maximum, read from `gardenAPI.descriptor()` at run time.
-`sphSubsteps` is 3 in `w3-128k`, which is `SPH_MAX_SUBSTEPS` (`src/sph_core.nim:34`), and 2
-elsewhere, which is the shipped value. `crowdingStrength` is 0 in every run, which is what it ships
+`sphSubsteps` is 3 in `w3-128k`, which is the substep ceiling `SUBSTEPS_MAX`
+(`src/config_ranges.nim:182`), and 2 elsewhere, which is the shipped value. `crowdingStrength` is 0 in every run, which is what it ships
 at.
 
 ## The field bucket runs backwards against particle count
@@ -128,7 +128,7 @@ constant, and do not carry a 16k field figure into a 128k budget.
 ## Per-frame figures and headroom
 
 Grid Build, Physics, Field Force, Long Range Force, Bodies and Integrate are the compute passes the
-substep loop (`src/webgpu_compute.nim:1243-1253`) re-encodes every substep, so their per-frame cost
+substep loop (`src/webgpu_compute.nim:1266-1276`) re-encodes every substep, so their per-frame cost
 is the raw figure times `substepCount`. Long Range Solve and Field carry `fncOncePerFrame`
 (`src/sim_registry.nim:417,460`) and run once per frame; draw, present and bloom are render passes
 timed outside that loop (`src/webgpu_render.nim:1795,1905,1946,1857-1859`) and also run once per
@@ -226,8 +226,11 @@ These are properties of the profiler as it stands. Each qualifies every number a
 
 - **Timestamps attach on the first substep only.** The executor encodes the frame description
   `substepCount` times per rendered frame and attaches the query set only when `substep == 0`
-  (`src/webgpu_compute.nim:895-898`). `substepCount` is 1 unless the fluid coupling acts, in which
-  case it is `clamp(sphSubsteps, 1, SPH_MAX_SUBSTEPS)` (`src/webgpu_compute.nim:717-719`).
+  (`src/webgpu_compute.nim:1266-1269`). `substepCount` is what `sim_registry.substepPlan` asks for
+  at this frame's couplings and frame factor, capped at `SUBSTEPS_MAX`
+  (`src/webgpu_compute.nim:988-1002`). The runs below were measured while it read
+  `clamp(sphSubsteps, 1, SPH_MAX_SUBSTEPS)` instead, so each row's substep column is the count that
+  ran.
 - **The Field Force node carries no slot.** It is built with `PROFILER_SLOT_NONE`
   (`src/sim_registry.nim:336-338`) and the executor skips the attach for that value. Its cost lands
   in no bucket and in no total, so it appears only as a difference between two configurations.
@@ -296,10 +299,10 @@ would if they were together — which is the worst case, since spread out they c
 | `bodiesStrength` | half the ceiling, the ceiling |
 | `bodyProximity` | `-BODY_FORCE_CEILING`, 0, `+BODY_FORCE_CEILING` |
 | `bodyEnclosure` | `-BODY_FORCE_CEILING`, 0, `+BODY_FORCE_CEILING` |
-| `bodyBand` | the derived floor, the ceiling |
+| `bodyBand` | the floor, the ceiling |
 | `bodyRadius` | floor, ceiling |
 | anisotropy | 1, the ceiling |
-| substeps | 1 and `SPH_MAX_SUBSTEPS` |
+| substeps | 1 and `SUBSTEPS_MAX` |
 
 **Result.** No coordinate diverges. At every one of the 864 the body's speed and angular speed stay
 under the closed-form ceiling `cap * frames * damping^frames / (1 - damping^frames)`, the geometric
@@ -321,7 +324,7 @@ made a frame's effect scale as the square of its length over the substep count.
 **Four premises re-run this sweep**, and `tests/test_body_core.nim` holds each against its source
 rather than restating it: the particle budget (`MAX_PARTICLES`), the strength and force ceilings
 (`BODY_STRENGTH_CEILING`, `BODY_FORCE_CEILING`), the force law (`bodyForceAt` and `bodyRigidStep`),
-and the substep count with the longest frame (`SPH_MAX_SUBSTEPS`, `src/app.nim`'s frame-delta cap,
+and the substep count with the longest frame (`SUBSTEPS_MAX`, `src/app.nim`'s frame-delta cap,
 `TIME_SCALE_MAX`, `FRAME_DT_REFERENCE`).
 
 The bodies passes' GPU cost is measured only with no live body so far: the `passBodies` slot

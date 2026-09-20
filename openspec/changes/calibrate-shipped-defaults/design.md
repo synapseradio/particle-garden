@@ -170,7 +170,7 @@ current-schema preset that omits the field.
 **Fixture F.** Export a fresh session, then: `fluidStrength` at its slider maximum; `forceStrength`
 0, so nothing but the fluid moves particles and the measurement is of the fluid alone
 (`src/config_ranges.nim:35-40`); `crowdingStrength` 0, which `openspec/specs/sph-scale/spec.md`
-already requires of this calibration; `sphStiffness`, `sphSubsteps`, `sphViscosity` and
+already requires of this calibration; `sphStiffness`, `sphViscosity` and
 `sphRestDensity` at their shipped defaults; the confound suppressions above.
 
 **The sweep.** `interactionRadius` at `INTERACTION_RADIUS_MIN` and at its shipped default, crossed

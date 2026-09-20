@@ -6,7 +6,7 @@ are `path:line` from the repository root.
 
 ## 1. Nodes
 
-### Sliders (54, from `src/ui/api/param_descriptor.nim:408-830`)
+### Sliders (53, from `src/ui/api/param_descriptor.nim:405-819`)
 
 | Group | id (label) | Writes | Dims when |
 |---|---|---|---|
@@ -32,12 +32,11 @@ are `path:line` from the repository root.
 | force-polynomial | `repulsionEnd`, `attractionPeak` | joints of the polynomial curve | forceOff |
 | force-exponential | `expRepulsionAlpha` (Repulsion α), `expAttractionBeta` (Attraction β) | decay rates of the two exponentials | forceOff |
 | palette | `paletteSaturation`, `paletteLightness` | generated species colours | — |
-| fluid | `fluidStrength` (Fluid) | SPH output multiplier; turns substeps on | — |
+| fluid | `fluidStrength` (Fluid) | SPH output multiplier | — |
 | fluid | `sphRadiusFraction` (Fluid Scale) | `h = interactionRadius·fraction` | fluidOff |
 | fluid | `sphRestDensity` (Rest Density) | Tait reference density | fluidOff |
 | fluid | `sphStiffness` (Stiffness) | Tait stiffness, clamped by a derived ceiling | fluidOff |
 | fluid | `sphViscosity` (Viscosity) | XSPH term | fluidOff |
-| fluid | `sphSubsteps` (Substeps) | substep count for the whole physics chain | fluidOff |
 | long-range | `longRangeStrength` (Long Range) | LR force scale; gates the solve | — |
 | long-range | `longRangeReach` (Reach, log travel) | screening length | longRangeOff |
 | long-range | `longRangeGridIndex` (Mesh Size) | mesh resolution | longRangeOff |
@@ -87,9 +86,12 @@ the next frame; rkModulate moves only the effective copy through
   fieldForce, bodyForce, lrForce.
 - **integrate**: `(vel + delta)·friction`, then a log soft cap above
   `maxVelocity·0.5` and a hard cap at `maxVelocity` (`web/shaders/src/integrate.wgsl:87-100`).
-- **substep loop**: `clamp(sphSubsteps,1,3)` only when `fluidStrength ≠ 0`
-  (`src/webgpu_compute.nim:984-988`); the executor replays every
-  per-substep node (`src/webgpu_compute.nim:1248-1254`).
+- **substep loop**: `min(max(n_ff, n_T, n_c), SUBSTEPS_MAX)`, the integrator's
+  own count from `substepPlan` (`src/sim_registry.nim:726-776`), called every
+  frame whatever acts (`src/webgpu_compute.nim:987-1004`); the executor replays
+  every per-substep node (`src/webgpu_compute.nim:1248-1254`). `n_ff` follows
+  the frame factor, `n_T` the travel bound a live body declares, and `n_c` an
+  acting coupling's own declared need — the fluid's stiffness is the only one.
 - **crowd density**: computed in the forces pass
   (`web/shaders/src/forces.wgsl:312-316`), read by crowding, render size
   and glow warmth.
@@ -123,10 +125,10 @@ the next frame; rkModulate moves only the effective copy through
 | 7 | friction — five velocity writers | sum | retention on `vel + delta` | `web/shaders/src/integrate.wgsl:87-100` |
 | 8 | maxVelocity — five velocity writers | sum | log soft cap above half | `web/shaders/src/integrate.wgsl:87-100` |
 | 9 | maxVelocity — velocityGlowScale | visual | `velNorm = speed/maxVelocity` | `web/shaders/src/glow.wgsl:89-90`, `src/webgpu_render.nim:1679` |
-| 10 | maxVelocity (range max) — bodyBand | bound | speed ceiling = `MAX_VELOCITY_MAX`, × largest substep dt → `BAND_FLOOR` 25 | `src/body_core.nim:135-149,184-193` |
+| 10 | maxVelocity — substep count | bound | `n_T = ceil(maxVelocity·ff / T)` holds per-step travel inside the band; past `SUBSTEPS_MAX` the plan clamps the effective Max Velocity instead. `BODY_BAND_MIN` is a stated 25.0 and derives from nothing | `src/sim_registry.nim:726-776`, `src/config_ranges.nim:502-507` |
 | 11 | timeScale — forceStrength | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
 | 12 | timeScale — fluid (pressure, viscosity) | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
-| 13 | timeScale — sphStiffness | bound | ceiling ÷ `(timeScale/60)` | `src/ui/api/param_descriptor.nim:242-254` |
+| 13 | timeScale — sphStiffness | bound | ceiling ÷ `(timeScale/60)` | `src/ui/api/param_descriptor.nim:240-253` |
 | 14 | timeScale — rdFeed, rdKill | time, cost | RD steps per frame, odd, cost `1 + steps` | `src/field_core.nim:184-197` |
 | 15 | timeScale — rdDeposit | time | `depositFrameScale(activeRdSteps)` | `src/webgpu_compute.nim:1051-1066` |
 | 16 | timeScale — rdFieldForce | time | integrate multiplies the summed delta by `frameFactor` | `web/shaders/src/integrate.wgsl:59-60`, `src/webgpu_compute.nim:1042` |
@@ -138,7 +140,7 @@ the next frame; rkModulate moves only the effective copy through
 | 22 | interactionRadius — force shape (4 sliders) | shape | `normalizedDist = d/r` | `web/shaders/src/forces.wgsl:210-214` |
 | 23 | interactionRadius — crowdingStrength | shape | density counted inside the radius | `web/shaders/src/forces.wgsl:312-316` |
 | 24 | interactionRadius — sphRadiusFraction | mul | `h = r·fraction` | `web/shaders/src/forces-sph.wgsl:115` |
-| 25 | interactionRadius — sphStiffness | bound | ceiling ∝ `r·fraction` | `src/ui/api/param_descriptor.nim:242-254` |
+| 25 | interactionRadius — sphStiffness | bound | ceiling ∝ `r·fraction` | `src/ui/api/param_descriptor.nim:240-253` |
 | 26 | forceStrength — crowding, force shape (5 sliders) | gate, mul | forceOff dims them; `fMul` scales the whole curve | `src/ui/api/dormancy.nim:36-37`, `web/shaders/src/forces.wgsl:282-283` |
 | 27 | forceStrength — fluidStrength | sum | the Hermite `-1` core is the only incompressibility while fluid sits at its default 0 | `web/shaders/src/forces.wgsl:243-247` |
 | 28 | forceStrength — longRangeStrength | cost | +12-28 ms physics at 128k in 2 of 3 seeds; seed variance exceeds it | `scratchpad/dev/tracer-reports/4.md:53` |
@@ -150,11 +152,11 @@ the next frame; rkModulate moves only the effective copy through
 | 34 | expRepulsionAlpha — expAttractionBeta | shape | difference of two exponentials | `web/shaders/src/forces.wgsl:73-78` |
 | 35 | Force Model — both shape groups | gate | model branch | `web/shaders/src/forces.wgsl:233-280` |
 | 36 | matrix — longRangeStrength | shape | the LR kernel reads the same matrix | `web/shaders/src/lr-kernel.wgsl:10-11,67-68` |
-| 37 | fluidStrength — five fluid sliders | gate, mul | fluidOff; one multiplier over pressure and viscosity | `src/ui/api/dormancy.nim:39-40`, `web/shaders/src/forces-sph.wgsl:274-278` |
-| 38 | fluidStrength — sphSubsteps | gate | substeps exist only when fluid ≠ 0 | `src/webgpu_compute.nim:984-988` |
-| 39 | sphSubsteps — every per-substep writer | time, cost | `substepDt`; forces, SPH, field force, LR force, bodies and integrate replay | `src/webgpu_compute.nim:992,1248-1254` |
-| 40 | sphSubsteps — sphStiffness | bound | ceiling ∝ substeps | `src/ui/api/param_descriptor.nim:242-254` |
-| 41 | sphRadiusFraction — sphStiffness | bound | ceiling ∝ `r·fraction` | `src/ui/api/param_descriptor.nim:242-254` |
+| 37 | fluidStrength — four fluid sliders | gate, mul | fluidOff; one multiplier over pressure and viscosity | `src/ui/api/dormancy.nim:39-40`, `web/shaders/src/forces-sph.wgsl:274-278` |
+| 38 | sphStiffness — substep count | bound | an acting fluid declares `n_c = ceil(sphStiffness·ff / (0.3·h))`; the frame runs the largest of the three asks | `src/sim_registry.nim:749-766` |
+| 39 | substep count — every per-substep writer | time, cost | `substepDt`; forces, SPH, field force, LR force, bodies and integrate replay | `src/webgpu_compute.nim:1002-1004,1248-1254` |
+| 40 | substep count — sphStiffness | bound | the panel's ceiling is evaluated at `SUBSTEPS_MAX`, the count the plan serves a fluid that needs it | `src/ui/api/param_descriptor.nim:240-253`, `src/sim_registry.nim:762-766` |
+| 41 | sphRadiusFraction — sphStiffness | bound | ceiling ∝ `r·fraction` | `src/ui/api/param_descriptor.nim:240-253` |
 | 42 | sphRestDensity — sphStiffness | mul | Tait `k·((ρ/ρ0)^7 - 1)` | `web/shaders/src/forces-sph.wgsl:130-144` |
 | 43 | sphViscosity — fluidStrength | mul | `(visc + 0.5)·fluidStrength` | `web/shaders/src/forces-sph.wgsl:262,274-278` |
 | 44 | fluidStrength — longRangeStrength | cost | fluid declusters; physics per substep ~3× lower | section 6 |
@@ -230,12 +232,12 @@ Edge numbers from section 3.
 | repulsionEnd, attractionPeak | 22, 26, 33, 35 |
 | expRepulsionAlpha, expAttractionBeta | 22, 26, 29, 34, 35 |
 | paletteSaturation, paletteLightness | 78, 81 |
-| fluidStrength | 12, 27, 37, 38, 43, 44, 82, 83 |
+| fluidStrength | 12, 27, 37, 43, 44, 82, 83 |
 | sphRadiusFraction | 24, 37, 41 |
 | sphRestDensity | 37, 42 |
-| sphStiffness | 13, 25, 37, 40, 41, 42 |
+| sphStiffness | 13, 25, 37, 38, 40, 41, 42 |
 | sphViscosity | 12, 37, 43 |
-| sphSubsteps | 37, 38, 39, 40 |
+| substep count (integrator, not a slider) | 10, 38, 39, 40 |
 | longRangeStrength | 17, 28, 36, 44, 45, 47 |
 | longRangeReach | 45, 46 |
 | longRangeGridIndex | 5, 45, 46 |
@@ -270,7 +272,10 @@ flowchart LR
   grid -->|h, ceiling| fluid
   species[species + force shape] -->|forces| V
   fluid -->|forcesSph| V
-  fluid -->|substep count| loop((substep loop))
+  sim -->|frame factor| plan
+  fluid -->|stiffness need| plan
+  bodies -->|travel bound| plan
+  plan[substepPlan] -->|count| loop((substep loop))
   lr[long-range] -->|lrForce| V
   rd -->|fieldForce × tropism| V
   chem[chemistry] --> rd
@@ -335,9 +340,9 @@ Findings:
   in seeds 42 and 7, while seed 99 with force off (82-86 ms) exceeds both
   force-on runs, so the seed spread is larger than the force effect
   (`scratchpad/dev/tracer-reports/4.md:30-31,53`).
-- Fluid declusters (per-substep physics ~3× lower under LR) but turns on the
-  substep loop, which replays every per-substep node
-  (`src/webgpu_compute.nim:1248-1254`).
+- Fluid declusters (per-substep physics ~3× lower under LR) but its stiffness
+  can ask the plan for more substeps, and each extra substep replays every
+  per-substep node (`src/webgpu_compute.nim:1248-1254`).
 - Mesh size default measured 0.417-0.450 ms at 512×256×12
   (`src/config_ranges.nim:91-125`); `docs/perf-report.md:156` gives 0.459 ms
   at S=12. Mesh cost scales with speciesCount (edge 5).
@@ -391,7 +396,7 @@ U = no statement either way.
 | tropism max | M (collapse at 4.0) | `src/config_ranges.nim:420-475` |
 | FIELD_LIGHT_STRENGTH 0.55, FIELD_DRIFT_SCALE 0.02 | B | `src/colormap_core.nim:61-84` |
 | fieldOpacity default 0 | U | `src/colormap_core.nim:43-57` |
-| bodyBand floor 25 | D | `src/body_core.nim:184-193` |
+| bodyBand floor 25 | U (a stated literal; nothing derives it) | `src/config_ranges.nim:502-507` |
 | bodiesStrength ceiling 1, BODY_FORCE_CEILING 10 | U | `src/body_core.nim:151-160` |
 | glowRadiusScale × particleSize pin 12 | D | `src/ui/state/render_state.nim:72-86` |
 | Trails lift to 25 | U | `src/ui/state/render_state.nim:60-70` |
@@ -451,13 +456,10 @@ Missing:
 
 Present but arguably unwanted:
 
-- Substeps belong to the fluid group, yet they rescale every contributor's
-  step and replay the neighbour sweep (edge 39).
 - The stiffness ceiling moves with Interaction Radius and Time Scale
   (edges 13, 25).
 - The field tints particles and bends trails with no slider (edges 54, 55);
   both constants are blind picks.
-- Body Reach's floor derives from the Max Velocity range (edge 10).
 - Tours overwrite a drag on the next frame (edge 84).
 
 ### "A lot of calibration is needed"
@@ -473,8 +475,6 @@ LR softening and tropism carry measurements.
 |---|---|---|
 | `docs/help/10-simulation.md:9-11`: particleCount "rebuilds the population" | commit resizes; existing particles stay | `src/app.nim:130-158` |
 | `docs/help/52-bloom.md:7-9` and `src/ui/api/param_descriptor.nim:504-506`: the five sliders act only with bloom on | the bloom-off backdrop runs `tonemapGrade`; live while Field Opacity > 0 | `web/shaders/src/field-composite.wgsl:60-68`, `web/shaders/modules/tonemap_grade.wgsl:6-8` |
-| `docs/help/30-fluid.md:20-22`: stiffness ceiling depends on reach, substeps, time scale | also Interaction Radius | `src/ui/api/param_descriptor.nim:242-254` |
-| `src/ui/api/param_descriptor.nim:269` ceilingReason names fluid radius and substeps | omits Interaction Radius and Time Scale | `src/ui/api/param_descriptor.nim:242-254` |
 | `docs/help/51-glow.md:10-11`: speed brightens | speed also grows the halo | `web/shaders/src/glow.wgsl:96-103` |
 | `docs/help/53-palette.md`: sliders adjust every scheme | Open Color ignores both | `src/palette.nim:141-164` |
 | `docs/help/50-render.md:9`: size is the radius drawn | drawn size is `(size+1)·sizeMod` | `web/shaders/src/render.wgsl:55-59,102-104` |
@@ -487,12 +487,9 @@ removes or rewires these edges:
 
 - Removes the RD visuals and the Field Opacity and Colormap nodes: 53, 54,
   55, 56, 57, 58.
-- Removes Substeps; the integrator owns the count: 38, 39, 40.
 - Rewires the strengths onto one 0-1 calibrated contract, including Force
   Strength and Scent-following: 11-18, and section 7's unit mismatch.
 - Moves incompressibility to world pressure; crowding becomes texture: 27, 30.
 - Makes long range radius-scaled and mesh-independent: 46.
-- Replaces Body Reach's velocity floor and the stiffness ceiling's substep
-  term with a travel bound: 10, 40.
 - Adds a Pattern Scale chemistry control and profiler slots for every
   contributor (section 6's unmeasured items).

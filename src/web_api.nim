@@ -1102,7 +1102,6 @@ when defined(js):
     settings.sphStiffness = stored.sphStiffness
     settings.sphRadiusFraction = stored.sphRadiusFraction
     settings.sphViscosity = stored.sphViscosity
-    settings.sphSubsteps = stored.sphSubsteps
     settings.longRangeStrength = stored.longRangeStrength
     settings.longRangeReach = stored.longRangeReach
     settings.longRangeGridIndex = stored.longRangeGridIndex
@@ -1209,7 +1208,6 @@ when defined(js):
           simState.sphStiffness = settings.sphStiffness
           simState.sphRadiusFraction = settings.sphRadiusFraction
           simState.sphViscosity = settings.sphViscosity
-          simState.sphSubsteps = settings.sphSubsteps
           simState.longRangeStrength = settings.longRangeStrength
           simState.longRangeReach = settings.longRangeReach
           simState.longRangeGridIndex = settings.longRangeGridIndex

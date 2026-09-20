@@ -191,7 +191,6 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.sphStiffness = 20.0
     customPreset.settings.sphRadiusFraction = 0.35
     customPreset.settings.sphViscosity = 0.5
-    customPreset.settings.sphSubsteps = 2
     customPreset.settings.rdFeed = 0.045
     customPreset.settings.rdKill = 0.058
     customPreset.settings.rdDeposit = 0.035
@@ -728,23 +727,21 @@ suite "Preset Clamp Behavior Contract":
     let result = validate(node)
     check result.preset.settings.forceStrength == 1.7
 
-  test "SPH settings clamp into their ranges and substeps cap at SPH_SUBSTEPS_MAX":
+  test "SPH settings clamp into their ranges":
     let node = %*{"settings": {
       "sphRestDensity": 99.0,
       "sphStiffness": -5.0,
-      "sphViscosity": 3.0,
-      "sphSubsteps": 99
+      "sphViscosity": 3.0
     }}
     let result = validate(node)
     check result.preset.settings.sphRestDensity == SPH_REST_DENSITY_MAX
     check result.preset.settings.sphStiffness == SPH_STIFFNESS_MIN
     check result.preset.settings.sphViscosity == SPH_VISCOSITY_MAX
-    check result.preset.settings.sphSubsteps == SPH_SUBSTEPS_MAX
 
   test "a missing SPH field defaults rather than crashing":
     let result = validate(%*{"settings": {}})
     check result.preset.settings.sphRestDensity == defaultSettings().sphRestDensity
-    check result.preset.settings.sphSubsteps == defaultSettings().sphSubsteps
+    check result.preset.settings.sphViscosity == defaultSettings().sphViscosity
 
   test "reaction-diffusion settings clamp into their ranges":
     let node = %*{"settings": {
@@ -1006,8 +1003,9 @@ suite "v3 -> v4 Matrix Restride":
 
 # The stiffness a preset carries is stored absolutely and clamped at load
 # against the envelope, exactly as every other field is. What the fluid can
-# honour of it depends on the radius fraction and substeps that same preset
-# carries, and that bound applies only where the value takes effect — after
+# honour of it depends on the radius fraction, interaction radius and time
+# scale that same preset carries, and that bound applies only where the value
+# takes effect — after
 # the apply lands, from the final state, never during the apply. That is why
 # presetApplySteps needs no ordering among scalars: it writes every scalar in
 # one pass (src/ui/presets/preset_store_core.nim).
@@ -1017,7 +1015,6 @@ suite "A Preset's Stiffness Survives A Fluid That Cannot Hold It":
     var customPreset = defaultPreset()
     customPreset.settings.sphStiffness = SPH_STIFFNESS_MAX
     customPreset.settings.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
-    customPreset.settings.sphSubsteps = SPH_SUBSTEPS_MIN
     let loaded = parsePreset(toJsonString(customPreset))
     check loaded.isOk
     # Stored, not effective: the load clamps against the envelope and nothing
@@ -1028,18 +1025,16 @@ suite "A Preset's Stiffness Survives A Fluid That Cannot Hold It":
   test "the fluid that preset describes runs at its own ceiling":
     # The other half of the same claim, taken through the state the apply
     # produces rather than through the wire: the effective stiffness is what
-    # this preset's own fraction and substeps imply, and the stored one is
-    # still the envelope maximum.
+    # this preset's own fraction implies, and the stored one is still the
+    # envelope maximum.
     var customPreset = defaultPreset()
     customPreset.settings.sphStiffness = SPH_STIFFNESS_MAX
     customPreset.settings.sphRadiusFraction = SPH_RADIUS_FRACTION_MIN
-    customPreset.settings.sphSubsteps = SPH_SUBSTEPS_MIN
     let settings = parsePreset(toJsonString(customPreset)).preset.settings
 
     var applied = initSimulationState()
     applied.sphStiffness = settings.sphStiffness
     applied.sphRadiusFraction = settings.sphRadiusFraction
-    applied.sphSubsteps = settings.sphSubsteps
     applied.interactionRadius = settings.interactionRadius
     applied.timeScale = settings.timeScale
 

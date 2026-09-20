@@ -31,13 +31,11 @@ Span, live fraction, and cliff per declared slice, at the calibrated thresholds 
 | paletteSaturation | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | paletteLightness | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | fluidStrength | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
-| sphRadiusFraction | default | 0.9000 | 1.000 | 0.011 | none | 0.00-1.00 | pass |
+| sphRadiusFraction | default | 0.8875 | 0.878 | 0.013 | 0.88-1.00 | 0.00-0.88 | pass |
 | sphRestDensity | default | 1.0000 | 0.922 | 0.024 | 0.00-0.08 | 0.08-1.00 | pass |
-| sphStiffness | default | 0.9667 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
-| sphStiffness | fraction=0.1 substeps=1 | 0.3333 | 1.000 | 0.200 | none | 0.00-1.00 | pass |
-| sphStiffness | fraction=0.1 substeps=3 | 0.7778 | 1.000 | 0.029 | none | 0.00-1.00 | pass |
-| sphStiffness | fraction=1.0 substeps=1 | 0.9333 | 1.000 | 0.007 | none | 0.00-1.00 | pass |
-| sphStiffness | fraction=1.0 substeps=3 | 0.9750 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
+| sphStiffness | default | 0.9750 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
+| sphStiffness | fraction=0.1 | 0.7778 | 1.000 | 0.029 | none | 0.00-1.00 | pass |
+| sphStiffness | fraction=1.0 | 0.9750 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
 | sphViscosity | default | 0.6667 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | longRangeStrength | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |
 | longRangeReach | default | 0.9850 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
@@ -93,6 +91,12 @@ consequence (maxVelocity, attractionPeak, paletteLightness,
 sphRadiusFraction, sphRestDensity), sphSubsteps left the probe set with its
 written exemption, and rdFeed/rdKill moved to the joint group's
 regime-point slices.
+
+Annotation, 2026-09-20: the Substeps slider no longer exists. The integrator
+derives the count per frame from the couplings that act, so the sphSubsteps
+row and its exemption below record a control the panel has stopped offering.
+The sphStiffness rows sliced on substeps=1 and substeps=3 record conditions
+the sweep really ran at, and the parameter they measure still exists.
 
 | parameter | slice | span | live | cliff | dead run | verdict |
 |---|---|---|---|---|---|---|

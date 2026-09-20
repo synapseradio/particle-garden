@@ -179,6 +179,17 @@ const
     ## are stated of the float path; the int lands within one unit of 140.
   TIME_SCALE_MIN* = 0.1
   TIME_SCALE_MAX* = 5.0
+  SUBSTEPS_MAX* = 3
+    ## The most physics substeps one rendered frame may run. Each extra substep
+    ## re-encodes every per-substep pass: at 128 000 particles that measured
+    ## 1.56 ms of grid plus physics over a 30 s window and 7.95 ms over a 150 s
+    ## one, both lower bounds on the settled cost (docs/perf-report.md).
+  FF_STABLE* = 12.0
+    ## The largest frame factor one substep carries before the count grows.
+    ## PROVISIONAL: no measurement has been taken of where an explicit step
+    ## stops holding. The longest frame the app delivers is 30 reference frames
+    ## (src/app.nim caps the raw delta at 0.05 s and TIME_SCALE_MAX multiplies
+    ## it), and ceil(30 / 12) is SUBSTEPS_MAX.
   PARTICLE_SIZE_MIN* = 1
   PARTICLE_SIZE_MAX* = 8
   PARTICLE_VISIBLE_RADIUS_FLOOR_PX* = 0.5
@@ -263,10 +274,6 @@ const
   SPH_STIFFNESS_MAX* = 40.0
   SPH_VISCOSITY_MIN* = 0.0
   SPH_VISCOSITY_MAX* = 1.0
-  SPH_SUBSTEPS_MIN* = 1
-  SPH_SUBSTEPS_MAX* = SPH_MAX_SUBSTEPS
-    ## The substep ceiling is sph_core's SPH_MAX_SUBSTEPS, not a bare literal —
-    ## the executor loop and the slider bound stay one value.
   RD_FEED_MIN* = 0.010
   RD_FEED_MAX* = 0.085
     ## 0.085 clears Coral, whose feed coordinate is 0.082; a 0.080
@@ -492,10 +499,12 @@ const
   BODY_RADIUS_MIN* = body_core.BODY_RADIUS_FLOOR
   BODY_RADIUS_MAX* = body_core.BODY_RADIUS_CEILING
   BODY_DEFAULT_RADIUS* = 240.0
-  BODY_BAND_MIN* = body_core.BODY_BAND_FLOOR
-    ## DERIVED from the particle speed cap and the longest substep
-    ## (src/body_core.nim states the derivation). The band is also a divisor in
-    ## the force law, so a floor above zero is what keeps it finite.
+  BODY_BAND_MIN* = 25.0
+    ## The narrowest band a body may hold at. Strictly positive because the band
+    ## divides the distance in the force law, and it is the value every saved
+    ## band was clamped against. Nothing derives it: a particle stays inside a
+    ## band this narrow because sim_registry.substepPlan counts the substeps its
+    ## travel needs and clamps the effective Max Velocity past the ceiling.
   BODY_BAND_MAX* = body_core.BODY_BAND_CEILING
   BODY_DEFAULT_BAND* = 120.0
   BODY_PROXIMITY_MIN* = -body_core.BODY_FORCE_CEILING
@@ -689,7 +698,6 @@ static:
       "a declared long-range grid's line leaves butterflies the transform's " &
       "workgroup covers neither one per thread nor by looping"
   doAssert SPH_VISCOSITY_MIN < SPH_VISCOSITY_MAX
-  doAssert SPH_SUBSTEPS_MIN < SPH_SUBSTEPS_MAX
   doAssert MATRIX_MIN_VALUE == -MATRIX_MAX_VALUE,
     "the matrix band is symmetric: the cell colour scale and the rule " &
     "sampler both read magnitude against MATRIX_MAX_VALUE alone"

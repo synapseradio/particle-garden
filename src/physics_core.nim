@@ -529,10 +529,19 @@ func integrateVelocity*(velocity: tuple[x, y: float32];
   var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
     invFixedPointScale, frameFactor)) * friction
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
+  # The cap bounds travel per reference frame, so a substep spanning
+  # frameFactor of them may carry a particle maxVelocity * frameFactor. The
+  # curve therefore acts on the speed per reference frame and the result is
+  # rescaled; at frameFactor 1 that is bit-identical to capping the speed
+  # itself. A stopped clock delivers frameFactor 0 and no travel, so the curve
+  # acts on the speed there rather than dividing by zero.
+  let perFrame = if frameFactor > 0.0'f32: frameFactor else: 1.0'f32
+  let frameSpeed = speed / perFrame
   let softCapThreshold = maxVelocity * 0.5'f32
-  if speed > softCapThreshold and speed > 0.0'f32:
-    let excess = speed - softCapThreshold
-    let cappedSpeed = min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity)
+  if frameSpeed > softCapThreshold and frameSpeed > 0.0'f32:
+    let excess = frameSpeed - softCapThreshold
+    let cappedSpeed =
+      min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity) * perFrame
     let scale = cappedSpeed / speed
     newVelX *= scale
     newVelY *= scale

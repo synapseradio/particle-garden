@@ -979,16 +979,29 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   scanParamsData[SCAN_NUM_BLOCKS] = scanBlocks
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["scanParams"]), 0, scanParamsData)
 
-  # Substepping: the executor runs the whole frame description substepCount
-  # times per rendered frame for stability at high stiffness, each substep
-  # advancing dt/substepCount. Only the fluid needs it, so a world with no fluid
-  # runs a single step and pays nothing. sphSubsteps is clamped to sph_core's
-  # SPH_MAX_SUBSTEPS ceiling.
-  let substepCount =
-    if activeCouplings.fluid != 0.0:
-      clamp(config.CONFIG.sphSubsteps, 1, SPH_MAX_SUBSTEPS)
-    else: 1
+  # Substepping: the executor runs the whole frame description framePlan.count
+  # times per rendered frame, each substep advancing dt/count. The count is what
+  # this frame's couplings need at this frame factor rather than a setting; past
+  # the plan's ceiling it hands back the two effect-time values that hold the
+  # bounds the count could not.
+  let frameFactorNow = frameFactor(dt)
+  let framePlan = substepPlan(frameFactorNow, LiveValues(
+    forces: config.CONFIG.forceStrength,
+    fluid: config.CONFIG.fluidStrength,
+    scent: config.CONFIG.rdFieldForce,
+    deposit: config.CONFIG.rdDeposit,
+    bodies: config.CONFIG.bodiesStrength,
+    longRange: config.CONFIG.longRangeStrength,
+    maxVelocity: config.CONFIG.maxVelocity,
+    interactionRadius: float(config.CONFIG.interactionRadius),
+    sphRadiusFraction: config.CONFIG.sphRadiusFraction,
+    sphStiffness: config.CONFIG.sphStiffness,
+    timeScale: config.CONFIG.timeScale,
+    bodyBand: config.CONFIG.bodyBand,
+    bodyLive: body_core.liveSlots(bodyState, bodySeconds) > 0))
+  let substepCount = framePlan.count
   let substepDt = dt / substepCount.float
+  let substepFrameFactor = frameFactorNow / substepCount.float
 
   # Simulation parameters (used by forces)
   # Layout matches SimParamsLayout in gpu_types.nim
@@ -1019,7 +1032,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # SPH fluid params (read by forces-sph.wgsl; ignored by forces.wgsl).
   # gamma is the fixed Tait exponent from sph_core, not a live CONFIG value.
   simParamsData[SIM_SPH_REST_DENSITY] = float32(config.CONFIG.sphRestDensity)
-  simParamsData[SIM_SPH_STIFFNESS] = float32(config.CONFIG.sphStiffness)
+  # The plan's stiffness, which is the stored one until the substep count
+  # clamps and the fluid has to be served what that count holds still at.
+  simParamsData[SIM_SPH_STIFFNESS] = float32(framePlan.effStiffness)
   simParamsData[SIM_SPH_GAMMA] = float32(SPH_DEFAULT_GAMMA)
   simParamsData[SIM_SPH_VISCOSITY] = float32(config.CONFIG.sphViscosity)
 
@@ -1038,11 +1053,14 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
   integrationParamsData[INTEG_FRICTION] = friction
-  integrationParamsData[INTEG_MAX_VELOCITY] = float32(config.CONFIG.maxVelocity)
+  # The plan's Max Velocity, which is the stored one until the substep count
+  # clamps and the travel bound has to be held by the speed instead.
+  integrationParamsData[INTEG_MAX_VELOCITY] =
+    float32(framePlan.effMaxVelocity)
   integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
   # The one time factor a particle's velocity receives: every writer
   # accumulates per reference frame.
-  integrationParamsData[INTEG_FRAME_FACTOR] = float32(frameFactor(substepDt))
+  integrationParamsData[INTEG_FRAME_FACTOR] = float32(substepFrameFactor)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # Field parameters. feed, kill, deposit, and field force are the live UI
@@ -1098,7 +1116,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Both clocks, read only by body-integrate: seconds is what a body travels
   # over, frames multiplies its per-reference-frame reaction, damping and caps.
   bodyParamsData[BODY_DT_SECONDS] = substepDt
-  bodyParamsData[BODY_FRAMES] = float32(frameFactor(substepDt))
+  bodyParamsData[BODY_FRAMES] = float32(substepFrameFactor)
   # The accumulator's two scales, unchanged: body-force multiplies by them to
   # encode and body-integrate divides to decode, so each scale reaches both
   # sides as one number.
@@ -1243,8 +1261,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Encode the frame description substepCount times into this one encoder. Each
   # repetition is a full physics step (grid build + scatter + forces + integrate)
   # reading and writing particlesA in place; passes in a single encoder execute
-  # in order, so the substeps advance sequentially. substepCount is 1 outside
-  # SPH, making this a plain single walk of the frame.
+  # in order, so the substeps advance sequentially.
   for substep in 0 ..< substepCount:
     # Timestamps write a fixed query slot per profiler pass; attach them only on
     # the first substep so multiple substeps never double-write the same query.

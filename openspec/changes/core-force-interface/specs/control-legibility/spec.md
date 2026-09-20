@@ -1,5 +1,35 @@
 ## MODIFIED Requirements
 
+### Requirement: Every visible control is probed or exempted, with nothing in between
+
+Every parameter descriptor SHALL name either a response probe — a pure function returning a scalar
+observable the parameter moves — or a written exemption, and a native test SHALL assert the union of
+the two covers the descriptor table exactly.
+
+Probes are drawn from the reference-oracle family, which mirrors WGSL math in pure Nim for the native
+suite. A probe therefore measures the mirror, not the pixels; that limit is inherent to the family and
+is not claimed away.
+
+Enforced by `tests/test_response_probe.nim`, suite `Every Descriptor Is Probed Or Exempted`: every
+descriptor carries one of the two and never both, every carried probe id resolves in
+`probeRegistry()`, every registered probe is carried by some descriptor, and the exempt set is pinned
+to exactly `particleCount`, `speciesCount`, and `longRangeGridIndex`, each with the reason it carries
+in `src/ui/api/param_descriptor.nim`.
+
+`sphSubsteps` leaves that set here, because the control it named is gone: the integrator derives the
+substep count per frame from the couplings that act, so there is no descriptor left to exempt. The
+`longRangeGridIndex` exemption was already in force and went unrecorded; its two positions name a
+solve resolution rather than a quantity a sweep can travel.
+
+#### Scenario: A new control cannot arrive unprobed
+- **WHEN** a descriptor is added with neither a probe id nor an exemption
+- **THEN** `just test` fails naming that descriptor
+
+#### Scenario: An exemption states its reason
+- **WHEN** a descriptor is exempted
+- **THEN** the exemption carries a written reason, and the pinned exempt set turns a fourth exemption
+  into a red test rather than a default anyone drifts into
+
 ### Requirement: Thresholds are calibrated against named controls
 
 The four thresholds — `RESPONSE_EPSILON`, `SPAN_MIN`, `LIVE_FRACTION_MIN`, and `CLIFF_MAX` — SHALL be

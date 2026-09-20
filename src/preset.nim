@@ -132,7 +132,6 @@ type
     sphStiffness*: float
     sphRadiusFraction*: float
     sphViscosity*: float
-    sphSubsteps*: int
     longRangeStrength*: float
     longRangeReach*: float
     longRangeGridIndex*: int
@@ -265,7 +264,6 @@ func defaultSettings*(): PresetSettings =
     # because that is the kernel a v1 fluid ran.
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
-    sphSubsteps: 2,
     # Mirrors simulation_state.initSimulationState's long-range defaults: the
     # shipped world runs no long-range coupling, so a preset that never
     # mentions one restores none, and no version branch is needed to keep an
@@ -459,8 +457,6 @@ proc validateSettings(node: JsonNode): PresetSettings =
     SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX)
   result.sphViscosity = clampFloat(
     field(node, "sphViscosity").getFloat(defaults.sphViscosity), SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX)
-  result.sphSubsteps = clampInt(
-    field(node, "sphSubsteps").getInt(defaults.sphSubsteps), SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX)
   result.longRangeStrength = clampFloat(
     field(node, "longRangeStrength").getFloat(defaults.longRangeStrength),
     LONG_RANGE_STRENGTH_MIN, LONG_RANGE_STRENGTH_MAX)
@@ -818,7 +814,6 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["sphStiffness"] = %settings.sphStiffness
   result["sphRadiusFraction"] = %settings.sphRadiusFraction
   result["sphViscosity"] = %settings.sphViscosity
-  result["sphSubsteps"] = %settings.sphSubsteps
   result["longRangeStrength"] = %settings.longRangeStrength
   result["longRangeReach"] = %settings.longRangeReach
   result["longRangeGridIndex"] = %settings.longRangeGridIndex

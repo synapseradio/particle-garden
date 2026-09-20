@@ -54,7 +54,6 @@ suite "Simulation Defaults Lie Inside Their Slider Ranges":
     check defaults.sphStiffness <= SPH_STIFFNESS_MAX
     check defaults.sphViscosity >= SPH_VISCOSITY_MIN
     check defaults.sphViscosity <= SPH_VISCOSITY_MAX
-    check defaults.sphSubsteps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX
 
   test "reaction-diffusion defaults are inside their clamp ranges":
     check defaults.rdFeed >= RD_FEED_MIN

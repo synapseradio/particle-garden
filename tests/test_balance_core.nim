@@ -259,7 +259,7 @@ suite "Every Writer Answers In The Pair Unit":
         cfg.liveBodies = liveBodies
         let unit = unitImpulse(ufBodies, cfg)
         var worst = 0.0
-        for band in [BODY_BAND_FLOOR, 120.0, BODY_BAND_CEILING]:
+        for band in [BODY_BAND_MIN, 120.0, BODY_BAND_CEILING]:
           for anisotropy in [BODY_ANISOTROPY_FLOOR, 1.0, BODY_ANISOTROPY_CEILING]:
             for proximity in [-BODY_FORCE_CEILING, 0.0, BODY_FORCE_CEILING]:
               for enclosure in [-BODY_FORCE_CEILING, 0.0, BODY_FORCE_CEILING]:

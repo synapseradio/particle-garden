@@ -15,6 +15,7 @@ import std/tables
 import ../src/sim_registry
 import ../src/field_core
 import ../src/config_ranges
+import ../src/sph_core
 import ../src/ui/api/param_descriptor
 import coupling_space  # the corners of the strength space, ALL_COUPLINGS
 
@@ -745,8 +746,7 @@ suite "Bounds Read Only Declared Parameters":
 
   proc baselineInputs(): CeilingInputs =
     CeilingInputs(interactionRadius: INTERACTION_RADIUS_MIN,
-      sphRadiusFraction: SPH_RADIUS_FRACTION_MIN, sphSubsteps: SPH_SUBSTEPS_MIN,
-      timeScale: TIME_SCALE_MIN)
+      sphRadiusFraction: SPH_RADIUS_FRACTION_MIN, timeScale: TIME_SCALE_MIN)
 
   test "each registered ceiling's sensitive inputs equal its coupling's declared boundsRead":
     for id in ParamCeilingId:
@@ -766,10 +766,6 @@ suite "Bounds Read Only Declared Parameters":
       moved = baselineInputs()
       moved.sphRadiusFraction = SPH_RADIUS_FRACTION_MAX
       checkSensitivity("sphRadiusFraction", moved)
-
-      moved = baselineInputs()
-      moved.sphSubsteps = SPH_SUBSTEPS_MAX
-      checkSensitivity("sphSubsteps", moved)
 
       moved = baselineInputs()
       moved.timeScale = TIME_SCALE_MAX
@@ -793,3 +789,155 @@ suite "Every Size Names Its Space":
       checkpoint(name & " already named by a coupling declaration")
       check name notin seen
       seen[name] = space
+
+
+suite "Substeps Follow The Tightest Coupling":
+  # substepPlan's count is the largest of three counts, capped at 3: the
+  # frame-factor count n_ff = ceil(ff / 12); the travel count n_T =
+  # ceil(maxVelocity * ff / T), only where some coupling declares a travel
+  # length T; and n_c, a coupling's own declared need (only the fluid
+  # declares one, from its stiffness). Over the stub substepPlan (count 1,
+  # source scNone, always), each test below works this arithmetic against
+  # its own live values; the divisor (12) and the cap (3) are not yet named
+  # constants, so the literals stand in for them.
+
+  test "shipped settings give one substep at frame factor one":
+    # Band 120, Max Velocity 50, ff 1, fluid off. Bodies are on
+    # (BODIES_DEFAULT_STRENGTH) but no body is live: with no live body
+    # there is no surface a step could carry a particle through, so the
+    # travel bound declares no length. With fluid off, ff 1 leaves the
+    # frame-factor count at ceil(1 / 12) = 1: nothing asks for more than
+    # one substep.
+    #
+    # GUARD, not a red: this bullet's right answer (count 1, source scNone)
+    # is exactly what the stub always returns, so this test cannot fail
+    # against the stub. It still pins the worked value.
+    let live = LiveValues(
+      fluid: 0.0,  # fluid off (simulation_state.nim:152)
+      bodies: BODIES_DEFAULT_STRENGTH,  # 1.0 (config_ranges.nim:492)
+      bodyBand: BODY_DEFAULT_BAND,  # 120 (config_ranges.nim:500)
+      bodyLive: false,
+      maxVelocity: 50.0)  # simulation_state.nim:139
+    let plan = substepPlan(1.0, live)
+    check plan.count == 1
+    check plan.source == scNone
+
+  test "stiffness at the ceiling with h 50 needs three substeps at frame factor one":
+    # The fluid's own declared need is n_c = ceil(stiffness * ff /
+    # (0.3 * h)), h = interactionRadius * sphRadiusFraction. At stiffness
+    # 40 (SPH_STIFFNESS_MAX), h 50 (interactionRadius 50, sphRadiusFraction
+    # 1, both shipped defaults, simulation_state.nim:131,158) and ff 1:
+    # ceil(40 / (0.3 * 50)) = ceil(2.667) = 3.
+    let live = LiveValues(
+      fluid: 1.0,  # nonzero: fluid is acting (sim_registry.acts)
+      interactionRadius: 50.0,
+      sphRadiusFraction: 1.0,
+      sphStiffness: SPH_STIFFNESS_MAX,
+      bodyLive: false)
+    let plan = substepPlan(1.0, live)
+    check plan.count == 3
+    check plan.source == scCouplingNeed
+
+  test "frame factor 10 with a live body caps at three substeps and clamps Max Velocity to 36":
+    # The travel bound is n_T = ceil(maxVelocity * ff / T), T = bodyBand
+    # while bodiesStrength > 0 and a body lives. At Max Velocity 50, band
+    # 120 (both shipped defaults) and ff 10: ceil(50 * 10 / 120) =
+    # ceil(4.167) = 5, past the cap of 3, so the effect-time clamp holds
+    # effMaxVelocity = T * 3 / ff = 120 * 3 / 10 = 36, and the travel bound
+    # is what asked for the count.
+    let live = LiveValues(
+      fluid: 0.0,
+      bodies: BODIES_DEFAULT_STRENGTH,
+      bodyBand: BODY_DEFAULT_BAND,
+      bodyLive: true,
+      maxVelocity: 50.0)
+    let plan = substepPlan(10.0, live)
+    check plan.count == 3
+    check plan.effMaxVelocity == 36.0
+    check plan.source == scTravelBound
+
+  test "frame factor 30 alone needs three substeps":
+    # The frame-factor count is n_ff = ceil(ff / 12) = ceil(30 / 12) = 3,
+    # with fluid off and no live body so neither other count reaches it:
+    # the frame factor is what asked for the count.
+    let live = LiveValues(
+      fluid: 0.0,
+      bodies: BODIES_DEFAULT_STRENGTH,
+      bodyBand: BODY_DEFAULT_BAND,
+      bodyLive: false,
+      maxVelocity: 50.0)
+    let plan = substepPlan(30.0, live)
+    check plan.count == 3
+    check plan.source == scFrameFactor
+
+  test "a live body at the band floor needs two substeps at frame factor one":
+    # T = BODY_BAND_MIN (25), Max Velocity 50, ff 1: the travel bound is
+    # n_T = ceil(50 * 1 / 25) = 2.
+    let live = LiveValues(
+      fluid: 0.0,
+      bodies: BODIES_DEFAULT_STRENGTH,
+      bodyBand: BODY_BAND_MIN,
+      bodyLive: true,
+      maxVelocity: 50.0)
+    let plan = substepPlan(1.0, live)
+    check plan.count == 2
+    check plan.source == scTravelBound
+
+  test "bodies above zero declares the band's length only while a body lives":
+    # No live body means no surface a step could carry a particle through,
+    # so with no live body the bodies declaration contributes no length:
+    # bodyLive gates the travel bound, not bodiesStrength alone. Asserted
+    # as a contrast rather than a lone count, because a scalar test at
+    # bodyLive false alone cannot fail against the stub — its right answer
+    # (1) is the stub's constant. The same live values as the band-floor
+    # test above (T = BODY_BAND_MIN, Max Velocity 50, ff 1), one relation,
+    # both halves.
+    let base = LiveValues(
+      fluid: 0.0,
+      bodies: BODIES_DEFAULT_STRENGTH,
+      bodyBand: BODY_BAND_MIN,
+      maxVelocity: 50.0)
+
+    var withLiveBody = base
+    withLiveBody.bodyLive = true
+    let livePlan = substepPlan(1.0, withLiveBody)
+    check livePlan.count == 2  # the band floor declares its length
+    check livePlan.source == scTravelBound
+
+    var withNoLiveBody = base
+    withNoLiveBody.bodyLive = false
+    let nonePlan = substepPlan(1.0, withNoLiveBody)
+    check nonePlan.count == 1  # no live body, no length, no extra substep
+    check nonePlan.source == scNone
+
+  test "a fluid request past SUBSTEPS_MAX runs three substeps at the clamped stiffness, with the stored stiffness unchanged":
+    # The clamp is effStiffness = min(stored, servedCeiling,
+    # 0.3 * h * SUBSTEPS_MAX / ff), reusing the stiffness test's h (50) and
+    # stiffness (40 = SPH_STIFFNESS_MAX) at the Max-Velocity test's ff (10)
+    # and the shipped Time Scale default (0.5, simulation_state.nim:138).
+    # servedCeiling is the panel's stable-stiffness ceiling,
+    # sph_core.stableStiffnessCeiling (sph_core.nim:242-254), at
+    # SUBSTEPS_MAX (3) and the 60 Hz reference dt.
+    const h = 50.0
+    const stiffness = 40.0  # SPH_STIFFNESS_MAX
+    const ff = 10.0
+    const timeScale = 0.5
+    const substepsMax = 3  # SUBSTEPS_MAX is 3: the substep ceiling
+    let servedCeiling = stableStiffnessCeiling(h, substepsMax,
+      timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS, SPH_STIFFNESS_MAX)
+    let expectedEffStiffness =
+      min(min(stiffness, servedCeiling), 0.3 * h * substepsMax.float / ff)
+
+    let live = LiveValues(
+      fluid: 1.0,
+      interactionRadius: h,
+      sphRadiusFraction: 1.0,
+      sphStiffness: stiffness,
+      timeScale: timeScale,
+      bodyLive: false)
+    let plan = substepPlan(ff, live)
+    check plan.count == 3
+    check plan.effStiffness == expectedEffStiffness
+    check plan.source == scCouplingNeed
+    check live.sphStiffness == stiffness  # neither clamp touches a stored
+      # value

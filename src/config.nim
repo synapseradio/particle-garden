@@ -61,7 +61,6 @@ type
     sphStiffness* {.exportc.}: float
     sphRadiusFraction* {.exportc.}: float
     sphViscosity* {.exportc.}: float
-    sphSubsteps* {.exportc.}: int
     longRangeStrength* {.exportc.}: float
     longRangeReach* {.exportc.}: float
     longRangeGridIndex* {.exportc.}: int
@@ -186,7 +185,6 @@ proc createConfig(): ConfigObject =
   result.sphStiffness = sim.sphStiffness
   result.sphRadiusFraction = sim.sphRadiusFraction
   result.sphViscosity = sim.sphViscosity
-  result.sphSubsteps = sim.sphSubsteps
   result.longRangeStrength = sim.longRangeStrength
   result.longRangeReach = sim.longRangeReach
   result.longRangeGridIndex = sim.longRangeGridIndex

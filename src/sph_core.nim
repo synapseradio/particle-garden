@@ -32,10 +32,6 @@ const
     ## XSPH blend fraction in [0, 1]. 0.5 is a strong-but-stable smoothing
     ## weight; the correction can never move a velocity by more than this
     ## fraction of the neighbor velocity gap (see xsphVelocityCorrection).
-  SPH_MAX_SUBSTEPS* = 3
-    ## Maximum physics substeps the executor may run per rendered frame. Higher
-    ## stiffness needs a smaller effective timestep; substepping buys that
-    ## without changing the render cadence.
   SPH_FORCE_SCALE* = 3.0
     ## Pressure acceleration gain, in px per frame squared. The primary
     ## aesthetic knob on how hard the fluid pushes back.
@@ -180,8 +176,8 @@ func stableStiffnessCeiling*(smoothingRadius: float; substeps: int;
   ## declares and the only thing this ceiling is clamped against.
   ##
   ## The envelope arrives as an argument rather than being read here because
-  ## config_ranges imports this module for SPH_MAX_SUBSTEPS; the range authority
-  ## therefore hands its own constant to the function it bounds.
+  ## config_ranges imports this module; the range authority therefore hands its
+  ## own constant to the function it bounds.
   ##
   ## THE SMOOTHING RADIUS IN PIXELS, not the fraction. The fraction alone cannot
   ## answer: the boundary follows the radius the kernel actually spans, so the

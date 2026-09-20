@@ -69,20 +69,17 @@ suite "Every Descriptor Is Probed Or Exempted":
           "\" is carried by no descriptor")
       check probeId in carried
 
-  test "the exemptions are exactly the four declared ones, with reasons":
-    # The exempt set is a declaration; a fifth exemption is a decision this
+  test "the exemptions are exactly the three declared ones, with reasons":
+    # The exempt set is a declaration; a fourth exemption is a decision this
     # test makes loud rather than a default anyone can drift into. Two
-    # structural counts, the substep count whose written reason names where
-    # its ceiling consequence stays measured (sphStiffness's deriving-box
-    # corner slices), and the mesh selector, whose two positions name a solve
-    # resolution rather than a quantity a sweep can travel.
+    # structural counts, and the mesh selector, whose two positions name a
+    # solve resolution rather than a quantity a sweep can travel.
     var exempted: seq[string]
     for descriptor in descriptors:
       if descriptor.exemption.len > 0:
         exempted.add descriptor.id
         check descriptor.exemption.len > 0
-    check exempted == @["particleCount", "speciesCount", "sphSubsteps",
-      "longRangeGridIndex"]
+    check exempted == @["particleCount", "speciesCount", "longRangeGridIndex"]
 
 const
   MustPass = ["friction", "fieldOpacity", "exposure", "contrast",
@@ -198,6 +195,12 @@ consequence (maxVelocity, attractionPeak, paletteLightness,
 sphRadiusFraction, sphRestDensity), sphSubsteps left the probe set with its
 written exemption, and rdFeed/rdKill moved to the joint group's
 regime-point slices.
+
+Annotation, 2026-09-20: the Substeps slider no longer exists. The integrator
+derives the count per frame from the couplings that act, so the sphSubsteps
+row and its exemption below record a control the panel has stopped offering.
+The sphStiffness rows sliced on substeps=1 and substeps=3 record conditions
+the sweep really ran at, and the parameter they measure still exists.
 
 | parameter | slice | span | live | cliff | dead run | verdict |
 |---|---|---|---|---|---|---|

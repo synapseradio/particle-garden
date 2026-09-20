@@ -27,6 +27,13 @@ import field_core
 import balance_core
 import profiler_slots
 export profiler_slots
+from std/math import ceil
+# The substep plan reads the range authority's ceilings and the fluid's own
+# stiffness law. Both are pure, so importing them keeps this module's purity.
+from config_ranges import SUBSTEPS_MAX, FF_STABLE, SPH_STIFFNESS_MAX
+from sph_core import SPH_STABILITY_COEFFICIENT,
+  SPH_CEILING_REFERENCE_FRAME_SECONDS, stableStiffnessCeiling
+from physics_core import FRAME_DT_REFERENCE
 
 # ==============================================================================
 # SECTION 1: COUPLING STRENGTHS
@@ -386,8 +393,9 @@ func buildFrame*(couplings: WorldCouplings;
   # Physics; its placement against the field passes is free, and it goes first
   # so the two once-per-frame nodes sit together. Once per frame because the
   # potential it leaves is good for the whole rendered frame: solving it per
-  # substep would multiply its cost by sphSubsteps and make Fluid Strength a
-  # second, undeclared control over how hard this coupling pulls.
+  # substep would multiply its cost by the frame's substep count and make every
+  # control feeding that count a second, undeclared control over how hard this
+  # coupling pulls.
   #
   # The whole chain is guarded by one strength. Nothing outside it reads the
   # density, either spectrum or the potential, so the chain's only output is
@@ -446,10 +454,10 @@ func buildFrame*(couplings: WorldCouplings;
       fieldDispatches.add dispatch("rdStepToTrail", dsFieldWorkgroups)
 
   # The chemistry evolves once per rendered frame. The executor encodes this
-  # description once per substep, so without the cadence a fluid world ran the
-  # pattern forward sphSubsteps times per frame and folded the deposit that many
-  # times, which made Fluid Strength a second, undeclared control on how fast the
-  # pattern moves.
+  # description once per substep, so without the cadence a substepped world ran
+  # the pattern forward once per substep and folded the deposit that many times,
+  # which made every control feeding the substep count a second, undeclared
+  # control on how fast the pattern moves.
   result.add computePassNode(
     "Field (RD)", PROFILER_SLOT_FIELD, fieldDispatches, fncOncePerFrame)
 
@@ -568,11 +576,9 @@ const COUPLINGS*: array[Coupling, CouplingDecl] = [
     passes: @[PassDecl(pipeline: "forcesSph", cadence: fncEverySubstep,
       slot: PROFILER_SLOT_FLUID, cost: csPerParticle)],
     dormancy: "fluidOff",
-    # sph_core.stableStiffnessCeiling multiplies by the substep count.
-    boundsRead: @["interactionRadius", "sphRadiusFraction", "sphSubsteps",
-      "timeScale"],
+    boundsRead: @["interactionRadius", "sphRadiusFraction", "timeScale"],
     ownParams: @["sphRadiusFraction", "sphRestDensity", "sphStiffness",
-      "sphViscosity", "sphSubsteps"],
+      "sphViscosity"],
     raisesCrowd: false,
     substepNeed: snFluidStiffness),
   cpScent: CouplingDecl(
@@ -646,5 +652,124 @@ const RENDER_SIZES*: seq[(string, SizeSpace)] = @[
   ("particleSize", ssScreenPx),
   ("glowRadiusScale", ssScreenPx),
 ]
-  ## Screen-pixel lengths that belong to no coupling (design N1): Particle
-  ## Size and the glow halo radius.
+  ## Screen-pixel lengths that belong to no coupling: Particle Size and the
+  ## glow halo radius.
+
+# ==============================================================================
+# SECTION 4: THE SUBSTEP PLAN
+# ==============================================================================
+#
+# How many times the executor runs buildFrame's description in one rendered
+# frame, and the two effect-time clamps that hold past SUBSTEPS_MAX.
+
+type
+  LiveValues* = object
+    ## What substepPlan reads: the six coupling strengths, and
+    ## the coupling parameters each declared substep need consults.
+    forces*, fluid*, scent*, deposit*, bodies*, longRange*: float
+    maxVelocity*: float
+    interactionRadius*: float
+    sphRadiusFraction*: float
+    sphStiffness*: float
+    timeScale*: float
+    bodyBand*: float
+    bodyLive*: bool
+      ## liveSlots(state, now) > 0 (src/body_core.nim:494): whether any body
+      ## is a surface this frame's travel could carry a particle through.
+
+  SubstepCountSource* = enum
+    ## Which of the three counts the plan's count came from, or that none of
+    ## them asked for more than one substep. Distinct from SubstepNeedId,
+    ## which says what one coupling declares; this says which count won
+    ## across the whole plan.
+    scNone
+    scFrameFactor    ## n_ff = ceil(ff / ff_stable)
+    scTravelBound    ## n_T = ceil(maxVelocity * ff / T)
+    scCouplingNeed   ## n_c, a coupling's own declared need
+
+  SubstepPlan* = object
+    ## What the executor runs this rendered frame: the substep
+    ## count, the two effect-time clamps applied past SUBSTEPS_MAX, and
+    ## which count asked for it.
+    count*: int
+    effMaxVelocity*: float
+    effStiffness*: float
+    source*: SubstepCountSource
+
+const SUBSTEP_STIFFNESS_RATE = SPH_STABILITY_COEFFICIENT / FRAME_DT_REFERENCE
+  ## sph_core's stiffness law (SPH_STABILITY_COEFFICIENT * h * substeps / dt)
+  ## read per reference frame: one substep of one reference frame holds the
+  ## fluid still up to this times the smoothing radius.
+
+func liveStrength(live: LiveValues; coupling: Coupling): float =
+  ## The strength that gates one coupling, so the walk below reads the same
+  ## number the frame's own gate reads.
+  case coupling
+  of cpSpecies: live.forces
+  of cpFluid: live.fluid
+  of cpScent: live.scent
+  of cpDeposit: live.deposit
+  of cpLongRange: live.longRange
+  of cpBodies: live.bodies
+
+func travelBound(live: LiveValues): float =
+  ## The length a substep's travel has to stay inside, or zero where no acting
+  ## coupling declares one. Only the bodies declare a length: a particle
+  ## carried past an enclosing body's band in one substep skips the hold's rise
+  ## entirely. With no live body there is no surface to carry it through, so
+  ## the band declares nothing. The pair core's repulsion reaches a quarter of
+  ## the interaction radius against a per-step travel of twice that, and the
+  ## fluid, scent and long range act smoothly over their ranges.
+  if acts(live.bodies) and live.bodyLive: live.bodyBand else: 0.0
+
+func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
+  ## What this rendered frame runs: count = min(max(n_ff, n_T, n_c),
+  ## SUBSTEPS_MAX), the largest of three asks under the ceiling.
+  ##   n_ff = ceil(ff / FF_STABLE), the frame factor on its own
+  ##   n_T  = ceil(maxVelocity * ff / T), the travel bound, where T is the
+  ##          length travelBound above states
+  ##   n_c  = what an acting coupling's own substepNeed asks for
+  ## Past the ceiling the ask goes unmet, so the two effect-time clamps hold
+  ## the bounds instead. Each is a min against the stored value and neither is
+  ## written back: below the ceiling the min is the stored value itself, since
+  ## n_T <= SUBSTEPS_MAX says exactly that maxVelocity <= T * SUBSTEPS_MAX / ff.
+  let askedByFrame = max(1.0, ceil(ff / FF_STABLE))
+  let bound = travelBound(live)
+  let askedByTravel =
+    if bound > 0.0 and ff > 0.0:
+      max(1.0, ceil(live.maxVelocity * ff / bound))
+    else: 1.0
+  result.effMaxVelocity =
+    if bound > 0.0 and ff > 0.0:
+      min(live.maxVelocity, bound * SUBSTEPS_MAX.float / ff)
+    else: live.maxVelocity
+  result.effStiffness = live.sphStiffness
+
+  var askedByCoupling = 1.0
+  for coupling in Coupling:
+    if not acts(liveStrength(live, coupling)): continue
+    case COUPLINGS[coupling].substepNeed
+    of snNone: discard
+    of snFluidStiffness:
+      let smoothingRadius = live.interactionRadius * live.sphRadiusFraction
+      if smoothingRadius > 0.0 and ff > 0.0:
+        let holds = SUBSTEP_STIFFNESS_RATE * smoothingRadius
+        askedByCoupling = max(askedByCoupling,
+          max(1.0, ceil(live.sphStiffness * ff / holds)))
+        # The panel's own ceiling comes in too: it is what the served slider
+        # offered, and the clamp may not hand the fluid more than that.
+        result.effStiffness = min(min(live.sphStiffness,
+            stableStiffnessCeiling(smoothingRadius, SUBSTEPS_MAX,
+              live.timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS,
+              SPH_STIFFNESS_MAX)),
+          holds * SUBSTEPS_MAX.float / ff)
+
+  let asked = max(max(askedByFrame, askedByTravel), askedByCoupling)
+  result.count = int(min(asked, SUBSTEPS_MAX.float))
+  # A tie is named by the most particular asker: a coupling's own declaration
+  # over the world's travel bound, and either over the bare frame factor.
+  result.source =
+    if asked <= 1.0: scNone
+    elif askedByCoupling == asked: scCouplingNeed
+    elif askedByTravel == asked: scTravelBound
+    else: scFrameFactor

@@ -55,10 +55,6 @@ type
                               ## smoothing radius past the neighbour sweep's
                               ## reach cannot be expressed.
     sphViscosity*: float      ## SPH XSPH viscosity strength
-    sphSubsteps*: int         ## SPH physics substeps per rendered frame.
-                              ## 2 halves the effective timestep the stiff
-                              ## gamma=7 EOS integrates at; capped by
-                              ## SPH_MAX_SUBSTEPS.
     longRangeStrength*: float ## How much of the long-range mesh's verdict on a
                               ## particle's velocity lands. It multiplies the
                               ## force pass alone and nothing earlier in the
@@ -157,7 +153,6 @@ func initSimulationState*(): SimulationState =
     # have already watched.
     sphRadiusFraction: 1.0,
     sphViscosity: 0.1,
-    sphSubsteps: 2,
     # The long-range mesh starts silent, like the fluid: the shipped world is
     # the one every other default was chosen against, and a coupling nobody has
     # watched act does not arrive switched on.

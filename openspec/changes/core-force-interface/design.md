@@ -846,7 +846,10 @@ quanta.
 - `maxVelocity`, `interactionRadius`, `sphRadiusFraction`, `sphStiffness`, `timeScale`, `bodyBand`
 - `bodyLive = liveSlots(state, now) > 0` (`src/body_core.nim:494`)
 
-`SubstepPlan` holds `count`, `effMaxVelocity`, `effStiffness` and the requesting source.
+`SubstepPlan` holds `count`, `effMaxVelocity`, `effStiffness` and the requesting source. The source
+is an enum over the three counts below and the case where none of them asked for more than one, so
+only a count that exists can be named. It is not `SubstepNeedId`, which says what one coupling
+declares, where this says which count won.
 `webgpu_compute` replaces `:984-988` with it and writes:
 - integrate's `frameFactor = ff/count`
 - the effective Max Velocity into the integrate params

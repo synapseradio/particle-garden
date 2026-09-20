@@ -1,5 +1,35 @@
 ## MODIFIED Requirements
 
+### Requirement: The reference-oracle family covers the render-side sliders
+
+Pure mirrors of the glow and trail shader math SHALL sit in the reference-oracle family, so the glow
+and trail sliders carry measured response probes and take no exemption. `glow_core.nim` mirrors the
+halo radius composition, the density and velocity factors, the Gaussian falloff, and the warm shift
+(`src/glow_core.nim:5`); `trail_core.nim` mirrors the per-frame decay and the trail-length mapping
+that drives it (`src/trail_core.nim:5`). Six render descriptors name probes that read those mirrors:
+`glow.clampedIntegral`, `glow.velocityIntegral`, `glow.radiusIntegral`, `glow.falloffIntegral`,
+`glow.warmth`, and `render.trailPersistence` (`src/ui/api/param_descriptor.nim`, probe functions at
+`src/ui/api/response_probe.nim`, both mirrors imported there).
+
+Enforcement: `tests/test_response_probe.nim`, suite `Every Descriptor Is Probed Or Exempted`, holds
+the exempt set to exactly `particleCount`, `speciesCount`, and `longRangeGridIndex`, so no glow or
+trail parameter can carry an exemption at all, and `tests/test_glow_core.nim` and
+`tests/test_trail_core.nim` run under `just test`. Divergence between either mirror and its shader
+falls under the divergence requirement above.
+
+`sphSubsteps` leaves that set here, because the integrator now derives the substep count and the
+slider is gone. The set is no longer three structural counts: two are counts, and
+`longRangeGridIndex` is a selector whose positions name a solve resolution.
+
+#### Scenario: The glow oracle mirrors its shader
+- **WHEN** the glow falloff, radius, alpha, or warmth expression changes in the shader
+- **THEN** the mirror is updated alongside it, as for every other oracle in the family
+
+#### Scenario: No render slider is exempt for want of an oracle
+- **WHEN** the exempt set is read
+- **THEN** it holds the two structural counts and the mesh selector, and names no glow or trail
+  parameter
+
 ### Requirement: WGSL math is tested through pure Nim reference oracles
 
 Math that runs in WGSL SHALL be held to account by a pure Nim mirror the native suite tests, because

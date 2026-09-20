@@ -11,19 +11,21 @@
 import std/[unittest, math]
 import ../src/sph_core
 import ../src/shader_config
+import ../src/sim_registry
 
 from ../src/memory_layout import MAX_PARTICLES
 # The stability harness below runs the fluid at the shipped defaults, so it
 # reads them from the default authority rather than restating any of them.
 from ../src/ui/state/simulation_state import initSimulationState
+from ../src/physics_core import FRAME_DT_REFERENCE
 # The smoothing radius is the interaction radius times a fraction, so the
 # reachable effective radii are the product of two ranges the slider contract
 # owns. Read from there rather than restated here: raising either range
 # re-scopes the sweep below without a second edit.
 from ../src/config_ranges import SPH_RADIUS_FRACTION_MIN,
   SPH_RADIUS_FRACTION_MAX, INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX,
-  FLUID_STRENGTH_MAX, SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, SPH_SUBSTEPS_MIN,
-  SPH_SUBSTEPS_MAX, TIME_SCALE_MIN, TIME_SCALE_MAX
+  FLUID_STRENGTH_MAX, SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX, SUBSTEPS_MAX,
+  TIME_SCALE_MIN, TIME_SCALE_MAX
 
 const SPH_CORE_TESTS_LOADED* = true
 
@@ -284,7 +286,7 @@ suite "SPH Tuning Constants Are In Physical Range":
   test "gamma, epsilon, and substep bounds hold their documented values":
     check SPH_DEFAULT_GAMMA == 7.0
     check SPH_XSPH_EPSILON == 0.5
-    check SPH_MAX_SUBSTEPS == 3
+    check SUBSTEPS_MAX == 3
 
   test "the XSPH epsilon is a well-formed blend fraction in [0, 1]":
     check SPH_XSPH_EPSILON >= 0.0
@@ -604,7 +606,7 @@ let
   boundaryReference =
     measuredBoundary(harnessDefaultRadius, 1, harnessDefaultTimeScale)
   boundaryMoreSubsteps = measuredBoundary(
-    harnessDefaultRadius, SPH_SUBSTEPS_MAX, harnessDefaultTimeScale)
+    harnessDefaultRadius, SUBSTEPS_MAX, harnessDefaultTimeScale)
   boundaryWiderKernel = measuredBoundary(
     INTERACTION_RADIUS_MAX.float, 1, harnessDefaultTimeScale)
   boundarySlowTime = measuredBoundary(harnessDefaultRadius, 1, TIME_SCALE_MIN)
@@ -651,7 +653,7 @@ suite "The Fluid Has A Measured Stability Boundary":
     # were sublinear.
     checkpoint("1 substep " & $boundaryReference &
       ", 3 substeps " & $boundaryMoreSubsteps)
-    let substepRatio = SPH_SUBSTEPS_MAX.float
+    let substepRatio = SUBSTEPS_MAX.float
     check boundaryMoreSubsteps >= substepRatio * boundaryReference
     check boundaryMoreSubsteps <= substepRatio * substepRatio * boundaryReference
 
@@ -723,7 +725,7 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
     # rest. Cheaper than bisecting at every corner and a more direct statement
     # of the claim: the ceiling is a stiffness the fluid holds.
     for smoothingRadius in CEILING_BOX_RADII:
-      for substeps in [SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX]:
+      for substeps in [1, SUBSTEPS_MAX]:
         for timeScale in CEILING_BOX_TIME_SCALES:
           let dt = harnessDt(timeScale)
           let ceiling = stableStiffnessCeiling(
@@ -733,9 +735,11 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
             ", time scale " & $timeScale & ", ceiling " & $ceiling &
             ", settled " & $run.settledSpeed)
           check comesToRest(run)
-    # And the shipped default, which is the configuration a fresh world runs.
+    # And the shipped default, which is the configuration a fresh world runs:
+    # the panel's ceiling is evaluated at SUBSTEPS_MAX, the count substepPlan
+    # serves the fluid when that ceiling binds.
     let defaultDt = harnessDt(harnessDefaultTimeScale)
-    let defaultSubsteps = initSimulationState().sphSubsteps
+    let defaultSubsteps = SUBSTEPS_MAX
     let defaultCeiling = stableStiffnessCeiling(
       harnessDefaultRadius, defaultSubsteps, defaultDt, SPH_STIFFNESS_MAX)
     checkpoint("default ceiling " & $defaultCeiling)
@@ -748,10 +752,8 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
     # sit: eight times the ceiling has to be a stiffness the fluid cannot hold,
     # at the corner where the law is anchored and at the shipped default.
     for (smoothingRadius, substeps, timeScale) in [
-        (INTERACTION_RADIUS_MAX.float, SPH_SUBSTEPS_MIN,
-          harnessDefaultTimeScale),
-        (harnessDefaultRadius, initSimulationState().sphSubsteps,
-          harnessDefaultTimeScale)]:
+        (INTERACTION_RADIUS_MAX.float, 1, harnessDefaultTimeScale),
+        (harnessDefaultRadius, SUBSTEPS_MAX, harnessDefaultTimeScale)]:
       let dt = harnessDt(timeScale)
       let ceiling = stableStiffnessCeiling(
         smoothingRadius, substeps, dt, SPH_STIFFNESS_MAX)
@@ -768,7 +770,7 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
     # deriving inputs, at the ends of each of their ranges.
     for smoothingRadius in [SPH_RADIUS_FRACTION_MIN * INTERACTION_RADIUS_MIN.float,
         SPH_RADIUS_FRACTION_MAX * INTERACTION_RADIUS_MAX.float]:
-      for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+      for substeps in 1 .. SUBSTEPS_MAX:
         for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
           let ceiling = stableStiffnessCeiling(smoothingRadius, substeps,
             harnessDt(timeScale), SPH_STIFFNESS_MAX)
@@ -784,7 +786,7 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
     # flat once it binds — flat is not a counterexample to increasing, but a
     # test that could not tell them apart would pass on a constant.
     let dt = harnessDt(TIME_SCALE_MAX)  # the corner where the clamp never binds
-    for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+    for substeps in 1 .. SUBSTEPS_MAX:
       var previous = 0.0
       for fraction in radiusFractionSweep(8):
         let ceiling = stableStiffnessCeiling(
@@ -795,13 +797,71 @@ suite "The Derived Stiffness Ceiling Holds Under The Measurement":
         previous = ceiling
     for fraction in radiusFractionSweep(4):
       var previous = 0.0
-      for substeps in SPH_SUBSTEPS_MIN .. SPH_SUBSTEPS_MAX:
+      for substeps in 1 .. SUBSTEPS_MAX:
         let ceiling = stableStiffnessCeiling(
           fraction * INTERACTION_RADIUS_MAX.float, substeps, dt,
           SPH_STIFFNESS_MAX)
         checkpoint("fraction " & $fraction & ", substeps " & $substeps)
         check ceiling > previous
         previous = ceiling
+
+proc smallestSubstepsHoldingStiffness(stiffness, smoothingRadius,
+    dt: float): int =
+  ## The smallest substep count whose stableStiffnessCeiling covers the given
+  ## stiffness: what a coupling that needs more substeps is asking for.
+  result = 1
+  while stableStiffnessCeiling(smoothingRadius, result, dt, SPH_STIFFNESS_MAX) <
+      stiffness:
+    inc result
+
+suite "The Fluid Declares The Substeps Its Stiffness Needs":
+  # The fluid is the only coupling that declares its own substep need,
+  # n_c = ceil(sphStiffness * ff / (0.3 * h)), h = interactionRadius *
+  # sphRadiusFraction. That is stableStiffnessCeiling's own stiffness law
+  # (0.0025 * h * substeps / dt) read backwards: the smallest substep count
+  # whose ceiling covers the stiffness is what the coupling is asking for.
+  # Where that count sits at or under SUBSTEPS_MAX the plan runs it and hands
+  # the fluid its declared stiffness unchanged. Past the cap the plan runs
+  # SUBSTEPS_MAX instead and clamps effStiffness down to what that count can
+  # hold, the same ceiling law read forward this time.
+  test "the declared substep count is the smallest whose ceiling holds the stiffness, and the harness comes to rest there":
+    for (interactionRadius, radiusFraction) in [
+        (INTERACTION_RADIUS_MIN.float, SPH_RADIUS_FRACTION_MIN),
+        (INTERACTION_RADIUS_MAX.float, SPH_RADIUS_FRACTION_MAX)]:
+      let smoothingRadius = interactionRadius * radiusFraction
+      for stiffness in [SPH_STIFFNESS_MIN, SPH_STIFFNESS_MAX]:
+        for timeScale in [TIME_SCALE_MIN, TIME_SCALE_MAX]:
+          let dt = harnessDt(timeScale)
+          let ff = dt / FRAME_DT_REFERENCE
+          let declaredCount = smallestSubstepsHoldingStiffness(
+            stiffness, smoothingRadius, dt)
+          let live = LiveValues(fluid: 1.0,
+            interactionRadius: interactionRadius,
+            sphRadiusFraction: radiusFraction, sphStiffness: stiffness,
+            bodyLive: false, timeScale: timeScale)
+          let plan = substepPlan(ff, live)
+          checkpoint("radius " & $smoothingRadius & ", stiffness " &
+            $stiffness & ", time scale " & $timeScale & ", declared " &
+            $declaredCount & ", plan.count " & $plan.count &
+            ", plan.effStiffness " & $plan.effStiffness)
+          check plan.count == min(declaredCount, SUBSTEPS_MAX)
+          if declaredCount <= SUBSTEPS_MAX:
+            # The ask was met: the plan hands the fluid its own stiffness,
+            # unclamped, at the count it declared.
+            check plan.effStiffness == stiffness
+            check comesToRest(runFluidHarness(stiffness, smoothingRadius,
+              declaredCount, dt))
+          else:
+            # The ask went unmet: the count is the fluid's own (not another
+            # coupling's), the clamp moved effStiffness below what was asked,
+            # and that lower stiffness is one the capped count can hold —
+            # read through the same oracle the met-ask branch above uses.
+            check plan.source == scCouplingNeed
+            check plan.effStiffness < stiffness
+            check smallestSubstepsHoldingStiffness(
+              plan.effStiffness, smoothingRadius, dt) <= SUBSTEPS_MAX
+            check comesToRest(runFluidHarness(plan.effStiffness,
+              smoothingRadius, plan.count, dt))
 
 suite "XSPH Smoothing Carries No Time Factor":
   # forces-sph.wgsl hands integrate its pair delta per reference frame: the

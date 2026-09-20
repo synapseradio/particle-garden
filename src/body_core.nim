@@ -138,17 +138,6 @@ const
     ## The fastest a particle may travel: config_ranges' MAX_VELOCITY_MAX.
     ## Stated here because this module sits upstream of config_ranges and
     ## cannot import it; tests/test_body_core.nim holds the two equal.
-  BODY_LARGEST_SUBSTEP_DT* = 0.05 * 5.0
-    ## The longest a substep can be: src/app.nim caps a frame's raw delta at
-    ## 0.05 s and multiplies by timeScale, whose ceiling is config_ranges'
-    ## TIME_SCALE_MAX; one substep takes the whole of it. tests/test_body_core.nim
-    ## holds both factors against their sources.
-  BODY_LARGEST_FRAME_FACTOR* =
-    BODY_LARGEST_SUBSTEP_DT / physics_core.FRAME_DT_REFERENCE
-    ## That substep as a multiple of the reference frame every force constant
-    ## here was measured against: the largest `frames` body-integrate
-    ## multiplies the decoded reaction, the change caps and the damping by.
-
   BODY_STRENGTH_CEILING* = 1.0
     ## One is the whole coupling: this multiplies the entire output of both
     ## bodies passes, so a value above one would amplify past the range the
@@ -181,17 +170,6 @@ const
   BODY_SUSTAIN_FLOOR* = 0.0
   BODY_SUSTAIN_CEILING* = 1.0
     ## Sustain is a level of the envelope, so its range is the envelope's.
-
-  BODY_BAND_FLOOR* =
-    BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
-    ## DERIVED, not chosen: the distance a particle at the speed cap covers in
-    ## the largest substep. A particle crossing an enclosing surface has to land
-    ## inside the band on the substep that carries it across, or it skips the
-    ## hold's rise; at half this floor it lands at the reach's end, where the
-    ## hold is zero, and is let go in one step. At this floor the fastest
-    ## particle the world admits still lands on the rise.
-    ## Re-derive when the speed ceiling, the frame cap or the time-scale ceiling
-    ## moves.
 
   BODY_MAX_FORCE_PER_PARTICLE* =
     2.0 * BODY_FORCE_CEILING * BODY_STRENGTH_CEILING
@@ -270,7 +248,6 @@ static:
     BODY_WORLD_HALF_DIAGONAL * BODY_TORQUE_FIXED_SCALE < float(high(int32)),
     "the body torque accumulator overflows int32 under a full crowd at the " &
     "world's half-diagonal"
-  doAssert BODY_BAND_FLOOR < BODY_BAND_CEILING
   doAssert BODY_RADIUS_FLOOR < BODY_RADIUS_CEILING
   doAssert BODY_LIFETIME_FLOOR > 0.0 and
     BODY_LIFETIME_FLOOR < BODY_LIFETIME_CEILING,

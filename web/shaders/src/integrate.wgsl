@@ -93,12 +93,22 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var newVelY = (p.vel.y + deltaVy) * params.friction;
 
   // Logarithmic velocity capping reduces jank in high-activity areas.
+  //
+  // The cap bounds travel per reference frame, so a substep spanning
+  // frameFactor of them may carry a particle maxVelocity * frameFactor: the
+  // curve acts on the speed per reference frame and the result is rescaled.
+  // At frameFactor 1 that is bit-identical to capping the speed itself. A
+  // stopped clock delivers frameFactor 0 and no travel, so the curve acts on
+  // the speed there rather than dividing by zero.
+  // Mirrored by physics_core.integrateVelocity.
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY);
+  let perFrame = select(1.0, params.frameFactor, params.frameFactor > 0.0);
+  let frameSpeed = speed / perFrame;
   let softCapThreshold = params.maxVelocity * 0.5;
-  if (speed > softCapThreshold && speed > 0.0) {
-    let excess = speed - softCapThreshold;
+  if (frameSpeed > softCapThreshold && frameSpeed > 0.0) {
+    let excess = frameSpeed - softCapThreshold;
     let compressedSpeed = softCapThreshold + log(1.0 + excess);
-    let cappedSpeed = min(compressedSpeed, params.maxVelocity);
+    let cappedSpeed = min(compressedSpeed, params.maxVelocity) * perFrame;
     let scale = cappedSpeed / speed;
     newVelX *= scale;
     newVelY *= scale;

@@ -364,7 +364,7 @@ func sphFractionCeilingProbe(value: float; ctx: ProbeContext): float =
   ## config_ranges, untouched by this observable.
   stableStiffnessCeiling(
     value * ctx.sim.interactionRadius.float,
-    ctx.sim.sphSubsteps,
+    SUBSTEPS_MAX,
     ctx.sim.timeScale * SPH_CEILING_REFERENCE_FRAME_SECONDS,
     SPH_STIFFNESS_MAX)
 
@@ -907,12 +907,9 @@ proc slicesFor*(descriptor: ParamDescriptor): seq[SliceSpec] =
       SliceSpec(name: "zoomCeiling", ctx: high)]
   of "sphStiffness":
     for fraction in [SPH_RADIUS_FRACTION_MIN, SPH_RADIUS_FRACTION_MAX]:
-      for substeps in [SPH_SUBSTEPS_MIN, SPH_SUBSTEPS_MAX]:
-        var corner = defaultProbeContext()
-        corner.sim.sphRadiusFraction = fraction
-        corner.sim.sphSubsteps = substeps
-        result.add SliceSpec(
-          name: &"fraction={fraction} substeps={substeps}", ctx: corner)
+      var corner = defaultProbeContext()
+      corner.sim.sphRadiusFraction = fraction
+      result.add SliceSpec(name: &"fraction={fraction}", ctx: corner)
   else:
     discard
 
@@ -924,7 +921,6 @@ proc servedMax*(descriptor: ParamDescriptor; ctx: ProbeContext): float =
     evaluateCeiling(descriptor.bound.ceilingId, CeilingInputs(
       interactionRadius: ctx.sim.interactionRadius,
       sphRadiusFraction: ctx.sim.sphRadiusFraction,
-      sphSubsteps: ctx.sim.sphSubsteps,
       timeScale: ctx.sim.timeScale))
   else:
     descriptor.maxValue

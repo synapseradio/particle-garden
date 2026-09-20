@@ -31,7 +31,6 @@ const
   DEFAULT_SPH_REST_DENSITY = 1.0
   DEFAULT_SPH_STIFFNESS = 8.0
   DEFAULT_SPH_VISCOSITY = 0.1
-  DEFAULT_SPH_SUBSTEPS = 1
   # DEFAULT_RD_FEED/DEFAULT_RD_KILL reference field_core's own constants
   # directly, not literals, so the two can't drift apart.
   DEFAULT_RD_FEED = field_core.RD_DEFAULT_FEED
@@ -98,13 +97,11 @@ suite "Configuration Invariants":
 
   test "SPH defaults are physically sensible":
     ## CONTRACT: rest density and stiffness drive the Tait EOS and must be
-    ## positive; viscosity is an XSPH blend fraction in [0,1]; substeps is a
-    ## positive per-frame loop count.
+    ## positive; viscosity is an XSPH blend fraction in [0,1].
     check DEFAULT_SPH_REST_DENSITY > 0.0
     check DEFAULT_SPH_STIFFNESS > 0.0
     check DEFAULT_SPH_VISCOSITY >= 0.0
     check DEFAULT_SPH_VISCOSITY <= 1.0
-    check DEFAULT_SPH_SUBSTEPS >= 1
 
   test "reaction-diffusion defaults sit in the Gray-Scott self-replicating-spots regime":
     ## CONTRACT: feed and kill are both positive rates; kill must exceed feed

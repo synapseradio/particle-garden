@@ -11,8 +11,8 @@ import std/[unittest, math, options, os, strutils, strformat]
 import ../src/body_core
 import ../src/memory_layout
 import ../src/physics_core
-import ../src/sph_core
 import ../src/config_ranges
+import ../src/sim_registry
 
 const BODY_CORE_TESTS_LOADED* = true
 
@@ -807,6 +807,14 @@ const CROWD_SAMPLES = 24
   ## contributes exactly what those particles would if they were together.
   ## Together is the worst case — spread out they cancel — so a run measures
   ## the coherent crowd and covers the scattered one.
+const LARGEST_FRAME_SECONDS = 0.05 * TIME_SCALE_MAX
+  ## The longest frame the executor can be handed: src/app.nim caps a raw frame
+  ## delta at 0.05 s and multiplies by the time scale, whose ceiling is
+  ## TIME_SCALE_MAX. Held against app.nim's own line by the premises test below.
+const LARGEST_FRAME_FACTOR = LARGEST_FRAME_SECONDS / FRAME_DT_REFERENCE
+  ## That frame as a multiple of the reference frame every force constant in
+  ## body_core was measured against.
+
 const SWEEP_FRAMES = 480
   ## Rendered frames per closed-loop run. At the largest frame that is 40
   ## seconds of wall clock, long enough that a body under a steady crowd
@@ -825,10 +833,10 @@ suite "A Crowd Cannot Drive A Body Unstable":
   #   2. the strength ceiling, BODY_STRENGTH_CEILING, and the force ceiling
   #      BODY_FORCE_CEILING the two signed parameters share
   #   3. the force law in bodyForceAt and the step in bodyRigidStep
-  #   4. the substep count, sph_core's SPH_MAX_SUBSTEPS, and the largest frame
-  #      BODY_LARGEST_FRAME_FACTOR states
+  #   4. the substep ceiling, config_ranges' SUBSTEPS_MAX, and the largest frame
+  #      LARGEST_FRAME_FACTOR states
   #
-  # Every run is at the WORST reachable frame: BODY_LARGEST_FRAME_FACTOR
+  # Every run is at the WORST reachable frame: LARGEST_FRAME_FACTOR
   # reference frames of impulse per rendered frame, cut into `substeps` pieces.
   # A shorter frame is strictly gentler on an explicit step, so a bound earned
   # here covers every frame the app can run.
@@ -912,8 +920,8 @@ suite "A Crowd Cannot Drive A Body Unstable":
       py[sample] = body.centerY + reach * sin(bearing)
     # Two clocks, as the step keeps them: seconds for travel, reference frames
     # for the impulse integrate delivers and for the damping.
-    let substepSeconds = BODY_LARGEST_SUBSTEP_DT / substeps.float
-    let substepFrames = BODY_LARGEST_FRAME_FACTOR / substeps.float
+    let substepSeconds = LARGEST_FRAME_SECONDS / substeps.float
+    let substepFrames = LARGEST_FRAME_FACTOR / substeps.float
     var speeds = newSeq[float](frames)
     var spins = newSeq[float](frames)
     for frame in 0 ..< frames:
@@ -976,10 +984,10 @@ suite "A Crowd Cannot Drive A Body Unstable":
       for strength in [BODY_STRENGTH_CEILING * 0.5, BODY_STRENGTH_CEILING]:
         for proximity in [-BODY_FORCE_CEILING, 0.0, BODY_FORCE_CEILING]:
           for enclosure in [-BODY_FORCE_CEILING, 0.0, BODY_FORCE_CEILING]:
-            for band in [BODY_BAND_FLOOR, BODY_BAND_CEILING]:
+            for band in [BODY_BAND_MIN, BODY_BAND_CEILING]:
               for radius in [BODY_RADIUS_FLOOR, BODY_RADIUS_CEILING]:
                 for anisotropy in [1.0, BODY_ANISOTROPY_CEILING]:
-                  for substeps in [1, 3]:
+                  for substeps in [1, SUBSTEPS_MAX]:
                     runs.add runCrowdPush(crowd, strength, proximity,
                       enclosure, band, radius, anisotropy, substeps)
     runs
@@ -998,7 +1006,6 @@ suite "A Crowd Cannot Drive A Body Unstable":
     check BODY_ENCLOSURE_MAX == BODY_FORCE_CEILING
     check BODY_PROXIMITY_MIN == -BODY_FORCE_CEILING
     check BODY_ENCLOSURE_MIN == -BODY_FORCE_CEILING
-    check BODY_BAND_MIN == BODY_BAND_FLOOR
     check BODY_BAND_MAX == BODY_BAND_CEILING
     check BODY_RADIUS_MIN == BODY_RADIUS_FLOOR
     check BODY_RADIUS_MAX == BODY_RADIUS_CEILING
@@ -1017,9 +1024,9 @@ suite "A Crowd Cannot Drive A Body Unstable":
     var worst = ""
     for run in sweep:
       let speedCeiling = reachableCeiling(BODY_MAX_SPEED_CHANGE,
-        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+        LARGEST_FRAME_FACTOR / run.substeps.float)
       let spinCeiling = reachableCeiling(BODY_MAX_SPIN_CHANGE,
-        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+        LARGEST_FRAME_FACTOR / run.substeps.float)
       # The sum is attained in the limit, so the comparison carries a
       # relative epsilon rather than testing a float against its own limit.
       if not run.finite or run.peakSpeed > speedCeiling * 1.000001 or
@@ -1052,9 +1059,9 @@ suite "A Crowd Cannot Drive A Body Unstable":
         run.enclosure, run.band, run.radius, run.anisotropy, run.substeps,
         frames = SWEEP_FRAMES * 4)
       let ceilingAt = reachableCeiling(BODY_MAX_SPEED_CHANGE,
-        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+        LARGEST_FRAME_FACTOR / run.substeps.float)
       let spinCeilingAt = reachableCeiling(BODY_MAX_SPIN_CHANGE,
-        BODY_LARGEST_FRAME_FACTOR / run.substeps.float)
+        LARGEST_FRAME_FACTOR / run.substeps.float)
       checkpoint("four times as long: " & longer.describe)
       check longer.finite
       check longer.peakSpeed <= ceilingAt * 1.000001
@@ -1065,12 +1072,12 @@ suite "A Crowd Cannot Drive A Body Unstable":
     # The ceiling is not perfectly substep-invariant and cannot be: damping is
     # applied after each substep, so an impulse delivered early in a finely cut
     # frame is damped more times than the same impulse delivered whole. The
-    # claim is that the difference stays small enough that turning the fluid's
-    # substeps up does not read as restrengthening the bodies coupling.
+    # claim is that the difference stays small enough that a frame the plan
+    # cuts finely does not read as restrengthening the bodies coupling.
     let whole = reachableCeiling(BODY_MAX_SPEED_CHANGE,
-      BODY_LARGEST_FRAME_FACTOR)
+      LARGEST_FRAME_FACTOR)
     let cut = reachableCeiling(BODY_MAX_SPEED_CHANGE,
-      BODY_LARGEST_FRAME_FACTOR / float(SPH_MAX_SUBSTEPS))
+      LARGEST_FRAME_FACTOR / float(SUBSTEPS_MAX))
     check whole > 0.0
     check max(whole, cut) / min(whole, cut) < 2.0
 
@@ -1121,18 +1128,18 @@ suite "A Body Is Blind Past Its Reach":
           accumulators[slot].addBodyReaction(bodies[slot], px[sample],
             py[sample], BODY_WORLD_W, BODY_WORLD_H, impulse.x * weight,
             impulse.y * weight)
-          vx[sample] += impulse.x * BODY_LARGEST_FRAME_FACTOR
-          vy[sample] += impulse.y * BODY_LARGEST_FRAME_FACTOR
+          vx[sample] += impulse.x * LARGEST_FRAME_FACTOR
+          vy[sample] += impulse.y * LARGEST_FRAME_FACTOR
           result.clumpImpulse += (abs(impulse.x) + abs(impulse.y)) *
-            BODY_LARGEST_FRAME_FACTOR
+            LARGEST_FRAME_FACTOR
         px[sample] = wrapToTorus(px[sample] + vx[sample] *
-          BODY_LARGEST_SUBSTEP_DT, BODY_WORLD_W)
+          LARGEST_FRAME_SECONDS, BODY_WORLD_W)
         py[sample] = wrapToTorus(py[sample] + vy[sample] *
-          BODY_LARGEST_SUBSTEP_DT, BODY_WORLD_H)
+          LARGEST_FRAME_SECONDS, BODY_WORLD_H)
       for slot in 0 .. 1:
         let received = accumulators[slot].decoded()
         bodies[slot] = bodyRigidStep(bodies[slot], received.forceX,
-          received.forceY, received.torque, BODY_LARGEST_SUBSTEP_DT,
+          received.forceY, received.torque, LARGEST_FRAME_SECONDS,
           BODY_WORLD_W, BODY_WORLD_H)
       if frame == 0:
         result.firstFrameVelA = bodies[0].velX
@@ -1197,8 +1204,8 @@ suite "A Body Is Blind Past Its Reach":
 suite "An Enclosing Body Cannot Be Tunnelled":
   # The band floor's warrant. It is a relation, not a choice: the fastest
   # particle the world admits must land on the enclosure ramp on the substep
-  # that carries it across the surface, or it meets the wall at full strength
-  # as a step in the force.
+  # substepPlan runs, or it meets the wall at full strength as a step in the
+  # force.
   #
   # NOTE ON WHAT "TUNNELLED" MEANS HERE. The hold peaks at the band edge and is
   # gone at twice the band, so a particle carried past the reach in one substep
@@ -1214,53 +1221,61 @@ suite "An Enclosing Body Cannot Be Tunnelled":
       enclosure: BODY_FORCE_CEILING,
       invMass: masses.invMass, invInertia: masses.invInertia)
 
-  proc crossingDepth(band: float): float =
+  proc wallLandedX(body: Body; maxVelocity, ff: float): float =
+    ## Where the fastest particle lands after one substep at substepPlan's
+    ## count, starting a hair inside the surface. Travel is the plan's
+    ## effective Max Velocity wherever the plan clamps (effMaxVelocity > 0),
+    ## the caller's Max Velocity otherwise — the value integrate actually
+    ## receives either way.
+    let live = LiveValues(bodies: BODIES_DEFAULT_STRENGTH,
+      bodyBand: body.bandWidth, bodyLive: true, maxVelocity: maxVelocity)
+    let plan = substepPlan(ff, live)
+    let ffSub = ff / plan.count.float
+    let travelSpeed =
+      if plan.effMaxVelocity > 0.0: plan.effMaxVelocity else: maxVelocity
+    body.centerX + RADIUS - 1e-6 + travelSpeed * ffSub
+
+  proc crossingDepth(band, maxVelocity, ff: float): float =
     ## How far outside the surface the fastest particle lands on the substep
-    ## that carries it across, as a multiple of the band. Below one it is on
-    ## the ramp; at or above one it has skipped the ramp.
+    ## substepPlan runs, as a multiple of the band. Below one it is on the
+    ## ramp; at or above one it has skipped the ramp.
     let body = wall(band)
-    # A particle a hair inside the surface, travelling straight out at the
-    # speed the range caps it at, over the longest substep the app can run.
-    let startX = body.centerX + RADIUS - 1e-6
-    let landedX = startX +
-      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+    let landedX = wallLandedX(body, maxVelocity, ff)
     let landed = sampleBody(body, landedX, body.centerY,
       BODY_WORLD_W, BODY_WORLD_H)
     landed.distance / band
 
-  test "the band floor is the travel of the fastest particle in the longest substep":
-    # DERIVED, stated as an executable relation rather than as a comment: a
-    # change to the speed ceiling or the frame cap that leaves this constant
-    # behind fails here.
-    check BODY_BAND_FLOOR ==
-      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
-    check BODY_BAND_FLOOR > 0.0
-    check BODY_BAND_FLOOR < BODY_BAND_CEILING
-
-  test "the fastest particle crossing an enclosing surface lands on the ramp":
-    # Passes at the derived floor.
-    check crossingDepth(BODY_BAND_FLOOR) < 1.0
-    # And the hold has it there: the crossing lands at the band's edge, where
-    # the rise peaks, and nothing past the ceiling acts.
-    let body = wall(BODY_BAND_FLOOR)
-    let landedX = body.centerX + RADIUS - 1e-6 +
-      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
+  test "the fastest particle crossing an enclosing surface at the band floor lands on the ramp":
+    # At band BODY_BAND_MIN (25), Max
+    # Velocity 50 (simulation_state.nim:139) and ff 1, substepPlan's travel
+    # count is n_T = ceil(50 * 1 / 25) = 2, so the substep runs at ff_sub =
+    # 1/2 and travels 50 * 0.5 = 25, the band exactly.
+    #
+    # Against the stub, count is always 1: ff_sub stays 1 and one step
+    # carries the particle 50, twice the band, so this fails for that
+    # reason.
+    check crossingDepth(BODY_BAND_MIN, 50.0, 1.0) < 1.0
+    # And the hold has it there: nothing past the ceiling acts.
+    let body = wall(BODY_BAND_MIN)
+    let landedX = wallLandedX(body, 50.0, 1.0)
     let met = bodyForceAt(body, landedX, body.centerY,
       BODY_WORLD_W, BODY_WORLD_H, 1.0, 1.0)
     check met.x < 0.0
     check abs(met.x) <= body.enclosure
 
-  test "at half the derived floor the same particle skips the ramp":
-    # Fails at half of it, which is what makes the floor a bound rather than a
-    # preference. At half the band the crossing lands at the reach's end, twice
-    # the band out, where the hold has fallen to nothing.
-    check crossingDepth(BODY_BAND_FLOOR * 0.5) > 2.0 - EPSILON_LOOSE
-    let body = wall(BODY_BAND_FLOOR * 0.5)
-    let landedX = body.centerX + RADIUS - 1e-6 +
-      BODY_PARTICLE_SPEED_CEILING * BODY_LARGEST_SUBSTEP_DT
-    let met = bodyForceAt(body, landedX, body.centerY,
-      BODY_WORLD_W, BODY_WORLD_H, 1.0, 1.0)
-    check abs(met.x) < EPSILON_LOOSE
+  test "containment holds below the band floor when the substep count clamps and Max Velocity drops to compensate":
+    # At band BODY_BAND_MIN * 0.5 (12.5), Max Velocity 50
+    # (simulation_state.nim:139) and ff 1: the travel count is n_T =
+    # ceil(50 * 1 / 12.5) = 4, past SUBSTEPS_MAX (3), so the count clamps
+    # to 3 and the effective Max Velocity drops to T * 3 / ff =
+    # 12.5 * 3 / 1 = 37.5. At ff_sub = 1/3, travel is 37.5 * (1/3) = 12.5,
+    # the band exactly: containment holds even though the band sits below
+    # the floor.
+    #
+    # Against the stub, count is always 1 and effMaxVelocity stays 0 (no
+    # clamp applied): ff_sub stays 1 and travel is the full Max Velocity,
+    # 50, four times the band, so this fails for that reason.
+    check crossingDepth(BODY_BAND_MIN * 0.5, 50.0, 1.0) < 1.0
 
 suite "The Body Oracle Names The World It Is Measured In":
   const CONFIG_FILE = "src" / "config.nim"
@@ -1288,20 +1303,13 @@ suite "The Body Oracle Names The World It Is Measured In":
       if trimmed.startsWith("let cappedDt = if rawDt >"):
         return parseFloat(trimmed.split(':', 1)[0].rsplit('>', 1)[1].strip())
 
-  test "the premises the accumulator and the band floor rest on are the app's":
-    # FOUR PREMISES, each held here rather than restated in a comment: the
-    # particle speed ceiling, the longest frame, the substep ceiling, and the
-    # reference frame. Any of them moving re-runs the stability sweep and
-    # re-derives the band floor.
+  test "the premises the accumulator and the stability sweep rest on are the app's":
+    # TWO PREMISES, each held here rather than restated in a comment: the
+    # particle speed ceiling and the longest frame the sweep runs at. Either
+    # moving re-runs the stability sweep.
     check BODY_PARTICLE_SPEED_CEILING == MAX_VELOCITY_MAX
     check frameDeltaCap() > 0.0
-    check BODY_LARGEST_SUBSTEP_DT == frameDeltaCap() * TIME_SCALE_MAX
-    check BODY_LARGEST_FRAME_FACTOR ==
-      BODY_LARGEST_SUBSTEP_DT / FRAME_DT_REFERENCE
-    # One substep takes the whole frame, which is what makes the substep above
-    # the largest one the executor can produce.
-    check SPH_SUBSTEPS_MIN == 1
-    check SPH_SUBSTEPS_MAX == SPH_MAX_SUBSTEPS
+    check LARGEST_FRAME_SECONDS == frameDeltaCap() * TIME_SCALE_MAX
 
   test "the world this suite measures in is the world the app runs":
     check worldExtent("WORLD_W") > 0.0

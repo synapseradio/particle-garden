@@ -56,7 +56,7 @@ Conventions every task below uses:
 
 ## 3. The integrator owns the substep count
 
-- [ ] 3.1 **Red.** Write suite "Substeps Follow The Tightest Coupling" in `tests/test_sim_registry.nim` over a stub `substepPlan` that returns count 1. It holds design N4's worked values:
+- [x] 3.1 **Red.** Write suite "Substeps Follow The Tightest Coupling" in `tests/test_sim_registry.nim` over a stub `substepPlan` that returns count 1. It holds design N4's worked values:
   - shipped settings (band 120, Max Velocity 50, ff 1, fluid off) give `n = 1`
   - stiffness 40 at `h` 50 and ff 1 gives 3
   - ff 10 with a live body gives `n_T = 5`, so the frame runs 3 at `effMaxVelocity` 36
@@ -66,27 +66,27 @@ Conventions every task below uses:
   - a fluid request past `SUBSTEPS_MAX` runs 3 at `effStiffness` with the stored value unchanged
 
   Verify it fails on values against the stub.
-- [ ] 3.2 **Red.** Four more failing tests:
+- [x] 3.2 **Red.** Four more failing tests:
   - Extend "Post-Step Speed Mirror" in `tests/test_physics.nim`: the cap is per reference frame (today's curve applied to `speed / ff_sub`, rescaled by `ff_sub`), per-step travel is at most `maxVelocity · ff_sub`, and the result is bit-identical at `ff_sub = 1`. It fails today because the per-step cap clips travel at `maxVelocity`.
   - Rewrite "An Enclosing Body Cannot Be Tunnelled" (`tests/test_body_core.nim:951`) to step at `substepPlan`'s count with the per-step travel model. It fails against the stub, because at band 25, Max Velocity 50 and ff 1 one step carries a particle 50.
   - Add suite "The Fluid Declares The Substeps Its Stiffness Needs" to `tests/test_sph_core.nim`: at every corner of the input box the declared count is the smallest whose ceiling holds the stiffness, and the harness comes to rest there.
   - In `tests/test_param_descriptor.nim`, "Descriptor Table Covers The Full Tunable Inventory" drops `sphSubsteps` from the id set, and "A Derived Bound Cites A Registered Ceiling" uses a box with no substep axis. Both fail while the descriptor and `CeilingInputs.sphSubsteps` exist.
-- [ ] 3.3 Implement `func substepPlan*(ff: float; live: LiveValues): SubstepPlan` in `src/sim_registry.nim`, with `SubstepNeedId` and the `substepNeed` field in each declaration (N1, N4). In `src/config_ranges.nim`, `SUBSTEPS_MAX = 3` replaces `SPH_MAX_SUBSTEPS` (`src/sph_core.nim:34`), with the per-extra-substep cost at 128k beside it: 1.56 ms from the 30 s run and 7.95 ms from the 150 s run, a lower bound (`docs/perf-report.md:83-84`). `FF_STABLE = 12` goes in marked provisional until 4.5. `src/webgpu_compute.nim:984-988` becomes the plan, writing `frameFactor = ff / count`, the effective Max Velocity into the integrate params and the effective stiffness into the SPH params, with `bodyLive` from `liveSlots` (`src/body_core.nim:494`). The per-reference-frame cap goes in `web/shaders/src/integrate.wgsl` and its oracle in `src/physics_core.nim`. `BODY_BAND_MIN = 25.0` becomes a stated literal in `src/config_ranges.nim`, and `BODY_BAND_FLOOR`, `BODY_LARGEST_SUBSTEP_DT`, `BODY_LARGEST_FRAME_FACTOR` and the tests pinning them leave `src/body_core.nim` and `tests/test_body_core.nim`. Verify 3.1 and the first three parts of 3.2 pass.
-- [ ] 3.4 Remove the Substeps slider:
+- [x] 3.3 Implement `func substepPlan*(ff: float; live: LiveValues): SubstepPlan` in `src/sim_registry.nim` (N1, N4). `SubstepNeedId` and the `substepNeed` field already sit on every declaration, landed by 1.7 in `f483b5d` (`src/sim_registry.nim:529-534,551`), so 3.3 reads them rather than adding them. In `src/config_ranges.nim`, `SUBSTEPS_MAX = 3` replaces `SPH_MAX_SUBSTEPS` (`src/sph_core.nim:34`), with the per-extra-substep cost at 128k beside it: 1.56 ms from the 30 s run and 7.95 ms from the 150 s run, a lower bound (`docs/perf-report.md:83-84`). `FF_STABLE = 12` goes in marked provisional until 4.5. `src/webgpu_compute.nim:984-988` becomes the plan, writing `frameFactor = ff / count`, the effective Max Velocity into the integrate params and the effective stiffness into the SPH params, with `bodyLive` from `liveSlots` (`src/body_core.nim:494`). The per-reference-frame cap goes in `web/shaders/src/integrate.wgsl` and its oracle in `src/physics_core.nim`. `BODY_BAND_MIN = 25.0` becomes a stated literal in `src/config_ranges.nim`, and `BODY_BAND_FLOOR`, `BODY_LARGEST_SUBSTEP_DT`, `BODY_LARGEST_FRAME_FACTOR` and the tests pinning them leave `src/body_core.nim` and `tests/test_body_core.nim`. Verify 3.1 and the first three parts of 3.2 pass.
+- [x] 3.4 Remove the Substeps slider:
   - the descriptor (`src/ui/api/param_descriptor.nim:598-599`)
-  - `CeilingInputs.sphSubsteps` (`:134-142`) and the `ceilingInputBox` axis (`:271-285`); the reason text (`:263-269`) and the Stiffness hint name the interaction radius, fluid radius and time scale
-  - the state field in `src/ui/state/simulation_state.nim` and `src/config.nim`
-  - the preset field and its read and write (`src/preset.nim:135,270,464-465,823`); an old file's key is then left unread
-  - `SPH_SUBSTEPS_MIN/MAX` and their assertion (`src/config_ranges.nim:263-266,639`)
-  - `sphSubsteps` in the exemption list at `tests/test_response_probe.nim:84`, and every reference in `tests/test_sph_core.nim`, `tests/test_sim_config.nim` and `tests/test_preset.nim`
+  - `CeilingInputs.sphSubsteps` (`:141`), where `ceilingInputs` fills it (`:239`), where `evaluateCeiling` reads it (`:252`), the `ceilingInputBox` axis (`:278,283`) and `minimumCeiling`'s corner (`:300`); the reason text (`:263-269`) and the Stiffness hint name the interaction radius, fluid radius and time scale. The ceiling is then evaluated at `SUBSTEPS_MAX` throughout, which is the count the plan serves (`src/sim_registry.nim:763`), so `minimumCeiling` rises — that rise is what 3.2's three red tests in `tests/test_param_descriptor.nim` expect.
+  - the state field in `src/ui/state/simulation_state.nim:58,160` and `src/config.nim:64,189`
+  - the preset field and its read and write (`src/preset.nim:135,268,462-463,821`); an old file's key is then left unread
+  - `SPH_SUBSTEPS_MIN/MAX` and their assertion (`src/config_ranges.nim:277-278,705`). `SPH_SUBSTEPS_MAX` is already an alias of `SUBSTEPS_MAX`, landed by 3.3, so every remaining reader takes `SUBSTEPS_MAX` directly.
+  - `sphSubsteps` in the exemption list at `tests/test_response_probe.nim:84`. Its `PreCalibrationTable` (`:189-249`) is a frozen measurement record, so principle 12 has it annotated rather than rewritten: the `sphSubsteps` FAIL row and the prose naming its exemption both stay, under a note saying the slider is gone. Then every reference in `tests/test_sph_core.nim` (`:27-28,609`), `tests/test_sim_config.nim` (`:57`), `tests/test_preset.nim` (`:194,731-747,1020-1042`), `tests/test_config.nim` (`:34,107`), `tests/test_sim_registry.nim` (`:749,772-773`) and `tests/test_param_descriptor.nim` (`:214,259,321,833-882`)
 
-  Then fix the docs. `docs/help/30-fluid.md` loses the Substeps line and each Interacts line naming Substeps (`:15`, `:29`, `:36`), and its stiffness line names Interaction Radius, fluid radius and time scale (N9.7). `docs/slider-interactions.md` edges 38, 39 and 40 and the Body Reach floor edge 10 are rewired to the integrator's count. Verify 3.2's last part passes, `tests/test_help_content.nim` passes, and a read of the three strings finds the ceiling's three inputs and no substep control (the sph-scale agent check).
-- [ ] 3.5 Amend the other changes' artifacts that name the removed floor and slider:
+  Then fix the docs. `docs/help/30-fluid.md` loses the Substeps line and each Interacts line naming Substeps (`:15`, `:29`, `:36`), and its stiffness line names Interaction Radius, fluid radius and time scale (N9.7). `docs/slider-interactions.md` edges 38, 39 and 40 (`:154-156`) and the Body Reach floor edge 10 (`:126`) are rewired to the integrator's count, and so is every other place that file makes the count a fluid setting: the `sphSubsteps` row in the slider table (`:40`), `fluidStrength`'s "turns substeps on" (`:35`), the substep-loop line `clamp(sphSubsteps,1,3)` only when `fluidStrength ≠ 0` (`:90-92`), the edge index row (`:238`), the `fluid -->|substep count|` arrow in the diagram (`:273`), the open-problem entries naming Substeps and `ceilingReason` (`:454`, `:476-477`), and the two forward-looking lines that name this removal as pending (`:490`, `:495`). Verify 3.2's last part passes, `tests/test_help_content.nim` passes, and a read of the three strings finds the ceiling's three inputs and no substep control (the sph-scale agent check).
+- [x] 3.5 Amend the other changes' artifacts that name the removed floor and slider:
   - `openspec/changes/parametric-bodies/design.md:585-588` (D13): the band floor is the stated 25.0, and the integrator's travel count holds a particle inside it (N4, N10).
   - `openspec/changes/calibrate-shipped-defaults/design.md:173`: fixture F's `sphSubsteps` is dropped, because the slider no longer exists.
 
   Verify `openspec validate parametric-bodies --strict` and `openspec validate calibrate-shipped-defaults --strict` pass.
-- [ ] 3.6 Group 3 closes with `just happen` and `just check` green.
+- [x] 3.6 Group 3 closes with `just happen` and `just check` green.
 
 ## 4. World pressure and gates G1.1–G1.5
 

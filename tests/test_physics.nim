@@ -530,6 +530,55 @@ suite "Post-Step Speed Mirror":
       check abs(hypot(stepped.x, stepped.y) - expectedSpeed) < 1e-5
       check abs(stepped.x * -3.0'f32 - stepped.y * 5.0'f32) < 1e-5
 
+  test "the per-step cap applies today's curve to speed divided by ff_sub, then rescales by ff_sub when ff_sub exceeds one":
+    # Per-step travel is at most maxVelocity * ff_sub, not maxVelocity
+    # flat. At ff_sub 3, a raw pre-friction speed of 120 (word 40 times
+    # ff_sub, decoded with frameFactor = ff_sub) should cap as
+    # postStepSpeed(120 / 3, friction, maxVelocity) * 3 =
+    # postStepSpeed(40, 1, 60) * 3 = (30 + ln(11)) * 3, not the flat cap
+    # postStepSpeed(120, 1, 60) integrateVelocity applies today.
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let ffSub = 3.0'f32
+    let maxVelocity = 60.0'f32
+    let friction = 1.0'f32
+    let word = (x: int32(40 * 65536), y: int32(0))
+    let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
+      invScale, ffSub, friction, maxVelocity)
+    let expected =
+      postStepSpeed(120.0'f32 / ffSub, friction, maxVelocity) * ffSub
+    check abs(hypot(stepped.x, stepped.y) - expected) < 1e-3'f32
+
+  test "per-step travel stays within maxVelocity times ff_sub when ff_sub is below one":
+    # The bound: per-step travel is at most maxVelocity * ff_sub. At ff_sub
+    # 0.5, maxVelocity 60, the bound is 30. A raw pre-friction speed of 100
+    # (word 200 times ff_sub) is what today's flat cap, postStepSpeed(100,
+    # 1, 60) = 30 + ln(71) ~= 34.26, lets through past that bound.
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let ffSub = 0.5'f32
+    let maxVelocity = 60.0'f32
+    let friction = 1.0'f32
+    let word = (x: int32(200 * 65536), y: int32(0))
+    let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
+      invScale, ffSub, friction, maxVelocity)
+    check hypot(stepped.x, stepped.y) <= maxVelocity * ffSub
+
+  test "the per-step cap matches today's flat cap when ff_sub equals one":
+    # Bit-identical at ff_sub = 1, since dividing and rescaling by 1
+    # changes nothing.
+    #
+    # GUARD, not a red: dividing and multiplying by 1 leaves today's actual
+    # unchanged, so this cannot fail against today's flat cap. It pins the
+    # invariant the fix must preserve.
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let ffSub = 1.0'f32
+    let maxVelocity = 60.0'f32
+    let friction = 0.9'f32
+    let word = (x: int32(40 * 65536), y: int32(0))
+    let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
+      invScale, ffSub, friction, maxVelocity)
+    let expected = postStepSpeed(40.0'f32 / ffSub, friction, maxVelocity) * ffSub
+    check abs(hypot(stepped.x, stepped.y) - expected) < 1e-5'f32
+
 suite "Frame Reference":
   # frameFactor turns a substep's dt into a multiple of the frame the shipped
   # constants were measured at; integrate.wgsl multiplies the decoded

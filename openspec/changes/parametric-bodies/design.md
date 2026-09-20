@@ -582,10 +582,11 @@ speed and angular speed settle. Recorded: in `docs/perf-report.md` under the tab
 uses (`:86`, `:134`), with the conditions a stranger needs — and the sweep's docstring names the four
 premises whose movement re-runs it (budget, ceiling, force law, substep count).
 
-A second bound falls out of the same rig and costs nothing extra: the band's floor. A particle at the
-speed cap crossing an enclosing surface must land inside the band on some substep, or it tunnels.
-That is `bandWidth >= speedCap * maxSubstepDt`, derived rather than chosen, stated beside the
-constant.
+The band's floor, `BODY_BAND_MIN`, is a stated literal, `25.0`, in `src/config_ranges.nim`, not
+derived from this rig. Containment falls to the substep plan instead: a live body's `bodyBand` sets
+the travel bound `T`, and the plan raises the substep count to `⌈speedCap · ff / T⌉`. At
+`SUBSTEPS_MAX` the count stops and the effective speed cap drops to `T · 3 / ff`, so per-step travel
+stays inside the band either way, with no stored value touched.
 
 The response to instability is ordered: mass from area first (already in D9), then damping, then the
 per-substep impulse cap. A lowered user-facing ceiling is not on the list.
