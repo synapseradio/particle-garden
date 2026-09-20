@@ -58,10 +58,11 @@ lint-shell:
     shellcheck -s bash -S style -x enter leave tools/garden.sh scripts/lib/*.sh
 
 # The balance calibration arms, outside `check` and outside `test`: each one
-# steps the native oracle world for hundreds of frames across sixteen seeds.
-# The 16 000-particle arms take about twenty minutes; the 128 000-particle arms
-# take about forty core-hours. Each define selects its own arms, so neither
-# recipe runs the other's.
+# steps the native oracle world for hundreds of frames, and every arm carrying a
+# fitted margin runs the calibration seeds as well as the held-out ones, so
+# thirty-two worlds where the rest run sixteen. The 16 000-particle arms take
+# close to forty minutes; the 128 000-particle arms about fifty core-hours. Each
+# define selects its own arms, so neither recipe runs the other's.
 calibrate-balance:
     nim c -r {{native_flags}} -d:calibrateBalance tests/test_balance_core.nim
 

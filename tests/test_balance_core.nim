@@ -474,15 +474,19 @@ when defined(calibrateBalance) or defined(calibrateBalance128k):
   import ../src/sim_registry
 
   const
+    CALIBRATION_SEEDS = [
+      20_149, 20_161, 20_173, 20_177, 20_183, 20_201, 20_219, 20_231,
+      20_233, 20_249, 20_261, 20_269, 20_287, 20_297, 20_323, 20_327]
+      ## PROVISIONAL. Sixteen seeds every fitted statistic in this file is
+      ## measured on.
     HELD_OUT_SEEDS = [
       20_011, 20_023, 20_029, 20_047, 20_051, 20_063, 20_071, 20_089,
       20_101, 20_107, 20_113, 20_117, 20_123, 20_129, 20_143, 20_147]
-      ## PROVISIONAL. Sixteen seeds no bound was fitted on. The calibration
-      ## run records the set it fitted on beside this one; until it does,
-      ## these sixteen stand and only these are gated.
+      ## PROVISIONAL. Sixteen seeds disjoint from CALIBRATION_SEEDS. Every
+      ## gate in this file checks against these and only these.
     T_95_ONE_SIDED_15_DF = 1.753
       ## Student's t at 5% one sided on 15 degrees of freedom, which is the
-      ## sixteen seeds above.
+      ## sixteen calibration seeds above.
     SETTLE_FRAMES = 600
       ## Frames a world runs before a body touches it, so the hold acts on a
       ## settled crowd rather than on uniform noise.
@@ -503,9 +507,11 @@ when defined(calibrateBalance) or defined(calibrateBalance128k):
       result += (value - centre) * (value - centre)
     sqrt(result / (values.len - 1).float)
 
-  func boundMargin(values: seq[float]): float =
-    ## The one-sided allowance a gate against a fixed bound carries.
-    T_95_ONE_SIDED_15_DF * sampleDeviation(values) / sqrt(values.len.float)
+  func boundMargin(calibrationValues: seq[float]; heldOutCount: int): float =
+    ## The two-sample allowance a gate carries: fitted on
+    ## `calibrationValues` and checked on `heldOutCount` disjoint seeds.
+    T_95_ONE_SIDED_15_DF * sampleDeviation(calibrationValues) *
+      sqrt(1.0 / calibrationValues.len.float + 1.0 / heldOutCount.float)
 
   func oracleParams(particleCount: int;
       sliderFriction, pressureStiffness, bodiesStrength: float): OracleParams =
@@ -708,6 +714,9 @@ when defined(calibrateBalance):
     var trials: seq[CompressionTrial]
     for index, seed in HELD_OUT_SEEDS:
       trials.add compressionTrial(seed, index)
+    var calTrials: seq[CompressionTrial]
+    for index, seed in CALIBRATION_SEEDS:
+      calTrials.add compressionTrial(seed, index)
 
     test "the held crowd's peak density stays below the stiffness-zero control's":
       var verdicts: Verdicts
@@ -726,10 +735,14 @@ when defined(calibrateBalance):
         checkpoint("seed " & $trial.seed & ": far held " & $trial.farHeld &
           " against far free " & $trial.farFree)
         ratios.add trial.farHeld / trial.farFree
+      var calRatios: seq[float]
+      for trial in calTrials:
+        calRatios.add trial.farHeld / trial.farFree
       let bound = 1.0 + FAR_SPEED_MARGIN
+      let margin = boundMargin(calRatios, ratios.len)
       checkpoint("mean ratio " & $meanOf(ratios) & " against " & $bound &
-        " + margin " & $boundMargin(ratios))
-      check meanOf(ratios) <= bound + boundMargin(ratios)
+        " + margin " & $margin)
+      check meanOf(ratios) <= bound + margin
 
   suite "Compression Is Not Remembered":
     var ratios: seq[float]
@@ -749,6 +762,11 @@ when defined(calibrateBalance):
       for seed in HELD_OUT_SEEDS:
         speeds.add motionPerReferenceFrame(seed, fixedFactors(1.0), false)
       speeds
+    let calReference = block:
+      var speeds: seq[float]
+      for seed in CALIBRATION_SEEDS:
+        speeds.add motionPerReferenceFrame(seed, fixedFactors(1.0), false)
+      speeds
 
     test "no frame factor moves a world warmer per reference frame than frame factor 1":
       var verdicts: Verdicts
@@ -757,7 +775,11 @@ when defined(calibrateBalance):
         for index, seed in HELD_OUT_SEEDS:
           ratios.add motionPerReferenceFrame(seed,
             fixedFactors(frameFactor), true) / reference[index]
-        let allowed = 1.0 + boundMargin(ratios)
+        var calRatios: seq[float]
+        for index, seed in CALIBRATION_SEEDS:
+          calRatios.add motionPerReferenceFrame(seed,
+            fixedFactors(frameFactor), true) / calReference[index]
+        let allowed = 1.0 + boundMargin(calRatios, ratios.len)
         checkpoint("frame factor " & $frameFactor & ": mean ratio " &
           $meanOf(ratios) & " against " & $allowed)
         if not (meanOf(ratios) <= allowed):
@@ -774,8 +796,16 @@ when defined(calibrateBalance):
           uniformFactors(seed, 8, 16), true) / reference[index]
         alternating.add motionPerReferenceFrame(seed,
           alternatingFactors(10.0, 13.0), true) / reference[index]
-      for arm in [("uniform 8-16", uniform), ("alternating 10/13", alternating)]:
-        let allowed = 1.0 + boundMargin(arm[1])
+      var calUniform: seq[float]
+      var calAlternating: seq[float]
+      for index, seed in CALIBRATION_SEEDS:
+        calUniform.add motionPerReferenceFrame(seed,
+          uniformFactors(seed, 8, 16), true) / calReference[index]
+        calAlternating.add motionPerReferenceFrame(seed,
+          alternatingFactors(10.0, 13.0), true) / calReference[index]
+      for arm in [("uniform 8-16", uniform, calUniform),
+          ("alternating 10/13", alternating, calAlternating)]:
+        let allowed = 1.0 + boundMargin(arm[2], arm[1].len)
         checkpoint(arm[0] & ": mean ratio " & $meanOf(arm[1]) & " against " &
           $allowed)
         if not (meanOf(arm[1]) <= allowed):
@@ -809,11 +839,14 @@ when defined(calibrateBalance128k):
     var ratios: seq[float]
     for seed in HELD_OUT_SEEDS:
       ratios.add relaxationRatio(128_000, seed)
+    var calRatios: seq[float]
+    for seed in CALIBRATION_SEEDS:
+      calRatios.add relaxationRatio(128_000, seed)
 
     test "a released crowd's neighbour count returns to a fresh settle's at 128 000 particles":
       for index, seed in HELD_OUT_SEEDS:
         checkpoint("seed " & $seed & ": ratio " & $ratios[index])
-      let allowed = 1.0 + boundMargin(ratios)
+      let allowed = 1.0 + boundMargin(calRatios, ratios.len)
       checkpoint("mean ratio " & $meanOf(ratios) & " against " & $allowed)
       check meanOf(ratios) <= allowed
 
