@@ -247,10 +247,10 @@ Conventions every task below uses:
 
 ## 8. Pattern Scale and gate G3
 
-- [ ] 8.1 **Red.**
+- [x] 8.1 **Red.**
   - **Diffusion rates.** Extend "The Field Draws A Small Pattern On Square Cells" in `tests/test_field_core.nim` over a stub `rdDiffusionRates(scale)` in `src/field_core.nim` that returns the base rates. At each band step, the rate ratio is exactly 0.5 and the diameter is `patternDiameterCells(RD_DIFFUSION_A · s)`. It fails on values at every step below 1.
   - **Harness geometry.** The chemotaxis harness (`tests/test_field_core.nim:325-345`) must derive its world units per cell from `WORLD_W` and `FIELD_W`, 1.875, and take the pattern scale (N9.10). It fails at today's 0.94 per cell, which comes from the 1920 reference width. The comment there states 3.75 per cell and a 240-unit world, and is rewritten.
-- [ ] 8.2 **Gate G3, the band; it gates 8.3 and 8.4.** Parameterize over the steps 1, 0.5, 0.25 and candidate floors below 0.25, down to the first step that fails:
+- [x] 8.2 **Gate G3, the band; it gates 8.3 and 8.4.** Parameterize over the steps 1, 0.5, 0.25 and candidate floors below 0.25, down to the first step that fails:
   - the `tests/test_field_core.nim` suites "The Regime Deposit Floor Preserves The Regime", "Ignition From Coherent Deposits", "A Cell's Per-Frame Deposit Is Bounded" and "Chemotactic Collapse Bound"
   - the splat-radius check
 
@@ -263,7 +263,7 @@ Conventions every task below uses:
   - the collapse bracket
 
   If a bracket's lower deposit edge falls to or below the deposit full effect, the suite fails naming the step. The remedy is a re-measured floor, scent gain or deposit ceiling, never a skipped step. Record the floor as the smallest step that passes every criterion, in `scratchpad/core-force-interface/g3__<DD-MM-YY-HHmm>.md`.
-- [ ] 8.3 Record the band's constants in `src/config_ranges.nim`:
+- [x] 8.3 Record the band's constants in `src/config_ranges.nim`:
   - `RD_PATTERN_SCALE_MIN` at G3's floor, with `RD_PATTERN_SCALE_DEFAULT = RD_PATTERN_SCALE_MIN` tied by assertion
   - ceiling 1
   - the static assertions: `RD_DIFFUSION_A · ceiling · RD_DELTA_T ≤ 1`, `patternDiameterCells(RD_DIFFUSION_A · floor) ≥ RD_MIN_RESOLVED_DIAMETER_CELLS`, and default in range
