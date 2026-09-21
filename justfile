@@ -78,8 +78,9 @@ check: shaders test test-ui test-shell lint-shell
 # a fluid-zero world and every arm side on the three gate seeds at 128 000
 # particles for 900 frames, one thread per world. A test-name filter runs one
 # arm: `just calibrate-fluid 'The Blend Arm::*'`.
+[positional-arguments]
 calibrate-fluid *filter:
-    nim c -r {{native_flags}} -d:calibrateFluid tests/test_balance_core.nim {{filter}}
+    nim c -r {{native_flags}} -d:calibrateFluid tests/test_balance_core.nim "$@"
 
 # Sync project dependencies (idempotent; seconds when already satisfied).
 # Runs inside `be` so a nimble.lock bump can't strand the build.
