@@ -214,11 +214,14 @@ func unitImpulse*(id: UnitFnId; cfg: UnitConfig): float =
 # A torus of particles stepped frame by frame on the CPU, so a number the GPU
 # would have to be running to report can be read off a native run instead. Each
 # substep runs the passes the frame runs, in the frame's order: forces.wgsl's
-# pair block over a uniform bin grid, body-force.wgsl's body block, then
-# integrate.wgsl.
+# pair block over a uniform bin grid, forces-sph.wgsl's fluid block while the
+# fluid acts, body-force.wgsl's body block, then integrate.wgsl.
 #
-# Three differences from a GPU frame, each of which moves the low bits of a
+# Four differences from a GPU frame, each of which moves the low bits of a
 # result:
+#   - The fluid block evaluates sph_core's kernels and equation of state in
+#     f64 where the shader runs f32, and sums a particle's own register in f64
+#     before the f32 split.
 #   - The GPU splits a pair by sorted cell position; this splits it by particle
 #     index. Which member of a pair plays "this" therefore differs, and with it
 #     which side of the pair is quantized per pair rather than once per
@@ -233,6 +236,26 @@ type
     ## The two arms forces.wgsl dispatches between on params.forceModel.
     ofmPolynomial
     ofmExponential
+
+  OracleFluidParams* = object
+    ## Every number forces-sph.wgsl reads. Strength 0 skips the pass, as the
+    ## frame skips it (src/sim_registry.nim's "Fluid" node).
+    strength*: float
+    radiusFraction*: float
+    restDensity*, viscosity*, gamma*: float
+    stiffness*: float
+      ## The effective stiffness substepPlan hands the frame.
+    blend*: float
+      ## The XSPH fraction the shader compiles in as SPH_XSPH_EPSILON.
+    pressureGain*: float
+      ## The shader's SPH_FORCE_SCALE.
+    maxPressureAccel*: float
+    maxDensityRatio*: float
+    densityScale*: float
+      ## SPH_DENSITY_FIXED_POINT_SCALE, the kernel density's own encoding.
+    coarseShift*: int
+      ## VELOCITY_COARSE_SHIFT: the fluid splits every velocity integer across
+      ## the fine and coarse words, as the shader does.
 
   OracleParams* = object
     ## Every number the stepped world reads. The caller supplies each one,
@@ -260,6 +283,7 @@ type
       ## forces.wgsl:323 names CROWD_DENSITY_FIXED_POINT_SCALE.
     densitySmoothFactor*: float32
     bodiesStrength*: float
+    fluid*: OracleFluidParams
 
   OracleWorld* = object
     ## One world mid-flight. The caller reads and writes `bodies` between
@@ -274,14 +298,17 @@ type
     species*: seq[int]
     colonyDensity*, crowdDensity*: seq[float32]
       ## Both smoothed, as integrate.wgsl:68-79 smooths them.
+    sphDensity*: seq[float32]
+      ## The fluid's kernel density, stored unsmoothed as integrate.wgsl:89-90
+      ## stores it, and read one substep late as the lagged density.
     bodies*: seq[Body]
     bodyEnvelopes*: seq[float]
       ## One envelope per body, in the order `bodies` holds them.
     gridW, gridH: int
     cellStart, cursor: seq[int]
     cellOf, ordered: seq[int]
-    deltaFixed: seq[int32]
-    colonyFixed, crowdFixed: seq[int32]
+    deltaFixed, coarseFixed: seq[int32]
+    colonyFixed, crowdFixed, sphFixed: seq[int32]
     bodyAccumulators: seq[BodyAccumulator]
     rngState: uint64
 
@@ -324,14 +351,17 @@ proc initOracleWorld*(params: OracleParams; particleCount, speciesCount: int;
     species: newSeq[int](particleCount),
     colonyDensity: newSeq[float32](particleCount),
     crowdDensity: newSeq[float32](particleCount),
+    sphDensity: newSeq[float32](particleCount),
     gridW: gridW, gridH: gridH,
     cellStart: newSeq[int](gridW * gridH + 1),
     cursor: newSeq[int](gridW * gridH + 1),
     cellOf: newSeq[int](particleCount),
     ordered: newSeq[int](particleCount),
     deltaFixed: newSeq[int32](particleCount * 2),
+    coarseFixed: newSeq[int32](particleCount * 2),
     colonyFixed: newSeq[int32](particleCount),
     crowdFixed: newSeq[int32](particleCount),
+    sphFixed: newSeq[int32](particleCount),
     rngState: cast[uint64](seed.int64))
   for i in 0 ..< particleCount:
     result.posX[i] = nextUnit(result.rngState) * params.worldWidth
@@ -465,6 +495,97 @@ proc sweepPairs(world: var OracleWorld) =
     world.crowdFixed[this] = wrapAdd(world.crowdFixed[this],
       int32(crowdAccum * p.crowdDensityScale))
 
+proc addSplit(world: var OracleWorld; slot: int; words: VelocityWords) =
+  world.deltaFixed[slot] = wrapAdd(world.deltaFixed[slot], words.fine)
+  world.coarseFixed[slot] = wrapAdd(world.coarseFixed[slot], words.coarse)
+
+proc sweepFluid(world: var OracleWorld) =
+  ## forces-sph.wgsl's neighbour loop (:240-326): the pressure and the
+  ## velocity blend on both sides of each pair, and the fresh kernel density.
+  let p = world.params
+  let f = p.fluid
+  let smoothingRadius = p.interactionRadius * f.radiusFraction.float32
+  let radiusSq = smoothingRadius * smoothingRadius
+  let h = smoothingRadius.float
+  let selfPoly6 = poly6Weight2d(0.0, h)
+  let selfSpiky = spikyGradientMagnitude2d(0.0, h)
+  let invSelfPoly6 = if selfPoly6 > 0.0: 1.0 / selfPoly6 else: 0.0
+  let invSelfSpiky = if selfSpiky > 0.0: 1.0 / selfSpiky else: 0.0
+  let invCellW = float32(world.gridW) / p.worldWidth
+  let invCellH = float32(world.gridH) / p.worldHeight
+  # The shader forms each side's pressure from its lagged density alone, so it
+  # is formed here once per particle.
+  let n = world.posX.len
+  var pressureDensity = newSeq[float](n)
+  var pressureOverDensitySq = newSeq[float](n)
+  for i in 0 ..< n:
+    pressureDensity[i] = clamp(world.sphDensity[i].float, f.restDensity,
+      f.restDensity * f.maxDensityRatio)
+    pressureOverDensitySq[i] = taitPressure(pressureDensity[i],
+      f.restDensity, f.stiffness, f.gamma) /
+      (pressureDensity[i] * pressureDensity[i])
+  for this in 0 ..< n:
+    let thisX = world.posX[this]
+    let thisY = world.posY[this]
+    let laggedThis = world.sphDensity[this].float
+    var sumX = 0.0
+    var sumY = 0.0
+    var densityAccum = 1.0
+    let coords = computeCellCoords(thisX, thisY, world.gridW, world.gridH,
+      invCellW, invCellH)
+    for dy in -1 .. 1:
+      for dx in -1 .. 1:
+        let neighbour = getNeighborCell(coords.cx, coords.cy, dx, dy,
+          world.gridW, world.gridH, p.worldWidth, p.worldHeight)
+        for slot in world.cellStart[neighbour.cell] ..<
+            world.cellStart[neighbour.cell + 1]:
+          let other = world.ordered[slot]
+          if other <= this:
+            continue
+          let separationX = world.posX[other] + neighbour.wrapX - thisX
+          let separationY = world.posY[other] + neighbour.wrapY - thisY
+          let distanceSq = separationX * separationX + separationY * separationY
+          if distanceSq <= 0.0'f32 or distanceSq >= radiusSq:
+            continue
+          let distance = sqrt(max(distanceSq, p.minDistanceSq))
+          let invDistance = 1.0'f32 / distance
+          let directionX = (separationX * invDistance).float
+          let directionY = (separationY * invDistance).float
+          let densityWeight = poly6Weight2d(distance.float, h) * invSelfPoly6
+          let gradientWeight =
+            spikyGradientMagnitude2d(distance.float, h) * invSelfSpiky
+          let pairPressure =
+            pressureOverDensitySq[this] + pressureOverDensitySq[other]
+          let pressureAccel = clamp(f.pressureGain * pairPressure *
+            gradientWeight, -f.maxPressureAccel, f.maxPressureAccel)
+          let smoothDenominator =
+            max(max(laggedThis, world.sphDensity[other].float), 1.0)
+          let smoothCoefficient =
+            (f.viscosity + f.blend) * densityWeight / smoothDenominator
+          let gapX = (world.velX[other] - world.velX[this]).float
+          let gapY = (world.velY[other] - world.velY[this]).float
+          let pairX = f.strength *
+            ((-pressureAccel * directionX) * FRAME_DT_REFERENCE +
+              smoothCoefficient * gapX)
+          let pairY = f.strength *
+            ((-pressureAccel * directionY) * FRAME_DT_REFERENCE +
+              smoothCoefficient * gapY)
+          sumX += pairX
+          sumY += pairY
+          densityAccum += densityWeight
+          world.addSplit(other * 2, splitVelocityWord(
+            int32(-pairX * p.fixedPointScale.float), f.coarseShift))
+          world.addSplit(other * 2 + 1, splitVelocityWord(
+            int32(-pairY * p.fixedPointScale.float), f.coarseShift))
+          world.sphFixed[other] = wrapAdd(world.sphFixed[other],
+            int32(densityWeight * f.densityScale))
+    world.addSplit(this * 2, splitVelocitySum(sumX.float32,
+      p.fixedPointScale, f.coarseShift))
+    world.addSplit(this * 2 + 1, splitVelocitySum(sumY.float32,
+      p.fixedPointScale, f.coarseShift))
+    world.sphFixed[this] = wrapAdd(world.sphFixed[this],
+      int32(densityAccum * f.densityScale))
+
 proc applyBodies(world: var OracleWorld; dtSeconds: float) =
   ## body-force.wgsl: every live body's pull on every particle, summed and
   ## encoded once per particle, with the negated sum taken by the body.
@@ -512,14 +633,27 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
   let invCrowd = 1.0'f32 / p.crowdDensityScale
   let carried = p.densitySmoothFactor
   let arriving = 1.0'f32 - carried
+  let fluidActs = p.fluid.strength != 0.0
+  let invSph =
+    if fluidActs: 1.0'f32 / p.fluid.densityScale.float32 else: 0.0'f32
   for i in 0 ..< world.posX.len:
     world.colonyDensity[i] = world.colonyDensity[i] * carried +
       float32(world.colonyFixed[i]) * invFixed * arriving
     world.crowdDensity[i] = world.crowdDensity[i] * carried +
       float32(world.crowdFixed[i]) * invCrowd * arriving
-    let stepped = integrateVelocity((x: world.velX[i], y: world.velY[i]),
-      (x: world.deltaFixed[i * 2], y: world.deltaFixed[i * 2 + 1]),
-      invFixed, subFrameFactor, p.friction, p.maxVelocity)
+    world.sphDensity[i] = float32(world.sphFixed[i]) * invSph
+    let decodedX = decodeVelocityWords(
+      (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
+      invFixed, subFrameFactor, p.fluid.coarseShift)
+    let decodedY = decodeVelocityWords(
+      (fine: world.deltaFixed[i * 2 + 1], coarse: world.coarseFixed[i * 2 + 1]),
+      invFixed, subFrameFactor, p.fluid.coarseShift)
+    # integrateVelocity decodes one word, so the two are rejoined above and a
+    # zero word passed, which adds exactly nothing.
+    let stepped = integrateVelocity(
+      (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY),
+      (x: 0'i32, y: 0'i32), invFixed, subFrameFactor, p.friction,
+      p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
     world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)
@@ -534,11 +668,15 @@ proc stepFrame*(world: var OracleWorld; frameFactor: float; substeps: int) =
   for _ in 0 ..< taken:
     for i in 0 ..< world.deltaFixed.len:
       world.deltaFixed[i] = 0
+      world.coarseFixed[i] = 0
     for i in 0 ..< world.colonyFixed.len:
       world.colonyFixed[i] = 0
       world.crowdFixed[i] = 0
+      world.sphFixed[i] = 0
     rebin(world)
     sweepPairs(world)
+    if world.params.fluid.strength != 0.0:
+      sweepFluid(world)
     applyBodies(world, subFrameFactor * FRAME_DT_REFERENCE)
     integrateParticles(world, subFrameFactor.float32)
 

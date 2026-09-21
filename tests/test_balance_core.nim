@@ -462,6 +462,384 @@ suite "The Onset Follows The World And Keeps A Contact Floor":
           check contactFloorDensity(cfg) == latticeCrowdDensity(repulsionEnd)
 
 # ==============================================================================
+# THE FLUID MIRROR AND ITS ARMS
+# ==============================================================================
+# The stepped world's fluid block is held against sph_core's pair term, summed
+# pair by pair over the torus, and each fluid arm's sides are held to differ in
+# the one term the arm reads (design N8).
+
+import std/random
+import ../src/preset
+
+const
+  FLUID_TEST_SPAN = 300.0'f32
+  FLUID_TEST_PARTICLES = 400
+    ## About 35 neighbours inside the interaction radius, and a few dozen
+    ## pairs inside the smallest smoothing radius.
+  FLUID_TEST_RADIUS = 50.0'f32
+  FLUID_TEST_SEED = 20_260_921
+  UNCAPPED_VELOCITY = 1.0e6'f32
+    ## Far above any speed a stirred world reaches, so the soft cap never acts.
+  F32_ROUNDING = 1.0 / 4_194_304.0
+    ## 2^-22: two f32 roundings of half an ulp each, with room to spare.
+  FLUID_ARM_RADIUS = 50.0
+  FLUID_ARM_FORCE_STRENGTH = 0.2
+    ## The shipped Force Strength on the 0-1 scale.
+  FLUID_ARM_PAIR_GAIN = 5.0
+    ## g_pair (design N2): the new scale's 0.2 is today's force multiplier 1.
+
+func shippedFluid(): OracleFluidParams =
+  ## forces-sph.wgsl's inputs at the shipped fluid settings, at fluid 1.
+  let shipped = defaultSettings()
+  OracleFluidParams(strength: 1.0,
+    radiusFraction: shipped.sphRadiusFraction,
+    restDensity: shipped.sphRestDensity, viscosity: shipped.sphViscosity,
+    gamma: SPH_DEFAULT_GAMMA, stiffness: shipped.sphStiffness,
+    blend: SPH_XSPH_EPSILON, pressureGain: SPH_FORCE_SCALE,
+    maxPressureAccel: SPH_MAX_PRESSURE_ACCEL,
+    maxDensityRatio: PRODUCTION_TUNING.sphMaxDensityRatio,
+    densityScale: sphDensityFixedPointScale(MAX_PARTICLES),
+    coarseShift: VELOCITY_COARSE_SHIFT)
+
+func fluidOnlyParams(fluid: OracleFluidParams;
+    retention = 1.0'f32): OracleParams =
+  ## A world whose species term and world pressure hand nothing, so every
+  ## velocity change is the fluid's.
+  OracleParams(interactionRadius: FLUID_TEST_RADIUS,
+    worldWidth: FLUID_TEST_SPAN, worldHeight: FLUID_TEST_SPAN,
+    minDistanceSq: PRODUCTION_TUNING.minDistanceSq.float32,
+    forceModel: ofmPolynomial, forceMultiplier: 0.0'f32,
+    repulsionEnd: 0.5'f32, attractionPeak: 0.75'f32,
+    pressureOnset: 1.0'f32, pressureStiffness: 0.0'f32,
+    friction: retention, maxVelocity: UNCAPPED_VELOCITY,
+    fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
+    crowdDensityScale: sphDensityFixedPointScale(MAX_PARTICLES).float32,
+    densitySmoothFactor: PRODUCTION_TUNING.densitySmoothFactor.float32,
+    fluid: fluid)
+
+proc stirredWorld(params: OracleParams; seed: int): OracleWorld =
+  ## Particles placed from `seed`, each given a velocity and a lagged density
+  ## that runs from below rest to above the pressure-density ceiling.
+  result = initOracleWorld(params, FLUID_TEST_PARTICLES, 1, @[0.0'f32], seed)
+  var draws = initRand(seed)
+  let f = params.fluid
+  for i in 0 ..< FLUID_TEST_PARTICLES:
+    result.velX[i] = draws.rand(-20.0 .. 20.0).float32
+    result.velY[i] = draws.rand(-20.0 .. 20.0).float32
+    result.sphDensity[i] = (f.restDensity *
+      draws.rand(0.5 .. f.maxDensityRatio + 1.0)).float32
+
+type FluidExpectation = object
+  ## sph_core's pair term summed pair by pair, per particle.
+  delta: seq[tuple[x, y: float]]
+  ownRegister: seq[tuple[x, y: float]]
+    ## The part summed in the particle's own f32 register: its pairs as the
+    ## lower index.
+  density: seq[float]
+  pairs: seq[int]
+  clampedPairs, blendedPairs: int
+
+func minimumImage(fromAt, toAt, span: float32): float32 =
+  ## The separation forces-sph.wgsl forms, `(other + wrap) - this`, with the
+  ## wrap that brings the two within half a world.
+  var best = toAt - fromAt
+  for wrap in [-span, span]:
+    let wrapped = (toAt + wrap) - fromAt
+    if abs(wrapped) < abs(best):
+      best = wrapped
+  best
+
+func expectFluid(world: OracleWorld): FluidExpectation =
+  ## Every pair over the torus, through sph_core's pair term. sph_core bakes
+  ## in SPH_XSPH_EPSILON and SPH_FORCE_SCALE, so an arm's zero side reaches it
+  ## as the viscosity or stiffness that gives the same term.
+  let p = world.params
+  let f = p.fluid
+  doAssert f.pressureGain in [0.0, SPH_FORCE_SCALE],
+    "sph_core's pair term carries SPH_FORCE_SCALE or no pressure at all"
+  doAssert f.maxPressureAccel == SPH_MAX_PRESSURE_ACCEL
+  let oracleViscosity =
+    if f.blend == SPH_XSPH_EPSILON: f.viscosity
+    else: f.viscosity + f.blend - SPH_XSPH_EPSILON
+  let oracleStiffness = if f.pressureGain == 0.0: 0.0 else: f.stiffness
+  let h = (p.interactionRadius * f.radiusFraction.float32).float
+  let n = world.posX.len
+  result.delta = newSeq[tuple[x, y: float]](n)
+  result.ownRegister = newSeq[tuple[x, y: float]](n)
+  result.density = newSeq[float](n)
+  result.pairs = newSeq[int](n)
+  for i in 0 ..< n:
+    result.density[i] = 1.0
+  for i in 0 ..< n:
+    for j in i + 1 ..< n:
+      let separationX = minimumImage(world.posX[i], world.posX[j], p.worldWidth)
+      let separationY = minimumImage(world.posY[i], world.posY[j], p.worldHeight)
+      let distanceSq = separationX * separationX + separationY * separationY
+      let radius = p.interactionRadius * f.radiusFraction.float32
+      if distanceSq <= 0.0'f32 or distanceSq >= radius * radius:
+        continue
+      let distance = sqrt(max(distanceSq, p.minDistanceSq))
+      let invDistance = 1.0'f32 / distance
+      let direction = (x: (separationX * invDistance).float,
+        y: (separationY * invDistance).float)
+      let densityWeight = poly6Weight2d(distance.float, h) /
+        poly6Weight2d(0.0, h)
+      let gradientWeight = spikyGradientMagnitude2d(distance.float, h) /
+        spikyGradientMagnitude2d(0.0, h)
+      let laggedI = world.sphDensity[i].float
+      let laggedJ = world.sphDensity[j].float
+      let ceilingDensity = f.restDensity * f.maxDensityRatio
+      let densityI = clamp(laggedI, f.restDensity, ceilingDensity)
+      let densityJ = clamp(laggedJ, f.restDensity, ceilingDensity)
+      let pressureI = flooredTaitPressure(densityI, f.restDensity,
+        oracleStiffness, f.gamma)
+      let pressureJ = flooredTaitPressure(densityJ, f.restDensity,
+        oracleStiffness, f.gamma)
+      let gap = (x: (world.velX[j] - world.velX[i]).float,
+        y: (world.velY[j] - world.velY[i]).float)
+      let onI = sphPairVelocityDelta(pressureI, densityI, pressureJ, densityJ,
+        gradientWeight, densityWeight, laggedI, laggedJ, oracleViscosity,
+        f.strength, direction, gap)
+      let unclamped = SPH_FORCE_SCALE * (pressureI / (densityI * densityI) +
+        pressureJ / (densityJ * densityJ)) * gradientWeight
+      if abs(unclamped) > SPH_MAX_PRESSURE_ACCEL:
+        result.clampedPairs += 1
+      if (oracleViscosity + SPH_XSPH_EPSILON) * densityWeight *
+          hypot(gap.x, gap.y) > 0.0:
+        result.blendedPairs += 1
+      result.delta[i] = (x: result.delta[i].x + onI.x,
+        y: result.delta[i].y + onI.y)
+      result.ownRegister[i] = (x: result.ownRegister[i].x + onI.x,
+        y: result.ownRegister[i].y + onI.y)
+      result.delta[j] = (x: result.delta[j].x - onI.x,
+        y: result.delta[j].y - onI.y)
+      result.density[i] += densityWeight
+      result.density[j] += densityWeight
+      result.pairs[i] += 1
+      result.pairs[j] += 1
+
+type MirrorReading = object
+  verdicts: Verdicts
+  expectation: FluidExpectation
+
+proc mirrorStep(label: string; fluid: OracleFluidParams;
+    frameFactor = 1.0; retention = 1.0'f32): MirrorReading =
+  ## One mirrored step of a stirred world against sph_core's pair term. The
+  ## tolerance is one quantum per encode a particle's delta passes through
+  ## (one per pair it meets as the higher index, one for its own register,
+  ## one spare), plus the f32 roundings of its own register, the velocity add
+  ## and the friction multiply.
+  var world = stirredWorld(fluidOnlyParams(fluid, retention), FLUID_TEST_SEED)
+  let before = world
+  let expected = expectFluid(before)
+  stepFrame(world, frameFactor, 1)
+  let quantum = 1.0 / PRODUCTION_TUNING.fixedPointScale
+  let densityQuantum = 1.0 / fluid.densityScale
+  result.expectation = expected
+  for i in 0 ..< world.posX.len:
+    for axis in 0 .. 1:
+      let v0 = (if axis == 0: before.velX[i] else: before.velY[i]).float
+      let v1 = (if axis == 0: world.velX[i] else: world.velY[i]).float
+      let delta =
+        if axis == 0: expected.delta[i].x else: expected.delta[i].y
+      let own =
+        if axis == 0: expected.ownRegister[i].x else: expected.ownRegister[i].y
+      let want = (v0 + frameFactor * delta) * retention.float
+      let allowed = frameFactor * (expected.pairs[i].float + 2.0) * quantum +
+        (abs(v0) + frameFactor * (abs(delta) + abs(own))) * F32_ROUNDING
+      if not (abs(v1 - want) <= allowed):
+        result.verdicts.add label & ": particle " & $i & " axis " & $axis &
+          " steps to " & $v1 & " where sph_core's pair term gives " & $want &
+          " (allowed " & $allowed & ", " & $expected.pairs[i] & " pairs)"
+    let density = world.sphDensity[i].float
+    let densityAllowed = (expected.pairs[i].float + 2.0) * densityQuantum +
+      expected.density[i] * F32_ROUNDING
+    if not (abs(density - expected.density[i]) <= densityAllowed):
+      result.verdicts.add label & ": particle " & $i & " stores density " &
+        $density & " where the kernel sum is " & $expected.density[i]
+
+type
+  FluidTerm = enum
+    ## The three effects design N8 reads one at a time, each named for the
+    ## OracleFluidParams field it moves.
+    ftBlend = "blend"
+    ftPressureGain = "pressureGain"
+    ftRadiusFraction = "radiusFraction"
+
+  FluidArm = object
+    term: FluidTerm
+    reference: OracleFluidParams
+      ## The side each step's structure survival is compared with.
+    steps: seq[OracleFluidParams]
+
+func fluidArms(): array[FluidTerm, FluidArm] =
+  ## Design N8's arms. The stiffness is the stored one; the calibration hands
+  ## each side the effective stiffness substepPlan derives from it.
+  let shipped = shippedFluid()
+  var blended = shipped
+  blended.viscosity = SPH_VISCOSITY_MIN
+  var unblended = blended
+  unblended.blend = 0.0
+  var unpressured = shipped
+  unpressured.pressureGain = 0.0
+  var whole = shipped
+  whole.radiusFraction = SPH_RADIUS_FRACTION_MAX
+  var fractions: seq[OracleFluidParams]
+  for fraction in [0.75, 0.5, 0.25, SPH_RADIUS_FRACTION_MIN]:
+    var step = whole
+    step.radiusFraction = fraction
+    fractions.add step
+  result[ftBlend] = FluidArm(term: ftBlend, reference: unblended,
+    steps: @[blended])
+  result[ftPressureGain] = FluidArm(term: ftPressureGain,
+    reference: unpressured, steps: @[shipped])
+  result[ftRadiusFraction] = FluidArm(term: ftRadiusFraction,
+    reference: whole, steps: fractions)
+
+func armWorldParams(fluid: OracleFluidParams;
+    particleCount: int): OracleParams =
+  ## The world every arm side and its fluid-zero comparison stand on: radius
+  ## 50, the species force at its shipped default, crowding 0, the world
+  ## pressure acting at the onset config_ranges holds.
+  let shipped = defaultSettings()
+  var cfg = referenceConfig()
+  cfg.particleCount = particleCount
+  cfg.interactionRadius = FLUID_ARM_RADIUS
+  cfg.repulsionEnd = shipped.repulsionEnd
+  cfg.attractionPeak = shipped.attractionPeak
+  OracleParams(
+    interactionRadius: FLUID_ARM_RADIUS.float32,
+    worldWidth: cfg.worldWidth.float32, worldHeight: cfg.worldHeight.float32,
+    minDistanceSq: PRODUCTION_TUNING.minDistanceSq.float32,
+    forceModel: ofmPolynomial,
+    forceMultiplier: (FLUID_ARM_PAIR_GAIN * FLUID_ARM_FORCE_STRENGTH).float32,
+    repulsionEnd: cfg.repulsionEnd.float32,
+    attractionPeak: cfg.attractionPeak.float32,
+    expAlpha: shipped.expRepulsionAlpha.float32,
+    expBeta: shipped.expAttractionBeta.float32,
+    crowdingStrength: 0.0'f32,
+    pressureOnset: crowdOnsetDensity(cfg).float32,
+    pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
+    pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+    friction: (1.0 - shipped.friction).float32,
+    maxVelocity: shipped.maxVelocity.float32,
+    fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
+    crowdDensityScale: sphDensityFixedPointScale(MAX_PARTICLES).float32,
+    densitySmoothFactor: PRODUCTION_TUNING.densitySmoothFactor.float32,
+    fluid: fluid)
+
+func differingFields[T: object](a, b: T): seq[string] =
+  for name, left, right in fieldPairs(a, b):
+    if left != right:
+      result.add name
+
+suite "The Fluid Mirror Steps As The Oracle Does":
+
+  test "one mirrored step at the shipped fluid matches sph_core's pair term":
+    let reading = mirrorStep("shipped", shippedFluid())
+    check reading.expectation.blendedPairs > 0
+    checkNoVerdicts(reading.verdicts)
+
+  test "one mirrored step matches across viscosity, radius fraction and strength":
+    var verdicts: Verdicts
+    for viscosity in [SPH_VISCOSITY_MIN, SPH_VISCOSITY_MAX]:
+      for fraction in [SPH_RADIUS_FRACTION_MAX, 0.5, SPH_RADIUS_FRACTION_MIN]:
+        for strength in [0.5, FLUID_STRENGTH_MAX]:
+          var fluid = shippedFluid()
+          fluid.viscosity = viscosity
+          fluid.radiusFraction = fraction
+          fluid.strength = strength
+          let reading = mirrorStep("viscosity " & $viscosity & " fraction " &
+            $fraction & " strength " & $strength, fluid)
+          check reading.expectation.pairs.len > 0
+          verdicts.add reading.verdicts
+    checkNoVerdicts(verdicts)
+
+  test "one mirrored step matches where the pressure clamp binds":
+    var fluid = shippedFluid()
+    fluid.restDensity = SPH_REST_DENSITY_MIN
+    fluid.stiffness = SPH_STIFFNESS_MAX
+    let reading = mirrorStep("clamped", fluid)
+    checkpoint($reading.expectation.clampedPairs & " clamped pairs")
+    check reading.expectation.clampedPairs > 0
+    checkNoVerdicts(reading.verdicts)
+
+  test "one mirrored step matches at each arm's side":
+    var verdicts: Verdicts
+    for arm in fluidArms():
+      verdicts.add mirrorStep($arm.term & " reference", arm.reference).verdicts
+      for index, step in arm.steps:
+        verdicts.add mirrorStep($arm.term & " step " & $index, step).verdicts
+    checkNoVerdicts(verdicts)
+
+  test "the frame factor and friction meet the fluid's delta only in integrate":
+    var verdicts: Verdicts
+    verdicts.add mirrorStep("frame factor 2", shippedFluid(),
+      frameFactor = 2.0).verdicts
+    verdicts.add mirrorStep("retention 0.9", shippedFluid(),
+      retention = 0.9'f32).verdicts
+    checkNoVerdicts(verdicts)
+
+  test "at strength zero the pass is skipped and no velocity moves":
+    var fluid = shippedFluid()
+    fluid.strength = 0.0
+    var world = stirredWorld(fluidOnlyParams(fluid), FLUID_TEST_SEED)
+    let before = world
+    stepFrame(world, 1.0, 1)
+    check world.velX == before.velX
+    check world.velY == before.velY
+    for density in world.sphDensity:
+      check density == 0.0'f32
+
+suite "Each Effect Is Read Alone":
+
+  test "each step differs from the side it is compared with in the arm's term alone":
+    for arm in fluidArms():
+      for step in arm.steps:
+        checkpoint($arm.term & ": " & $differingFields(arm.reference, step))
+        check differingFields(arm.reference, step) == @[$arm.term]
+
+  test "every side and its fluid-zero world share one species and world setting":
+    for arm in fluidArms():
+      var fluidZero = arm.reference
+      fluidZero.strength = 0.0
+      let zeroWorld = armWorldParams(fluidZero, MAX_PARTICLES)
+      for side in @[arm.reference] & arm.steps:
+        check differingFields(armWorldParams(side, MAX_PARTICLES),
+          zeroWorld) == @["fluid"]
+        check differingFields(side, fluidZero) == @["strength"] or
+          differingFields(side, fluidZero) == @["strength", $arm.term]
+
+  test "every side runs fluid 1 over crowding 0 with the world pressure acting":
+    for arm in fluidArms():
+      for side in @[arm.reference] & arm.steps:
+        let world = armWorldParams(side, MAX_PARTICLES)
+        check side.strength == FLUID_STRENGTH_MAX
+        check world.crowdingStrength == 0.0'f32
+        check world.pressureStiffness > 0.0'f32
+        if arm.term == ftBlend:
+          check side.viscosity == SPH_VISCOSITY_MIN
+
+  test "each arm's term moves one mirrored step and the blend and pressure leave the density alone":
+    var verdicts: Verdicts
+    for arm in fluidArms():
+      var reference = stirredWorld(fluidOnlyParams(arm.reference),
+        FLUID_TEST_SEED)
+      stepFrame(reference, 1.0, 1)
+      for index, step in arm.steps:
+        var stepped = stirredWorld(fluidOnlyParams(step), FLUID_TEST_SEED)
+        stepFrame(stepped, 1.0, 1)
+        let label = $arm.term & " step " & $index
+        if stepped.velX == reference.velX and stepped.velY == reference.velY:
+          verdicts.add label & ": both sides step every velocity alike, " &
+            "so the arm reads no effect"
+        if arm.term != ftRadiusFraction and
+            stepped.sphDensity != reference.sphDensity:
+          verdicts.add label & ": the " & $arm.term &
+            " moved the kernel density, which it has no part in"
+    checkNoVerdicts(verdicts)
+
+# ==============================================================================
 # THE CALIBRATION ARMS
 # ==============================================================================
 # Each arm steps the oracle world for hundreds of frames on sixteen seeds, so
