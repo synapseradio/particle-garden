@@ -811,78 +811,112 @@ suite "Ignition From Coherent Deposits":
     # outcome. clusteredDepositMask normalizes to depositMask()'s total, so the
     # only variable is coherence.
     #
-    # OBSERVED at the shipped defaults (frame of ignition, -1 for none):
-    #   radius   1     2     3     5     8
-    #   top-hat  -1    -1    -1    -1     9
-    #   gaussian -1    -1    -1    12     4
-    # and at amplitude 0.04 radius 3 top-hat ignites, at 0.08 radius 2 does.
-    # The scattered baseline ignites at no amplitude in the range.
-    for amplitude in [RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
-      check framesToIgnite(depositMask(), amplitude) == -1
+    # OBSERVED at scale 1 (frame of ignition at 0.02 / 0.08, -1 for none):
+    #   radius    1       2      3      4      5      8
+    #   top-hat  -1/-1   -1/5   -1/3   -1/2   -1/2    9/2
+    #   gaussian -1/-1   -1/3   -1/2   30/1    8/1    3/1
+    # The scattered baseline first ignites at 0.0875 at scale 1, 0.06 at 0.5
+    # and 0.04 at 0.25 (G3 record).
+    for scale in PATTERN_SCALE_STEPS:
+      checkpoint("pattern scale " & $scale)
+      for amplitude in [RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
+        check framesToIgnite(depositMask(), amplitude,
+          patternScale = scale) == -1
 
-    var anyClusteredIgnited = false
-    for radius in [1.0, 2.0, 3.0, 5.0, 8.0]:
-      for profile in [dpTopHat, dpGaussian]:
-        for amplitude in [RD_DEPOSIT_MIN, RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
-          let ignitedOn = framesToIgnite(
-            clusteredDepositMask(radius, profile), amplitude)
-          if ignitedOn > 0:
-            anyClusteredIgnited = true
-            # Nothing ignites on zero deposit, whatever its shape — the field
-            # is being asked to pattern with no input at all.
-            check amplitude > 0.0
-            # Nothing below the shipped radius may ignite at the shipped
-            # deposit, or the radius is larger than the measurement warrants.
-            if amplitude <= RD_DEFAULT_DEPOSIT:
-              check radius >= RD_DEPOSIT_SPLAT_RADIUS
-    check anyClusteredIgnited
+      var anyClusteredIgnited = false
+      for radius in [1.0, 2.0, 3.0, 5.0, 8.0]:
+        for profile in [dpTopHat, dpGaussian]:
+          for amplitude in [RD_DEPOSIT_MIN, RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
+            let ignitedOn = framesToIgnite(
+              clusteredDepositMask(radius, profile), amplitude,
+              patternScale = scale)
+            if ignitedOn > 0:
+              anyClusteredIgnited = true
+              # Nothing ignites on zero deposit, whatever its shape.
+              check amplitude > 0.0
+              # The shipped radius is the smallest that ignites at the shipped
+              # deposit where it was measured, scale 1. Below it smaller radii
+              # ignite too (radius 3 from 0.5), which leaves the radius wider
+              # than needed there and breaks no criterion.
+              if scale == 1.0 and amplitude <= RD_DEFAULT_DEPOSIT:
+                check radius >= RD_DEPOSIT_SPLAT_RADIUS
+      check anyClusteredIgnited
 
   test "the shipped splat radius ignites at the shipped deposit":
     # CONTRACT: this is the warrant for RD_DEPOSIT_SPLAT_RADIUS's value, and
     # the test that goes red if a later change shrinks the kernel for cost or
     # weakens the deposit default. The pairing is what matters — neither
     # constant is meaningful alone.
-    check framesToIgnite(
-      clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
-      RD_DEFAULT_DEPOSIT) > 0
+    for scale in PATTERN_SCALE_STEPS:
+      checkpoint("pattern scale " & $scale)
+      check framesToIgnite(
+        clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+        RD_DEFAULT_DEPOSIT, patternScale = scale) > 0
 
   test "a clustered deposit below the critical radius relaxes to background":
     # The negative control: without it "clustering ignites" could be satisfied
     # by a kernel so wide that everything ignites, which would prove nothing
-    # about coherence. Radius 1 is a splat in name only — it covers one cell —
-    # and it must stay dead even at the deposit ceiling.
+    # about coherence. Radius 1 is the narrowest splat, and it must stay dead
+    # even at the deposit ceiling.
     #
     # Run to twice the budget, because "has not ignited yet" is a weaker claim
-    # than "has relaxed to background". OBSERVED: no ignition at any amplitude
-    # over 120 frames; the field decays to a trace.
-    for profile in [dpTopHat, dpGaussian]:
-      let mask = clusteredDepositMask(1.0, profile)
-      check framesToIgnite(mask, RD_DEPOSIT_MAX,
-        budget = IGNITION_FRAME_BUDGET * 2) == -1
-      let seed = flatSeed()
-      let stats = evolve(seed.a, seed.b, HARNESS_FRAMES, RD_DEPOSIT_MAX,
-        mask = mask)
-      check stats.aliveFraction == 0.0
-      check stats.maxB < 0.05
+    # than "has relaxed to background". OBSERVED at scale 1: no ignition up to
+    # 0.10; maxB 0.017 top-hat, 0.023 Gaussian after 60 frames at 0.08. A
+    # smaller diffusion strips an isolated peak more slowly: the Gaussian
+    # radius-1 mask first ignites at 0.0625 at scale 0.5 and 0.0325 at 0.25.
+    for scale in PATTERN_SCALE_STEPS:
+      for profile in [dpTopHat, dpGaussian]:
+        checkpoint("pattern scale " & $scale & " profile " & $profile)
+        let mask = clusteredDepositMask(1.0, profile)
+        check framesToIgnite(mask, RD_DEPOSIT_MAX,
+          budget = IGNITION_FRAME_BUDGET * 2, patternScale = scale) == -1
+        let seed = flatSeed()
+        let stats = evolve(seed.a, seed.b, HARNESS_FRAMES, RD_DEPOSIT_MAX,
+          mask = mask, patternScale = scale)
+        check stats.aliveFraction == 0.0
+        check stats.maxB < 0.05
 
   test "ignition completes within the cold-start budget at the shipped defaults":
     # Contract: the cold start must read as a dawn, not as a hang, and this is
     # the budget it must meet — the app opens dark and chemistry arrives
-    # visibly. Observed: frame 12 against a budget of 30.
-    let ignitedOn = framesToIgnite(
-      clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
-      RD_DEFAULT_DEPOSIT)
-    check ignitedOn > 0
-    check ignitedOn <= IGNITION_FRAME_BUDGET
+    # visibly. Observed: frame 8 at scale 1, 5 at 0.5, 4 at 0.25, against a
+    # budget of 30.
+    for scale in PATTERN_SCALE_STEPS:
+      checkpoint("pattern scale " & $scale)
+      let ignitedOn = framesToIgnite(
+        clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+        RD_DEFAULT_DEPOSIT, patternScale = scale)
+      check ignitedOn > 0
+      check ignitedOn <= IGNITION_FRAME_BUDGET
 
   test "ignition survives the weakest climate corner the sliders offer":
     # CONTRACT: the shipped radius is measured at the Pearson defaults, but a
     # user may drag feed and kill anywhere. The corner where the (feed+kill)*B
     # depletion opposing the deposit is weakest must not be the corner that
-    # breaks ignition. OBSERVED: frame 4 at radius 5.
-    check framesToIgnite(
-      clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
-      RD_DEFAULT_DEPOSIT, feed = RD_FEED_MIN, kill = RD_KILL_MIN) > 0
+    # breaks ignition. OBSERVED: frame 4 at scale 1, 3 at 0.5 and 0.25.
+    for scale in PATTERN_SCALE_STEPS:
+      checkpoint("pattern scale " & $scale)
+      check framesToIgnite(
+        clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+        RD_DEFAULT_DEPOSIT, feed = RD_FEED_MIN, kill = RD_KILL_MIN,
+        patternScale = scale) > 0
+
+  test "the high-feed regimes ignite at their deposit floor and not at the default":
+    # CONTRACT: Worms and Coral need their minDeposit to appear, and the
+    # default deposit leaves them blank, at every band step. OBSERVED at the
+    # floor 0.04: frame 4 at scale 1, 3 at 0.5 and 0.25. At the default 0.02
+    # neither ignites at 1 or 0.5; Worms ignites on frame 22 at 0.25.
+    for scale in PATTERN_SCALE_STEPS:
+      for regime in RD_REGIMES:
+        if regime.minDeposit <= 0.0: continue
+        checkpoint("pattern scale " & $scale & " regime " & regime.id)
+        let mask = clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian)
+        let atFloor = framesToIgnite(mask, regime.minDeposit,
+          feed = regime.feed, kill = regime.kill, patternScale = scale)
+        check atFloor > 0
+        check atFloor <= IGNITION_FRAME_BUDGET
+        check framesToIgnite(mask, RD_DEFAULT_DEPOSIT, feed = regime.feed,
+          kill = regime.kill, patternScale = scale) == -1
 
   test "the splat kernel conserves a particle's total deposit at every radius":
     # CONTRACT: normalization is what keeps widening the kernel from becoming a
@@ -1190,6 +1224,57 @@ suite "Chemotactic Collapse Bound":
     check downRun.maxB < 0.05
     check boundRunMaxForce.maxB > 0.5
 
+  # The bracket at each pattern-scale step. The scent force follows the scale
+  # as the contract's gain does, sqrt(s) times the scale-1 ceiling, so the
+  # strength-1 push holds while the gradient per cell steepens. A fixed 37.5
+  # gives the same lower edges or higher at 0.25 (G3 record).
+  const COLLAPSE_BRACKETS = [
+    (scale: 1.0, safe: 5.0, collapse: 7.5, witness: 2.0),
+    (scale: 0.5, safe: 3.0, collapse: 5.0, witness: 2.0),
+    (scale: 0.25, safe: 7.5, collapse: 10.0, witness: 2.0)]
+    ## MEASURED per step, deposits in multiples of RD_DEPOSIT_MAX and the
+    ## witness in multiples of TROPISM_MAX: `safe` is the largest sampled
+    ## deposit where no sampled tropism diverges, `collapse` the next sampled
+    ## deposit, where the witness diverges and a frozen population does not.
+  const BRACKET_TROPISMS = [0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0,
+    1024.0]
+
+  func bandFieldForce(scale: float): float = RD_FIELD_FORCE_MAX * sqrt(scale)
+
+  test "the bracket table covers every band step":
+    check COLLAPSE_BRACKETS.len == PATTERN_SCALE_STEPS.len
+    for index, bracket in COLLAPSE_BRACKETS:
+      check bracket.scale == PATTERN_SCALE_STEPS[index]
+
+  test "no sampled tropism collapses the field at the deposit ceiling at any band step":
+    # The lower deposit edge must sit above what the slider reaches. A step
+    # where it falls to RD_DEPOSIT_MAX fails here, named by its checkpoint.
+    for scale in PATTERN_SCALE_STEPS:
+      for multiple in BRACKET_TROPISMS:
+        checkpoint("pattern scale " & $scale & " tropism " & $multiple &
+          "x TROPISM_MAX")
+        let run = runChemotaxis(TROPISM_MAX * multiple,
+          fieldForceScale = bandFieldForce(scale), patternScale = scale)
+        check run.finite
+        check run.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
+
+  test "each band step's collapse bracket holds as recorded":
+    for bracket in COLLAPSE_BRACKETS:
+      let force = bandFieldForce(bracket.scale)
+      for multiple in BRACKET_TROPISMS:
+        checkpoint("pattern scale " & $bracket.scale & " safe deposit " &
+          $bracket.safe & "x, tropism " & $multiple & "x")
+        check runChemotaxis(TROPISM_MAX * multiple,
+          deposit = RD_DEPOSIT_MAX * bracket.safe, fieldForceScale = force,
+          patternScale = bracket.scale).finite
+      checkpoint("pattern scale " & $bracket.scale & " collapse deposit " &
+        $bracket.collapse & "x")
+      check not runChemotaxis(TROPISM_MAX * bracket.witness,
+        deposit = RD_DEPOSIT_MAX * bracket.collapse, fieldForceScale = force,
+        patternScale = bracket.scale).finite
+      check runChemotaxis(0.0, deposit = RD_DEPOSIT_MAX * bracket.collapse,
+        fieldForceScale = force, patternScale = bracket.scale).finite
+
 
 suite "The Regime Deposit Floor Preserves The Regime":
   # Why this suite exists: two named regimes (Worms, Coral) do not ignite at the
@@ -1243,7 +1328,7 @@ suite "The Regime Deposit Floor Preserves The Regime":
   func morphologyDistance(a, b: Morphology): float =
     abs(a.alive - b.alive) + abs(a.structure - b.structure)
 
-  proc unforcedMorphology(feed, kill: float): Morphology =
+  proc unforcedMorphology(feed, kill, patternScale: float): Morphology =
     ## The regime's own attractor: nucleus, no deposit, nothing but the reaction.
     var seedA, seedB: HarnessField
     for y in 0 ..< HARNESS_GRID:
@@ -1254,56 +1339,83 @@ suite "The Regime Deposit Floor Preserves The Regime":
         seedA[y][x] = if inside: NUCLEUS_ACTIVATOR else: 1.0
         seedB[y][x] = if inside: NUCLEUS_INHIBITOR else: 0.0
     morphologyOf(evolve(seedA, seedB, SETTLE_FRAMES, RD_DEPOSIT_MIN,
-      feed = feed, kill = kill))
+      feed = feed, kill = kill, patternScale = patternScale))
 
-  proc shippedMorphology(feed, kill, deposit: float): Morphology =
+  proc shippedMorphology(feed, kill, deposit, patternScale: float):
+      Morphology =
     ## What a user actually gets after pressing the button: no seed, flat
     ## trivial start, colonies depositing through the splat kernel.
     let flat = flatSeed()
     morphologyOf(evolve(flat.a, flat.b, SETTLE_FRAMES, deposit,
       feed = feed, kill = kill,
-      mask = clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian)))
+      mask = clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian),
+      patternScale = patternScale))
+
+  type StepMorphologies = object
+    ## One band step's attractors and shipped results.
+    scale: float
+    wormsUnforced, coralUnforced, labyrinthUnforced: Morphology
+    wormsFloored, coralFloored, labyrinthUnfloored: Morphology
+
+  proc measureStep(scale: float): StepMorphologies =
+    StepMorphologies(scale: scale,
+      wormsUnforced: unforcedMorphology(0.078, 0.061, scale),
+      coralUnforced: unforcedMorphology(0.082, 0.059, scale),
+      labyrinthUnforced: unforcedMorphology(0.029, 0.057, scale),
+      wormsFloored: shippedMorphology(0.078, 0.061,
+        RD_REGIME_HIGH_FEED_DEPOSIT, scale),
+      coralFloored: shippedMorphology(0.082, 0.059,
+        RD_REGIME_HIGH_FEED_DEPOSIT, scale),
+      labyrinthUnfloored: shippedMorphology(0.029, 0.057, RD_DEFAULT_DEPOSIT,
+        scale))
 
   # Computed once for the suite; each is SETTLE_FRAMES of the field.
-  let wormsUnforced = unforcedMorphology(0.078, 0.061)
-  let coralUnforced = unforcedMorphology(0.082, 0.059)
-  let labyrinthUnforced = unforcedMorphology(0.029, 0.057)
-  let wormsFloored = shippedMorphology(0.078, 0.061, RD_REGIME_HIGH_FEED_DEPOSIT)
-  let coralFloored = shippedMorphology(0.082, 0.059, RD_REGIME_HIGH_FEED_DEPOSIT)
-  let labyrinthUnfloored = shippedMorphology(0.029, 0.057, RD_DEFAULT_DEPOSIT)
+  var steps: seq[StepMorphologies]
+  for scale in PATTERN_SCALE_STEPS:
+    steps.add measureStep(scale)
 
   test "the statistic separates different regimes from each other":
     # The vacuity guard, and it runs first on purpose. If this fails, every
     # agreement below is meaningless — a statistic that cannot tell two regimes
     # apart would report any two patterns as the same morphology.
-    # OBSERVED separations: Worms/Coral 1.25, Worms/Labyrinth 1.65,
-    # Coral/Labyrinth 0.40. The tightest pair is four times the largest
-    # within-regime distance measured below.
-    let separations = [
-      morphologyDistance(wormsUnforced, coralUnforced),
-      morphologyDistance(wormsUnforced, labyrinthUnforced),
-      morphologyDistance(coralUnforced, labyrinthUnforced)]
-    for separation in separations:
-      check separation > 0.35
+    # OBSERVED separations W/C, W/L, C/L: 1.04, 1.73, 0.69 at scale 1;
+    # 1.21, 1.70, 0.49 at 0.5; 1.12, 1.82, 0.70 at 0.25.
+    for step in steps:
+      checkpoint("pattern scale " & $step.scale)
+      let separations = [
+        morphologyDistance(step.wormsUnforced, step.coralUnforced),
+        morphologyDistance(step.wormsUnforced, step.labyrinthUnforced),
+        morphologyDistance(step.coralUnforced, step.labyrinthUnforced)]
+      for separation in separations:
+        check separation > 0.35
 
   test "a floored regime settles into its own unforced morphology":
     # CONTRACT: the button is honest. Each floored regime must land closer to
-    # ITS OWN unforced attractor than to any other regime's.
-    # OBSERVED (alive / std-over-mean), 150 frames:
-    #   Worms unforced 0.188 / 1.90   floored 0.177 / 2.02   distance 0.13
-    #   Coral unforced 0.497 / 0.96   floored 0.448 / 1.01   distance 0.10
-    # Against nearest-other-regime distances of 0.40 and above.
+    # ITS OWN unforced attractor than to any other regime's, at every step.
+    # OBSERVED distance to own / half the own-to-nearest separation:
+    #   scale 1:    Worms 0.075 / 0.520   Coral 0.177 / 0.343
+    #   scale 0.5:  Worms 0.151 / 0.603   Coral 0.402 / 0.245
+    #   scale 0.25: Worms 0.129 / 0.559   Coral 0.882, and 0.237 from Worms
     #
     # If this goes red the floor has moved a regime into a neighbouring
-    # morphology: the button would be lying, and the fix is to find a deposit
-    # that ignites without distorting — not to widen the tolerance here.
-    for (floored, own, other) in [
-        (wormsFloored, wormsUnforced, coralUnforced),
-        (coralFloored, coralUnforced, labyrinthUnforced)]:
-      check floored.alive > 0.05  # a dead field would "match" nothing
-      check morphologyDistance(floored, own) < morphologyDistance(floored, other)
-      check morphologyDistance(floored, own) <
-        morphologyDistance(own, other) * 0.5
+    # morphology at that step: the button would be lying there. The remedy is
+    # a row for that step that restores the regime, or a floor above the step,
+    # never a wider tolerance here.
+    for step in steps:
+      let attractors = [step.wormsUnforced, step.coralUnforced,
+        step.labyrinthUnforced]
+      for (name, floored, ownIndex, nearest) in [
+          ("worms", step.wormsFloored, 0, step.coralUnforced),
+          ("coral", step.coralFloored, 1, step.labyrinthUnforced)]:
+        checkpoint("pattern scale " & $step.scale & " regime " & name)
+        let own = attractors[ownIndex]
+        check floored.alive > 0.05  # a dead field would "match" nothing
+        for index, other in attractors:
+          if index != ownIndex:
+            check morphologyDistance(floored, own) <
+              morphologyDistance(floored, other)
+        check morphologyDistance(floored, own) <
+          morphologyDistance(own, nearest) * 0.5
 
   test "a regime that gets no floor behaves the same way under the same procedure":
     # The negative control on the procedure: Labyrinth needs no deposit floor —
@@ -1311,24 +1423,30 @@ suite "The Regime Deposit Floor Preserves The Regime":
     # shows what agreement looks like when nothing is raised. If the floored
     # regimes matched their attractors but this did not, the procedure would be
     # measuring the floor rather than the morphology.
-    # OBSERVED: unforced 0.539 / 0.60, shipped at the default 0.535 / 0.62 —
-    # distance 0.02, the tightest agreement in the suite, as it should be.
+    # OBSERVED distance to own against Labyrinth/Coral: 0.033 / 0.685 at
+    # scale 1, 0.381 / 0.490 at 0.5, 0.451 / 0.696 at 0.25.
     # Labyrinth rather than Spots: Spots, Mitosis and Waves have no unforced
     # attractor to compare against in this harness. At their low feed a nucleus
     # cannot sustain itself without continuous deposit, so their pattern is
     # deposit-sustained by nature and "unforced Spots" does not exist.
-    check morphologyDistance(labyrinthUnfloored, labyrinthUnforced) <
-      morphologyDistance(labyrinthUnforced, coralUnforced)
+    for step in steps:
+      checkpoint("pattern scale " & $step.scale)
+      check morphologyDistance(step.labyrinthUnfloored,
+        step.labyrinthUnforced) <
+        morphologyDistance(step.labyrinthUnforced, step.coralUnforced)
 
   test "every regime the buttons can select settles into something alive":
     # The plainest statement of what a regime button promises, across all six —
     # each at whatever deposit its own entry says it needs.
-    for regime in RD_REGIMES:
-      let deposit =
-        if regime.minDeposit > 0.0: regime.minDeposit else: RD_DEFAULT_DEPOSIT
-      let settled = shippedMorphology(regime.feed, regime.kill, deposit)
-      check settled.alive > 0.05
-      check settled.structure > 0.3
+    for scale in PATTERN_SCALE_STEPS:
+      for regime in RD_REGIMES:
+        checkpoint("pattern scale " & $scale & " regime " & regime.id)
+        let deposit =
+          if regime.minDeposit > 0.0: regime.minDeposit else: RD_DEFAULT_DEPOSIT
+        let settled = shippedMorphology(regime.feed, regime.kill, deposit,
+          scale)
+        check settled.alive > 0.05
+        check settled.structure > 0.3
 
 
 suite "Reaction-Diffusion Tuning Constants":
@@ -1699,6 +1817,45 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
             result = max(result, max(abs(activator[y][x]), abs(inhibitor[y][x])))
         if result.classify in {fcNan, fcInf, fcNegInf} or result > 1.0e6:
           return result
+
+  proc heldBlockStaysFinite(cap, patternScale, feed, kill: float,
+      halfSide: int): bool =
+    ## A living pattern with a centred block of cells taking `cap` every frame
+    ## for 400 frames, through the shipped fold.
+    let seed = blobSeed(1'u32)
+    var fieldA = seed.a
+    var fieldB = seed.b
+    var scratchA, scratchB: HarnessField
+    let center = HARNESS_GRID div 2
+    for _ in 0 ..< 400:
+      for y in center - halfSide .. center + halfSide:
+        for x in center - halfSide .. center + halfSide:
+          fieldB[y][x] = resolveCellDeposit(fieldB[y][x], UNBOUNDED_DEPOSIT,
+            cap = cap)
+      advanceFrame(fieldA, fieldB, scratchA, scratchB, default(HarnessField),
+        0.0, feed, kill, patternScale = patternScale)
+    for y in 0 ..< HARNESS_GRID:
+      for x in 0 ..< HARNESS_GRID:
+        if fieldB[y][x].classify in {fcNan, fcInf, fcNegInf} or
+            abs(fieldB[y][x]) > 1.0e6:
+          return false
+    true
+
+  test "twice the ceiling still holds a living pattern finite at every step":
+    # The cap sits at most half the largest measured stable cap, so twice it
+    # must stay finite. MEASURED largest stable cap (10x10 feed/kill grid,
+    # 3x3 and 21x21 blocks): 0.20 at scale 1 (0.25 diverges at feed 0.010,
+    # kill 0.040), 0.30 at 0.5, at least 0.40 at 0.25. Checked here at the
+    # climate corners and the Pearson defaults.
+    for scale in PATTERN_SCALE_STEPS:
+      for (feed, kill) in [(RD_FEED_MIN, RD_KILL_MIN), (RD_FEED_MIN, RD_KILL_MAX),
+          (RD_FEED_MAX, RD_KILL_MIN), (RD_FEED_MAX, RD_KILL_MAX),
+          (RD_DEFAULT_FEED, RD_DEFAULT_KILL)]:
+        for halfSide in [1, 10]:
+          checkpoint("pattern scale " & $scale & " feed " & $feed & " kill " &
+            $kill & " block " & $(2 * halfSide + 1))
+          check heldBlockStaysFinite(2.0 * RD_DEPOSIT_CELL_MAX, scale, feed,
+            kill, halfSide)
 
   test "the ceiling holds the field finite under a mouse held forever":
     # The acceptance criterion, as the reported failure. Checked at the feed and
