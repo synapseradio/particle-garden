@@ -1,7 +1,13 @@
 import std/unittest
 import std/math
+import std/random
 import ../src/long_range_core
 import ../src/memory_layout
+from ../src/config_ranges import LR_GRID_SIZES, LONG_RANGE_REACH_MAX,
+  CROWD_ONSET_RATIO, MATRIX_MAX_VALUE, FORCE_STRENGTH_MAX,
+  INTERACTION_RADIUS_MIN, INTERACTION_RADIUS_MAX
+from ../src/physics_core import FRAME_DT_REFERENCE
+from ../src/balance_core import UnitConfig, longRangeFullEffectGain
 
 const LONG_RANGE_CORE_TESTS_LOADED* = true
 
@@ -794,3 +800,135 @@ suite "Momentum Is Conserved Only Under A Symmetric Matrix":
       checkpoint "an asymmetric matrix left a net impulse of (" &
         $totals[1].sx & ", " & $totals[1].sy & "), relatively " &
         $asymmetricDrift & " — the world is not supposed to be still here"
+
+# ==============================================================================
+# The pull in the pair unit: one disc clump placed by each gate seed.
+# ==============================================================================
+
+const
+  GATE_SEEDS = [42, 7, 1001]
+  CLUMP_PARTICLES = 1000
+  CLUMP_RADIUS = 40.0
+
+func designPairUnit(radius: float): float =
+  ## U(R) = u0 R^2 (a + R) / a^2, a = sqrt(A_world / (pi x_on)), written from
+  ## the design so the suites never ask the oracle what the unit is.
+  let a = sqrt(TEST_WORLD_W * TEST_WORLD_H / (PI * CROWD_ONSET_RATIO))
+  FRAME_DT_REFERENCE * radius * radius * (a + radius) / (a * a)
+
+proc seededClump(seed: int): tuple[cx, cy: float; density: seq[seq[float]]] =
+  ## A sunflower disc of CLUMP_PARTICLES at a centre the seed draws, deposited
+  ## on every declared grid size, in LR_GRID_SIZES order.
+  var rng = initRand(seed)
+  result.cx = rng.rand(TEST_WORLD_W)
+  result.cy = rng.rand(TEST_WORLD_H)
+  for size in LR_GRID_SIZES:
+    var grid = emptyGrid(size.w, size.h)
+    for i in 0 ..< CLUMP_PARTICLES:
+      let r = CLUMP_RADIUS * sqrt((i.float + 0.5) / CLUMP_PARTICLES.float)
+      let theta = i.float * 2.399963229728653
+      let assignment = lrAssign(result.cx + r * cos(theta),
+        result.cy + r * sin(theta), size.w, size.h, TEST_WORLD_W, TEST_WORLD_H)
+      for k in 0 .. 3:
+        grid[assignment.cells[k]] += assignment.weights[k]
+    result.density.add grid
+
+func impulseAt(potential: seq[float]; size: tuple[w, h: int];
+               radius, px, py: float): float =
+  ## The impulse lr-force.wgsl hands a particle at strength 1 under the
+  ## largest self-attraction, from the scale written to LR_FORCE_SCALE.
+  let g = lrGradient(potential, size.w, size.h, TEST_WORLD_W, TEST_WORLD_H,
+    px, py)
+  lrForceScale(1.0, radius, CROWD_ONSET_RATIO, size.w, size.h,
+    TEST_WORLD_W, TEST_WORLD_H) * MATRIX_MAX_VALUE * hypot(g.gx, g.gy)
+
+suite "The Pull Does Not Depend On Mesh Size":
+  test "every declared mesh size hands the same impulse 240 and 600 from a clump's centre":
+    # MEASURED: the static solve at reach 600, seeds 42/7/1001, sampled along
+    # +x and +y. The gap reads 0.153-0.261% at 240 (mean 0.212%) and
+    # 0.098-0.126% at 600 (mean 0.106%); each bound is the mean plus the
+    # largest reading's distance from it. Closer in the gap grows (3.19x the
+    # cell-area ratio at 60), since the clump spans few cells.
+    const radius = 50.0
+    const reach = 600.0
+    const samples = [(offset: 240.0, bound: 0.00271),
+                     (offset: 600.0, bound: 0.00126)]
+    for seed in GATE_SEEDS:
+      let clump = seededClump(seed)
+      var potentials: seq[seq[float]]
+      for s, size in LR_GRID_SIZES:
+        potentials.add solveOneSpecies(clump.density[s], size.w, size.h,
+          TEST_WORLD_W, TEST_WORLD_H, reach)
+      for sample in samples:
+        for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)]:
+          let px = clump.cx + dx * sample.offset
+          let py = clump.cy + dy * sample.offset
+          let reference = impulseAt(potentials[0], LR_GRID_SIZES[0], radius,
+            px, py)
+          require reference > 0.0
+          for s in 1 ..< LR_GRID_SIZES.len:
+            let other = impulseAt(potentials[s], LR_GRID_SIZES[s], radius,
+              px, py)
+            let gap = abs(reference / other - 1.0)
+            check gap <= sample.bound
+            if gap > sample.bound:
+              checkpoint "seed " & $seed & ", " & $sample.offset &
+                " along (" & $dx & ", " & $dy & "): " & $LR_GRID_SIZES[0] &
+                " hands " & $reference & ", " & $LR_GRID_SIZES[s] & " hands " &
+                $other & ", a gap of " & $(gap * 100.0) & "% against " &
+                $(sample.bound * 100.0) & "%"
+
+suite "The Pull Is The Pair Unit Spread By The Green's Function":
+  test "at the longest reach the impulse 240 from a clump is A U(R) M / (2 pi r) at every radius":
+    # MEASURED: the static solve at reach 4000, 240 from the centre, seeds
+    # 42/7/1001, +x and +y, both mesh sizes. The miss reads 0.60-0.72% along
+    # +x and 4.13-4.31% along +y (mean 2.449%); the bound is the mean plus the
+    # largest reading's distance from it. Under the cell-area convention the
+    # miss is about 1825x at radius 50.
+    const offset = 240.0
+    const bound = 0.0431
+    for seed in GATE_SEEDS:
+      let clump = seededClump(seed)
+      for s, size in LR_GRID_SIZES:
+        let potential = solveOneSpecies(clump.density[s], size.w, size.h,
+          TEST_WORLD_W, TEST_WORLD_H, LONG_RANGE_REACH_MAX)
+        for radius in [INTERACTION_RADIUS_MIN.float, 50.0,
+            INTERACTION_RADIUS_MAX.float]:
+          let expected = MATRIX_MAX_VALUE * designPairUnit(radius) *
+            CLUMP_PARTICLES.float / (2.0 * PI * offset)
+          for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)]:
+            let actual = impulseAt(potential, size, radius,
+              clump.cx + dx * offset, clump.cy + dy * offset)
+            let miss = abs(actual / expected - 1.0)
+            check miss <= bound
+            if miss > bound:
+              checkpoint "seed " & $seed & ", " & $size & ", radius " &
+                $radius & " along (" & $dx & ", " & $dy & "): solved " &
+                $actual & " against " & $expected & ", a miss of " &
+                $(miss * 100.0) & "% against " & $(bound * 100.0) & "%"
+
+suite "One Long-Range Full Effect Holds At Every Radius":
+  test "the gain at which strength 1 matches the pair's edge impulse is one value at radii 10, 50 and 150":
+    # CONTRACT: MAX_PARTICLES in one disc at the onset density pulls a particle
+    # one interaction radius past its edge as hard as the pair force at gain 5
+    # holds that edge. Both grow as R^2 under U(R), so the gain loses R; the
+    # bound is float rounding.
+    const bound = 1e-9
+    const radii = [INTERACTION_RADIUS_MIN.float, 50.0,
+                   INTERACTION_RADIUS_MAX.float]
+    var gains: seq[float]
+    for radius in radii:
+      gains.add longRangeFullEffectGain(UnitConfig(
+        particleCount: MAX_PARTICLES, interactionRadius: radius,
+        worldWidth: TEST_WORLD_W, worldHeight: TEST_WORLD_H,
+        onsetRatio: CROWD_ONSET_RATIO, attraction: MATRIX_MAX_VALUE,
+        pairGain: FORCE_STRENGTH_MAX, repulsionEnd: 0.5, attractionPeak: 0.75,
+        longRangeGrid: LR_GRID_SIZES[^1]))
+    require gains[0] > 0.0
+    for i in 1 ..< gains.len:
+      let spread = abs(gains[i] / gains[0] - 1.0)
+      check spread <= bound
+      if spread > bound:
+        checkpoint "radius " & $radii[0] & " derives gain " & $gains[0] &
+          ", radius " & $radii[i] & " derives " & $gains[i] & ", apart by " &
+          $(spread * 100.0) & "%"

@@ -144,6 +144,11 @@ func lrCellArea*(gridW, gridH: int; worldW, worldH: float): float =
   ## World area one mesh cell covers.
   (worldW / float(gridW)) * (worldH / float(gridH))
 
+func lrForceScale*(strength, radius, onsetRatio: float; gridW, gridH: int;
+                   worldW, worldH: float): float =
+  ## The value written to LR_FORCE_SCALE.
+  strength
+
 func lrDiscPull*(strength, entry, cellArea, mass, distance: float): float =
   ## The pull the mesh hands a particle `distance` from the centre of a uniform
   ## disc of `mass` particles, outside the disc: `strength * entry * cellArea *

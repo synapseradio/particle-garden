@@ -208,6 +208,14 @@ func unitImpulse*(id: UnitFnId; cfg: UnitConfig): float =
     # depositFrameScale holds the rate to.
     abs(speciesDeposit(cfg.depositGain, cfg.secretion))
 
+func longRangeFullEffectGain*(cfg: UnitConfig): float =
+  ## g_LR: the long-range gain at which strength 1 pulls a particle one
+  ## interaction radius past the reference colony's edge as hard as the pair
+  ## force at `cfg.pairGain` holds that edge (F_LR = F_edge).
+  var atUnitStrength = cfg
+  atUnitStrength.longRangeStrength = 1.0
+  unitImpulse(ufSpecies, cfg) / unitImpulse(ufLongRange, atUnitStrength)
+
 # ==============================================================================
 # THE STEPPED ORACLE WORLD
 # ==============================================================================

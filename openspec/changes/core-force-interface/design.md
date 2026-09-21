@@ -154,15 +154,19 @@ Rejected:
 
 Evidence (**proven** for long range): a static mesh solve (`lr_unit_probe.nim`) agrees with the
 long-range formula to 4% at 60 from the clump centre and reach 600 (55.4 by formula against 53.1
-solved), and to 0.7% at 240 and reach 4000. The fluid, scent, mouse and blast functions are
+solved), and within 4.31% at 240 and reach 4000: the gate bound over a clump placed by seeds
+42/7/1001, sampled along +x and +y on both mesh sizes, which reads 0.60–0.72% along +x and
+4.13–4.31% along +y (mean 2.449%). The fluid, scent, mouse and blast functions are
 **designed**, not exercised.
 
 ### C2 (was D2). The long-range pull is measured in a radius-scaled pair unit, not in cell area
 
 Today the impulse is `s · A · cellArea · M/(2πr)` inside the reach. Around a 1 000-particle clump the
-coarse mesh pulls 4.006× harder at 240 from the centre and 4.004× harder at 600
-(`lr_unit_probe.nim`). At 60 the ratio is 3.19, so mesh independence holds only a few cell widths
-out. `cellArea` becomes `U(R) = u0 · R² · (a + R) / a²`, where `R` is the live interaction radius and
+coarse mesh pulls 4.0061–4.0104× harder at 240 from the centre and 4.0039–4.0050× harder at 600,
+over a clump placed by seeds 42/7/1001 and sampled along +x and +y at reach 600. Under the unit the
+mesh-to-mesh gap is therefore 0.153–0.261% at 240 (mean 0.212%, gate bound 0.271%) and
+0.098–0.126% at 600 (mean 0.106%, gate bound 0.126%). At 60 the ratio is 3.19
+(`lr_unit_probe.nim`), so mesh independence holds only a few cell widths out. `cellArea` becomes `U(R) = u0 · R² · (a + R) / a²`, where `R` is the live interaction radius and
 `a` the reference colony's radius. The kernel shape, `G(0) = 0`, the unit-charge deposit and the
 fixed point stay. The one site is the value written to `LR_FORCE_SCALE`
 (`src/webgpu_compute.nim:1125-1126`). A `long_range_core` function that the test also calls computes
@@ -508,9 +512,9 @@ values and not on compilation.
 Tests, with coupling-balance's numbering kept and the new suite names from the specs:
 
 1. `test_long_range_core` "The Pull Does Not Depend On Mesh Size". The gap is within the static
-   solve's: 0.15% at 240 and 0.10% at 600. Catches `cellArea` left in (300%).
+   solve's gate bounds: 0.271% at 240 and 0.126% at 600 (C2). Catches `cellArea` left in (300%).
 2. Same file, "The Pull Is The Pair Unit Spread By The Green's Function". At reach 4000 and 240 from
-   the centre, within 0.7%, at radii 10, 50 and 150. Catches `cellArea` (1 825×), `u0·R` (0.083 at
+   the centre, within the gate bound 4.31% (C1), at radii 10, 50 and 150. Catches `cellArea` (1 825×), `u0·R` (0.083 at
    radius 50), `a + R` dropped (1.21 at 150), and a `2π` slip.
    - 2b. **Changed:** "One Long-Range Full Effect Holds At Every Radius". `F_LR`'s derivation returns
      the same value at radii 10, 50 and 150. Catches 18.4× and the slipped form's 1.47×.
