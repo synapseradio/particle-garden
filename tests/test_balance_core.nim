@@ -780,6 +780,25 @@ suite "The Fluid Mirror Steps As The Oracle Does":
       retention = 0.9'f32).verdicts
     checkNoVerdicts(verdicts)
 
+  test "the summed velocity delta rejoins both words, so a fluid step sums to its quantization":
+    # Each pair's integer is negated for the other side, so the sum departs
+    # from zero only by the truncation at each encode and the f32 rounding of
+    # each own register.
+    var world = stirredWorld(fluidOnlyParams(shippedFluid()), FLUID_TEST_SEED)
+    let expected = expectFluid(world)
+    stepFrame(world, 1.0, 1)
+    let scale = PRODUCTION_TUNING.fixedPointScale
+    var allowed = (x: 0.0, y: 0.0)
+    for i in 0 ..< expected.pairs.len:
+      allowed.x += expected.pairs[i].float + 2.0 +
+        abs(expected.ownRegister[i].x) * scale * F32_ROUNDING
+      allowed.y += expected.pairs[i].float + 2.0 +
+        abs(expected.ownRegister[i].y) * scale * F32_ROUNDING
+    let summed = summedVelocityDelta(world)
+    checkpoint("summed " & $summed & " quanta, allowed " & $allowed)
+    check abs(summed.x) <= allowed.x
+    check abs(summed.y) <= allowed.y
+
   test "at strength zero the pass is skipped and no velocity moves":
     var fluid = shippedFluid()
     fluid.strength = 0.0

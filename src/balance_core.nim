@@ -726,9 +726,13 @@ func meanWeightedNeighbours*(world: OracleWorld): float =
 
 func summedVelocityDelta*(world: OracleWorld): tuple[x, y: float] =
   ## The last substep's velocity delta summed over every particle, per
-  ## component, in fixed-point quanta. At force multiplier zero with no body
-  ## live, the only writer left is the world pressure, whose pair integer is
-  ## negated for the other side, so the sum reads exactly zero.
+  ## component, in fixed-point quanta, with the coarse word rejoined to the
+  ## fine. At force multiplier zero with no body live and no fluid, the only
+  ## writer left is the world pressure, whose pair integer is negated for the
+  ## other side, so the sum reads exactly zero.
+  let coarseUnit = float(1 shl world.params.fluid.coarseShift)
   for i in 0 ..< world.posX.len:
-    result.x += world.deltaFixed[i * 2].float
-    result.y += world.deltaFixed[i * 2 + 1].float
+    result.x += world.deltaFixed[i * 2].float +
+      world.coarseFixed[i * 2].float * coarseUnit
+    result.y += world.deltaFixed[i * 2 + 1].float +
+      world.coarseFixed[i * 2 + 1].float * coarseUnit
