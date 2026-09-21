@@ -1418,6 +1418,105 @@ suite "A Limited Step Cannot Overshoot":
     check coupledExceeded
 
 # ==============================================================================
+# THE STEP LIMIT REACHES INTEGRATE
+# ==============================================================================
+# T5a-T5d hold stepLimit's own formula. This holds that stepFrame applies the
+# factor stepLimit computes, through the oracle's real integrate path
+# (integrateParticles -> integrateVelocity), rather than calling
+# integrateVelocity directly with the delta already folded in, as T6 does.
+
+const
+  LIMIT_REACH_PARTICLES = 31
+  LIMIT_REACH_RADIUS = 50.0'f32
+  LIMIT_REACH_WORLD = 400.0'f32
+  LIMIT_REACH_ONSET = 0.05'f32
+  LIMIT_REACH_UNLIMITED_BOUND = 1.0e6'f32
+    ## A theta this large never binds `stepLimit`, so this copy shows the
+    ## delta the limited copy's `s` is meant to scale.
+
+func limitReachParams(bound: float32): OracleParams =
+  OracleParams(
+    interactionRadius: LIMIT_REACH_RADIUS,
+    worldWidth: LIMIT_REACH_WORLD, worldHeight: LIMIT_REACH_WORLD,
+    minDistanceSq: PRODUCTION_TUNING.minDistanceSq.float32,
+    forceModel: ofmPolynomial,
+    forceMultiplier: 0.0'f32,
+    repulsionEnd: 0.5'f32, attractionPeak: 0.75'f32,
+    crowdingStrength: 0.0'f32,
+    pressureOnset: LIMIT_REACH_ONSET,
+    pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
+    pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+    pressureStepBound: bound,
+    stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
+    stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
+    friction: 1.0'f32,
+    maxVelocity: UNCAPPED_VELOCITY,
+    fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
+    crowdDensityScale: sphDensityFixedPointScale(MAX_PARTICLES).float32,
+    densitySmoothFactor: PRODUCTION_TUNING.densitySmoothFactor.float32,
+    bodiesStrength: 0.0,
+    fluid: OracleFluidParams(strength: 0.0, coarseShift: VELOCITY_COARSE_SHIFT))
+
+func limitReachWorld(bound: float32): OracleWorld =
+  ## Particle 0 at the world's own place, a 6x5 clump of 30 particles beyond
+  ## the species repulsion lobe (`0.5 * radius`) so only the pressure term
+  ## acts on particle 0. `forceMultiplier` is 0 as a second guard against the
+  ## species term reaching this test.
+  result = initOracleWorld(limitReachParams(bound), LIMIT_REACH_PARTICLES, 1,
+    @[0.0'f32], 1)
+  result.posX[0] = 100.0'f32
+  result.posY[0] = 100.0'f32
+  var i = 1
+  for row in 0 ..< 6:
+    for col in 0 ..< 5:
+      result.posX[i] = 130.0'f32 + row.float32 * 0.4'f32 - 1.0'f32
+      result.posY[i] = 100.0'f32 + col.float32 * 0.4'f32 - 0.8'f32
+      inc i
+
+func stiffnessSumFromWorld(world: OracleWorld; i: int): float32 =
+  ## D_i, replicated from sweepPairs's own accumulation
+  ## (src/balance_core.nim:514-520), since `world.stiffnessFixed` is private
+  ## to that module.
+  let p = world.params
+  let halfW = p.worldWidth * 0.5'f32
+  let halfH = p.worldHeight * 0.5'f32
+  let invRadius = 1.0'f32 / p.interactionRadius
+  let radiusSq = p.interactionRadius * p.interactionRadius
+  for j in 0 ..< world.posX.len:
+    if j == i: continue
+    let dx = wrapDelta(world.posX[j] - world.posX[i], p.worldWidth, halfW)
+    let dy = wrapDelta(world.posY[j] - world.posY[i], p.worldHeight, halfH)
+    let distSq = dx * dx + dy * dy
+    if distSq <= 0.0'f32 or distSq >= radiusSq: continue
+    result += pairStiffnessSlope(
+      crowdPressure(world.crowdDensity[i], p.pressureOnset),
+      crowdPressure(world.crowdDensity[j], p.pressureOnset),
+      p.pressureStiffness, p.pressureImpulseMax, invRadius)
+
+suite "A Limited Step Reaches Integrate":
+
+  test "a particle past the bound receives exactly s times the unlimited delta through stepFrame":
+    var limited = limitReachWorld(PRESSURE_STEP_BOUND.float32)
+    var unlimited = limitReachWorld(LIMIT_REACH_UNLIMITED_BOUND)
+    # Frame 1: crowdDensity starts at 0, so D is 0 and s is 1 in both copies
+    # alike; this only warms crowdDensity for frame 2's sweepPairs to read.
+    stepFrame(limited, 1.0, 1)
+    stepFrame(unlimited, 1.0, 1)
+    let d = stiffnessSumFromWorld(limited, 0)
+    let expectedS = stepLimit(1.0'f32, d, PRESSURE_STEP_BOUND.float32)
+    checkpoint "D " & $d & ", expected s " & $expectedS
+    check expectedS < 1.0'f32
+    stepFrame(limited, 1.0, 1)
+    stepFrame(unlimited, 1.0, 1)
+    checkpoint "limited (" & $limited.velX[0] & ", " & $limited.velY[0] &
+      "), unlimited (" & $unlimited.velX[0] & ", " & $unlimited.velY[0] & ")"
+    check abs(unlimited.velX[0]) > 1.0e-6'f32
+    check abs(limited.velX[0] - expectedS * unlimited.velX[0]) <
+      1.0e-3'f32 * abs(unlimited.velX[0])
+    check abs(limited.velY[0] - expectedS * unlimited.velY[0]) <
+      1.0e-3'f32 * max(abs(unlimited.velY[0]), 1.0'f32)
+
+# ==============================================================================
 # T7: A BALANCE HOLDS AT EVERY FRAME FACTOR (crowding-redesign design §8, "buys")
 # ==============================================================================
 # Integration, not calibration: a small enough world to run in `just test`,

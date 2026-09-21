@@ -725,8 +725,8 @@ func travelBound(live: LiveValues): float =
 func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
   ## What this rendered frame runs: count = min(max(n_T, n_c), SUBSTEPS_MAX),
   ## the larger of two asks under the ceiling. The frame factor sets no count
-  ## of its own: integrate's step limit (crowding-redesign design §3.4) holds
-  ## every frame factor stable on its own.
+  ## of its own: integrate's step limit holds every frame factor stable on
+  ## its own.
   ##   n_T  = ceil(maxVelocity * ff / T), the travel bound, where T is the
   ##          length travelBound above states
   ##   n_c  = what an acting coupling's own substepNeed asks for

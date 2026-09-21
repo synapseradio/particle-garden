@@ -405,11 +405,12 @@ func integrateVelocity*(velocity: tuple[x, y: float32];
     deltaFixed: tuple[x, y: int32];
     invFixedPointScale, frameFactor, stepLimit, friction, maxVelocity: float32):
     tuple[x, y: float32] =
-  ## integrate.wgsl: the decoded delta scaled by the particle's step limit
-  ## (crowding-redesign design §3.4), friction applied, then the soft cap
-  ## postStepSpeed states for the speed. `stepLimit` is 1 for a particle with
-  ## zero summed stiffness, so this is bit-identical to multiplying by
-  ## `frameFactor` alone in that case.
+  ## integrate.wgsl: the decoded delta scaled by the particle's step limit,
+  ## which holds `frameFactor * 2 * stiffness` under a fixed bound so the
+  ## explicit scheme's one-step map stays stable at every frame factor,
+  ## friction applied, then the soft cap postStepSpeed states for the speed.
+  ## `stepLimit` is 1 for a particle with zero summed stiffness, so this is
+  ## bit-identical to multiplying by `frameFactor` alone in that case.
   var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
     invFixedPointScale, frameFactor) * stepLimit) * friction
   var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
@@ -467,7 +468,7 @@ func worldPressureSum*(pressureThis, pressureOther, stiffness,
     impulseMax: float32): float32 =
   ## A pair's pressure over one reference frame before the proximity weight,
   ## saturated here so the pair's radial slope stays bounded by
-  ## `impulseMax / R` at every distance (crowding-redesign design §3.2).
+  ## `impulseMax / R` at every distance.
   min(stiffness * (pressureThis + pressureOther) *
     FRAME_DT_REFERENCE.float32, impulseMax)
 

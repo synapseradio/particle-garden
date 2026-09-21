@@ -319,8 +319,8 @@ type
     deltaFixed, coarseFixed: seq[int32]
     colonyFixed, crowdFixed, sphFixed: seq[int32]
     stiffnessFixed, stiffnessCoarseFixed: seq[int32]
-      ## A particle's summed pair stiffness `D` (crowding-redesign design
-      ## §3.4), one scalar per particle rather than one per axis.
+      ## A particle's summed pair stiffness `D`, one scalar per particle
+      ## rather than one per axis.
     bodyAccumulators: seq[BodyAccumulator]
     rngState: uint64
 
@@ -700,19 +700,20 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     world.crowdDensity[i] = world.crowdDensity[i] * carried +
       float32(world.crowdFixed[i]) * invCrowd * arriving
     world.sphDensity[i] = float32(world.sphFixed[i]) * invSph
-    let decodedX = decodeVelocityWords(
-      (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
-      invFixed, subFrameFactor, p.fluid.coarseShift)
-    let decodedY = decodeVelocityWords(
-      (fine: world.deltaFixed[i * 2 + 1], coarse: world.coarseFixed[i * 2 + 1]),
-      invFixed, subFrameFactor, p.fluid.coarseShift)
-    # integrateVelocity decodes one word, so the two are rejoined above and a
-    # zero word passed, which adds exactly nothing.
-    let joined = (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY)
     let stiffness = decodeStiffness(
       (fine: world.stiffnessFixed[i], coarse: world.stiffnessCoarseFixed[i]),
       invStiffnessFixed, p.stiffnessCoarseShift)
     let limit = stepLimit(subFrameFactor, stiffness, p.pressureStepBound)
+    let decodedX = decodeVelocityWords(
+      (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
+      invFixed, subFrameFactor, p.fluid.coarseShift) * limit
+    let decodedY = decodeVelocityWords(
+      (fine: world.deltaFixed[i * 2 + 1], coarse: world.coarseFixed[i * 2 + 1]),
+      invFixed, subFrameFactor, p.fluid.coarseShift) * limit
+    # integrateVelocity decodes one word, so the two are rejoined above,
+    # already scaled by the step limit, and a zero word passed, which adds
+    # exactly nothing.
+    let joined = (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY)
     # Two diagnostic variants, never the shipped integrate: the per-step cap
     # of before the per-reference-frame one, and friction as retention^ff.
     let retention = when defined(calibrateFrictionPerFrame):
@@ -722,8 +723,10 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
         perStepCapVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
           subFrameFactor, retention, p.maxVelocity)
       else:
+        # The limit already scaled `joined` above; the zero word here leaves
+        # this second application acting on nothing.
         integrateVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
-          subFrameFactor, limit, retention, p.maxVelocity)
+          subFrameFactor, 1.0'f32, retention, p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
     world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)
