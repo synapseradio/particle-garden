@@ -195,8 +195,8 @@ Conventions every task below uses:
 ## 6. The long-range pull in the pair unit
 
 - [x] 6.1 **Red.** Add three suites to `tests/test_long_range_core.nim`, each with its tolerance and measured source beside it:
-  - "The Pull Does Not Depend On Mesh Size": every size in `LR_GRID_SIZES`, sampled 240 and 600 from the clump's centre along +x and +y, clump placed by seeds 42/7/1001, within the gate bounds 0.271% and 0.126% (design C2)
-  - "The Pull Is The Pair Unit Spread By The Green's Function": reach `LONG_RANGE_REACH_MAX`, sampled 240 from the centre along +x and +y on every size, same seeds, radii 10, 50 and 150, within the gate bound 4.31% (design C1)
+  - "The Pull Does Not Depend On Mesh Size": every size in `LR_GRID_SIZES`, sampled 240 and 600 from the clump's centre along +x and +y, clump placed by seeds 42/7/1001, within the gate bounds per direction, 0.1977% (+x) and 0.2607% (+y) at 240 and 0.1063% and 0.1258% at 600 (design C2)
+  - "The Pull Is The Pair Unit Spread By The Green's Function": reach `LONG_RANGE_REACH_MAX`, sampled 240 from the centre along +x and +y on every size, same seeds, radii 10, 50 and 150, within the gate bounds per direction, 0.7466% (+x) and 4.320% (+y) (design C1)
   - "One Long-Range Full Effect Holds At Every Radius": `F_LR`'s derivation in `src/balance_core.nim` returns one value at radii 10, 50 and 150
 
   Verify all three fail on today's code: the 4.006–4.010 mesh ratio, the `cellArea` factor, and a full effect moving with the radius.

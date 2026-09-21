@@ -844,15 +844,21 @@ func impulseAt(potential: seq[float]; size: tuple[w, h: int];
 
 suite "The Pull Does Not Depend On Mesh Size":
   test "every declared mesh size hands the same impulse 240 and 600 from a clump's centre":
-    # MEASURED: the static solve at reach 600, seeds 42/7/1001, sampled along
-    # +x and +y. The gap reads 0.153-0.261% at 240 (mean 0.212%) and
-    # 0.098-0.126% at 600 (mean 0.106%); each bound is the mean plus the
-    # largest reading's distance from it. Closer in the gap grows (3.19x the
-    # cell-area ratio at 60), since the clump spans few cells.
+    # MEASURED: the static solve at reach 600, seeds 42/7/1001. Each bound is
+    # the mean plus the largest reading's distance from it, per direction:
+    #   240 +x: 0.1527-0.1977%, mean 0.1680%, bound 0.1977%
+    #   240 +y: 0.2514-0.2607%, mean 0.2555%, bound 0.2607%
+    #   600 +x: 0.0976-0.1062%, mean 0.1005%, bound 0.1063%
+    #   600 +y: 0.1038-0.1257%, mean 0.1114%, bound 0.1258%
+    # Closer in the gap grows (3.19x the cell-area ratio at 60), since the
+    # clump spans few cells.
     const radius = 50.0
     const reach = 600.0
-    const samples = [(offset: 240.0, bound: 0.00271),
-                     (offset: 600.0, bound: 0.00126)]
+    const samples = [
+      (offset: 240.0, dx: 1.0, dy: 0.0, bound: 0.001977),
+      (offset: 240.0, dx: 0.0, dy: 1.0, bound: 0.002607),
+      (offset: 600.0, dx: 1.0, dy: 0.0, bound: 0.001063),
+      (offset: 600.0, dx: 0.0, dy: 1.0, bound: 0.001258)]
     for seed in GATE_SEEDS:
       let clump = seededClump(seed)
       var potentials: seq[seq[float]]
@@ -860,33 +866,35 @@ suite "The Pull Does Not Depend On Mesh Size":
         potentials.add solveOneSpecies(clump.density[s], size.w, size.h,
           TEST_WORLD_W, TEST_WORLD_H, reach)
       for sample in samples:
-        for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)]:
-          let px = clump.cx + dx * sample.offset
-          let py = clump.cy + dy * sample.offset
-          let reference = impulseAt(potentials[0], LR_GRID_SIZES[0], radius,
+        let px = clump.cx + sample.dx * sample.offset
+        let py = clump.cy + sample.dy * sample.offset
+        let reference = impulseAt(potentials[0], LR_GRID_SIZES[0], radius,
+          px, py)
+        require reference > 0.0
+        for s in 1 ..< LR_GRID_SIZES.len:
+          let other = impulseAt(potentials[s], LR_GRID_SIZES[s], radius,
             px, py)
-          require reference > 0.0
-          for s in 1 ..< LR_GRID_SIZES.len:
-            let other = impulseAt(potentials[s], LR_GRID_SIZES[s], radius,
-              px, py)
-            let gap = abs(reference / other - 1.0)
-            check gap <= sample.bound
-            if gap > sample.bound:
-              checkpoint "seed " & $seed & ", " & $sample.offset &
-                " along (" & $dx & ", " & $dy & "): " & $LR_GRID_SIZES[0] &
-                " hands " & $reference & ", " & $LR_GRID_SIZES[s] & " hands " &
-                $other & ", a gap of " & $(gap * 100.0) & "% against " &
-                $(sample.bound * 100.0) & "%"
+          let gap = abs(reference / other - 1.0)
+          check gap <= sample.bound
+          if gap > sample.bound:
+            checkpoint "seed " & $seed & ", " & $sample.offset & " along (" &
+              $sample.dx & ", " & $sample.dy & "): " & $LR_GRID_SIZES[0] &
+              " hands " & $reference & ", " & $LR_GRID_SIZES[s] & " hands " &
+              $other & ", a gap of " & $(gap * 100.0) & "% against " &
+              $(sample.bound * 100.0) & "%"
 
 suite "The Pull Is The Pair Unit Spread By The Green's Function":
   test "at the longest reach the impulse 240 from a clump is A U(R) M / (2 pi r) at every radius":
     # MEASURED: the static solve at reach 4000, 240 from the centre, seeds
-    # 42/7/1001, +x and +y, both mesh sizes. The miss reads 0.60-0.72% along
-    # +x and 4.13-4.31% along +y (mean 2.449%); the bound is the mean plus the
-    # largest reading's distance from it. Under the cell-area convention the
-    # miss is about 1825x at radius 50.
+    # 42/7/1001, both mesh sizes. Each bound is the mean plus the largest
+    # reading's distance from it, per direction:
+    #   +x: 0.604-0.720%, mean 0.675%, bound 0.7466%
+    #   +y: 4.127-4.309%, mean 4.223%, bound 4.320%
+    # The +y miss runs about 6x the +x miss on both sizes; the cause is
+    # untested. Under the cell-area convention the miss is about 1825x.
     const offset = 240.0
-    const bound = 0.0431
+    const directions = [(dx: 1.0, dy: 0.0, bound: 0.007466),
+                        (dx: 0.0, dy: 1.0, bound: 0.04320)]
     for seed in GATE_SEEDS:
       let clump = seededClump(seed)
       for s, size in LR_GRID_SIZES:
@@ -896,16 +904,16 @@ suite "The Pull Is The Pair Unit Spread By The Green's Function":
             INTERACTION_RADIUS_MAX.float]:
           let expected = MATRIX_MAX_VALUE * designPairUnit(radius) *
             CLUMP_PARTICLES.float / (2.0 * PI * offset)
-          for (dx, dy) in [(1.0, 0.0), (0.0, 1.0)]:
+          for d in directions:
             let actual = impulseAt(potential, size, radius,
-              clump.cx + dx * offset, clump.cy + dy * offset)
+              clump.cx + d.dx * offset, clump.cy + d.dy * offset)
             let miss = abs(actual / expected - 1.0)
-            check miss <= bound
-            if miss > bound:
+            check miss <= d.bound
+            if miss > d.bound:
               checkpoint "seed " & $seed & ", " & $size & ", radius " &
-                $radius & " along (" & $dx & ", " & $dy & "): solved " &
+                $radius & " along (" & $d.dx & ", " & $d.dy & "): solved " &
                 $actual & " against " & $expected & ", a miss of " &
-                $(miss * 100.0) & "% against " & $(bound * 100.0) & "%"
+                $(miss * 100.0) & "% against " & $(d.bound * 100.0) & "%"
 
 suite "One Long-Range Full Effect Holds At Every Radius":
   test "the gain at which strength 1 matches the pair's edge impulse is one value at radii 10, 50 and 150":

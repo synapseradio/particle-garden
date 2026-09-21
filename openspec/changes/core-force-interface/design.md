@@ -154,9 +154,9 @@ Rejected:
 
 Evidence (**proven** for long range): a static mesh solve (`lr_unit_probe.nim`) agrees with the
 long-range formula to 4% at 60 from the clump centre and reach 600 (55.4 by formula against 53.1
-solved), and within 4.31% at 240 and reach 4000: the gate bound over a clump placed by seeds
-42/7/1001, sampled along +x and +y on both mesh sizes, which reads 0.60–0.72% along +x and
-4.13–4.31% along +y (mean 2.449%). The fluid, scent, mouse and blast functions are
+solved), and at 240 and reach 4000 within the gate bounds over a clump placed by seeds 42/7/1001
+on both mesh sizes, per direction: along +x 0.604–0.720% (mean 0.675%, bound 0.7466%), along +y
+4.127–4.309% (mean 4.223%, bound 4.320%). The fluid, scent, mouse and blast functions are
 **designed**, not exercised.
 
 ### C2 (was D2). The long-range pull is measured in a radius-scaled pair unit, not in cell area
@@ -164,8 +164,10 @@ solved), and within 4.31% at 240 and reach 4000: the gate bound over a clump pla
 Today the impulse is `s · A · cellArea · M/(2πr)` inside the reach. Around a 1 000-particle clump the
 coarse mesh pulls 4.0061–4.0104× harder at 240 from the centre and 4.0039–4.0050× harder at 600,
 over a clump placed by seeds 42/7/1001 and sampled along +x and +y at reach 600. Under the unit the
-mesh-to-mesh gap is therefore 0.153–0.261% at 240 (mean 0.212%, gate bound 0.271%) and
-0.098–0.126% at 600 (mean 0.106%, gate bound 0.126%). At 60 the ratio is 3.19
+mesh-to-mesh gap, with its gate bound per direction, is 0.153–0.198% along +x (mean 0.168%, bound
+0.1977%) and 0.251–0.261% along +y (mean 0.256%, bound 0.2607%) at 240, and 0.098–0.106% along +x
+(mean 0.101%, bound 0.1063%) and 0.104–0.126% along +y (mean 0.111%, bound 0.1258%) at 600. At 60
+the ratio is 3.19
 (`lr_unit_probe.nim`), so mesh independence holds only a few cell widths out. `cellArea` becomes `U(R) = u0 · R² · (a + R) / a²`, where `R` is the live interaction radius and
 `a` the reference colony's radius. The kernel shape, `G(0) = 0`, the unit-charge deposit and the
 fixed point stay. The one site is the value written to `LR_FORCE_SCALE`
@@ -201,6 +203,10 @@ unchanged.
 The diagnosis report's red test "scaling deposits leaves the gradient unchanged" stays rejected,
 because it would hold a contrast potential. Mesh-size independence and the Green's-function formula
 take its place (C10, tests 1 and 2).
+
+**Open finding.** At reach 4000 and 240 from the clump, the Green's-function miss along +y
+(4.127–4.309%) runs about 6× the miss along +x (0.604–0.720%) on both mesh sizes; the cause is
+untested, and the candidates both sizes share are the grids' 2:1 aspect and the world's 16:9 torus.
 
 ### C3 (was D3). The density the pressure reads is measured in the world's own mean
 
@@ -512,9 +518,11 @@ values and not on compilation.
 Tests, with coupling-balance's numbering kept and the new suite names from the specs:
 
 1. `test_long_range_core` "The Pull Does Not Depend On Mesh Size". The gap is within the static
-   solve's gate bounds: 0.271% at 240 and 0.126% at 600 (C2). Catches `cellArea` left in (300%).
+   solve's gate bounds per direction (C2): 0.1977% along +x and 0.2607% along +y at 240, 0.1063% and
+   0.1258% at 600. Catches `cellArea` left in (300%).
 2. Same file, "The Pull Is The Pair Unit Spread By The Green's Function". At reach 4000 and 240 from
-   the centre, within the gate bound 4.31% (C1), at radii 10, 50 and 150. Catches `cellArea` (1 825×), `u0·R` (0.083 at
+   the centre, within the gate bounds per direction (C1), 0.7466% along +x and 4.320% along +y, at
+   radii 10, 50 and 150. Catches `cellArea` (1 825×), `u0·R` (0.083 at
    radius 50), `a + R` dropped (1.21 at 150), and a `2π` slip.
    - 2b. **Changed:** "One Long-Range Full Effect Holds At Every Radius". `F_LR`'s derivation returns
      the same value at radii 10, 50 and 150. Catches 18.4× and the slipped form's 1.47×.
