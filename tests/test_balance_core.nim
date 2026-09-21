@@ -1418,6 +1418,85 @@ suite "A Limited Step Cannot Overshoot":
     check coupledExceeded
 
 # ==============================================================================
+# T7: A BALANCE HOLDS AT EVERY FRAME FACTOR (crowding-redesign design §8, "buys")
+# ==============================================================================
+# Integration, not calibration: a small enough world to run in `just test`,
+# on the design's own reference world (radius 50, one self-attracting species
+# at MATRIX_MAX_VALUE) held down to 2 000 particles, one body live for the
+# whole run. What C4b keeps ("a static balance is unchanged by the limit")
+# means the body compresses the crowd against it to the same peak, whatever
+# the frame factor: the ratio of the two runs' final peak crowd density,
+# meaned over the three gate seeds, does not exceed 1 (specs/coupling-
+# contract/spec.md:183-187's convention, on peak density rather than motion).
+
+const
+  T7_PARTICLES = 2_000
+  T7_SEEDS = [42, 7, 1001]
+  T7_STEPS = 900
+  T7_HELD_FF = 30.0
+  T7_FREE_FF = 0.25
+
+func t7Params(): OracleParams =
+  let shipped = defaultSettings()
+  var cfg = referenceConfig()
+  cfg.particleCount = T7_PARTICLES
+  OracleParams(
+    interactionRadius: cfg.interactionRadius.float32,
+    worldWidth: cfg.worldWidth.float32, worldHeight: cfg.worldHeight.float32,
+    minDistanceSq: PRODUCTION_TUNING.minDistanceSq.float32,
+    forceModel: ofmPolynomial,
+    forceMultiplier: shipped.forceStrength.float32,
+    repulsionEnd: shipped.repulsionEnd.float32,
+    attractionPeak: shipped.attractionPeak.float32,
+    expAlpha: shipped.expRepulsionAlpha.float32,
+    expBeta: shipped.expAttractionBeta.float32,
+    crowdingStrength: 0.0'f32,
+    pressureOnset: crowdOnsetDensity(cfg).float32,
+    pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
+    pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+    pressureStepBound: PRESSURE_STEP_BOUND.float32,
+    stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
+    stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
+    friction: (1.0 - shipped.friction).float32,
+    maxVelocity: shipped.maxVelocity.float32,
+    fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
+    crowdDensityScale: sphDensityFixedPointScale(MAX_PARTICLES).float32,
+    densitySmoothFactor: PRODUCTION_TUNING.densitySmoothFactor.float32,
+    bodiesStrength: BODIES_DEFAULT_STRENGTH,
+    fluid: OracleFluidParams(strength: 0.0, coarseShift: VELOCITY_COARSE_SHIFT))
+
+func t7Body(): Body =
+  let masses = bodyInverseMasses(BODY_DEFAULT_RADIUS, 1.0)
+  Body(centerX: BODY_WORLD_W * 0.5, centerY: BODY_WORLD_H * 0.5,
+    radius: BODY_DEFAULT_RADIUS, anisotropy: 1.0,
+    bandWidth: BODY_DEFAULT_BAND,
+    proximity: BODY_PROXIMITY_MAX, enclosure: BODY_ENCLOSURE_MAX,
+    invMass: masses.invMass, invInertia: masses.invInertia)
+
+func t7PeakDensity(frameFactor: float; seed: int): float =
+  var world = initOracleWorld(t7Params(), T7_PARTICLES, 1,
+    @[MATRIX_MAX_VALUE.float32], seed)
+  world.bodies = @[t7Body()]
+  world.bodyEnvelopes = @[1.0]
+  for _ in 0 ..< T7_STEPS:
+    stepFrame(world, frameFactor, 1)
+  peakCrowdDensity(world)
+
+suite "A Balance Holds At Every Frame Factor":
+
+  test "a held crowd settles to the same peak density at ff 30 as at ff 0.25 (T7)":
+    var ratios: seq[float]
+    for seed in T7_SEEDS:
+      let held = t7PeakDensity(T7_HELD_FF, seed)
+      let free = t7PeakDensity(T7_FREE_FF, seed)
+      ratios.add held / free
+    var meanRatio = 0.0
+    for ratio in ratios: meanRatio += ratio
+    meanRatio /= ratios.len.float
+    checkpoint "peak-density ratios by seed: " & $ratios
+    check meanRatio <= 1.0
+
+# ==============================================================================
 # THE CALIBRATION ARMS
 # ==============================================================================
 # Each arm steps the oracle world at 128 000 particles for hundreds of frames on
