@@ -187,10 +187,10 @@ const
     ## one, both lower bounds on the settled cost (docs/perf-report.md).
   FF_STABLE* = 12.0
     ## The largest frame factor one substep carries before the count grows.
-    ## PROVISIONAL: no measurement has been taken of where an explicit step
-    ## stops holding. The longest frame the app delivers is 30 reference frames
-    ## (src/app.nim caps the raw delta at 0.05 s and TIME_SCALE_MAX multiplies
-    ## it), and ceil(30 / 12) is SUBSTEPS_MAX.
+    ## PROVISIONAL, and the frame-factor path is open: G1.5 at 128 000
+    ## particles, K 540, shipped friction, bisected it to 1, every ff from 2 to
+    ## 30 warmer than ff 1 (scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md).
+    ## Friction acts once per step, the condition that run was measured under.
   PARTICLE_SIZE_MIN* = 1
   PARTICLE_SIZE_MAX* = 8
   PARTICLE_VISIBLE_RADIUS_FLOOR_PX* = 0.5
@@ -673,20 +673,20 @@ const
   CROWD_ONSET_RATIO* = 6.3
     ## x_on: the crowd density the pressure starts at, in multiples of the
     ## world's uniform crowd density.
-    ## PROVISIONAL. It rests on settled worlds at 16 000 and 128 000 particles
-    ## and radii 50 and 100, whose peaks spread 60x in absolute crowd density
-    ## yet sit in one band of this ratio: 2.2-6.6 for mixed matrices and
-    ## 9.7-11.3 for a self-attracting species. 6.3 is the bottom of the
-    ## self-attracting band on 3 seeds. The calibration that settles it sweeps
-    ## 100 to 128 000 particles and radii 10 to 150 on the recorded seeds and
-    ## records the band's floor past the contact floor.
+    ## The user's placement. G1.1 (128 000 particles, radius 50, polynomial,
+    ## seeds 42/7/1001, species force only) put it below every one-species
+    ## settle (p99.9 x >= 10.56) and above every four-species self-only settle
+    ## (<= 3.34). Other counts, radii, species counts and the exponential model
+    ## are unmeasured.
   WORLD_PRESSURE_STIFFNESS* = 540.0
-    ## K: the pair impulse's stiffness, fixed at every live value.
-    ## PROVISIONAL. It rests on a 128 000-particle trade on 3 seeds: at 540 a
-    ## friction-0 world settles 1.163-1.175 times as warm as the same seed
-    ## without the term and relaxes fully after a hold, where 1728 settles
-    ## 1.360-1.393 as warm. The calibration that settles it re-derives that
-    ## ratio's bound on the recorded seeds.
+    ## K: the pair impulse's stiffness, fixed at every live value. The user's
+    ## choice, confirmed by G1.2 at 128 000 particles on seeds 42/7/1001:
+    ## friction-0 L 1.1483-1.1613 at 540, and a mean 1.3431 at 1728 exceeding
+    ## WORLD_PRESSURE_SETTLE_BOUND.
+  WORLD_PRESSURE_SETTLE_BOUND* = 1.1613
+    ## B_L: the bound on L, a self-attracting world's friction-0 late-window
+    ## speed with the term over the same seed's without it. G1.2's mean 1.1527
+    ## plus its largest seed distance 0.0085, at 128 000 and radius 50.
   WORLD_PRESSURE_IMPULSE_MAX* = float(PRESSURE_COARSE_MAX *
     (1 shl VELOCITY_COARSE_SHIFT)) / VELOCITY_FIXED_POINT_SCALE
     ## q_max as a velocity per reference frame, 706.9: the coarse word's

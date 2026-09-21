@@ -1133,11 +1133,11 @@ when defined(calibrateBalance):
       scaled(900) - 1]
       ## The late window every settle statistic is read on: 749, 799, 849 and
       ## 899 in the recipe.
-    SETTLE_BOUND = 1.177
-      ## PROVISIONAL. B_L, the bound on the friction-zero settle statistic.
-    FAR_SPEED_MARGIN = 0.10
-      ## PROVISIONAL. How much faster the crowd beyond a body's reach may run
-      ## while the body holds, as a fraction of the same seed's no-body run.
+    SETTLE_BOUND = WORLD_PRESSURE_SETTLE_BOUND
+    FAR_SPEED_MARGIN = 0.0734
+      ## How much faster the crowd beyond a body's reach may run while the
+      ## stacked bodies hold, as a fraction of the same seed's no-body run: G1.3's
+      ## mean ratio 0.9316 plus its largest seed distance 0.1419, less 1.
     STACK_CLEARANCE = 2.0 * BODY_DEFAULT_BAND
       ## Enclosure falls to exactly zero at twice the band
       ## (src/body_core.nim:376-380), so past this a stacked body hands a
