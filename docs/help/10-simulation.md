@@ -7,8 +7,8 @@ group: simulation
 These controls set how much world there is and how fast it runs.
 
 - `particleCount` — how many particles live in the world. Committing a new
-  count rebuilds the population, so expect a fresh start rather than a
-  resized crowd.
+  count resizes the population in place, so the world keeps running rather
+  than starting fresh.
   Interacts with: every force's cost (more particles, more work); Secretion
   Rate (each particle deposits); Long Range (clusters cost more when
   crowded).
