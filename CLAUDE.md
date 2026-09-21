@@ -50,22 +50,24 @@ beside a constant, one or two lines satisfy it.
   killed, and exits 1 when the port is taken.
 - For any work that interacts with the app in a browser, use `./main --serve`, never bare `./main`
   or `just be`. Bare `./main` exits with code 0 when no browser attaches within webui's startup
-  wait, and it opens an extensionless Chromium profile that Browser MCP cannot reach.
-- In-app verification runs in this order:
-  1. Confirm the Browser MCP tools are present and connected without errors. If they are not, ask
-     the user to start Chrome and connect Browser MCP, and start nothing until they confirm.
+  wait, and it opens an extensionless Chromium profile that Claude in Chrome cannot reach.
+- In-app verification runs through Claude in Chrome (`mcp__claude-in-chrome__*`), in this order:
+  1. Load the Claude in Chrome tools in one ToolSearch call: `tabs_context_mcp`, `tabs_create_mcp`,
+     `navigate`, `computer`, `read_page`, `find`, `javascript_tool` and `read_console_messages`.
+     Call `tabs_context_mcp`. If the extension does not answer, ask the user to open Chrome and
+     connect Claude in Chrome, and start nothing until they confirm.
   2. Run `just happen`, then `./main --serve` as a persistent background shell (the Bash tool's
-     `run_in_background`, not a trailing `&`), and poll the port for 200.
-  3. Navigate the connected tab to `http://127.0.0.1:8089`. If navigation fails, ask the user to
-     load the URL in that tab. Browser MCP refuses a new-tab page or `about:blank` ("This page
-     cannot be automated"), and a Browser MCP call made before the server answers can return "No
-     connection to browser extension" even with the tab ready.
-  4. Drive the page through Browser MCP. Browser MCP has no script-eval tool, so drive
-     `gardenAPI` through the panel's controls. `browser_get_console_logs` can return nothing while
-     the page logs (`[gpu-profile]` lines every ~5 s); treat an empty read as no read, and ask the
-     user to check the DevTools console before recording that no error occurred.
+     `run_in_background`, not a trailing `&`), and confirm `http://127.0.0.1:8089` answers 200
+     before any browser call.
+  3. Open a new tab at that URL with `tabs_create_mcp`. Never reuse a tab id from another session.
+  4. Drive `window.gardenAPI` through `javascript_tool`, or through the panel's controls. Read the
+     `[gpu-profile]` lines (logged every ~5 s) with `read_console_messages` and the pattern
+     `\[gpu-profile\]`, and GPU validation errors with the pattern `error|validation`. Trigger no
+     alert, confirm or prompt dialog: one blocks every later browser call until the user dismisses
+     it.
   5. Stop the server by killing the port's listener.
-- Never install Playwright or another browser driver to work around a missing connection.
+- Browser MCP (`mcp__browsermcp__*`) is not used. Never install Playwright or another browser
+  driver to work around a missing connection.
 
 ## Help
 

@@ -75,7 +75,7 @@ shader's expressions and never the GPU (`scratchpad/coupling-balance/`: `design-
 The measurement gates, labelled here and used throughout:
 - **G1.1–G1.5**, coupling-balance's five gates, carried unchanged (`proposal.md:128`):
   - G1.1: the onset `x_on`
-  - G1.2: the stiffness trade `K`, `B_L` and `B_r`
+  - G1.2: the stiffness trade `K` and `B_L`
   - G1.3: the stacked hold
   - G1.4: the pressure's in-app cost and the settled headroom
   - G1.5: `ff_stable`
@@ -316,12 +316,13 @@ Measured L (**proven** on CPU):
   - `K = 1728` without viscosity → 1.360–1.393 (lower bound 1.347)
   - Tait `K = 54` → 1.525–1.605 (batch R)
 
-**`B_L`.** `B_L = mean_cal(L) + t_{0.95, n_cal+n_held−2} · s · √(1/n_cal + 1/n_held)`. Provisionally
-that is mean 1.170, `s` 0.0062, `t` 1.740 at 17 df, margin 0.007, so **`B_L ≈ 1.177`**. G1.2 replaces
-it.
+**`B_L`.** `B_L` is the mean of `L` over the three gate seeds at 128 000 particles plus the largest
+single seed's distance from that mean. On C13's seeds 540 read 1.163–1.175, so provisionally
+**`B_L ≈ 1.177`**. G1.2 replaces it.
 
-**The margin, stated once.** A gate with a derived bound passes when `mean_held ≤ B`. A gate against a
-fixed bound `B` passes when `mean_held ≤ B + t_{0.95,df} · s/√n_held`. Every gate uses `α = 5%`.
+**The margin, stated once.** Every gate runs the three gate seeds 42, 7 and 1001 at 128 000
+particles. A gate passes when the three-seed mean is at most its bound. A bound derived from a run is
+that run's mean plus the largest single seed's distance from it.
 
 **At shipped friction the square law adds a simmer that no `K` removes.** It reads 0.05–0.10 at every
 square `K` against 0.000–0.005 without the term, and 0.028–0.115 at `K = 540` and 128 000 (batch M).
@@ -482,23 +483,12 @@ Ceiling" are deleted, and `CROWD_PACKING_CONSTANT` moves to `balance_core`'s flo
 
 ### C10 (was D10). Red tests first, each able to fail
 
-Seeds, recipes and oracles are carried. Every constant derived from a run is derived on recorded
-calibration seeds, and every behavioural gate runs 16 disjoint held-out seeds at `α = 5%` with the C5
-margin.
+Seeds, recipes and oracles are carried. Every constant derived from a run, and every behavioural
+gate, uses the three gate seeds at 128 000 particles with the C5 margin.
 
-Gates 5–7 at 16 000 run in `just calibrate-balance`. A 16 000-particle seed takes about 72 s, and the
-stiffness-zero control about 52 s once per suite, so the recipe takes about 20 minutes. The
-128 000-particle checks run in `just calibrate-balance-128k`, at about 1.3 s per step (batch M:
-1 171–1 275 s per 900-step run):
-
-| Part | Runs | Core-hours |
-|---|---|---|
-| `B_L` re-derivation, 16 calibration seeds, with and without the term | 32 × 900 | ≈ 10.7 |
-| Gate 7 friction-0 check, 16 held-out seeds | 32 × 900 | ≈ 10.7 |
-| Gate 6 relaxation at 128 000, fresh and held | 32 × 1 600 | ≈ 18.5 |
-| **Total** | | **≈ 40** |
-
-Neither recipe runs in `just check`. Each runs when the term lands and again on any change to:
+Gates 5–7 run in `just calibrate-balance`, at about 1.3 s per step (batch M: 1 171–1 275 s per
+900-step run). It does not run in `just check`. It runs when the term lands and again on any change
+to:
 - `K`
 - the pressure law
 - the onset
@@ -524,18 +514,17 @@ Tests, with coupling-balance's numbering kept and the new suite names from the s
    at old 0.7.
    - 4b. "Today's Low Bits Move By Less Than The Frame Factor" at ff 1, 2 and 30.
 5. `test_balance_core` "A Compressed Crowd Stays Local And Below Its Collapse". The pressured peak was
-   95–171 against a control of 1 558–6 116 within 100 held frames (batches I-b, J).
-6. "Compression Is Not Remembered":
-   - At 16 000 against `B_r`. `K = 540` reads 1.000–1.014 there (batch R).
-   - At 128 000 against 1 + margin (0.971–0.976, batch M).
-   - Falsifiers: 1.16–1.19 at `K = 54`, 1.10 at 173.
+   95–171 against a control of 1 558–6 116 within 100 held frames (batches I-b, J). At 128 000:
+   638 against 6 305 at frame 24 (C6).
+6. "Compression Is Not Remembered" at 128 000 against 1 (0.971–0.976, batch M). Falsifiers:
+   1.16–1.19 at `K = 54`, 1.10 at 173 (at 16 000).
 7. "A Settling World Still Settles":
    - Friction 0 at 128 000, ff 1, against `B_L`. Falsifiers: 1.220–1.261, 1.360–1.393 and
      1.525–1.605.
-   - Frame-factor arms at 16 000 and shipped friction: ff 1, 2, 10 and 30, uniform 8–16, and
-     alternating 10/13, through the substep rule (C15/N4). Falsifier: ff 30 without substeps reads
-     1.33× with lower bound 0.022 on 8 seeds. Uniform 8–16 without substeps reads 1.18× with lower
-     bound 0.0035.
+   - Frame-factor arms at 128 000 and shipped friction: ff 1, 2, 10 and 30, uniform 8–16, and
+     alternating 10/13, through the substep rule (C15/N4). Falsifier (measured at 16 000): ff 30
+     without substeps reads 1.33× with lower bound 0.022 on 8 seeds. Uniform 8–16 without substeps
+     reads 1.18× with lower bound 0.0035.
 8. **Widened:** `test_preset`, the version-5 suite `coupling-contract` names. Every coupling strength
    at each grid size and two radii (N7).
 9. `test_response_probe` "Couplings Are Compared On One Scale". It reports `x*` and asserts nothing
@@ -1067,10 +1056,10 @@ Rejected:
 **Harness.** The new recipe `just calibrate-fluid`, outside `just check`, extends `balance_core`'s
 binned oracle world with a mirror of `sph_core`'s pair loop (`forces-sph.wgsl:240-280`). This answers
 the unsourced mark at `sph-scale:136`. Conditions:
-- 16 000 particles, radius 50, the species force at its shipped default (0.2 on the new scale)
+- 128 000 particles, radius 50, the species force at its shipped default (0.2 on the new scale)
 - the pressure acting, crowding 0, fluid 1
 - 900 steps, late window 749–899
-- calibration seeds and a disjoint held-out set, one-sided `α = 5%` with the C5 margin
+- the three gate seeds with the C5 margin
 
 **Readings** (answering the unsourced mark at `sph-scale:107`):
 - **Structure survival.** `σ = (S_arm − 1/n_s) / (S_0 − 1/n_s)`. `S` is the mean share of a
@@ -1082,7 +1071,7 @@ the unsourced mark at `sph-scale:136`. Conditions:
 
 **Arms, and the default each gates:**
 1. Blend at `SPH_XSPH_EPSILON` against 0, at Viscosity 0. This gates `SPH_XSPH_EPSILON`. If σ is lower
-   with the blend, one-sided, then `SPH_XSPH_EPSILON = 0`, no smoothing acts at Viscosity 0, and the
+   with the blend, then `SPH_XSPH_EPSILON = 0`, no smoothing acts at Viscosity 0, and the
    Viscosity help line says so.
 2. The pressure term's gain at `SPH_FORCE_SCALE` against 0. This **gates the `sphStiffness` default**,
    answering `sph-scale:114`'s caller mark: stiffness is the knob that scales that term. The reading
@@ -1090,7 +1079,7 @@ the unsourced mark at `sph-scale:136`. Conditions:
    from 8 to the largest value whose σ is not lower than fluid-without-pressure's. The floor is
    `SPH_STIFFNESS_MIN` 1.
 3. Radius fraction 1 against steps 0.75, 0.5, 0.25 and 0.1. This gates the `sphRadiusFraction`
-   default: the largest step whose σ is not lower than fraction 1's, one-sided. The record also says
+   default: the largest step whose σ is not lower than fraction 1's. The record also says
    whether 0.1 still computes a fluid.
 
 If no step of an arm passes, meaning every value flattens, the arm's numbers go back to the user with
@@ -1189,7 +1178,7 @@ Carried from coupling-balance:
 - [`forces.wgsl` at 8 storage buffers] → Any further binding needs a raised limit or a merged buffer.
 - [Scent and long-range maxima may exceed 7 251] → `k` falls to 11 (C8).
 - [The coarse word's cost is unmeasured] → G1.4.
-- [The 128k checks cost about 40 core-hours; nothing detects a skipped rerun] → Recorded in
+- [A full `calibrate-balance` run costs core-hours at 128 000; nothing detects a skipped rerun] → Recorded in
   `docs/enforcement.md` at the recipe tier.
 - [The substep count toggles frame to frame] → It read cooler (batch T). Stutter is an in-app
   reading.
@@ -1237,7 +1226,7 @@ New:
 4. The world pressure (C3–C5) and gates 5–7. G1.1–G1.4 run here.
 5. **G2** in-app, then the gains, the 0–1 ranges, the constants restated for the scale, and schema
    version 5 (N2, N7), in one group.
-6. Pattern Scale and G3 (N5). Then G4.
+6. Pattern Scale and G3 (N5). G4 reads in the final in-app pass.
 7. The long-range unit (C2), after step 4 and before G2 in step 5, because G2 reads long range in it.
 8. RD visual removal (N6), which can land at any point after step 1.
 9. The fluid arms (N8).

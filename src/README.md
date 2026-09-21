@@ -33,7 +33,7 @@ just happen
 
 A browser window opens showing the simulation. Drag sliders to adjust forces between particle species.
 
-`./main --serve` skips the window and serves until killed, so the page runs in any WebGPU Chromium tab at `http://127.0.0.1:8089`, including one an agent drives through Browser MCP.
+`./main --serve` skips the window and serves until killed, so the page runs in any WebGPU Chromium tab at `http://127.0.0.1:8089`, including one an agent drives through Claude in Chrome.
 
 | Command | Purpose |
 |---------|---------|

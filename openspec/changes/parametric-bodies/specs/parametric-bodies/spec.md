@@ -450,7 +450,7 @@ that a player ignition resets the phase. Build-asserted: the panel typecheck, si
 method the panel calls but the boundary does not declare fails `tsc --noEmit`
 (`openspec/specs/gardenapi-boundary/spec.md`, "One object carries the whole boundary").
 Agent-checkable: that the canvas gesture reaches the entry in the running app — an agent launches
-`./main`, drives the gesture through Browser MCP, and watches particles gather where it pressed.
+`./main --serve`, drives the gesture through Claude in Chrome, and watches particles gather where it pressed.
 
 #### Scenario: A rate of zero silences the world's generator
 
@@ -529,8 +529,8 @@ Bodies SHALL NOT be drawn. The world shows a body by what the particles around i
 on a surface, a crowd held inside one, a shape drifting because the crowd pushed it. No render pass,
 no overlay, and no debug outline belongs to this capability.
 
-Enforcement — Agent-checkable: an agent launches `./main` with a Browser MCP connection already
-established, ignites a body into a settled population, and observes that particles gather at the
+Enforcement — Agent-checkable: an agent launches `./main --serve` with a Claude in Chrome connection
+already established, ignites a body into a settled population, and observes that particles gather at the
 surface while nothing else is drawn. The procedure that detects a violation is that observation; no
 automated gate exists. Raised by a render-pass inventory test, which this repository does not have.
 

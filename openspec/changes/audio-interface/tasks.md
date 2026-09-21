@@ -568,8 +568,8 @@ outputs beside them.
 
 ## 6. Live verification
 
-Each task names the agent procedure and the observation that settles it. Browser MCP against
-the user's Chrome, `./main --serve` in a persistent background shell, the port killed at the end. The permission
+Each task names the agent procedure and the observation that settles it. Claude in Chrome against
+the user's Chrome (CLAUDE.md's in-app order), `./main --serve` in a persistent background shell, the port killed at the end. The permission
 clicks are the user's, for the reason group 1 states.
 
 - [ ] 6.1 `just happen`, run `./main --serve` as a persistent background shell, poll the port, navigate the

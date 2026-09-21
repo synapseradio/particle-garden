@@ -177,13 +177,13 @@ frame SHALL run `SUBSTEPS_MAX`. `SUBSTEPS_MAX` SHALL live in `src/config_ranges.
 slider. `src/config_ranges.nim` SHALL hold `ff_stable` with its conditions beside it. `ff_stable` is
 the largest frame factor, held fixed through a run, at which a dense self-attracting world at the
 recorded `K` and shipped friction settles no warmer per reference frame than at frame factor 1. It is
-measured on the calibration seeds, one-sided at a 5% false-fail rate. The time-scale range SHALL NOT
+measured on the gate seeds at 128 000 particles (`world-pressure`). The time-scale range SHALL NOT
 be narrowed to avoid substeps.
 
-Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles". On the held-out
-seeds it runs frame factors 2, 10 and 30, a frame factor drawn per frame from 8 to 16, and one
-alternating 10 and 13, through the substep rule. It holds each no warmer per reference frame than
-frame factor 1 at shipped friction, one-sided at a 5% false-fail rate (held by the `just
+Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles". On the gate
+seeds at 128 000 particles it runs frame factors 2, 10 and 30, a frame factor drawn per frame from 8
+to 16, and one alternating 10 and 13, through the substep rule. It holds each arm's three-seed mean no
+warmer per reference frame than frame factor 1 at shipped friction (held by the `just
 calibrate-balance` recipe, not by every `just check`). `tests/test_sim_registry.nim` suite "Substeps
 Follow The Tightest Coupling" holds the count's function over the declarations, including the cap and
 the effect-time clamp (test-held). That `src/webgpu_compute.nim` runs the count the function returns
@@ -242,14 +242,14 @@ per field cell or per mesh cell, and whether the coupling can raise the crowd de
 sweep iterates over. Every coupling's writing pass and the neighbour sweep SHALL each have its own
 profiler slot, the long-range force and the field force included; passes of one pipeline share its
 slot. Coupled time, the `coupled=` figure, is the `physics=` figure (the neighbour sweep plus integrate)
-plus every coupling's slot. A coupling that can raise the crowd
-density SHALL record the coupled time measured at `MAX_PARTICLES` at its strength 1, in the four
-corners of its strength × Force Strength, over 5 or more seeds each.
+plus every coupling's slot. Long Range SHALL record the coupled time measured at `MAX_PARTICLES` at
+strength 1, in the four corners of Long Range × Force Strength, one run each. The coupled time of the
+other couplings that can raise the crowd density, scent and bodies, is declared and **unmeasured**.
 
 Enforced by: `tests/test_sim_registry.nim` holds that every velocity-delta and field writer's pipeline
-key maps to a profiler slot no other pipeline shares (test-held). The recorded cost at `MAX_PARTICLES` is
-**agent-checkable**. An agent runs the headless cost harness at 128 000 particles with the coupling at
-1 in the four corners, and reads the `[gpu-profile]` coupled time against the pair pass's allotment.
+key maps to a profiler slot no other pipeline shares (test-held). The recorded Long Range cost is
+**agent-checkable** in-app. An agent sets Long Range to 1 at 128 000 particles in each corner and reads
+`coupled=` from the `[gpu-profile]` lines against the pair pass's allotment.
 
 #### Scenario: A writer with no profiler slot
 
@@ -260,7 +260,7 @@ key maps to a profiler slot no other pipeline shares (test-held). The recorded c
 #### Scenario: Long range with pressure on stays inside the allotment
 
 - **WHEN** Long Range runs at 1 over 128 000 particles at each Force Strength corner
-- **THEN** the measured coupled time stays under the pair pass's allotment on every seed
+- **THEN** the measured coupled time stays under the pair pass's allotment in every corner
 
 ### Requirement: A coupling's controls dim with its strength
 

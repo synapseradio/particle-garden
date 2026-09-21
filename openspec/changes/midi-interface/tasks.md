@@ -381,8 +381,8 @@ rest of this group is unchanged.
 
 ## 9. Live verification
 
-Each task names the agent procedure and the observation that settles it: Browser MCP against the
-user's Chrome, `./main --serve` in a persistent background shell, the port killed at the end. The permission click is the
+Each task names the agent procedure and the observation that settles it: Claude in Chrome against the
+user's Chrome (CLAUDE.md's in-app order), `./main --serve` in a persistent background shell, the port killed at the end. The permission click is the
 user's, for the reason group 1 states, and 9.3 through 9.7 need the MIDI source task 1.3 asked about.
 
 - [x] 9.1 `just happen`, run `./main --serve` as a persistent background shell, poll the port, navigate the connected tab

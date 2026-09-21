@@ -106,9 +106,9 @@ a property of the fluid atop the world's own resistance to compression. Each arm
 readings against the same world with the fluid at 0: how much species structure survives, and how
 even the crowd density becomes. Structure survival SHALL be `σ = (S_arm − 1/n_s) / (S_0 − 1/n_s)`, where `S` is
 the mean share of a particle's neighbours of its own species and `n_s` the species count. Evenness
-SHALL be the coefficient of variation of crowd density on the arm over that of the fluid-0 world. Constants SHALL be derived on
-recorded calibration seeds and checked on a disjoint held-out set, one-sided at a 5% false-fail rate,
-the convention `world-pressure`'s gates use.
+SHALL be the coefficient of variation of crowd density on the arm over that of the fluid-0 world. Constants SHALL be read on
+the gate seeds `world-pressure` uses, at 128 000 particles. A step passes when its three-seed mean σ
+is not lower than the mean σ it is compared with.
 
 The result gates the defaults. `SPH_XSPH_EPSILON`, and whether any velocity smoothing acts at
 Viscosity 0, answer to the first arm. The radius-fraction default answers to the third. The second

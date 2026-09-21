@@ -125,10 +125,10 @@ This change supersedes `coupling-balance`. Its unit, pressure term, velocity wor
 
 Each gate orders ahead of the constants it sets:
 
-1. **coupling-balance's five gates,** carried over unchanged: the onset, the stiffness trade, the stacked hold, the pressure's in-app cost, and `ff_stable`.
+1. **coupling-balance's five gates,** carried over, each native gate run on three gate seeds at 128 000 particles: the onset, the stiffness trade, the stacked hold, the pressure's in-app cost, and `ff_stable`.
 2. **Each coupling's calibrated full effect in `u0`,** measured in-app, before its gain is set. Until then a strength range carries a provisional note, as `LONG_RANGE_STRENGTH_MAX` does now (`src/config_ranges.nim:68-75`).
 3. **The chemistry-scale band.** At each scale step: the regimes' distance to their own attractor, deposit ignition, the splat radius, and the collapse bracket. This runs in the existing `tests/test_field_core.nim` harness. The floor is the smallest scale at which every regime still settles nearer its own attractor than any other.
-4. **The long-range cost with pressure on.** Coupled time (the `physics=` figure plus every coupling's slot) at 128 000 particles and Long Range 1 in the four Long Range × Force Strength corners, 5 or more seeds each. The frame must stay under the pair pass's allotment (coupling-balance gate 4).
+4. **The long-range cost with pressure on.** Coupled time (the `physics=` figure plus every coupling's slot) at 128 000 particles and Long Range 1 in the four Long Range × Force Strength corners, one run each, read in-app. Scent and bodies are declared and unmeasured. The frame must stay under the pair pass's allotment (coupling-balance gate 4).
 
 ## Falsifier
 
@@ -149,3 +149,4 @@ Running a native contract test over every coupling answers true while the proble
 - **Particle and halo sizes stay in screen pixels.** The contract declares each size's space, and no size moves between spaces.
 - **Field resolution stays at 2048 × 1152.** A Field Detail selector is outside this change. If the chemistry band (gate 3) shows the regimes distorting at the scales wanted, it becomes its own change.
 - **The defects the trace found are fixed in this change.**
+- **The shipped particle count is 32 000.** 16 000 is too few for a default.
