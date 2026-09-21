@@ -979,6 +979,13 @@ follows the recorded per-step table, interpolated in `s`. G3 measured it at 1, 0
 the scale-1 impulse at 1, 0.5 and 0.25 (128x128 torus, settled peak gradient), so √s stays the
 closed form and 8.4 writes the table, `RD_SCENT_STEPPED_IMPULSE`.
 
+Group 7 has not landed `F_scent` or `scentUnit`. Until it does, 8.4 writes the correction directly
+onto today's gain: `rdFieldForce · rdScentGainFactor(s)`, where `rdScentGainFactor(s) =
+√s / interpolatedRatio(s)` (`src/config_ranges.nim`) is the `√s` closed form divided by
+`RD_SCENT_STEPPED_IMPULSE`'s interpolated ratio, so the strength-1 impulse holds its scale-1 value
+at every step. Once group 7 lands `F_scent` and `scentUnit`, `g_scent(1)` carries the same
+correction: `g_scent(s) = g_scent(1) · rdScentGainFactor(s)`.
+
 **Presets.** An absent `rdPatternScale` decodes to 1.
 
 The default is the floor, `RD_PATTERN_SCALE_DEFAULT = RD_PATTERN_SCALE_MIN`: the user chose the smallest
