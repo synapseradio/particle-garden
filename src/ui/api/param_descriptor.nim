@@ -700,11 +700,6 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
       hint = "tours of the force waypoints per minute, while Force Weather is on",
       probe = "climate.phaseStep",
       horizon = rhSettling, horizonReview = true),
-    # "rd-field" rather than "rd": this is the field's appearance, not its
-    # physics, and the panel puts the colormap selector between the two groups.
-    floatParam("fieldOpacity", "Field Opacity", "rd-field",
-      FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX, visual.fieldOpacity,
-      2, psRender, probe = "colormap.coverage", dormantWhen = "fieldUnlit"),
 
     # Bodies. bodiesStrength leads the group because it is the coupling
     # strength and the six below it say what a body IS: how big, how far its

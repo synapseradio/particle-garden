@@ -208,10 +208,6 @@ import field_core
 # bloom_core is pure; it computes the separable Gaussian blur weights so the
 # HDR-bloom shader's kernel shape is native-tested, not hand-written in WGSL.
 import bloom_core
-# colormap_core is pure; it owns the reaction-diffusion field colormap ramp
-# coefficients (and the two-tone constants), so colormap.wgsl's ramps are
-# native-tested and single-sourced rather than hand-written in WGSL.
-import colormap_core
 # sph_core is pure; it derives the density accumulator's fixed-point scale from
 # the particle budget, so the scale the shader encodes with and the
 # native-tested one are one number.
@@ -435,16 +431,3 @@ proc getPlaceholderMap*(): Table[string, string] =
   # native-tested source of the Gaussian shape.
   result["BLOOM_WEIGHT_COUNT"] = $bloomWeightCount()
   result["BLOOM_WEIGHTS"] = bloomWeightsWgsl()
-
-  # Reaction-diffusion field colormaps (consumed by the colormap.wgsl module).
-  # The polynomial ramp coefficients, the two-tone constants, and the field
-  # scalar gain all come from colormap_core, the single native-tested authority.
-  result["COLORMAP_POLY_TERMS"] = $COLORMAP_POLY_TERMS
-  result["COLORMAP_INFERNO_COEFFS"] = colormapCoeffsWgsl(INFERNO_COEFFS)
-  result["COLORMAP_VIRIDIS_COEFFS"] = colormapCoeffsWgsl(VIRIDIS_COEFFS)
-  result["COLORMAP_FIELD_GAIN"] = wgslScalar(COLORMAP_FIELD_GAIN)
-  result["FIELD_LIGHT_STRENGTH"] = wgslScalar(FIELD_LIGHT_STRENGTH)
-  result["COLORMAP_TWO_TONE_WARM"] = wgslVec3(TWO_TONE_WARM)
-  result["COLORMAP_TWO_TONE_COOL"] = wgslVec3(TWO_TONE_COOL)
-  result["COLORMAP_TWO_TONE_INHIBITOR_GAIN"] = wgslScalar(TWO_TONE_INHIBITOR_GAIN)
-  result["COLORMAP_TWO_TONE_COOL_LEVEL"] = wgslScalar(TWO_TONE_COOL_LEVEL)

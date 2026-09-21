@@ -82,8 +82,8 @@ func bloomWeightsWgsl*(): string =
 # ==============================================================================
 # THE TONEMAP GRADE
 # ==============================================================================
-# web/shaders/modules/tonemap_grade.wgsl, the one grading authority both
-# tonemap.wgsl and field-composite.wgsl run: exposure scales the HDR light,
+# web/shaders/modules/tonemap_grade.wgsl, the grading authority tonemap.wgsl
+# runs: exposure scales the HDR light,
 # the Narkowicz ACES curve maps it into display range, saturation mixes the
 # colour against its own luminance, contrast pivots at 0.5, and temperature
 # trades red against blue by a tenth per unit. Mirrored per channel — ACES

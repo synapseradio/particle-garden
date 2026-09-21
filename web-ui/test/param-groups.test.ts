@@ -21,7 +21,6 @@ const descriptors: GroupedParam[] = [
   { id: "sphRestDensity", group: "fluid" },
   { id: "rdFeed", group: "rd" },
   { id: "rdKill", group: "rd" },
-  { id: "fieldOpacity", group: "rd-field" },
 ];
 
 describe("groupParamIds", () => {

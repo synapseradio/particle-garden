@@ -135,11 +135,6 @@ suite "Each Predicate Distinguishes Dormant From Awake":
     check predicates["bloomOff"].eval(witness({"bloomEnabled": 0.0}))
     check not predicates["bloomOff"].eval(witness({"bloomEnabled": 1.0}))
 
-  test "fieldUnlit reads the alive-cell census":
-    check predicates["fieldUnlit"].eval(witness({"fieldAliveCells": 0.0}))
-    check not predicates["fieldUnlit"].eval(
-      witness({"fieldAliveCells": 3.0}))
-
   test "the compound predicate is dormant only while dark AND subcritical":
     let compound = predicates["fieldSubcritical"]
     # Dark and subcritical (a named-regime-like coordinate): dormant.

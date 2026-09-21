@@ -270,25 +270,6 @@ export function Panel(props: { ctrl: PanelController }) {
           <For each={groupIds("rd")}>
             {(id) => <ParamSlider ctrl={ctrl} id={id} />}
           </For>
-          <div class="control-group">
-            <label>Field Colormap</label>
-            <div class="model-selector">
-              <For each={ctrl.api.colormaps()}>
-                {(entry) => (
-                  <button
-                    class="model-btn"
-                    classList={{ active: ctrl.colormap() === entry.index }}
-                    onClick={() => ctrl.setColormap(entry.index)}
-                  >
-                    {entry.label}
-                  </button>
-                )}
-              </For>
-            </div>
-          </div>
-          <For each={groupIds("rd-field")}>
-            {(id) => <ParamSlider ctrl={ctrl} id={id} />}
-          </For>
           <div class="control-group model-selector">
             {/* A deliberate action, never automatic: the field otherwise
                 only ever lights where colonies deposit. */}

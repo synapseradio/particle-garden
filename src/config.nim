@@ -24,8 +24,7 @@ import ui/state/render_state
 type
   ConfigObject* = ref object of JsObject
     ## Flat GPU-facing mirror of the typed records. Field semantics live on
-    ## SimulationState (simulation_state.nim) and RenderState (render_state.nim);
-    ## colormapIndex values are colormap_core.nim's COLORMAP_INDEX_* constants.
+    ## SimulationState (simulation_state.nim) and RenderState (render_state.nim).
     particleCount* {.exportc.}: int
     speciesCount* {.exportc.}: int
     interactionRadius* {.exportc.}: int
@@ -54,8 +53,6 @@ type
     saturation* {.exportc.}: float
     contrast* {.exportc.}: float
     temperature* {.exportc.}: float
-    colormapIndex* {.exportc.}: int
-    fieldOpacity* {.exportc.}: float
     fluidStrength* {.exportc.}: float
     sphRestDensity* {.exportc.}: float
     sphStiffness* {.exportc.}: float
@@ -217,8 +214,6 @@ proc createConfig(): ConfigObject =
   result.saturation = visual.saturation
   result.contrast = visual.contrast
   result.temperature = visual.temperature
-  result.colormapIndex = visual.colormapIndex
-  result.fieldOpacity = visual.fieldOpacity
   result.cameraDrift = visual.cameraDrift
   result.cameraDriftSpeed = visual.cameraDriftSpeed
 

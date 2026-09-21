@@ -28,11 +28,6 @@ import webgpu_compute
 # camera_core is pure; it owns the Camera type and the toroidal transform that
 # camera_transform.wgsl mirrors. The uniform written here is that type's fields.
 import camera_core
-# colormap_core is pure; it supplies FIELD_DRIFT_SCALE, how far the fade pass
-# displaces the trail along the field gradient. It sits beside the field's other
-# render-coupling constants there rather than here, so the calibration pass has
-# one place to look.
-import colormap_core
 # trail_core is pure; it owns the trail length -> fade multiplier mapping and
 # mirrors the decay fade.wgsl runs with it. The uniform written below is that
 # mapping's output, so the number the GPU receives is the one the native suite
@@ -128,22 +123,6 @@ var canvasFormat: cstring
 var fadeBindGroupLayout: GPUBindGroupLayout
 var blitBindGroupLayout: GPUBindGroupLayout
 
-# Reaction-diffusion field composite (LDR backdrop, present pass, bloom off).
-# Reuses the blit bind-group layout (texture + sampler). The bind group is (re)built
-# lazily when webgpu_init.fieldGeneration() changes, mirroring the trail-texture
-# caching pattern; -1 forces a first build.
-var fieldCompositePipeline: GPURenderPipeline
-var fieldCompositeBindGroup: GPUBindGroup
-var fieldCompositeBindGroupLayout: GPUBindGroupLayout
-var cachedFieldGeneration: int = -1
-var cachedRenderFieldGeneration: int = -1
-  ## The same caching pattern for the render/glow bind groups, which bind the
-  ## field texture so the vertex stage can light particles by it. Separate from
-  ## cachedFieldGeneration because these groups are also rebuilt on resize (the
-  ## pre-field placeholder view is a bloom target, and those are recreated
-  ## there), so the two cannot share a counter without one path defeating the
-  ## other's caching.
-
 # ==============================================================================
 # HDR BLOOM RESOURCES
 # ==============================================================================
@@ -180,18 +159,8 @@ var tonemapBindGroupLayout: GPUBindGroupLayout
 # Cached bloom bind groups (rebuilt on resize alongside the trail bind groups).
 var blurBindGroupH: GPUBindGroup    # samples bloom A, writes bloom B (horizontal)
 var blurBindGroupV: GPUBindGroup    # samples bloom B, writes bloom A (vertical)
-var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A + field
-var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A + field
-# The tonemap bind groups reference the RD field texture (binding 4). The
-# textures are created once, in webgpu_init's createFieldResources during
-# initWebGPU — a re-seed only rewrites their contents and leaves the texture
-# objects and this bind group alone. fieldGeneration bumps only on an actual
-# (re)creation, which is what these groups rebuild on, mirroring
-# cachedFieldGeneration for the field-composite bind group. Binding 4 falls back
-# to the bloom view while the field view is nil, because the layout declares an
-# entry there either way; createFieldResources runs inside initWebGPU, so the
-# live path binds the real field from the first build. -1 forces a first build.
-var cachedTonemapFieldGeneration: int = -1
+var tonemapBindGroupTrailA: GPUBindGroup  # tonemap sampling trail A + bloom A
+var tonemapBindGroupTrailB: GPUBindGroup  # tonemap sampling trail B + bloom A
 
 
 # ==============================================================================
@@ -210,19 +179,17 @@ var cachedTonemapFieldGeneration: int = -1
 # They compare counts, not bindings: a layout and a shader that disagree about
 # what binding 3 HOLDS still reaches the GPU.
 
-const EXPECTED_BIND_GROUP_ENTRIES_RENDER* = 5
-  ## particles + renderParams + colors + field + camera. Shared by the render
-  ## and glow pipelines, so both bind groups carry all five.
-const EXPECTED_BIND_GROUP_ENTRIES_FADE* = 6
-  ## trail texture + sampler + fadeParams + field + camera + previous camera.
+const EXPECTED_BIND_GROUP_ENTRIES_RENDER* = 4
+  ## particles + renderParams + colors + camera. Shared by the render and glow
+  ## pipelines, so both bind groups carry all four.
+const EXPECTED_BIND_GROUP_ENTRIES_FADE* = 5
+  ## trail texture + sampler + fadeParams + camera + previous camera.
 const EXPECTED_BIND_GROUP_ENTRIES_BLIT* = 2
   ## trail texture + sampler.
-const EXPECTED_BIND_GROUP_ENTRIES_FIELD_COMPOSITE* = 4
-  ## field texture + sampler + tonemapParams + camera.
 const EXPECTED_BIND_GROUP_ENTRIES_BLUR* = 3
   ## source texture + sampler + bloomParams.
-const EXPECTED_BIND_GROUP_ENTRIES_TONEMAP* = 6
-  ## trail texture + bloom texture + sampler + tonemapParams + field + camera.
+const EXPECTED_BIND_GROUP_ENTRIES_TONEMAP* = 4
+  ## trail texture + bloom texture + sampler + tonemapParams.
 const EXPECTED_BIND_GROUP_ENTRIES_OVERLAY* = 3
   ## overlayParams + camera + renderParams.
 
@@ -244,7 +211,6 @@ const RENDER_SHADER = staticRead("../web/shaders/render.wgsl")
 const GLOW_SHADER = staticRead("../web/shaders/glow.wgsl")
 const FADE_SHADER = staticRead("../web/shaders/fade.wgsl")
 const BLIT_SHADER = staticRead("../web/shaders/composite.wgsl")
-const FIELD_COMPOSITE_SHADER = staticRead("../web/shaders/field-composite.wgsl")
 # HDR bloom shaders; staticRead-embedded like the render shaders above.
 const BLUR_SHADER = staticRead("../web/shaders/blur.wgsl")
 const TONEMAP_SHADER = staticRead("../web/shaders/tonemap.wgsl")
@@ -259,7 +225,6 @@ func halfDimension(fullSize: int): int =
 proc updateBindGroup*()
 proc createBloomTargets()
 proc createBloomBindGroups()
-proc currentFieldViewOrFallback(): GPUTextureView
 proc createFadeBindGroups()
 proc resetCamera*()
 
@@ -341,12 +306,12 @@ proc initWebGPURender*(): bool =
   lastUploadedCamera = Camera(centerX: 0.0, centerY: 0.0, zoom: 0.0)
   lastUploadedPrevCamera = Camera(centerX: 0.0, centerY: 0.0, zoom: 0.0)
 
-  # Create bind group layout (AoS: particles + renderParams + colors + field +
+  # Create bind group layout (AoS: particles + renderParams + colors +
   # camera). SHARED BY THE RENDER AND GLOW PIPELINES — both are built from the
-  # pipelineLayout below, so every bind group for either must supply all five
-  # entries, whether or not that shader reads them. glow.wgsl ignores the field
-  # texture; declaring a binding a shader does not use is legal, supplying a
-  # bind group that omits one the layout declares is not.
+  # pipelineLayout below, so every bind group for either must supply all four
+  # entries. Binding 3 is left as a gap: it held the reaction-diffusion field,
+  # which no longer reaches either shader, and glow's camera stays at binding 4
+  # rather than shift down to fill the hole, since WebGPU allows gaps.
   #
   # NONE OF THIS IS CHECKED AT NIM COMPILE TIME. A mismatch between this layout,
   # the bind groups below, and the two shaders' @binding declarations surfaces
@@ -382,16 +347,6 @@ proc initWebGPURender*(): bool =
   buffer2["type"] = "uniform".cstring.toJs
   entry2["buffer"] = buffer2
   discard entries.push(entry2)
-
-  # Binding 3: the reaction-diffusion field, read in the VERTEX stage so
-  # render.wgsl can light each particle by the field it stands in.
-  let entry3 = newJsObject()
-  entry3["binding"] = 3.toJs
-  entry3["visibility"] = gpuShaderStageVertex.toJs
-  let texture3 = newJsObject()
-  texture3["sampleType"] = "unfilterable-float".cstring.toJs
-  entry3["texture"] = texture3
-  discard entries.push(entry3)
 
   # Binding 4: the camera, vertex only. Both pipelines read it, and must agree.
   let entry4 = newJsObject()
@@ -574,17 +529,10 @@ proc initWebGPURender*(): bool =
   fadeEntry2["buffer"] = fadeBuffer2
   discard fadeLayoutEntries.push(fadeEntry2)
 
-  # Binding 3: the reaction-diffusion field, which displaces the trail sample
-  # along its gradient so trails bend around the pattern instead of decaying
-  # straight back.
-  let fadeEntry3 = newJsObject()
-  fadeEntry3["binding"] = 3.toJs
-  fadeEntry3["visibility"] = gpuShaderStageFragment.toJs
-  let fadeTexture3 = newJsObject()
-  fadeTexture3["sampleType"] = "float".cstring.toJs
-  fadeEntry3["texture"] = fadeTexture3
-  discard fadeLayoutEntries.push(fadeEntry3)
-
+  # Binding 3 is left as a gap: it held the reaction-diffusion field, which no
+  # longer reaches this shader, and binding 4/5 stay put rather than shift
+  # down to fill the hole, since WebGPU allows gaps.
+  #
   # Binding 4: the live camera, and binding 5 the view the trail was drawn
   # under. Reprojecting the trail as the view moves takes both.
   let fadeEntry4 = newJsObject()
@@ -840,96 +788,6 @@ proc initWebGPURender*(): bool =
     discard overlayBindEntries.push(entry)
   overlayBindGroupDesc["entries"] = overlayBindEntries
   overlayBindGroup = webgpu_init.device.createBindGroup(overlayBindGroupDesc)
-
-  # ==========================================================================
-  # FIELD COMPOSITE PIPELINE (reaction-diffusion LDR backdrop)
-  # ==========================================================================
-  # The bloom-off quality floor for the RD field. Its bind group is texture +
-  # sampler + the shared TonemapParams uniform (the field-composite reads
-  # the same colormapIndex / fieldOpacity the HDR tonemap does, so the field
-  # looks the same under either present path). Opaque backdrop drawn first in
-  # the present pass under glow/trails, so no blending. Depth matches the pass.
-
-  let fieldLayoutDesc = newJsObject()
-  fieldLayoutDesc["label"] = "Field Composite Bind Group Layout".cstring.toJs
-  let fieldLayoutEntries = newJsArray()
-  let fieldLayoutEntry0 = newJsObject()
-  fieldLayoutEntry0["binding"] = 0.toJs
-  fieldLayoutEntry0["visibility"] = gpuShaderStageFragment.toJs
-  let fieldLayoutTexture0 = newJsObject()
-  fieldLayoutTexture0["sampleType"] = "float".cstring.toJs
-  fieldLayoutEntry0["texture"] = fieldLayoutTexture0
-  discard fieldLayoutEntries.push(fieldLayoutEntry0)
-  let fieldLayoutEntry1 = newJsObject()
-  fieldLayoutEntry1["binding"] = 1.toJs
-  fieldLayoutEntry1["visibility"] = gpuShaderStageFragment.toJs
-  let fieldLayoutSampler1 = newJsObject()
-  fieldLayoutSampler1["type"] = "filtering".cstring.toJs
-  fieldLayoutEntry1["sampler"] = fieldLayoutSampler1
-  discard fieldLayoutEntries.push(fieldLayoutEntry1)
-  let fieldLayoutEntry2 = newJsObject()
-  fieldLayoutEntry2["binding"] = 2.toJs
-  fieldLayoutEntry2["visibility"] = gpuShaderStageFragment.toJs
-  let fieldLayoutBuffer2 = newJsObject()
-  fieldLayoutBuffer2["type"] = "uniform".cstring.toJs
-  fieldLayoutEntry2["buffer"] = fieldLayoutBuffer2
-  discard fieldLayoutEntries.push(fieldLayoutEntry2)
-  # Binding 3: the camera. Same mapping the tonemap path applies, so the two
-  # present paths agree about WHERE the field is, not merely how it is graded.
-  let fieldLayoutEntry3 = newJsObject()
-  fieldLayoutEntry3["binding"] = 3.toJs
-  fieldLayoutEntry3["visibility"] = gpuShaderStageFragment.toJs
-  let fieldLayoutBuffer3 = newJsObject()
-  fieldLayoutBuffer3["type"] = "uniform".cstring.toJs
-  fieldLayoutEntry3["buffer"] = fieldLayoutBuffer3
-  discard fieldLayoutEntries.push(fieldLayoutEntry3)
-  validateEntryCount(fieldLayoutEntries, "Field Composite Bind Group Layout",
-    EXPECTED_BIND_GROUP_ENTRIES_FIELD_COMPOSITE)
-  fieldLayoutDesc["entries"] = fieldLayoutEntries
-  fieldCompositeBindGroupLayout = webgpu_init.device.createBindGroupLayout(fieldLayoutDesc)
-
-  let fieldPipelineLayoutDesc = newJsObject()
-  let fieldPipelineLayouts = newJsArray()
-  discard fieldPipelineLayouts.push(fieldCompositeBindGroupLayout)
-  fieldPipelineLayoutDesc["bindGroupLayouts"] = fieldPipelineLayouts
-  let fieldCompositePipelineLayout = webgpu_init.device.createPipelineLayout(fieldPipelineLayoutDesc)
-
-  let fieldShaderDesc = newJsObject()
-  fieldShaderDesc["label"] = "Field Composite Shader".cstring.toJs
-  fieldShaderDesc["code"] = FIELD_COMPOSITE_SHADER.cstring.toJs
-  let fieldShaderModule = webgpu_init.device.createShaderModule(fieldShaderDesc)
-
-  let fieldPipelineDesc = newJsObject()
-  fieldPipelineDesc["label"] = "Field Composite Pipeline".cstring.toJs
-  fieldPipelineDesc["layout"] = fieldCompositePipelineLayout.toJs
-
-  let fieldVertexStage = newJsObject()
-  fieldVertexStage["module"] = fieldShaderModule.toJs
-  fieldVertexStage["entryPoint"] = "vs_main".cstring.toJs
-  fieldPipelineDesc["vertex"] = fieldVertexStage
-
-  let fieldFragmentStage = newJsObject()
-  fieldFragmentStage["module"] = fieldShaderModule.toJs
-  fieldFragmentStage["entryPoint"] = "fs_main".cstring.toJs
-  let fieldTargets = newJsArray()
-  let fieldTarget0 = newJsObject()
-  fieldTarget0["format"] = canvasFormat.toJs
-  discard fieldTargets.push(fieldTarget0)
-  fieldFragmentStage["targets"] = fieldTargets
-  fieldPipelineDesc["fragment"] = fieldFragmentStage
-
-  let fieldPrimitive = newJsObject()
-  fieldPrimitive["topology"] = "triangle-list".cstring.toJs
-  fieldPrimitive["cullMode"] = "none".cstring.toJs
-  fieldPipelineDesc["primitive"] = fieldPrimitive
-
-  let fieldDepthStencil = newJsObject()
-  fieldDepthStencil["format"] = "depth24plus".cstring.toJs
-  fieldDepthStencil["depthWriteEnabled"] = false.toJs
-  fieldDepthStencil["depthCompare"] = "always".cstring.toJs
-  fieldPipelineDesc["depthStencil"] = fieldDepthStencil
-
-  fieldCompositePipeline = webgpu_init.device.createRenderPipeline(fieldPipelineDesc)
 
   # --- Glow-to-HDR pipeline: the glow shader, retargeted to the half-res
   # rgba16float bloom source. Same layout/bindings/additive-blend as the
@@ -1325,15 +1183,10 @@ proc updateBindGroup*() =
   colorsEntry["resource"] = colorsResource
   discard entries.push(colorsEntry)
 
-  # Entry 3: the reaction-diffusion field, so the vertex stage can light each
-  # particle by the field it is standing in. While the field view is nil this is
-  # the same bloom-view placeholder the tonemap binds, which keeps the entry
-  # count right until createFieldResources has run.
-  let fieldEntry = newJsObject()
-  fieldEntry["binding"] = 3.toJs
-  fieldEntry["resource"] = currentFieldViewOrFallback().toJs
-  discard entries.push(fieldEntry)
-
+  # Entry 3 is left as a gap: it held the reaction-diffusion field, which no
+  # longer reaches the vertex stage. Entry 4 stays put rather than shift down,
+  # since WebGPU allows gaps.
+  #
   # Entry 4: the camera. Both pipelines transform through it.
   let cameraEntry = newJsObject()
   cameraEntry["binding"] = 4.toJs
@@ -1347,7 +1200,6 @@ proc updateBindGroup*() =
     EXPECTED_BIND_GROUP_ENTRIES_RENDER)
   bindGroupDesc["entries"] = entries
   renderBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
-  cachedRenderFieldGeneration = webgpu_init.fieldGeneration()
 
   let glowBindGroupDesc = newJsObject()
   glowBindGroupDesc["label"] = "Glow Bind Group AoS".cstring.toJs
@@ -1423,13 +1275,9 @@ proc createFadeBindGroups() =
     paramsEntry["resource"] = paramsResource
     discard entries.push(paramsEntry)
 
-    # The field the trail drifts along. The bloom view stands in while the field
-    # view is nil, because the layout declares an entry here either way.
-    let fieldEntry = newJsObject()
-    fieldEntry["binding"] = 3.toJs
-    fieldEntry["resource"] = currentFieldViewOrFallback().toJs
-    discard entries.push(fieldEntry)
-
+    # Binding 3 is left as a gap: it held the reaction-diffusion field, which
+    # no longer displaces the trail sample.
+    #
     # The live camera and the one the trail was drawn under. The reprojection
     # asks where each world point sat on that earlier screen and reads the
     # trail there, so a moving view slides its history with the world instead
@@ -1455,62 +1303,6 @@ proc createFadeBindGroups() =
   fadeBindGroupReadA = makeFadeBindGroup("Fade Bind Group Read A", trailViewA)
   fadeBindGroupReadB = makeFadeBindGroup("Fade Bind Group Read B", trailViewB)
 
-proc ensureRenderFieldBinding() =
-  ## Rebuild the render/glow bind groups when the field textures were
-  ## (re)created, so the particle-lighting binding follows the live field
-  ## instead of the placeholder it started on. Same generation-caching shape as
-  ## ensureFieldCompositeBindGroup; a no-op on every frame that changes nothing.
-  if webgpu_init.fieldGeneration() == cachedRenderFieldGeneration:
-    return
-  updateBindGroup()
-  # The fade pass drifts the trail along the same field, so its groups hold the
-  # same view and go stale at the same moment.
-  createFadeBindGroups()
-
-proc ensureFieldCompositeBindGroup() =
-  ## (Re)build the field composite bind group when the field textures were
-  ## (re)created (fieldGeneration changed). Layout is texture + sampler + the
-  ## shared TonemapParams uniform (the colormap/opacity authority). No-op when
-  ## the field view does not exist yet.
-  let generation = webgpu_init.fieldGeneration()
-  if generation == cachedFieldGeneration and not fieldCompositeBindGroup.isNil:
-    return
-  let fieldView = webgpu_init.activeFieldView()
-  if cast[JsObject](fieldView).isNil or cast[JsObject](fieldView).isNullOrUndefined:
-    return
-
-  let bindGroupDesc = newJsObject()
-  bindGroupDesc["label"] = "Field Composite Bind Group".cstring.toJs
-  bindGroupDesc["layout"] = fieldCompositeBindGroupLayout.toJs
-  let entries = newJsArray()
-  let textureEntry = newJsObject()
-  textureEntry["binding"] = 0.toJs
-  textureEntry["resource"] = fieldView.toJs
-  discard entries.push(textureEntry)
-  let samplerEntry = newJsObject()
-  samplerEntry["binding"] = 1.toJs
-  samplerEntry["resource"] = webgpu_init.fieldSampler().toJs
-  discard entries.push(samplerEntry)
-  let uniformEntry = newJsObject()
-  uniformEntry["binding"] = 2.toJs
-  let uniformResource = newJsObject()
-  uniformResource["buffer"] = tonemapParamsBuffer.toJs
-  uniformEntry["resource"] = uniformResource
-  discard entries.push(uniformEntry)
-  # The camera, so this path places the field exactly where the tonemap path
-  # does. Grading parity alone does not place it: the view moves.
-  let compositeCameraEntry = newJsObject()
-  compositeCameraEntry["binding"] = 3.toJs
-  let compositeCameraResource = newJsObject()
-  compositeCameraResource["buffer"] = cameraBuffer.toJs
-  compositeCameraEntry["resource"] = compositeCameraResource
-  discard entries.push(compositeCameraEntry)
-  validateEntryCount(entries, "Field Composite Bind Group",
-    EXPECTED_BIND_GROUP_ENTRIES_FIELD_COMPOSITE)
-  bindGroupDesc["entries"] = entries
-  fieldCompositeBindGroup = webgpu_init.device.createBindGroup(bindGroupDesc)
-  cachedFieldGeneration = generation
-
 proc createBloomTargets() =
   ## (Re)create the two half-resolution rgba16float bloom targets at the current
   ## canvas size and rewrite the per-axis BloomParams (their texelSize tracks
@@ -1520,10 +1312,6 @@ proc createBloomTargets() =
     bloomTargetA.destroy()
   if not bloomTargetB.isNil:
     bloomTargetB.destroy()
-  # Before the field exists, the render bind group's field slot holds a bloom
-  # view — which these lines just destroyed. Force a rebuild rather than let the
-  # next frame bind a dead texture. Harmless when the real field is bound.
-  cachedRenderFieldGeneration = -1
 
   let halfWidth = halfDimension(canvas.width)
   let halfHeight = halfDimension(canvas.height)
@@ -1563,15 +1351,6 @@ proc createBloomTargets() =
   bloomV[BLOOM_TEXEL_SIZE_Y] = texelY
   webgpu_init.queue.writeBuffer(bloomParamsBufferV, 0, bloomV)
 
-proc currentFieldViewOrFallback(): GPUTextureView =
-  ## The active RD field view for the tonemap's binding 4, or the bloom view
-  ## while the field view is nil — the layout declares an entry there, so the
-  ## bind group needs one whether or not createFieldResources has run.
-  let fieldView = webgpu_init.activeFieldView()
-  if cast[JsObject](fieldView).isNil or cast[JsObject](fieldView).isNullOrUndefined:
-    return bloomViewA
-  fieldView
-
 proc createBloomBindGroups() =
   ## (Re)create the blur and tonemap bind groups. They reference the bloom and
   ## trail texture views, so they are rebuilt whenever either is recreated.
@@ -1603,7 +1382,6 @@ proc createBloomBindGroups() =
   blurBindGroupH = makeBlurBindGroup("Blur Bind Group H", bloomViewA, bloomParamsBufferH)
   blurBindGroupV = makeBlurBindGroup("Blur Bind Group V", bloomViewB, bloomParamsBufferV)
 
-  let fieldView = currentFieldViewOrFallback()
   proc makeTonemapBindGroup(label: cstring, trailView: GPUTextureView): GPUBindGroup =
     let desc = newJsObject()
     desc["label"] = label.toJs
@@ -1627,32 +1405,12 @@ proc createBloomBindGroups() =
     entry3Resource["buffer"] = tonemapParamsBuffer.toJs
     entry3["resource"] = entry3Resource
     discard entries.push(entry3)
-    let entry4 = newJsObject()
-    entry4["binding"] = 4.toJs
-    entry4["resource"] = fieldView.toJs   # RD field, or bloom placeholder pre-field
-    discard entries.push(entry4)
-    # Binding 5: the camera, for mapping screen UV into field space.
-    let entry5 = newJsObject()
-    entry5["binding"] = 5.toJs
-    let cameraResource = newJsObject()
-    cameraResource["buffer"] = cameraBuffer.toJs
-    entry5["resource"] = cameraResource
-    discard entries.push(entry5)
     validateEntryCount(entries, $label, EXPECTED_BIND_GROUP_ENTRIES_TONEMAP)
     desc["entries"] = entries
     return webgpu_init.device.createBindGroup(desc)
 
   tonemapBindGroupTrailA = makeTonemapBindGroup("Tonemap Bind Group Trail A", trailViewA)
   tonemapBindGroupTrailB = makeTonemapBindGroup("Tonemap Bind Group Trail B", trailViewB)
-  cachedTonemapFieldGeneration = webgpu_init.fieldGeneration()
-
-proc ensureTonemapBindGroups() =
-  ## Rebuild the tonemap bind groups when the RD field textures were (re)created
-  ## (fieldGeneration changed) so binding 4 tracks the live field view. Mirrors
-  ## ensureFieldCompositeBindGroup for the HDR path.
-  if webgpu_init.fieldGeneration() == cachedTonemapFieldGeneration:
-    return
-  createBloomBindGroups()
 
 proc render*(particleCount: int) =
   ## Render particles using WebGPU with ping-pong trail rendering.
@@ -1663,10 +1421,6 @@ proc render*(particleCount: int) =
 
   if not isInitialized:
     return
-
-  # Point the particle-lighting binding at the live field if it appeared or was
-  # recreated since the last frame. Cheap generation compare; usually a no-op.
-  ensureRenderFieldBinding()
 
   # Layout matches RenderParams indices in gpu_types.nim
   renderParamsData[RENDER_RESOLUTION_X] = float32(canvas.width)
@@ -1686,13 +1440,8 @@ proc render*(particleCount: int) =
   # No floor: the neighbour sweep is world-intrinsic, so every particle in every
   # world carries a measured density and the glow reads it directly.
   renderParamsData[RENDER_GLOW_DENSITY_FLOOR] = 0.0'f32
-  # The field lights the particles standing in it (render.wgsl), in every world,
-  # because every world has a field. What decides whether anything shows is the
-  # field's own intensity: a world depositing nothing sits at Gray-Scott's
-  # trivial fixed point, where the coverage term is zero and each particle keeps
-  # its species colour exactly.
-  renderParamsData[RENDER_COLORMAP_INDEX] = float32(config.CONFIG.colormapIndex)
-  renderParamsData[RENDER_FIELD_OPACITY] = float32(config.CONFIG.fieldOpacity)
+  renderParamsData[RENDER_PAD1] = 0.0'f32
+  renderParamsData[RENDER_PAD2] = 0.0'f32
   webgpu_init.queue.writeBuffer(renderParamsBuffer, 0, renderParamsData)
 
   # Camera uniform. One buffer feeds render, glow, fade, tonemap and the field
@@ -1737,27 +1486,19 @@ proc render*(particleCount: int) =
   # previous frame retained = longer trails, and zero clears outright. The
   # mapping lives in trail_core, where the suite measures the frames it buys.
   fadeData[FADE_AMOUNT] = float32(fadeAmountFor(config.CONFIG.trailLength))
-  # Trails bend along the field gradient, in every world. A flat field has zero
-  # gradient, so the drift term vanishes by arithmetic rather than by a gate.
-  fadeData[FADE_FIELD_DRIFT_SCALE] = float32(FIELD_DRIFT_SCALE)
+  fadeData[FADE_PAD0] = 0.0
   fadeData[FADE_PAD1] = 0.0
   fadeData[FADE_PAD2] = 0.0
   webgpu_init.queue.writeBuffer(fadeParamsBuffer, 0, fadeData)
 
-  # Tonemap/grade uniforms — written every frame regardless of the present path.
-  # Both present paths run the full grade from this one buffer: the HDR tonemap
-  # and the bloom-off field composite each call tonemapGrade, so every knob here
-  # reaches the screen either way.
+  # Tonemap/grade uniforms — written every frame.
   tonemapData[TONEMAP_EXPOSURE] = float32(config.CONFIG.exposure)
   tonemapData[TONEMAP_BLOOM_INTENSITY] = float32(config.CONFIG.bloomIntensity)
   tonemapData[TONEMAP_SATURATION] = float32(config.CONFIG.saturation)
   tonemapData[TONEMAP_CONTRAST] = float32(config.CONFIG.contrast)
   tonemapData[TONEMAP_TEMPERATURE] = float32(config.CONFIG.temperature)
-  tonemapData[TONEMAP_COLORMAP_INDEX] = float32(config.CONFIG.colormapIndex)
-  # The field contributes to the tonemap wherever it has intensity, which is a
-  # question the coverage term answers per pixel rather than one the world
-  # answers once.
-  tonemapData[TONEMAP_FIELD_OPACITY] = float32(config.CONFIG.fieldOpacity)
+  tonemapData[TONEMAP_PAD0] = 0.0
+  tonemapData[TONEMAP_PAD1] = 0.0
   tonemapData[TONEMAP_PAD2] = 0.0
   webgpu_init.queue.writeBuffer(tonemapParamsBuffer, 0, tonemapData)
 
@@ -1840,12 +1581,6 @@ proc render*(particleCount: int) =
     # composites it over the blurred glow.
     # ------------------------------------------------------------------------
 
-    # The tonemap/grade uniforms (including the field-visualization pair)
-    # were written above, before this branch, so both present paths share them.
-    # The field is sampled inside the tonemap (binding 4), so its bind groups
-    # must track the live field texture.
-    ensureTonemapBindGroups()
-
     # Helper: a single-color-attachment render pass clearing to black.
     # spanBegin/spanEnd mark the edges of the single passBloom profiling span
     # across the three bloom passes (first pass opens, last pass closes).
@@ -1895,11 +1630,7 @@ proc render*(particleCount: int) =
     blurVPass.draw(3, 1, 0, 0)
     blurVPass.endPass()
 
-    # Present: clear bg, then tonemap the trail + bloom + field over it. The RD
-    # field is composited INSIDE the tonemap (sampled at binding 4 and
-    # folded into the graded HDR light), so there is no separate backdrop draw
-    # here; the tonemap's coverage alpha keeps the flat clear wherever the field
-    # has no intensity.
+    # Present: clear bg, then tonemap the trail + bloom over it.
     let presentPassDesc = newJsObject()
     presentPassDesc["label"] = "Tonemap Present Pass".cstring.toJs
     gpu_profiler.attachTimestamps(presentPassDesc, gpu_profiler.passPresent)
@@ -1938,8 +1669,8 @@ proc render*(particleCount: int) =
 
   else:
     # ------------------------------------------------------------------------
-    # QUALITY FLOOR (bloom off): the untouched present pass — RD backdrop,
-    # additive glow, then the plain alpha blit of the trail.
+    # QUALITY FLOOR (bloom off): additive glow, then the plain alpha blit of
+    # the trail.
     # ------------------------------------------------------------------------
     let presentPassDesc = newJsObject()
     presentPassDesc["label"] = "Present Pass".cstring.toJs
@@ -1969,17 +1700,6 @@ proc render*(particleCount: int) =
     presentPassDesc["depthStencilAttachment"] = presentDepthAttachment
 
     let presentPass = commandEncoder.beginRenderPass(presentPassDesc)
-
-    # Step 0: draw the field as a colormapped LDR backdrop under everything else
-    # (the bloom-off floor). It reads the same colormapIndex / fieldOpacity from
-    # the shared TonemapParams buffer the HDR tonemap uses, and its alpha follows
-    # the field's own intensity — so a world whose field sits at the trivial
-    # fixed point composites nothing visible. Nil-guarded before the textures.
-    ensureFieldCompositeBindGroup()
-    if not fieldCompositeBindGroup.isNil:
-      presentPass.setPipeline(fieldCompositePipeline)
-      presentPass.setBindGroup(0, fieldCompositeBindGroup)
-      presentPass.draw(3, 1, 0, 0)  # Fullscreen triangle
 
     # GUARANTEE: Glow is ALWAYS behind particles because:
     #   - Glow draws here with depthCompare="less" (but depth just cleared to 1.0)

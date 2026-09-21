@@ -173,11 +173,10 @@ const ExpectedShaderBindings*: Table[string, seq[int]] = {
   "lr-kernel": @[0, 1, 2, 3],  # binding 3 is SimParams, where the attraction matrix already lives
   "lr-force": @[0, 1, 2, 3, 4],
   # Render shaders (staticRead into app.js by webgpu_render.nim).
-  "render": @[0, 1, 2, 3, 4],
-  "glow": @[0, 1, 2, 4],  # binding 3 (render's fieldTexture) legally absent — glow never samples the RD field
-  "fade": @[0, 1, 2, 3, 4, 5],  # binding 5 is the PREVIOUS frame's camera, the second Camera record the trail reprojection reads
-  "tonemap": @[0, 1, 2, 3, 4, 5],
-  "field-composite": @[0, 1, 2, 3],
+  "render": @[0, 1, 2, 4],  # binding 3 (the RD field) is gone; glow's camera keeps the shared layout's binding 4
+  "glow": @[0, 1, 2, 4],  # binding 3 legally absent — glow shares render's layout and never samples the RD field
+  "fade": @[0, 1, 2, 4, 5],  # binding 3 (the RD field) is gone; binding 5 is the PREVIOUS frame's camera, the second Camera record the trail reprojection reads
+  "tonemap": @[0, 1, 2, 3],  # bindings 4 (the RD field) and 5 (the camera that placed it) are gone
   "composite": @[0, 1],
   "blur": @[0, 1, 2],
   "overlay": @[0, 1, 2],

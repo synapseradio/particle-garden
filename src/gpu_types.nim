@@ -216,13 +216,10 @@ const
   # at 0 and glow.wgsl's max is inert. The field stays until someone shrinks
   # RenderParams deliberately.
   #
-  # fieldOpacity and colormapIndex are duplicated here from TonemapParams so the
-  # VERTEX stage can light each particle by the field it is standing in
-  # (render.wgsl), which the composite stages cannot do — they only ever see the
-  # field per screen pixel, after the particles are already coloured. They spend
-  # two of the three pads that rounded the struct to 64 bytes, so the field
-  # reaches the render stage without growing or reallocating the uniform. One
-  # pad remains.
+  # Three pads: the field no longer reaches the vertex stage (the reaction-
+  # diffusion field acts on particles only as force), so the two slots that
+  # carried its opacity and colormap index join the one that rounded the
+  # struct to 64 bytes.
   RenderParamsLayout* = GpuStruct(
     name: "RenderParams",
     fields: @[
@@ -237,8 +234,8 @@ const
       GpuField(name: "glowFalloff",       kind: gtF32, offset: 40, size: 4, count: 1),
       GpuField(name: "glowWarmth",        kind: gtF32, offset: 44, size: 4, count: 1),
       GpuField(name: "glowDensityFloor",  kind: gtF32, offset: 48, size: 4, count: 1),
-      GpuField(name: "fieldOpacity",      kind: gtF32, offset: 52, size: 4, count: 1),
-      GpuField(name: "colormapIndex",     kind: gtF32, offset: 56, size: 4, count: 1),
+      GpuField(name: "_pad1",             kind: gtF32, offset: 52, size: 4, count: 1),
+      GpuField(name: "_pad2",             kind: gtF32, offset: 56, size: 4, count: 1),
       GpuField(name: "_pad0",             kind: gtF32, offset: 60, size: 4, count: 1),
     ],
     totalSize: 64
@@ -246,9 +243,10 @@ const
 
   # FadeParams struct (16 bytes, generated into web/shaders/modules/fade_params.wgsl)
   #
-  # The fade pass's own two settings and nothing else. How much of the previous
-  # frame survives, and how far the trail slides along the field gradient while
-  # it decays.
+  # The fade pass's own one setting and nothing else: how much of the previous
+  # frame survives. The trail no longer drifts along the field gradient (the
+  # reaction-diffusion field acts on particles only as force), so the slot that
+  # carried its scale joins the two that rounded the struct to 16 bytes.
   #
   # The VIEW the pass reprojects through does not live here. The trail texture
   # is in screen space, so a moving camera has to be reprojected or the history
@@ -261,7 +259,7 @@ const
     name: "FadeParams",
     fields: @[
       GpuField(name: "fadeAmount", kind: gtF32, offset: 0,  size: 4, count: 1),
-      GpuField(name: "fieldDriftScale", kind: gtF32, offset: 4, size: 4, count: 1),
+      GpuField(name: "pad0",       kind: gtF32, offset: 4, size: 4, count: 1),
       GpuField(name: "pad1",       kind: gtF32, offset: 8,  size: 4, count: 1),
       GpuField(name: "pad2",       kind: gtF32, offset: 12, size: 4, count: 1),
     ],
@@ -536,17 +534,13 @@ const
 
   # TonemapParams struct (32 bytes, generated into web/shaders/modules/tonemap_params.wgsl)
   # The bloom composite/tonemap pass uniform: HDR exposure, the bloom mix gain,
-  # the three colour-grade knobs (saturation, contrast, signed temperature), and
-  # the field-visualization pair — colormapIndex (which procedural ramp maps
-  # the RD field) and fieldOpacity (how much the field contributes). The RD
-  # field-composite (bloom-off) floor reads the same two slots from the same
-  # buffer. Written every frame from CONFIG.
+  # and the three colour-grade knobs (saturation, contrast, signed
+  # temperature). Written every frame from CONFIG.
   #
-  # Nothing about the VIEW appears here. Both composite paths map screen UV
-  # into field space, which needs the camera and the world extent, and both
-  # bind the shared Camera uniform that carries the pair — render, glow, fade,
-  # tonemap and field-composite must agree about the view within a frame, and
-  # five copies is five chances to disagree.
+  # Three pads: the reaction-diffusion field no longer reaches this pass (it
+  # acts on particles only as force), so the two slots that carried its
+  # colormap index and opacity join the one that rounded the struct to 32
+  # bytes.
   TonemapParamsLayout* = GpuStruct(
     name: "TonemapParams",
     fields: @[
@@ -555,8 +549,8 @@ const
       GpuField(name: "saturation",     kind: gtF32, offset: 8,  size: 4, count: 1),
       GpuField(name: "contrast",       kind: gtF32, offset: 12, size: 4, count: 1),
       GpuField(name: "temperature",    kind: gtF32, offset: 16, size: 4, count: 1),
-      GpuField(name: "colormapIndex",  kind: gtF32, offset: 20, size: 4, count: 1),
-      GpuField(name: "fieldOpacity",   kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "pad0",           kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "pad1",           kind: gtF32, offset: 24, size: 4, count: 1),
       GpuField(name: "pad2",           kind: gtF32, offset: 28, size: 4, count: 1),
     ],
     totalSize: 32
@@ -798,11 +792,10 @@ const
 # RENDERPARAMS / FADEPARAMS FIELD INDICES (webgpu_render.nim)
 # =============================================================================
 # Generated from the layout tables by genFieldIndices, like SIM_* above.
-# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_DENSITY_FLOOR=12, then
-# RENDER_FIELD_OPACITY=13 and RENDER_COLORMAP_INDEX=14 (the field reaching the
-# vertex stage) and one pad at 15, RENDER_PARAMS_F32_COUNT=16 (totalSize 64);
-# FADE_AMOUNT=0, FADE_FIELD_DRIFT_SCALE=1 ... FADE_PAD2=3,
-# FADE_PARAMS_F32_COUNT=4; CAMERA_CENTER_X=0 ... CAMERA_WORLD_HEIGHT=4, three
+# RENDER_RESOLUTION_X=0 ... RENDER_GLOW_DENSITY_FLOOR=12, three pads at
+# 13-15, RENDER_PARAMS_F32_COUNT=16 (totalSize 64);
+# FADE_AMOUNT=0, three pads at 1-3, FADE_PARAMS_F32_COUNT=4;
+# CAMERA_CENTER_X=0 ... CAMERA_WORLD_HEIGHT=4, three
 # pads, CAMERA_PARAMS_F32_COUNT=8.
 
 genFieldIndices(RenderParamsLayout, "RENDER")

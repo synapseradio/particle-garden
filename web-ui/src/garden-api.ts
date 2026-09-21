@@ -113,11 +113,6 @@ export interface PaletteSchemeEntry {
   label: string;
 }
 
-export interface ColormapEntry {
-  index: number;
-  label: string;
-}
-
 export interface StatsSample {
   fps: number;
   particleCount: number;
@@ -359,10 +354,6 @@ export interface GardenAPI {
   setForceWeather(enabled: boolean): void;
   // Asked for rather than listed, on the same terms climateParamIds is.
   forceWeatherParamIds(): string[];
-
-  colormaps(): ColormapEntry[];
-  getColormap(): number;
-  setColormap(index: number): void;
 
   // Attraction matrix (live references; valid after onReady)
   matrix(): Float32Array;

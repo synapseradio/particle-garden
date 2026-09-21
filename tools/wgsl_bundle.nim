@@ -204,7 +204,6 @@ const PlaceholderSources = [
   "src/shader_config.nim",
   "src/field_core.nim",
   "src/bloom_core.nim",
-  "src/colormap_core.nim",
   "src/camera_core.nim",
   "src/memory_layout.nim",
   "src/physics_core.nim",

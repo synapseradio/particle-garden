@@ -12,22 +12,14 @@
 // the trail texture was drawn under, both as the Camera struct camera.wgsl
 // generates from CameraLayout, and both carrying the world extent the
 // transforms need.
-//
-// THE TRAIL DRIFTS ALONG THE FIELD. Binding 3 is the reaction-diffusion field;
-// the trail is re-sampled a hair along its gradient, so a trail decaying near
-// the pattern bends around it rather than fading straight back. fieldDriftScale
-// carries colormap_core's FIELD_DRIFT_SCALE, and the field is world-intrinsic,
-// so the drift is live on every frame the trail is on.
 // =============================================================================
 
 //! import fade_params
 //! import camera_transform
-//! import field_grid
 
 @group(0) @binding(0) var prevFrame: texture_2d<f32>;
 @group(0) @binding(1) var prevSampler: sampler;
 @group(0) @binding(2) var<uniform> params: FadeParams;
-@group(0) @binding(3) var fieldTexture: texture_2d<f32>;
 @group(0) @binding(4) var<uniform> cam: Camera;
 // The view the trail texture was drawn under. A second record of the same
 // struct the renderer transforms through, so the reprojection reads a camera
@@ -72,28 +64,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   let worldHere = cameraScreenUvToWorld(input.uv, cam, worldSize);
   let reprojectedUv = cameraWorldToScreenUv(worldHere, prevCam, worldSize);
 
-  // Displace the sample along the field gradient. The whole term is multiplied
-  // by fieldDriftScale, so at zero this reduces to the reprojected UV exactly
-  // and the guard skips the four texture loads that would build a gradient
-  // about to be multiplied by zero. It comes from a uniform, so the branch is
-  // coherent across the draw. The shipped scale is nonzero, which makes the
-  // guard a contract with the value rather than a path the app takes.
-  //
-  // The field cell comes from the WORLD position, not from the screen UV: the
-  // field lives in the world, so a camera that has panned or zoomed must read
-  // the same field cell for the same world point.
-  // Floor rather than fieldCellFor's clamp: worldHere is a reprojection, so
-  // near a seam it legitimately sits outside the world rect, and the gradient
-  // taps wrap it back onto the torus.
-  var fieldGradient = vec2f(0.0);
-  if (params.fieldDriftScale != 0.0) {
-    let fieldUv = worldHere / worldSize;
-    let fieldCell = vec2<i32>(floor(fieldUv * vec2<f32>(FIELD_DIMS)));
-    fieldGradient = fieldInhibitorGradient(fieldTexture, fieldCell);
-  }
-  let driftUv = reprojectedUv + fieldGradient * params.fieldDriftScale;
-
-  let prev = textureSample(prevFrame, prevSampler, driftUv);
+  let prev = textureSample(prevFrame, prevSampler, reprojectedUv);
 
   // Higher fadeAmount = MORE of previous frame = LONGER trails
   let bgRgb = vec3f(0.04, 0.04, 0.06);

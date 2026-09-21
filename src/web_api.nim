@@ -381,11 +381,6 @@ when defined(js):
     updateSimulation(proc(simState: var SimulationState) =
       simState.forceWeather = enabled)
 
-  proc setColormapImpl(index: int) =
-    updateRender(proc(renderState: var RenderState) =
-      renderState.colormapIndex =
-        clamp(index, COLORMAP_INDEX_MIN, COLORMAP_INDEX_MAX))
-
   proc setSpeciesCountImpl(count: int; randomizeNew: bool) =
     ## The species slider's full release behavior: clamp, update the typed
     ## state, resize the matrix bookkeeping, then re-initialize particles.
@@ -1091,8 +1086,6 @@ when defined(js):
     settings.saturation = stored.saturation
     settings.contrast = stored.contrast
     settings.temperature = stored.temperature
-    settings.colormapIndex = stored.colormapIndex
-    settings.fieldOpacity = stored.fieldOpacity
     # Every field, and the fluid and chemistry ones especially: `settings` is
     # zero-initialized, so a field left out here serializes as 0 and reloads
     # clamped up to its range minimum. rdDeposit and rdFieldForce are
@@ -1234,14 +1227,12 @@ when defined(js):
           renderState.saturation = settings.saturation
           renderState.contrast = settings.contrast
           renderState.temperature = settings.temperature
-          renderState.fieldOpacity = settings.fieldOpacity
           renderState.cameraDrift = settings.cameraDrift
           renderState.cameraDriftSpeed = settings.cameraDriftSpeed
         )
         setForceModelImpl(settings.forceModel)
         setTrailsImpl(settings.trails)
         setBloomImpl(settings.bloomEnabled)
-        setColormapImpl(settings.colormapIndex)
       of pasUiRefresh:
         # Display refresh belongs to the Solid UI: the controller re-reads
         # everything through gardenAPI after a successful apply.
@@ -1261,24 +1252,6 @@ when defined(js):
       let entry = newJsObject()
       entry["id"] = toJs(cstring(schemeId(scheme)))
       entry["label"] = toJs(cstring(paletteSchemeLabel(scheme)))
-      jsArray.push(entry)
-    jsArray
-
-  static:
-    # The label list below is hand-written while the ramps themselves live in
-    # colormap_core. A fourth ramp would otherwise be invisible in the panel
-    # with nothing failing anywhere; this makes it fail the build instead.
-    # Phrased against the index bounds rather than colormap_core's
-    # COLORMAP_COUNT because those are what preset re-exports into this scope,
-    # and COLORMAP_INDEX_MAX is defined as COLORMAP_COUNT - 1.
-    doAssert COLORMAP_INDEX_MAX - COLORMAP_INDEX_MIN + 1 == 3
-
-  let colormapArray = block:
-    let jsArray = newJsArray()
-    for (index, label) in [(0, "Inferno"), (1, "Viridis"), (2, "Two-Tone")]:
-      let entry = newJsObject()
-      entry["index"] = toJs(index)
-      entry["label"] = toJs(cstring(label))
       jsArray.push(entry)
     jsArray
 
@@ -1406,10 +1379,6 @@ when defined(js):
     result["rdRegimes"] = toJs(proc(): JsObject = regimeArray)
     result["getRdRegime"] = toJs(proc(): cstring = cstring(activeRegimeImpl()))
     result["applyRdRegime"] = toJs(proc(id: cstring) = applyRegimeImpl($id))
-
-    result["colormaps"] = toJs(proc(): JsObject = colormapArray)
-    result["getColormap"] = toJs(proc(): int = CONFIG.colormapIndex)
-    result["setColormap"] = toJs(proc(index: int) = setColormapImpl(index))
 
     # Dormancy: id -> whether the control's consumer can act. The panel calls
     # this on its own writes and on each stats push — never per frame.

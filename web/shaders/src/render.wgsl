@@ -12,24 +12,10 @@
 // With AoS layout, we read all particle data (pos, vel, species, density) from
 // one Particle struct instead of 4 separate buffer reads. This reduces binding
 // count from 5 to 2 and improves cache locality.
-//
-// THE FIELD LIGHTS THE PARTICLES. Binding 3 is the reaction-diffusion field,
-// read in the VERTEX stage at each particle's own cell, so a particle standing
-// in a bright region of the pattern is lit by it. This is the one stage that
-// can do that: the composite stages see the field per screen pixel, long after
-// the particles have been coloured, so there they can only ever lie behind or
-// in front of the particles rather than illuminate them.
-//
-// textureLoad, not textureSample: the vertex stage has no implicit derivatives,
-// and the read is at an exact cell anyway. Binding 3 holds the bloom view as a
-// stand-in while the field view is nil, because the layout declares an entry
-// there either way.
 
 //! import particle
 //! import render_params
-//! import colormap
 //! import camera_transform
-//! import field_grid
 
 // Quad corner offsets (2 triangles = 6 vertices)
 // Unit quad: corners at distance sqrt(2) from center
@@ -69,10 +55,7 @@ const MAX_BRIGHTNESS: f32 = 1.0;           // Clustered particles at full bright
 // out-of-range uniform read is clamped rather than trapped, so a short array
 // would render the species past its end in the last species' colour silently.
 @group(0) @binding(2) var<uniform> colors: array<vec4f, {{MAX_SPECIES}}>;
-@group(0) @binding(3) var fieldTexture: texture_2d<f32>;     // RD field (activator, inhibitor)
 @group(0) @binding(4) var<uniform> cam: Camera;              // View over the toroidal world
-
-const FIELD_LIGHT_STRENGTH: f32 = {{FIELD_LIGHT_STRENGTH}};
 
 // Tail length in particle radii at which the motion-blur taper reaches full
 // depth. Substituted from trail_core.TRAIL_TAPER_FULL_ELONGATION, which
@@ -167,32 +150,7 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
 
   let speciesIdx = min(p.species, MAX_SPECIES - 1u);
   let speciesColor = colors[speciesIdx].rgb;
-
-  // Light the particle by the field it is standing in. Sampled at the
-  // particle's OWN position (p.pos, not the quad corner worldPos) so every
-  // vertex of one particle agrees and the quad is lit as one thing rather than
-  // gradient-shaded across itself.
-  //
-  // THE TINT DOES NOT READ fieldOpacity, and that is deliberate. fieldOpacity
-  // scales the BACKDROP — the fullscreen layer field-composite.wgsl and the
-  // tonemap draw under everything — and it ships at zero, because a backdrop
-  // claims whole regions of the frame that colonies and trails then compete
-  // with. Lighting the particles is how the field shows itself instead, so
-  // gating this on the backdrop's scale would blind the particles the moment
-  // the backdrop is turned off, which is its default state.
-  //
-  // No guard, for the same reason: the pull is already proportional to the
-  // field's local intensity, and the field clears to Gray-Scott's trivial fixed
-  // point where the inhibitor is 0. A particle standing where no pattern is
-  // therefore gets a pull of 0 and mix returns its species colour untouched.
-  let fieldCell = fieldCellFor(p.pos, params.worldSize);
-  let fieldHere = textureLoad(fieldTexture, fieldCell, 0).xy;
-  let colormapIndex = u32(params.colormapIndex + 0.5);
-  let fieldPull = colormapFieldIntensity(colormapIndex, fieldHere.x, fieldHere.y) *
-    FIELD_LIGHT_STRENGTH;
-  let fieldTint = applyColormap(colormapIndex, fieldHere.x, fieldHere.y);
-  let particleColor = mix(speciesColor, fieldTint, fieldPull);
-  output.color = vec4f(particleColor, 1.0);
+  output.color = vec4f(speciesColor, 1.0);
 
   return output;
 }

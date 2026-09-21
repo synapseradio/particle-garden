@@ -28,7 +28,6 @@ import ../../physics_core
 import ../../sph_core
 import ../../field_core
 import ../../bloom_core
-import ../../colormap_core
 import ../../climate_core
 import ../../camera_core
 import ../../camera_drift
@@ -666,11 +665,6 @@ func temperatureProbe(value: float; ctx: ProbeContext): float =
     ctx.render.exposure, ctx.render.saturation, ctx.render.contrast, value)
   graded.r - graded.b
 
-func fieldOpacityProbe(value: float; ctx: ProbeContext): float =
-  ## fieldOpacity: the composited field coverage over the background at a
-  ## reference field sample — linear end to end, a must-pass anchor.
-  fieldCoverage(0, 0.4, 0.5, value)
-
 func paletteDistance(saturation, lightness: float): float =
   let colors = generatePalette(RefPaletteCount, psGolden, saturation,
     lightness)
@@ -837,8 +831,6 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
     "grade.contrastSpread": ProbeSpec(fn: contrastProbe,
       budget: pbClosedForm),
     "grade.temperatureSplit": ProbeSpec(fn: temperatureProbe,
-      budget: pbClosedForm),
-    "colormap.coverage": ProbeSpec(fn: fieldOpacityProbe,
       budget: pbClosedForm),
     "palette.pairwiseDistance.saturation": ProbeSpec(
       fn: paletteSaturationProbe, budget: pbClosedForm),

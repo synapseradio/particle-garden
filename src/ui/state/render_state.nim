@@ -10,7 +10,6 @@
 # ==============================================================================
 
 import ../../bloom_core
-import ../../colormap_core
 import ../../camera_drift  # CAMERA_DRIFT_DEFAULT_SPEED, the drift-rate authority
 
 type
@@ -33,11 +32,6 @@ type
     saturation*: float        ## Grade: 1 = unchanged, 0 = greyscale
     contrast*: float          ## Grade: 1 = unchanged, around a 0.5 pivot
     temperature*: float       ## Grade: signed warm/cool tint, 0 = neutral
-    # Reaction-diffusion field visualization. colormapIndex selects the
-    # procedural ramp; fieldOpacity scales the field's contribution. Read by
-    # both the HDR tonemap and the bloom-off field-composite floor.
-    colormapIndex*: int
-    fieldOpacity*: float
     # The camera drift. Read by the frame loop, never by a shader, the way
     # climateSpeed sits in SimulationState.
     cameraDrift*: bool         ## Whether the view moves itself.
@@ -90,8 +84,6 @@ func initRenderState*(): RenderState =
     saturation: BLOOM_DEFAULT_SATURATION,
     contrast: BLOOM_DEFAULT_CONTRAST,
     temperature: BLOOM_DEFAULT_TEMPERATURE,
-    colormapIndex: COLORMAP_DEFAULT_INDEX,
-    fieldOpacity: FIELD_OPACITY_DEFAULT,
     cameraDrift: false,
     cameraDriftSpeed: CAMERA_DRIFT_DEFAULT_SPEED
   )

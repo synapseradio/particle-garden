@@ -266,7 +266,6 @@ suite "Descriptors Agree With The Range Authority":
     ("longRangeReach", LONG_RANGE_REACH_MIN, LONG_RANGE_REACH_MAX),
     ("longRangeGridIndex", LONG_RANGE_GRID_INDEX_MIN.float,
       LONG_RANGE_GRID_INDEX_MAX.float),
-    ("fieldOpacity", FIELD_OPACITY_RANGE_MIN, FIELD_OPACITY_RANGE_MAX),
     # Bodies
     ("bodiesStrength", BODIES_STRENGTH_MIN, BODIES_STRENGTH_MAX),
     ("bodyRadius", BODY_RADIUS_MIN, BODY_RADIUS_MAX),
@@ -344,7 +343,6 @@ suite "Descriptors Agree With The Default Authority":
     ("saturation", renderDefaults.saturation),
     ("contrast", renderDefaults.contrast),
     ("temperature", renderDefaults.temperature),
-    ("fieldOpacity", renderDefaults.fieldOpacity),
     # palette.nim
     ("paletteSaturation", DEFAULT_SATURATION),
     ("paletteLightness", DEFAULT_LIGHTNESS),
@@ -395,8 +393,7 @@ suite "Store Routing Sends Each Parameter To Its Mutation Path":
   test "render-pipeline parameters route to the render store":
     for id in ["particleSize", "trailLength", "glowIntensity",
         "velocityGlowScale", "glowRadiusScale", "glowFalloff", "glowWarmth",
-        "bloomIntensity", "exposure", "saturation", "contrast", "temperature",
-        "fieldOpacity"]:
+        "bloomIntensity", "exposure", "saturation", "contrast", "temperature"]:
       check byId(id).store == psRender
 
   test "only the two count parameters re-initialize particles on commit":

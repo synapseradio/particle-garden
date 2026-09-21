@@ -26,7 +26,6 @@ const HelpFileNames* = [
   "35-bodies.md",
   "35-long-range.md",
   "40-rd.md",
-  "41-rd-field.md",
   "42-chemistry.md",
   "50-render.md",
   "51-glow.md",

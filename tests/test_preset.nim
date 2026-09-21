@@ -6,8 +6,7 @@ import std/unittest
 import std/json
 import ../src/memory_layout
 import ../src/preset
-import ../src/colormap_core  # the authority preset.nim mirrors fieldOpacity from
-import ../src/field_core     # and the chemistry defaults it mirrors
+import ../src/field_core     # the chemistry defaults it mirrors
 import ../src/climate_core   # and the climate speed default
 import ../src/camera_drift   # and the camera drift speed default
 import ../src/ui/api/param_descriptor
@@ -35,7 +34,6 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     # a fresh session starts at — so the agreement is asserted from here, where
     # both modules are importable.
     let defaults = defaultSettings()
-    check defaults.fieldOpacity == FIELD_OPACITY_DEFAULT
     check defaults.rdFeed == RD_DEFAULT_FEED
     check defaults.rdKill == RD_DEFAULT_KILL
     check defaults.rdDeposit == RD_DEFAULT_DEPOSIT

@@ -139,20 +139,16 @@ var hasTimestampQuery* {.exportc.}: bool = false
 # as a write-only storage texture — it is not in the storage-capable format list;
 # rgba16float is the nearest storage+sampled+filterable half-float format. This is the
 # app's only use of STORAGE_BINDING: the rd-step / resolve passes sample one
-# texture and write the other. fieldTextureA is the FIXED front the render and
-# force passes always read; fieldTextureB is the scratch the ping-pong bounces
+# texture and write the other. fieldTextureA is the FIXED front the force
+# pass always reads; fieldTextureB is the scratch the ping-pong bounces
 # through (see field-resolve.wgsl for why the half-float format forces a
 # ping-pong rather than an in-place update, and webgpu_compute's bind-group
-# section for the full per-frame swap sequence). fieldGenerationCounter bumps
-# whenever the textures are (re)created so the render side can cache its bind
-# group and rebuild on change.
+# section for the full per-frame swap sequence).
 var fieldTextureA {.exportc: "pgFieldTextureA".}: GPUTexture = nil
 var fieldTextureB {.exportc: "pgFieldTextureB".}: GPUTexture = nil
 var fieldViewA {.exportc: "pgFieldViewA".}: GPUTextureView = nil
 var fieldViewB {.exportc: "pgFieldViewB".}: GPUTextureView = nil
-var fieldLinearSampler {.exportc: "pgFieldSampler".}: GPUSampler = nil
 var fieldDepositBuffer {.exportc: "pgFieldDeposit".}: GPUBuffer = nil
-var fieldGenerationCounter {.exportc: "pgFieldGeneration".}: int = 0
 
 proc calculateBufferSizes*(): BufferSizes {.exportc.} =
   ## Calculate GPU buffer sizes for AoS layout.
@@ -225,20 +221,6 @@ proc createFieldResources() =
   fieldViewA = fieldTextureA.createView()
   fieldViewB = fieldTextureB.createView()
 
-  # Linear sampler for the LDR composite (compute passes use textureLoad and
-  # need no sampler). rgba16float is filterable, so filtering is valid.
-  let samplerDesc = makeJsObject()
-  samplerDesc["magFilter".cstring] = "linear".cstring.toJs
-  samplerDesc["minFilter".cstring] = "linear".cstring.toJs
-  # Repeat addressing, because the field wraps and the composite passes sample
-  # it through a camera whose view can straddle the world edge. Clamping here
-  # would smear the boundary row across everything past that edge instead of
-  # showing the world again, which is the seam the camera exists to hide.
-  samplerDesc["addressModeU".cstring] = "repeat".cstring.toJs
-  samplerDesc["addressModeV".cstring] = "repeat".cstring.toJs
-  samplerDesc["label".cstring] = "RD Field Sampler".cstring.toJs
-  fieldLinearSampler = device.createSampler(samplerDesc)
-
   # Deposit buffer: one i32 per field cell — the inhibitor channel — for
   # fixed-point atomic accumulation of per-particle splats. field-deposit.wgsl
   # documents why there is no second, activator channel.
@@ -285,29 +267,13 @@ proc createFieldResources() =
   discard seedArray.push(seedCommands.toJs)
   queue.submit(seedArray)
 
-  inc fieldGenerationCounter
-
-proc activeFieldView*(): GPUTextureView =
-  ## The sampled view of the current front field texture (fieldA is the fixed
-  ## front). R = activator, G = inhibitor. Nil until createFieldResources runs.
-  fieldViewA
-
 proc fieldSampledViewA*(): GPUTextureView = fieldViewA
 proc fieldSampledViewB*(): GPUTextureView = fieldViewB
   ## The two ping-pong views, for the compute executor's RD bind groups.
 
-proc fieldSampler*(): GPUSampler =
-  ## The linear sampler the LDR field composite reads the field with.
-  fieldLinearSampler
-
 proc fieldDepositGpuBuffer*(): GPUBuffer =
   ## The fixed-point deposit buffer (2 i32 channels per field cell).
   fieldDepositBuffer
-
-proc fieldGeneration*(): int =
-  ## Bumps on each (re)creation of the field textures, so the render side caches
-  ## its field-composite bind group and rebuilds only when this changes.
-  fieldGenerationCounter
 
 proc detectWebGPU*(): bool {.exportc.} =
   if not hasWebGPU():

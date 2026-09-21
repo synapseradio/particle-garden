@@ -219,13 +219,13 @@ suite "Generated Render Struct Layouts":
     check RENDER_TRAIL_LENGTH_SCALE == 8
 
   test "FadeParamsLayout is 4 floats and generates FADE_ indices":
-    # 16 bytes: the fade pass carries only its own two settings. The view it
+    # 16 bytes: the fade pass carries only its own one setting. The view it
     # reprojects through arrives as Camera records on their own bindings, so
     # neither the previous camera nor the world extent takes room here.
     check FadeParamsLayout.totalSize == 16
     check wgslUniformSize(FadeParamsLayout) == 16
     check FADE_AMOUNT == 0
-    check FADE_FIELD_DRIFT_SCALE == 1
+    check FADE_PAD0 == 1
     check FADE_PARAMS_F32_COUNT == 4
 
   test "a field name that begins with the prefix does not double the prefix":
@@ -479,11 +479,8 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check BLOOM_PARAMS_F32_COUNT == 4
 
   test "TonemapParamsLayout is 8 floats, 32 bytes written and allocated":
-    # 32 bytes: exposure, the bloom gain, the three grade knobs and the two
-    # field-visualization slots, padded to the 16-byte boundary. Both composite
-    # paths map screen UV into field space through the camera they already
-    # bind, which carries the world extent, so nothing about the view is
-    # restated here.
+    # 32 bytes: exposure, the bloom gain and the three grade knobs, padded to
+    # the 16-byte boundary.
     check TonemapParamsLayout.totalSize == 32
     check wgslUniformSize(TonemapParamsLayout) == 32
 
@@ -493,9 +490,8 @@ suite "Generated BloomParams / TonemapParams Layouts (HDR Bloom)":
     check TONEMAP_SATURATION == 2
     check TONEMAP_CONTRAST == 3
     check TONEMAP_TEMPERATURE == 4
-    # Two pad slots carry the field-visualization pair.
-    check TONEMAP_COLORMAP_INDEX == 5
-    check TONEMAP_FIELD_OPACITY == 6
+    check TONEMAP_PAD0 == 5
+    check TONEMAP_PAD1 == 6
     check TONEMAP_PAD2 == 7
     check TONEMAP_PARAMS_F32_COUNT == 8
 

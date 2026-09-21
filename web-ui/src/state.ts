@@ -31,7 +31,6 @@ export function createPanelController(api: GardenAPI) {
   const [trails, setTrailsSignal] = createSignal(api.getTrails());
   const [bloom, setBloomSignal] = createSignal(api.getBloom());
   const [forceModel, setForceModelSignal] = createSignal(api.getForceModel());
-  const [colormap, setColormapSignal] = createSignal(api.getColormap());
   const [rdRegime, setRdRegimeSignal] = createSignal(api.getRdRegime());
   const [climateDrift, setClimateDriftSignal] = createSignal(
     api.getClimateDrift(),
@@ -94,7 +93,6 @@ export function createPanelController(api: GardenAPI) {
     setTrailsSignal(api.getTrails());
     setBloomSignal(api.getBloom());
     setForceModelSignal(api.getForceModel());
-    setColormapSignal(api.getColormap());
     setRdRegimeSignal(api.getRdRegime());
     setClimateDriftSignal(api.getClimateDrift());
     setCameraDriftSignal(api.getCameraDrift());
@@ -162,7 +160,6 @@ export function createPanelController(api: GardenAPI) {
     trails,
     bloom,
     forceModel,
-    colormap,
     rdRegime,
     climateDrift,
     cameraDrift,
@@ -249,10 +246,6 @@ export function createPanelController(api: GardenAPI) {
     setForceWeather(enabled: boolean) {
       api.setForceWeather(enabled);
       setForceWeatherSignal(api.getForceWeather());
-    },
-    setColormap(index: number) {
-      api.setColormap(index);
-      setColormapSignal(api.getColormap());
     },
     setPaletteScheme(id: string) {
       api.setPaletteScheme(id);
