@@ -1090,13 +1090,24 @@ when defined(calibrateFluid):
       reportArm(fluidArms()[ftRadiusFraction])
 
 # ==============================================================================
-# T5: THE STEP LIMIT BOUNDS THE LINEARIZED MAP (crowding-redesign design §8)
+# T5a-T5d: THE STEP LIMIT BOUNDS EACH MODE BY ITS SIGN
+# (crowding-redesign design §8, addendum of 21-09-2026 23:50)
 # ==============================================================================
 # An oracle independent of stepLimit's own formula: a finite-difference
 # Jacobian of the float pressure force, checked against the analytic sum
-# sweepPairs accumulates. "Fixed phi" (design §8): every particle in a trial
-# crowd shares one density, so the pressure between any pair depends only on
+# sweepPairs accumulates. Fixed phi = ((x - x_on)/x_on)^2 (addendum, Decision
+# 2(b)): every particle in a trial crowd shares one density at the pressure
+# law's own onset ratio, so the pressure between any pair depends only on
 # their positions, not on a simulated smoothed density.
+#
+# The addendum's proof splits a mode by the sign of its stiffness: a
+# restoring mode (lambda >= 0) is bounded by the particle's radial slope D
+# (T5a); a sliding mode (lambda < 0) is the transverse pair term's own
+# physical growth, which D does not bound, so the limit's claim there is only
+# that it never amplifies the mode past the unlimited map's own radius, and
+# never grows it faster per reference frame past ff 1 than at ff 1 (T5b).
+# T5c holds the same split on the full coupled Hessian, and T5d confirms the
+# crowds are hard enough to break the restoring bound when the limit is off.
 
 const
   T5_FRAME_FACTORS = [0.42'f64, 1.0'f64, 2.0'f64, 4.2'f64, 10.0'f64, 30.0'f64]
@@ -1104,10 +1115,10 @@ const
   T5_RADII = [10.0'f64, 50.0'f64, 150.0'f64]
   T5_TRIALS = 20
   T5_PARTICLES = 200
+  T5C_TRIALS = 6
+  T5C_PARTICLES = 60
   T5_EPS = 1.0e-3'f64
-
-type Jacobian2 = object
-  xx, xy, yx, yy: float64
+  T5_TOL = 1.0e-6'f64
 
 func pressureForceOn(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
     stiffness, impulseMax: float64): tuple[x, y: float64] =
@@ -1132,11 +1143,12 @@ func pressureForceOn(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
     result.x += -magnitude * dx * invDist
     result.y += -magnitude * dy * invDist
 
-func pressureJacobian(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
-    stiffness, impulseMax: float64): Jacobian2 =
-  ## The negative gradient of pressureForceOn with particle `i`'s own
-  ## position, central-differenced: the local restoring "spring constant" a
-  ## linearization around this crowd sees.
+func blockEigenvalues(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
+    stiffness, impulseMax: float64): array[2, float64] =
+  ## The two eigenvalues of the symmetrized central-difference 2x2 Jacobian
+  ## of pressureForceOn with particle `i`'s own position: the local
+  ## restoring or sliding "spring constant" a linearization around this
+  ## crowd sees, split by sign in T5a/T5b.
   var plusXxs = xs
   plusXxs[i] += T5_EPS
   var minusXxs = xs
@@ -1154,11 +1166,14 @@ func pressureJacobian(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
   let fMinusY = pressureForceOn(xs, minusYys, i, worldSize, radius, phi,
     stiffness, impulseMax)
   let inv2Eps = 1.0 / (2.0 * T5_EPS)
-  Jacobian2(
-    xx: -(fPlusX.x - fMinusX.x) * inv2Eps,
-    xy: -(fPlusY.x - fMinusY.x) * inv2Eps,
-    yx: -(fPlusX.y - fMinusX.y) * inv2Eps,
-    yy: -(fPlusY.y - fMinusY.y) * inv2Eps)
+  let xx = -(fPlusX.x - fMinusX.x) * inv2Eps
+  let xy = -(fPlusY.x - fMinusY.x) * inv2Eps
+  let yx = -(fPlusX.y - fMinusX.y) * inv2Eps
+  let yy = -(fPlusY.y - fMinusY.y) * inv2Eps
+  let sxy = 0.5 * (xy + yx)
+  let trace = xx + yy
+  let diff = sqrt(max(0.0, ((xx - yy) * 0.5) ^ 2 + sxy * sxy))
+  [trace * 0.5 + diff, trace * 0.5 - diff]
 
 func pressureStiffnessSum(xs, ys: seq[float64]; i: int; worldSize, radius,
     phi, stiffness, impulseMax: float64): float64 =
@@ -1176,73 +1191,106 @@ func pressureStiffnessSum(xs, ys: seq[float64]; i: int; worldSize, radius,
     result += pairStiffnessSlope(phi.float32, phi.float32, stiffness.float32,
       impulseMax.float32, invRadius.float32).float64
 
-func stepMatrix(j: Jacobian2; retention, frameFactor, s: float64):
-    array[4, array[4, float64]] =
-  ## The symplectic map v' = r(v - ff*s*J*x), x' = x + v' (crowding-redesign
-  ## design §3.4), state ordered [vx, vy, xx, xy].
-  let b = frameFactor * s
-  result[0] = [retention, 0.0, -retention * b * j.xx, -retention * b * j.xy]
-  result[1] = [0.0, retention, -retention * b * j.yx, -retention * b * j.yy]
-  result[2] = [retention, 0.0, 1.0 - retention * b * j.xx,
-    -retention * b * j.xy]
-  result[3] = [0.0, retention, -retention * b * j.yx,
-    1.0 - retention * b * j.yy]
+func fullHessian(xs, ys: seq[float64]; worldSize, radius, phi, stiffness,
+    impulseMax: float64): seq[seq[float64]] =
+  ## The unsymmetrized central-difference Hessian of the full crowd's
+  ## pressure force, row `2*i + axis` holding particle i's force response to
+  ## the perturbed coordinate in column order [x0, y0, x1, y1, ...].
+  let n = xs.len
+  result = newSeq[seq[float64]](2 * n)
+  for row in 0 ..< 2 * n: result[row] = newSeq[float64](2 * n)
+  for col in 0 ..< 2 * n:
+    var xp = xs
+    var xm = xs
+    var yp = ys
+    var ym = ys
+    let k = col div 2
+    if col mod 2 == 0: xp[k] += T5_EPS; xm[k] -= T5_EPS
+    else: yp[k] += T5_EPS; ym[k] -= T5_EPS
+    for i in 0 ..< n:
+      let fp = pressureForceOn(xp, yp, i, worldSize, radius, phi, stiffness,
+        impulseMax)
+      let fm = pressureForceOn(xm, ym, i, worldSize, radius, phi, stiffness,
+        impulseMax)
+      result[2 * i][col] = -(fp.x - fm.x) / (2.0 * T5_EPS)
+      result[2 * i + 1][col] = -(fp.y - fm.y) / (2.0 * T5_EPS)
 
-func spectralRadius4(m: array[4, array[4, float64]]): float64 =
-  ## The dominant |eigenvalue|, by power iteration on the norm growth rate: a
-  ## complex-conjugate dominant pair's invariant real subspace is a scaled
-  ## rotation, so the per-step norm ratio converges to the modulus there too.
-  var v = [1.0, 0.3, -0.2, 0.5]
-  for _ in 0 ..< 80:
-    var next: array[4, float64]
-    for r in 0 ..< 4:
-      for c in 0 ..< 4:
-        next[r] += m[r][c] * v[c]
-    var norm = 0.0
-    for x in next: norm += x * x
-    norm = sqrt(norm)
-    if norm <= 0.0:
-      return 0.0
-    for r in 0 ..< 4:
-      v[r] = next[r] / norm
-  var lastApplied: array[4, float64]
-  for r in 0 ..< 4:
-    for c in 0 ..< 4:
-      lastApplied[r] += m[r][c] * v[c]
-  var norm = 0.0
-  for x in lastApplied: norm += x * x
-  sqrt(norm)
+func jacobiEigen(a: var seq[seq[float64]]): seq[float64] =
+  ## Eigenvalues of a symmetric matrix by cyclic Jacobi rotation: the
+  ## off-diagonal sum shrinks monotonically to zero, leaving the diagonal as
+  ## the spectrum (Golub & Van Loan, "Matrix Computations", the classical
+  ## Jacobi eigenvalue algorithm).
+  let n = a.len
+  for sweep in 0 ..< 60:
+    var off = 0.0
+    for p in 0 ..< n:
+      for q in p + 1 ..< n: off += a[p][q] * a[p][q]
+    if off < 1e-22: break
+    for p in 0 ..< n:
+      for q in p + 1 ..< n:
+        if abs(a[p][q]) < 1e-300: continue
+        let theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q])
+        let t = (if theta >= 0: 1.0 else: -1.0) /
+          (abs(theta) + sqrt(theta * theta + 1.0))
+        let cs = 1.0 / sqrt(t * t + 1.0)
+        let sn = t * cs
+        for k in 0 ..< n:
+          let akp = a[k][p]
+          let akq = a[k][q]
+          a[k][p] = cs * akp - sn * akq
+          a[k][q] = sn * akp + cs * akq
+        for k in 0 ..< n:
+          let apk = a[p][k]
+          let aqk = a[q][k]
+          a[p][k] = cs * apk - sn * aqk
+          a[q][k] = sn * apk + cs * aqk
+  for i in 0 ..< n: result.add a[i][i]
+
+func rho(kappa, retention: float64): float64 =
+  ## The larger |root| of mu^2 - (1 + r - r*kappa) mu + r = 0, the
+  ## characteristic polynomial of the one-step map v' = r(v - kappa*x),
+  ## x' = x + v' for a mode of stiffness kappa = ff*s*lambda (addendum,
+  ## Decision 1).
+  let t = 1.0 + retention - retention * kappa
+  let disc = t * t - 4.0 * retention
+  if disc >= 0.0:
+    max(abs((t + sqrt(disc)) * 0.5), abs((t - sqrt(disc)) * 0.5))
+  else:
+    sqrt(retention)
 
 type T5Crowd = object
   xs, ys: seq[float64]
   worldSize, radius, phi: float64
 
-func t5Crowd(seed: int): T5Crowd =
-  ## 200 particles placed uniformly at random, at a radius from {10, 50,
-  ## 150} and a crowd ratio x from [7, 16] (crowding-redesign design §8). The
+func t5Crowd(seed, particles: int): T5Crowd =
+  ## `particles` placed uniformly at random, at a radius from {10, 50, 150}
+  ## and a crowd ratio x from [7, 16] (crowding-redesign design §8). The
   ## world spans the area whose mean crowd density (N pi R^2 / 3A, the same
   ## expression meanCrowdDensity uses) equals x at onset 1, so a uniformly
-  ## placed particle's expected neighbour-weighted density matches phi.
+  ## placed particle's expected neighbour-weighted density matches phi. phi
+  ## is the pressure law's own ratio to the onset (addendum, Decision 2(b)),
+  ## not the onset-at-1 approximation the unaddended T5 used.
   var rng = initRand(seed)
   let radius = T5_RADII[rng.rand(0 .. 2)]
   let x = rng.rand(7.0 .. 16.0)
-  let worldSize = radius * sqrt(T5_PARTICLES.float64 * PI / (3.0 * x))
-  var xs = newSeq[float64](T5_PARTICLES)
-  var ys = newSeq[float64](T5_PARTICLES)
-  for i in 0 ..< T5_PARTICLES:
+  let worldSize = radius * sqrt(particles.float64 * PI / (3.0 * x))
+  var xs = newSeq[float64](particles)
+  var ys = newSeq[float64](particles)
+  for i in 0 ..< particles:
     xs[i] = rng.rand(0.0 .. worldSize)
     ys[i] = rng.rand(0.0 .. worldSize)
+  let ratio = (x - ONSET_RATIO) / ONSET_RATIO
   T5Crowd(xs: xs, ys: ys, worldSize: worldSize, radius: radius,
-    phi: (x - 1.0) * (x - 1.0))
+    phi: ratio * ratio)
 
 suite "A Limited Step Cannot Overshoot":
 
-  test "the limited map's spectral radius never passes 1 (T5)":
+  test "a restoring mode stays inside the bound (T5a)":
     var verdicts: Verdicts
     for trial in 0 ..< T5_TRIALS:
-      let crowd = t5Crowd(trial)
+      let crowd = t5Crowd(trial, T5_PARTICLES)
       for i in 0 ..< crowd.xs.len:
-        let j = pressureJacobian(crowd.xs, crowd.ys, i, crowd.worldSize,
+        let lams = blockEigenvalues(crowd.xs, crowd.ys, i, crowd.worldSize,
           crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
           WORLD_PRESSURE_IMPULSE_MAX)
         let d = pressureStiffnessSum(crowd.xs, crowd.ys, i, crowd.worldSize,
@@ -1251,28 +1299,123 @@ suite "A Limited Step Cannot Overshoot":
         for frameFactor in T5_FRAME_FACTORS:
           let s = stepLimit(frameFactor.float32, d.float32,
             PRESSURE_STEP_BOUND.float32).float64
-          for retention in T5_RETENTIONS:
-            let radius = spectralRadius4(stepMatrix(j, retention, frameFactor,
-              s))
-            if radius > 1.0 + 1.0e-6:
+          for lam in lams:
+            if lam < 0.0: continue
+            let kappa = frameFactor * s * lam
+            if kappa > PRESSURE_STEP_BOUND * 0.5 * (1.0 + T5_TOL):
               verdicts.add "trial " & $trial & " particle " & $i & " ff " &
-                $frameFactor & " retention " & $retention &
-                ": spectral radius " & $radius & " passes 1"
+                $frameFactor & ": restoring ff*s*lambda " & $kappa &
+                " passes theta/2 " & $(PRESSURE_STEP_BOUND * 0.5)
     checkNoVerdicts(verdicts)
 
-  test "the unlimited control exceeds spectral radius 1 at frame factor 30 (T5)":
-    var exceeded = false
-    block search:
-      for trial in 0 ..< T5_TRIALS:
-        let crowd = t5Crowd(trial)
-        for i in 0 ..< crowd.xs.len:
-          let j = pressureJacobian(crowd.xs, crowd.ys, i, crowd.worldSize,
-            crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
-            WORLD_PRESSURE_IMPULSE_MAX)
-          if spectralRadius4(stepMatrix(j, 1.0, 30.0, 1.0)) > 1.0:
-            exceeded = true
-            break search
-    check exceeded
+  test "the limit never speeds a sliding mode (T5b)":
+    var verdicts: Verdicts
+    for trial in 0 ..< T5_TRIALS:
+      let crowd = t5Crowd(trial, T5_PARTICLES)
+      for i in 0 ..< crowd.xs.len:
+        let lams = blockEigenvalues(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+          WORLD_PRESSURE_IMPULSE_MAX)
+        let d = pressureStiffnessSum(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+          WORLD_PRESSURE_IMPULSE_MAX)
+        let s1 = stepLimit(1.0'f32, d.float32, PRESSURE_STEP_BOUND.float32).float64
+        for lam in lams:
+          if lam >= 0.0: continue
+          for retention in T5_RETENTIONS:
+            let kappaOne = 1.0 * s1 * lam
+            let refGrowth = ln(rho(kappaOne, retention))
+            for frameFactor in T5_FRAME_FACTORS:
+              let s = stepLimit(frameFactor.float32, d.float32,
+                PRESSURE_STEP_BOUND.float32).float64
+              let limited = rho(frameFactor * s * lam, retention)
+              let unlimited = rho(frameFactor * lam, retention)
+              if limited > unlimited * (1.0 + T5_TOL):
+                verdicts.add "trial " & $trial & " particle " & $i & " ff " &
+                  $frameFactor & " retention " & $retention &
+                  ": limited radius " & $limited &
+                  " exceeds the unlimited map's " & $unlimited
+              if frameFactor >= 1.0:
+                let growth = ln(limited) / frameFactor
+                if growth > refGrowth * (1.0 + T5_TOL) + 1e-15:
+                  verdicts.add "trial " & $trial & " particle " & $i &
+                    " ff " & $frameFactor & " retention " & $retention &
+                    ": growth per reference frame " & $growth &
+                    " exceeds ff 1's " & $refGrowth
+    checkNoVerdicts(verdicts)
+
+  test "the coupled map keeps the bound (T5c)":
+    var verdicts: Verdicts
+    for trial in 0 ..< T5C_TRIALS:
+      let crowd = t5Crowd(trial, T5C_PARTICLES)
+      let n = crowd.xs.len
+      let h = fullHessian(crowd.xs, crowd.ys, crowd.worldSize, crowd.radius,
+        crowd.phi, WORLD_PRESSURE_STIFFNESS, WORLD_PRESSURE_IMPULSE_MAX)
+      var d = newSeq[float64](n)
+      for i in 0 ..< n:
+        d[i] = pressureStiffnessSum(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+          WORLD_PRESSURE_IMPULSE_MAX)
+      var referenceGrowth = 0.0
+      for frameFactor in T5_FRAME_FACTORS:
+        var a = newSeq[seq[float64]](2 * n)
+        for row in 0 ..< 2 * n:
+          a[row] = newSeq[float64](2 * n)
+          for col in 0 ..< 2 * n:
+            let si = stepLimit(frameFactor.float32, d[row div 2].float32,
+              PRESSURE_STEP_BOUND.float32).float64
+            let sj = stepLimit(frameFactor.float32, d[col div 2].float32,
+              PRESSURE_STEP_BOUND.float32).float64
+            a[row][col] = frameFactor * sqrt(si * sj) * 0.5 *
+              (h[row][col] + h[col][row])
+        let eig = jacobiEigen(a)
+        var largest = -Inf
+        var smallest = Inf
+        for e in eig:
+          largest = max(largest, e)
+          smallest = min(smallest, e)
+        if largest > PRESSURE_STEP_BOUND * (1.0 + T5_TOL):
+          verdicts.add "trial " & $trial & " ff " & $frameFactor &
+            ": largest coupled eigenvalue " & $largest & " passes theta " &
+            $PRESSURE_STEP_BOUND
+        if smallest < 0.0:
+          let growth = ln(rho(smallest, 1.0)) / frameFactor
+          if frameFactor == 1.0:
+            referenceGrowth = growth
+          elif frameFactor > 1.0 and
+              growth > referenceGrowth * (1.0 + T5_TOL) + 1e-15:
+            verdicts.add "trial " & $trial & " ff " & $frameFactor &
+              ": most negative coupled mode's growth per reference frame " &
+              $growth & " exceeds ff 1's " & $referenceGrowth
+    checkNoVerdicts(verdicts)
+
+  test "the unlimited control overshoots at frame factor 30 (T5d)":
+    var blockExceeded = false
+    for trial in 0 ..< T5_TRIALS:
+      let crowd = t5Crowd(trial, T5_PARTICLES)
+      for i in 0 ..< crowd.xs.len:
+        let lams = blockEigenvalues(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+          WORLD_PRESSURE_IMPULSE_MAX)
+        for retention in T5_RETENTIONS:
+          for lam in lams:
+            if lam >= 0.0 and 30.0 * lam > 2.0 * (1.0 + retention) / retention:
+              blockExceeded = true
+    var coupledExceeded = false
+    for trial in 0 ..< T5C_TRIALS:
+      let crowd = t5Crowd(trial, T5C_PARTICLES)
+      let n = crowd.xs.len
+      let h = fullHessian(crowd.xs, crowd.ys, crowd.worldSize, crowd.radius,
+        crowd.phi, WORLD_PRESSURE_STIFFNESS, WORLD_PRESSURE_IMPULSE_MAX)
+      var a = newSeq[seq[float64]](2 * n)
+      for row in 0 ..< 2 * n:
+        a[row] = newSeq[float64](2 * n)
+        for col in 0 ..< 2 * n:
+          a[row][col] = 30.0 * 0.5 * (h[row][col] + h[col][row])
+      for e in jacobiEigen(a):
+        if e > 4.0: coupledExceeded = true
+    check blockExceeded
+    check coupledExceeded
 
 # ==============================================================================
 # THE CALIBRATION ARMS
