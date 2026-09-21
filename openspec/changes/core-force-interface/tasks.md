@@ -150,7 +150,7 @@ Conventions every task below uses:
   - `docs/slider-interactions.md`: edges 27 and 30 are rewired.
 
   Verify `tests/test_help_content.nim` passes.
-- [ ] 4.12 Amend the other changes' artifacts that waited on `coupling-balance`'s pressure:
+- [x] 4.12 Amend the other changes' artifacts that waited on `coupling-balance`'s pressure:
   - `openspec/changes/parametric-bodies/tasks.md:384,396`: 9.2 and 9.3 wait on `core-force-interface` 12.1, not on `coupling-balance`.
   - `openspec/changes/parametric-bodies/design.md` gains the findings from design C6 (held-world heat) and design Risks (a body's own motion is not in the travel count).
   - `openspec/changes/calibrate-shipped-defaults/design.md:110-133` and `tasks.md:35-41,51-83`: fixture C becomes a world whose crowd rises past the onset at crowding 0, with its validity gate and red step 2.5 to match. `c_hold` is removed, so crowding is calibrated by `c_soften` alone, and group 3 waits on `core-force-interface` (C12).
@@ -313,7 +313,7 @@ Conventions every task below uses:
   - the inertness stated in `docs/help/53-palette.md`
 
   Verify green (N9.5).
-- [ ] 11.2 Help-text defects:
+- [x] 11.2 Help-text defects:
   - `docs/help/10-simulation.md:9-10`: "rebuilds" becomes "resizes", as the code does (`src/web_api.nim:893-901`, N9.1).
   - `docs/help/51-glow.md:10-11`: the Velocity Sweep line gains halo growth (`web/shaders/src/glow.wgsl:94-99`, N9.6).
 
@@ -338,9 +338,9 @@ Conventions every task below uses:
   - **Unenforced, with their raisers.** Each shader carries its oracle's convention; the `U(R)` factor in `lr-force.wgsl`; the range-constant lint; the size-conversion grep gate; GPU bit identity under relaxed math (C4); the hold with long range, scent and the mouse at 1 (C6).
 
   Update `docs/one-world.md` to the couplings model: the contract, world pressure, the integrator's substeps and the field as force only. Update `tests/README.md`'s rows and oracle lists for `test_balance_core`. Verify by reading each spec's "Enforced by" against the entries.
-- [ ] 11.5 Rewrite the fresh-state test at `openspec/changes/audio-interface/tasks.md:196-198`. As written, it holds one state across both rooms, so it cannot catch a room level that survives reinitialisation. The rewrite learns a quiet room, re-initialises the state, then feeds a louder room and asserts it reads exactly zero with silent reported. Verify `openspec validate audio-interface --strict` passes.
-- [ ] 11.6 Correct `openspec/changes/audio-interface/specs/audio-input/spec.md:158-160`. "the same wall-clock time at any frame rate" holds only down to 20 fps, because the audio poll receives the delta capped at 0.05 s (`src/app.nim:240,259`). The spec states that bound. Verify `openspec validate audio-interface --strict` passes.
-- [ ] 11.7 Rerun the gain-step arm of `scratchpad/audio-interface/probe/frozen_room_probe_v7.nim` on the chosen candidate: the held level at the chosen 1 s ceiling decay ("held 1 s, 1 s"), the frozen learned-room edge design.md:188 describes. Replace the figures at `openspec/changes/audio-interface/design.md:188` (a 20 dB up-step, and a 10 dB drop moving p50 from 0.57 to 0.49) with the rerun's, citing its output file in `scratchpad/audio-interface/probe/`. Verify `openspec validate audio-interface --strict` passes.
+- [x] 11.5 Rewrite the fresh-state test at `openspec/changes/audio-interface/tasks.md:196-198`. As written, it holds one state across both rooms, so it cannot catch a room level that survives reinitialisation. The rewrite learns a quiet room, re-initialises the state, then feeds a louder room and asserts it reads exactly zero with silent reported. Verify `openspec validate audio-interface --strict` passes.
+- [x] 11.6 Correct `openspec/changes/audio-interface/specs/audio-input/spec.md:158-160`. "the same wall-clock time at any frame rate" holds only down to 20 fps, because the audio poll receives the delta capped at 0.05 s (`src/app.nim:240,259`). The spec states that bound. Verify `openspec validate audio-interface --strict` passes.
+- [x] 11.7 Rerun the gain-step arm of `scratchpad/audio-interface/probe/frozen_room_probe_v7.nim` on the chosen candidate: the held level at the chosen 1 s ceiling decay ("held 1 s, 1 s"), the frozen learned-room edge design.md:188 describes. Replace the figures at `openspec/changes/audio-interface/design.md:188` (a 20 dB up-step, and a 10 dB drop moving p50 from 0.57 to 0.49) with the rerun's, citing its output file in `scratchpad/audio-interface/probe/`. Verify `openspec validate audio-interface --strict` passes.
 - [ ] 11.9 **The shipped particle count is 32 000.** Set `particleCount` to 32 000 in `src/ui/state/simulation_state.nim:125` and `src/preset.nim:232`. Update every test and help line that reads 16 000 as the shipped default (`grep -rn '16000\|16 000' tests docs/help src/ui src/preset.nim`), leaving the measurement records that name 16 000 as their condition. Verify `tests/test_preset.nim`, `tests/test_config.nim` and `tests/test_help_content.nim` pass. 7.4 and 12.1 run at this default.
 
 ## 12. The final in-app pass and the check
