@@ -82,7 +82,6 @@ type
       ## The largest-magnitude tropism.
     patternScale*: float
     longRangeStrength*: float
-    longRangeGrid*: tuple[w, h: int]
     bodiesStrength*: float
     liveBodies*: int
     blastStrength*: float

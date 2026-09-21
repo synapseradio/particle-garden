@@ -679,14 +679,12 @@ suite "A Full Crowd Decodes To Its Impulse":
       (x: sign * 2.0 * MAX_VELOCITY_MAX, y: 0.0)).x
 
   proc longRangeMax(): float =
-    for grid in LR_GRID_SIZES:
-      for radius in [INTERACTION_RADIUS_MIN.float, INTERACTION_RADIUS_MAX.float]:
-        result = max(result, unitImpulse(ufLongRange, UnitConfig(
-          particleCount: MAX_PARTICLES, interactionRadius: radius,
-          worldWidth: BODY_WORLD_W, worldHeight: BODY_WORLD_H,
-          onsetRatio: ONSET_RATIO, attraction: MATRIX_MAX_VALUE,
-          longRangeStrength: LONG_RANGE_STRENGTH_MAX, longRangeGrid: grid)) *
-          u0)
+    for radius in [INTERACTION_RADIUS_MIN.float, INTERACTION_RADIUS_MAX.float]:
+      result = max(result, unitImpulse(ufLongRange, UnitConfig(
+        particleCount: MAX_PARTICLES, interactionRadius: radius,
+        worldWidth: BODY_WORLD_W, worldHeight: BODY_WORLD_H,
+        onsetRatio: ONSET_RATIO, attraction: MATRIX_MAX_VALUE,
+        longRangeStrength: LONG_RANGE_STRENGTH_MAX)) * u0)
 
   proc judge(verdicts: var seq[string]; label: string; words: VelocityWords;
       impulse: float; adds: int) =

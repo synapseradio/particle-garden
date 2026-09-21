@@ -63,7 +63,6 @@ func referenceConfig(): UnitConfig =
     fluidStrength: 1.0, viscosity: SPH_VISCOSITY_MAX,
     maxVelocity: MAX_VELOCITY_MAX, scentGain: 1.0, tropism: TROPISM_MIN,
     patternScale: 1.0, longRangeStrength: 1.0,
-    longRangeGrid: LR_GRID_SIZES[LONG_RANGE_GRID_INDEX_DEFAULT],
     bodiesStrength: 1.0, liveBodies: 1, blastStrength: 1.0,
     blastRange: sqrt(PRODUCTION_TUNING.blastRangeSq),
     depositGain: 1.0, secretion: SECRETION_MAX)
