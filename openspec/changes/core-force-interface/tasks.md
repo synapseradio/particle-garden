@@ -279,7 +279,7 @@ Conventions every task below uses:
     - The `rdPatternScale` descriptor in `src/ui/api/param_descriptor.nim`: group `rd`, linear, step 0.01, precision 2, no dormancy.
     - A closed-form probe over `patternDiameterWorld` in `src/ui/api/response_probe.nim`.
     - The state field in `src/ui/state/simulation_state.nim`, and the preset field in `src/preset.nim`, which decodes absent as 1.
-    - `src/webgpu_compute.nim:1053-1054` writes `rdDiffusionRates` and `g_scent(s) = F_scent · √s / scentUnit(1)` each frame, or the recorded per-step gain where √s misses G3's stepped impulse beyond the oracle's tolerance.
+    - `src/webgpu_compute.nim:1053-1054` writes `rdDiffusionRates` and the scent gain `rdFieldForce · rdScentGainFactor(s)` each frame. The factor corrects √s by `RD_SCENT_STEPPED_IMPULSE`, because √s alone misses G3's stepped impulse from 0.5 down. Until group 7 defines `F_scent`, the gain reads today's strength (design N5).
     - `applyRegimeImpl` and the regime catalog in `src/web_api.nim:596-654` read `regimeRow` at the live scale, and the served rows reach `web-ui/src/garden-api.ts`'s catalog type.
     - `rdClimateTour` in `src/climate_core.nim:107-112` takes the scale.
     - The help line in `docs/help/40-rd.md`, and a Pattern Scale node in `docs/slider-interactions.md`.
