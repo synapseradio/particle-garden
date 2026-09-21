@@ -1406,6 +1406,15 @@ when defined(js):
       else:
         raiseAssert "dormancy predicate names unknown world signal " & name
 
+    proc paletteFieldValue(name: string): float =
+      case name
+      of "scheme": ord(paletteEditorState.scheme).float
+      of "saturation": paletteEditorState.saturation
+      of "lightness": paletteEditorState.lightness
+      of "isCustom": (if paletteEditorState.isCustom: 1.0 else: 0.0)
+      else:
+        raiseAssert "dormancy predicate names unknown palette field " & name
+
     result["dormantParams"] = toJs(proc(): JsObject =
       let states = newJsObject()
       let registry = dormancyRegistry()
@@ -1420,6 +1429,8 @@ when defined(js):
           values[fieldName] = renderFieldValue(fieldName)
         for fieldName in predicate.statsFields:
           values[fieldName] = worldSignalValue(fieldName)
+        for fieldName in predicate.paletteFields:
+          values[fieldName] = paletteFieldValue(fieldName)
         states[cstring(descriptor.id)] = toJs(predicate.eval(values))
       states)
 

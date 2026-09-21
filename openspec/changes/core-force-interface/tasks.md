@@ -306,7 +306,7 @@ Conventions every task below uses:
 
 ## 11. Remaining folded defects and the interaction docs
 
-- [ ] 11.1 **Red.** In `tests/test_dormancy.nim`, walk a new `paletteFixed` predicate's `paletteFields` against `PaletteEditorState`: true under `psOpenColor` and the default scheme (`src/palette.nim:27-29,141-164`, `src/ui/state/palette_state.nim:40-44`), false otherwise. Verify it fails while the predicate is unregistered. Then implement:
+- [x] 11.1 **Red.** In `tests/test_dormancy.nim`, walk a new `paletteFixed` predicate's `paletteFields` against `PaletteEditorState`: true under `psOpenColor` and the default scheme (`src/palette.nim:27-29,141-164`, `src/ui/state/palette_state.nim:40-44`), false otherwise. Verify it fails while the predicate is unregistered. Then implement:
   - `DormancyPredicate.paletteFields` and `paletteFixed` in `src/ui/api/dormancy.nim`
   - `dormantParams` reading `paletteEditorState` in `src/web_api.nim:1442-1455`
   - `dormantWhen` on `paletteSaturation` and `paletteLightness` in `src/ui/api/param_descriptor.nim`

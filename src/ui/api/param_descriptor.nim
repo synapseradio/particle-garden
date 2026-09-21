@@ -539,10 +539,12 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
     # Palette section (routes to the palette editor state, not CONFIG)
     floatParam("paletteSaturation", "Saturation", "palette",
       PALETTE_SATURATION_MIN, PALETTE_SATURATION_MAX, DEFAULT_SATURATION, 2,
-      psPalette, probe = "palette.pairwiseDistance.saturation"),
+      psPalette, probe = "palette.pairwiseDistance.saturation",
+      dormantWhen = "paletteFixed"),
     floatParam("paletteLightness", "Lightness", "palette",
       PALETTE_LIGHTNESS_MIN, PALETTE_LIGHTNESS_MAX, DEFAULT_LIGHTNESS, 2,
-      psPalette, probe = "palette.meanLuminance"),
+      psPalette, probe = "palette.meanLuminance",
+      dormantWhen = "paletteFixed"),
 
     # SPH Fluid section. fluidStrength leads it because it is the coupling
     # strength and the four below it are the fluid's character: they say what

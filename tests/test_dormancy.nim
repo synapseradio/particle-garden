@@ -14,6 +14,7 @@ import ../src/sim_registry
 import ../src/ui/api/dormancy
 import ../src/ui/api/param_descriptor
 import ../src/ui/api/response_probe
+import ../src/ui/state/palette_state
 import ../src/ui/state/render_state
 import ../src/ui/state/simulation_state
 
@@ -31,6 +32,7 @@ proc recordFieldNames[T](record: T): HashSet[string] =
 
 let simFields = recordFieldNames(initSimulationState())
 let renderFields = recordFieldNames(initRenderState())
+let paletteFields = recordFieldNames(initPaletteEditorState())
 
 suite "Dormancy Predicates Name Real State":
   test "every carried dormantWhen resolves to a registered predicate":
@@ -65,6 +67,14 @@ suite "Dormancy Predicates Name Real State":
           checkpoint(predicate.id & " names missing render field " &
             fieldName)
         check fieldName in renderFields
+
+  test "every named palette field exists on the state record":
+    for predicate in predicates.values:
+      for fieldName in predicate.paletteFields:
+        if fieldName notin paletteFields:
+          checkpoint(predicate.id & " names missing palette field " &
+            fieldName)
+        check fieldName in paletteFields
 
   test "every named world signal is one the stats push carries":
     for predicate in predicates.values:
@@ -134,6 +144,16 @@ suite "Each Predicate Distinguishes Dormant From Awake":
   test "bloomOff reads the toggle":
     check predicates["bloomOff"].eval(witness({"bloomEnabled": 0.0}))
     check not predicates["bloomOff"].eval(witness({"bloomEnabled": 1.0}))
+
+  test "paletteFixed is true for the default scheme and false for every other":
+    let defaultScheme = initPaletteEditorState().scheme
+    check defaultScheme == psOpenColor
+    check predicates["paletteFixed"].eval(
+      witness({"scheme": ord(defaultScheme).float}))
+    for scheme in PaletteScheme:
+      if scheme != psOpenColor:
+        check not predicates["paletteFixed"].eval(
+          witness({"scheme": ord(scheme).float}))
 
   test "the compound predicate is dormant only while dark AND subcritical":
     let compound = predicates["fieldSubcritical"]

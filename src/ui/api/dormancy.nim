@@ -9,6 +9,7 @@
 # A strength's own control declares none — the slider at zero is the way back.
 
 import std/tables
+import ../../palette
 
 type
   DormancyPredicate* = object
@@ -17,6 +18,7 @@ type
     simFields*: seq[string]   ## SimulationState fields the predicate reads.
     renderFields*: seq[string]  ## RenderState fields it reads.
     statsFields*: seq[string]   ## World signals from the pushed stats stream.
+    paletteFields*: seq[string] ## PaletteEditorState fields it reads.
     eval*: proc (values: Table[string, float]): bool {.nimcall, noSideEffect.}
       ## True means DORMANT. The table is keyed by exactly the declared
       ## field names; booleans arrive as 0.0 / 1.0.
@@ -54,6 +56,9 @@ func evalBodiesOff(values: Table[string, float]): bool =
 func evalCameraDriftOff(values: Table[string, float]): bool =
   values["cameraDrift"] == 0.0
 
+func evalPaletteFixed(values: Table[string, float]): bool =
+  values["scheme"] == ord(psOpenColor).float
+
 func evalFieldSubcritical(values: Table[string, float]): bool =
   ## Both terms matter: the named regimes sit subcritical, so the line speaks
   ## only while the field is dark; crossing into F >= 4(F+k)^2 wakes the pair
@@ -89,6 +94,9 @@ proc dormancyRegistry*(): Table[string, DormancyPredicate] =
     "cameraDriftOff": DormancyPredicate(id: "cameraDriftOff",
       line: "the camera holds still",
       renderFields: @["cameraDrift"], eval: evalCameraDriftOff),
+    "paletteFixed": DormancyPredicate(id: "paletteFixed",
+      line: "the scheme is Open Color",
+      paletteFields: @["scheme"], eval: evalPaletteFixed),
     "fieldSubcritical": DormancyPredicate(id: "fieldSubcritical",
       line: "nothing has ignited yet",
       simFields: @["rdFeed", "rdKill"],
