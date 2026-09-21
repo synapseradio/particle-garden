@@ -58,9 +58,9 @@ const
   HARNESS_DEPOSIT_COVERAGE = 16
     ## One cell in HARNESS_DEPOSIT_COVERAGE receives a particle deposit. The
     ## fraction (6.25%) is far denser than the shipped FIELD_W x FIELD_H
-    ## field, where the 16000-particle default puts that population on ~0.7%
-    ## of cells (1 in ~147) and the 128000 maximum on ~5.4%; as an areal rate
-    ## this models the densest legitimate population, ~9x the default's.
+    ## field, where the 32000-particle default puts that population on ~1.4%
+    ## of cells (1 in ~74) and the 128000 maximum on ~5.4%; as an areal rate
+    ## this models the densest legitimate population, ~4.6x the default's.
     ## Direction per consumer: the negative and ceiling
     ## tests hold at this inflated rate and so hold a fortiori at the
     ## default's; the comparative tests normalize totals and cancel the
