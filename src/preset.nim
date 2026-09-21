@@ -141,6 +141,7 @@ type
     rdKill*: float
     rdDeposit*: float
     rdFieldForce*: float
+    rdPatternScale*: float
     bodiesStrength*: float
     bodyRadius*: float
     bodyBand*: float
@@ -279,6 +280,12 @@ func defaultSettings*(): PresetSettings =
     rdKill: 0.062,
     rdDeposit: 0.02,
     rdFieldForce: 7.5,
+    # The band's floor, this module's own constant (config_ranges, unlike the
+    # field_core mirrors above). An absent scale (see validateSettings)
+    # decodes to 1 instead — a preset saved before the control existed ran at
+    # the base rates, the look it was saved with, not this fresh-session
+    # default.
+    rdPatternScale: RD_PATTERN_SCALE_DEFAULT,
     # Mirrors simulation_state.initSimulationState's bodies defaults as
     # literals, for the same dependency-restriction reason as the sph/rd
     # defaults above. The coupling ships acting and the world ships silent, so
@@ -467,6 +474,12 @@ proc validateSettings(node: JsonNode): PresetSettings =
   result.rdFieldForce = clampFloat(
     field(node, "rdFieldForce").getFloat(defaults.rdFieldForce),
     RD_FIELD_FORCE_MIN, RD_FIELD_FORCE_MAX)
+  # RD_PATTERN_SCALE_MAX, not defaults.rdPatternScale: a file with no key
+  # predates the control, so it decodes at the scale that world ran at
+  # (1), never the shipped floor a fresh session starts from.
+  result.rdPatternScale = clampFloat(
+    field(node, "rdPatternScale").getFloat(RD_PATTERN_SCALE_MAX),
+    RD_PATTERN_SCALE_MIN, RD_PATTERN_SCALE_MAX)
   result.bodiesStrength = clampFloat(
     field(node, "bodiesStrength").getFloat(defaults.bodiesStrength),
     BODIES_STRENGTH_MIN, BODIES_STRENGTH_MAX)
@@ -808,6 +821,7 @@ proc toJson*(settings: PresetSettings): JsonNode =
   result["rdKill"] = %settings.rdKill
   result["rdDeposit"] = %settings.rdDeposit
   result["rdFieldForce"] = %settings.rdFieldForce
+  result["rdPatternScale"] = %settings.rdPatternScale
   result["bodiesStrength"] = %settings.bodiesStrength
   result["bodyRadius"] = %settings.bodyRadius
   result["bodyBand"] = %settings.bodyBand

@@ -53,6 +53,7 @@ Span, live fraction, and cliff per declared slice, at the calibrated thresholds 
 | rdKill | coral | 1.0000 | 0.857 | 0.069 | 0.86-1.00 | 0.00-0.86 | joint |
 | rdDeposit | default | 0.2105 | 1.000 | 0.013 | none | 0.00-1.00 | pass |
 | rdFieldForce | default | 1.0000 | 1.000 | 0.004 | none | 0.00-1.00 | pass |
+| rdPatternScale | default | 0.5000 | 1.000 | 0.020 | none | 0.00-1.00 | pass |
 | climateSpeed | default | 0.9750 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | forceWeatherSpeed | default | 0.9750 | 1.000 | 0.005 | none | 0.00-1.00 | pass |
 | bodiesStrength | default | 1.0000 | 1.000 | 0.010 | none | 0.00-1.00 | pass |

@@ -457,6 +457,11 @@ func rdFieldForceProbe(value: float; ctx: ProbeContext): float =
   ## species tropism, linear in the scale under measurement.
   speciesTropismForce(RefGradient, value, 1.0)
 
+func rdPatternScaleProbe(value: float; ctx: ProbeContext): float =
+  ## rdPatternScale: the mean spot diameter in world units at this scale, a
+  ## closed form over patternDiameterWorld.
+  patternDiameterWorld(RD_DIFFUSION_A * value, FIELD_W.float, BODY_WORLD_W)
+
 func climateSpeedProbe(value: float; ctx: ProbeContext): float =
   ## climateSpeed: phase advanced per second. The tour period is its inverse;
   ## the probe reads the step to keep the zero-speed endpoint finite.
@@ -788,6 +793,8 @@ proc probeRegistry*(): Table[string, ProbeSpec] =
     "field.resolvedDeposit": ProbeSpec(fn: rdDepositProbe,
       budget: pbClosedForm),
     "field.tropism": ProbeSpec(fn: rdFieldForceProbe,
+      budget: pbClosedForm),
+    "field.patternDiameter": ProbeSpec(fn: rdPatternScaleProbe,
       budget: pbClosedForm),
     "field.speciesDeposit": ProbeSpec(fn: secretionProbe,
       budget: pbClosedForm),

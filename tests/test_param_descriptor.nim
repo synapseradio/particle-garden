@@ -75,7 +75,7 @@ suite "Descriptor Table Covers The Full Tunable Inventory":
       # radius, capped at 1 so it can never outrun the neighbour sweep.
       "sphRadiusFraction",
       "sphRestDensity", "sphStiffness", "sphViscosity",
-      "rdFeed", "rdKill", "rdDeposit", "rdFieldForce",
+      "rdFeed", "rdKill", "rdDeposit", "rdFieldForce", "rdPatternScale",
       # bodiesStrength is the coupling strength; the six below it say what a
       # body is. The three a body is ALSO born with — anisotropy, envelope
       # skew, sustain — are absent on purpose: they travel on the ignition

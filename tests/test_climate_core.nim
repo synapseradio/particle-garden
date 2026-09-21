@@ -229,6 +229,18 @@ suite "Climate Drift Tours The Named Regimes":
       check abs(RD_CLIMATE_TOUR[waypoint][caKill] -
         RD_REGIMES[waypoint].kill) < 1e-12
 
+  test "the tour reads the drifting regimes' rows at the given scale":
+    ## Coral's coordinates move under Pattern Scale (RD_REGIME_SCALE_ROWS); a
+    ## tour built at that scale must follow, or the weather visits a point
+    ## that no longer settles as Coral.
+    for scale in RD_PATTERN_SCALE_STEPS:
+      let scaled = rdClimateTour(scale)
+      for waypoint, regime in RD_REGIMES:
+        let row = regimeRow(regime.id, scale)
+        checkpoint("regime " & regime.id & " at scale " & $scale)
+        check abs(scaled[waypoint][caFeed] - row.feed) < 1e-12
+        check abs(scaled[waypoint][caKill] - row.kill) < 1e-12
+
   test "one tour at a given speed takes the time that speed names":
     # `speed` is tours per minute, a unit a user can feel. At speed 1 a lap
     # takes sixty seconds; at speed 2, thirty. Frame rate must not enter into

@@ -193,6 +193,7 @@ suite "Preset Round-Trip Contract":
     customPreset.settings.rdKill = 0.058
     customPreset.settings.rdDeposit = 0.035
     customPreset.settings.rdFieldForce = 8.0
+    customPreset.settings.rdPatternScale = 0.4
     customPreset.settings.bloomEnabled = true
     customPreset.settings.bloomIntensity = 1.8
     customPreset.settings.exposure = 1.4
@@ -516,7 +517,12 @@ suite "Preset Malformed Input Contract":
     let result = validate(%*{})
     check result.isOk
     check result.preset.name == DEFAULT_PRESET_NAME
-    check result.preset.settings == defaultSettings()
+    # Every field defaults except rdPatternScale: an absent key means no
+    # control existed yet, so it decodes to scale 1, not this session's own
+    # floor default (see "a preset with no rdPatternScale decodes at 1").
+    var expectedSettings = defaultSettings()
+    expectedSettings.rdPatternScale = RD_PATTERN_SCALE_MAX
+    check result.preset.settings == expectedSettings
     check result.preset.matrix == defaultMatrix()
     check result.preset.chemistry == defaultChemistry()
     check result.preset.palette == DEFAULT_PALETTE
@@ -773,6 +779,19 @@ suite "Preset Clamp Behavior Contract":
     check result.preset.settings.rdKill == defaultSettings().rdKill
     check result.preset.settings.rdDeposit == defaultSettings().rdDeposit
     check result.preset.settings.rdFieldForce == defaultSettings().rdFieldForce
+
+  test "rdPatternScale clamps into its range":
+    let tooHigh = validate(%*{"settings": {"rdPatternScale": 2.0}})
+    let tooLow = validate(%*{"settings": {"rdPatternScale": 0.0}})
+    check tooHigh.preset.settings.rdPatternScale == RD_PATTERN_SCALE_MAX
+    check tooLow.preset.settings.rdPatternScale == RD_PATTERN_SCALE_MIN
+
+  test "a preset with no rdPatternScale decodes at 1":
+    ## An absent scale means a preset saved before the control existed — the
+    ## world it described ran at the base diffusion rates, scale 1, not the
+    ## shipped default RD_PATTERN_SCALE_DEFAULT (the floor).
+    let result = validate(%*{"settings": {}})
+    check result.preset.settings.rdPatternScale == RD_PATTERN_SCALE_MAX
 
   test "bloom and grade settings clamp into their ranges":
     let node = %*{"settings": {

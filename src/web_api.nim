@@ -586,15 +586,19 @@ when defined(js):
   # The named regimes, and what selecting one does. A regime is a POINT in the
   # feed/kill plane, so both axes move together — a notch on one axis alone
   # does not locate one.
-  let regimeArray = block:
+  proc regimeArrayImpl(): JsObject =
+    ## Built fresh per call, not cached: regimeRow reads the LIVE Pattern
+    ## Scale, so a regime whose scale-1 coordinates drift (Coral, Worms)
+    ## must serve the row that restores it at whatever scale is live now.
     let jsArray = newJsArray()
     for regime in RD_REGIMES:
+      let row = regimeRow(regime.id, CONFIG.rdPatternScale)
       let entry = newJsObject()
       entry["id"] = toJs(cstring(regime.id))
       entry["label"] = toJs(cstring(regime.label))
-      entry["feed"] = toJs(regime.feed)
-      entry["kill"] = toJs(regime.kill)
-      entry["minDeposit"] = toJs(regime.minDeposit)
+      entry["feed"] = toJs(row.feed)
+      entry["kill"] = toJs(row.kill)
+      entry["minDeposit"] = toJs(row.minDeposit)
       jsArray.push(entry)
     jsArray
 
@@ -625,10 +629,14 @@ when defined(js):
     ## 0) never touches it.
     for regime in RD_REGIMES:
       if regime.id == id:
-        setParamImpl("rdFeed", regime.feed)
-        setParamImpl("rdKill", regime.kill)
-        if regime.minDeposit > CONFIG.rdDeposit:
-          setParamImpl("rdDeposit", regime.minDeposit)
+        # regimeRow, not the scale-1 regime above: it exists only to
+        # validate the id before this reads the row that restores it at the
+        # live Pattern Scale.
+        let row = regimeRow(id, CONFIG.rdPatternScale)
+        setParamImpl("rdFeed", row.feed)
+        setParamImpl("rdKill", row.kill)
+        if row.minDeposit > CONFIG.rdDeposit:
+          setParamImpl("rdDeposit", row.minDeposit)
         return
     consoleWarn(toJs("[gardenAPI] unknown regime id: " & id))
 
@@ -1102,6 +1110,7 @@ when defined(js):
     settings.rdKill = stored.rdKill
     settings.rdDeposit = stored.rdDeposit
     settings.rdFieldForce = stored.rdFieldForce
+    settings.rdPatternScale = stored.rdPatternScale
     settings.fluidStrength = stored.fluidStrength
     settings.climateDrift = stored.climateDrift
     settings.climateSpeed = stored.climateSpeed
@@ -1208,6 +1217,7 @@ when defined(js):
           simState.rdKill = settings.rdKill
           simState.rdDeposit = settings.rdDeposit
           simState.rdFieldForce = settings.rdFieldForce
+          simState.rdPatternScale = settings.rdPatternScale
           simState.fluidStrength = settings.fluidStrength
           simState.climateDrift = settings.climateDrift
           simState.climateSpeed = settings.climateSpeed
@@ -1376,7 +1386,7 @@ when defined(js):
     result["forceWeatherParamIds"] = toJs(proc(): JsObject =
       forceWeatherParamIdArray)
 
-    result["rdRegimes"] = toJs(proc(): JsObject = regimeArray)
+    result["rdRegimes"] = toJs(proc(): JsObject = regimeArrayImpl())
     result["getRdRegime"] = toJs(proc(): cstring = cstring(activeRegimeImpl()))
     result["applyRdRegime"] = toJs(proc(id: cstring) = applyRegimeImpl($id))
 

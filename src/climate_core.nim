@@ -104,15 +104,19 @@ const CLIMATE_PARAM_IDS*: array[ClimateAxis, string] = [
   ## projects RD_REGIMES — which is why the panel lights its regime buttons
   ## off the same list it reads the drift from.
 
-func rdClimateTour(): array[RD_REGIMES.len, array[ClimateAxis, float]] =
-  ## The named regimes' coordinates as tour waypoints. RD_REGIMES stays the one
-  ## source of those numbers; this projects them, and inherits the static
-  ## in-range assertion config_ranges makes over them.
+func rdClimateTour*(scale: float): array[RD_REGIMES.len, array[ClimateAxis, float]] =
+  ## The named regimes' coordinates as tour waypoints, at a pattern scale:
+  ## each regime's row for the step nearest `scale` (regimeRow), so a
+  ## drifting regime's waypoint follows the coordinates that still settle as
+  ## it at that scale. RD_REGIMES stays the one source of the scale-1
+  ## numbers; this projects them, and inherits the static in-range assertion
+  ## config_ranges makes over them.
   for index, regime in RD_REGIMES:
-    result[index] = [caFeed: regime.feed, caKill: regime.kill]
+    let row = regimeRow(regime.id, scale)
+    result[index] = [caFeed: row.feed, caKill: row.kill]
 
 const
-  RD_CLIMATE_TOUR* = rdClimateTour()
+  RD_CLIMATE_TOUR* = rdClimateTour(RD_PATTERN_SCALE_MAX)
     ## The waypoint table the drifting climate walks.
   CLIMATE_WAYPOINTS* = RD_CLIMATE_TOUR.len
     ## Waypoints on the climate loop: one per named regime. The loop closes back

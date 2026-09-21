@@ -6,7 +6,7 @@ are `path:line` from the repository root.
 
 ## 1. Nodes
 
-### Sliders (52, from `src/ui/api/param_descriptor.nim:405-814`)
+### Sliders (53, from `src/ui/api/param_descriptor.nim:405-814`)
 
 | Group | id (label) | Writes | Dims when |
 |---|---|---|---|
@@ -43,6 +43,7 @@ are `path:line` from the repository root.
 | rd | `rdFeed` (Breath In), `rdKill` (Breath Out) | Gray-Scott feed/kill | fieldSubcritical |
 | rd | `rdDeposit` (Secretion Rate) | particle deposit into the field | — |
 | rd | `rdFieldForce` (Scent-following) | field-gradient impulse scale | — |
+| rd | `rdPatternScale` (Pattern Scale) | both diffusion rates (their ratio fixed); the live-scale regime row; the scent gain factor | — |
 | rd | `climateSpeed` (Drift) | Weather tour rate | — |
 | bodies | `bodiesStrength` (Bodies) | body force multiplier | — |
 | bodies | `bodyRadius`, `bodyBand`, `bodyProximity`, `bodyEnclosure`, `bodyLifetime` | the next body's shape and life | — (none) |
@@ -193,7 +194,7 @@ the next frame; rkModulate moves only the effective copy through
 | 83 | Audio — forceStrength, fluidStrength, glowIntensity | write | rkModulate; high→glow at depth 0 | `src/ui/input/shipped_mapping.nim:122-135,172-181` |
 | 84 | Tours — dragged slider | write | rkTour overwrites the drag next frame | `src/ui/input/control_matrix.nim:975-1030` |
 
-**Counts:** 54 slider nodes, 12 non-slider control nodes, 5 shared nodes;
+**Counts:** 55 slider nodes, 12 non-slider control nodes, 5 shared nodes;
 84 edge rows (several rows name a group on one side).
 
 ## 4. Per-slider adjacency

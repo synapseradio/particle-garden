@@ -273,7 +273,7 @@ Conventions every task below uses:
   - the per-step collapse bracket beside `TROPISM_MAX` (species-chemistry)
 
   Implement `rdDiffusionRates`. Verify 8.1 passes.
-- [ ] 8.4 **Red, then green.**
+- [x] 8.4 **Red, then green.**
   - **Red.** `tests/test_preset.nim`: a preset with no `rdPatternScale` decodes at 1. Probe coverage in `tests/test_response_probe.nim` and help coverage in `tests/test_help_content.nim` fail for the new id.
   - **Green.**
     - The `rdPatternScale` descriptor in `src/ui/api/param_descriptor.nim`: group `rd`, linear, step 0.01, precision 2, no dormancy.

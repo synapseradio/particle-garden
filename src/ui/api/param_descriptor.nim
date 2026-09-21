@@ -686,6 +686,17 @@ func buildParamDescriptors*(): seq[ParamDescriptor] =
         notch(RD_FIELD_FORCE_MIN, "blind"),
       ], probe = "field.tropism",
       horizon = rhSettling, horizonReview = true).withDefaultNotch(1),
+    # No dormancy: the scale moves the chemistry, ignition included, while
+    # the field is dark, so nothing this control does waits on the field
+    # being alive. rhStructural rather than rhSettling: the pattern redraws
+    # at a new size over the following seconds, not instantly.
+    floatParam("rdPatternScale", "Pattern Scale", "rd",
+      RD_PATTERN_SCALE_MIN, RD_PATTERN_SCALE_MAX, sim.rdPatternScale, 2,
+      psSimulation,
+      hint = "how big the pattern draws; 1 is the base rates, the floor is " &
+        "the smallest scale every named pattern still holds its shape at",
+      probe = "field.patternDiameter",
+      horizon = rhStructural, horizonReview = true),
     floatParam("climateSpeed", "Drift", "rd",
       CLIMATE_SPEED_MIN, CLIMATE_SPEED_MAX, sim.climateSpeed, 2, psSimulation,
       hint = "tours of the named regimes per minute, while Weather is on",

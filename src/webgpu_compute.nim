@@ -1084,8 +1084,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # parameters whenever chemistry's strengths sit at zero.
   fieldParamsData[FIELD_FEED] = float32(config.CONFIG.rdFeed)
   fieldParamsData[FIELD_KILL] = float32(config.CONFIG.rdKill)
-  fieldParamsData[FIELD_DIFFUSION_A] = float32(RD_DIFFUSION_A)
-  fieldParamsData[FIELD_DIFFUSION_B] = float32(RD_DIFFUSION_B)
+  let diffusionRates = rdDiffusionRates(config.CONFIG.rdPatternScale)
+  fieldParamsData[FIELD_DIFFUSION_A] = float32(diffusionRates.activator)
+  fieldParamsData[FIELD_DIFFUSION_B] = float32(diffusionRates.inhibitor)
   fieldParamsData[FIELD_DELTA_T] = float32(RD_DELTA_T)
   # field-resolve.wgsl multiplies the deposit by the RD_DEPOSIT_FRAME_SCALE the
   # bundler substituted, which is pinned to the shipped step count. Time Scale
@@ -1095,7 +1096,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # second control on what it takes to ignite.
   fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(config.CONFIG.rdDeposit *
     depositFrameScale(activeRdSteps) / RD_DEPOSIT_FRAME_SCALE)
-  fieldParamsData[FIELD_FORCE_SCALE] = float32(config.CONFIG.rdFieldForce)
+  # The pattern shrinks under Pattern Scale, and its per-cell gradient grows
+  # as 1/sqrt(scale) as it does; rdScentGainFactor corrects the gain so a
+  # fixed strength keeps the push it had at scale 1.
+  fieldParamsData[FIELD_FORCE_SCALE] = float32(config.CONFIG.rdFieldForce *
+    rdScentGainFactor(config.CONFIG.rdPatternScale))
   fieldParamsData[FIELD_SEED_NONCE] = float32(fieldSeedNonce)
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["fieldParams"]), 0, fieldParamsData)
 

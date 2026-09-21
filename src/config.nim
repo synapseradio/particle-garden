@@ -65,6 +65,7 @@ type
     rdKill* {.exportc.}: float
     rdDeposit* {.exportc.}: float
     rdFieldForce* {.exportc.}: float
+    rdPatternScale* {.exportc.}: float
     bodiesStrength* {.exportc.}: float
     bodyRadius* {.exportc.}: float
     bodyBand* {.exportc.}: float
@@ -189,6 +190,7 @@ proc createConfig(): ConfigObject =
   result.rdKill = sim.rdKill
   result.rdDeposit = sim.rdDeposit
   result.rdFieldForce = sim.rdFieldForce
+  result.rdPatternScale = sim.rdPatternScale
   result.bodiesStrength = sim.bodiesStrength
   result.bodyRadius = sim.bodyRadius
   result.bodyBand = sim.bodyBand

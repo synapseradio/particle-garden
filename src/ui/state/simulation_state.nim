@@ -81,6 +81,9 @@ type
     rdFieldForce*: float      ## Gain converting the sampled field gradient
                               ## into a per-frame velocity impulse. Zero
                               ## leaves particles blind to the field.
+    rdPatternScale*: float    ## Both diffusion rates' common factor: 1 is the
+                              ## base rates, the band's floor shrinks the
+                              ## pattern furthest a named regime still holds.
     bodiesStrength*: float    ## How much of what a body says actually lands:
                               ## multiplies the whole output of both bodies
                               ## passes, the forces particles receive and the
@@ -166,6 +169,7 @@ func initSimulationState*(): SimulationState =
     rdKill: RD_DEFAULT_KILL,
     rdDeposit: RD_DEFAULT_DEPOSIT,
     rdFieldForce: RD_DEFAULT_FIELD_FORCE,
+    rdPatternScale: RD_PATTERN_SCALE_DEFAULT,
     # Bodies ship with the coupling acting and the world silent: a body pulls
     # as soon as a player makes one, and the world makes none until the
     # ignition rate is raised off its floor.
