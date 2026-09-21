@@ -194,9 +194,12 @@ outputs beside them.
       - "a burst shorter than half the learning window is not learned as room". Silence with
         `QUIET_DB` from 0.5 s to 1.7 s, 5 s in all. Assert a `QUIET_DB` frame then reads loudness
         above 0.5. It catches a p90 or maximum statistic in place of the median.
-      - "a fresh state learns a louder room as zero". Hold `QUIET_DB` for 5 s, then 2 s more.
-        Assert loudness is exactly zero and silent is reported. It catches a room carried across
-        re-initialization, which is how turning Listen off and on relearns.
+      - "a fresh state learns a louder room as zero". Hold `QUIET_DB` to `ROOM_LEARN_SECONDS`, so
+        the state learns a quiet room, then start a fresh `initAnalysisState()` and hold
+        `QUIET_DB + 20.0` to `ROOM_LEARN_SECONDS` again. Assert the fresh state's loudness is
+        exactly zero and silent is reported. It catches a room carried across re-initialization,
+        which is how turning Listen off and on relearns: a state that kept the first, quieter
+        room would read the louder level as sound, not as room.
 - [ ] 2.7 **Red first.** Write the relations and the Room Gate tests.
       - "no reading falls when the room gate falls". The dithered passage after `learnRoom`,
         analysed at offsets 0 and `AUDIO_ROOM_GATE_MIN_DB`. Assert every level feature at the

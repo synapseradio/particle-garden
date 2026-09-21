@@ -158,7 +158,8 @@ copy, read the Room Gate, and call.
 
 Every constant the core expresses in time SHALL be honored against that delta rather than counted in
 frames, so the refractory window, the learning window, the held window and the ceiling's decay span the same
-wall-clock time at any frame rate.
+wall-clock time at any frame rate down to 20 fps, below which the delta the core receives is capped at
+0.05 s (`src/app.nim:240,259`) and reads less wall-clock time than actually elapsed.
 A constant counted in frames spans half the seconds at 120 fps that it spans at 60.
 
 Enforcement: the module compiles on both backends and a native test compiled with `nim c` exercises
