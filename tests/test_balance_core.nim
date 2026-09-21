@@ -839,6 +839,233 @@ suite "Each Effect Is Read Alone":
             " moved the kernel density, which it has no part in"
     checkNoVerdicts(verdicts)
 
+# The fluid arms themselves step 128 000-particle worlds for 900 frames, so
+# they sit behind `calibrateFluid`, which only `just calibrate-fluid` sets. A
+# test-name filter (`'The Blend Arm::*'`) runs one arm alone, and
+# `-d:calibrateSmoke` runs a reduced world that proves the arm runs and records
+# nothing. The arms report and assert no gate.
+
+when defined(calibrateFluid):
+  import std/[strutils, tables, times, typedthreads]
+  import ../src/sim_registry
+
+  const
+    FLUID_SEEDS = [42, 7, 1001]
+    FLUID_PARTICLES =
+      when defined(calibrateSmoke): 8_000 else: MAX_PARTICLES
+    FLUID_FRAME_DIVISOR = when defined(calibrateSmoke): 15 else: 1
+
+  func fluidScaled(frames: int): int = max(frames div FLUID_FRAME_DIVISOR, 1)
+
+  const
+    FLUID_STEPS = fluidScaled(900)
+    FLUID_WINDOW = [fluidScaled(750) - 1, fluidScaled(800) - 1,
+      fluidScaled(850) - 1, fluidScaled(900) - 1]
+      ## 749, 799, 849 and 899 in the recipe.
+
+  func fluidSpeciesCount(): int = defaultSettings().speciesCount
+
+  func selfAttraction(speciesCount: int): seq[float32] =
+    ## Each species attracting itself at the matrix maximum and indifferent
+    ## to the rest, so the fluid-zero world sorts by species and sigma's
+    ## denominator stands clear of zero.
+    for row in 0 ..< speciesCount:
+      for column in 0 ..< speciesCount:
+        result.add (if row == column: MATRIX_MAX_VALUE.float32 else: 0.0'f32)
+
+  func armPlan(fluid: OracleFluidParams): SubstepPlan =
+    ## What the app's plan runs for this fluid at frame factor 1: the count
+    ## and the effective stiffness follow the radius fraction and stiffness.
+    let shipped = defaultSettings()
+    substepPlan(1.0, LiveValues(
+      forces: shipped.forceStrength, fluid: fluid.strength, scent: 0.0,
+      deposit: 0.0, bodies: 0.0, longRange: 0.0,
+      maxVelocity: shipped.maxVelocity,
+      interactionRadius: FLUID_ARM_RADIUS,
+      sphRadiusFraction: fluid.radiusFraction,
+      sphStiffness: fluid.stiffness,
+      timeScale: shipped.timeScale,
+      bodyBand: BODY_DEFAULT_BAND, bodyLive: false))
+
+  type
+    FluidRun = object
+      params: OracleParams
+      substeps: int
+      seed: int
+
+    FluidReading = object
+      share: float
+        ## S: the mean share of a particle's proximity-weighted neighbours
+        ## that are its own species, over the window.
+      variation: float
+        ## The coefficient of variation of the crowd density, over the window.
+      kernelNeighbours: float
+        ## The mean kernel density less the particle's own weight at the last
+        ## window step: zero where the kernel meets no neighbour.
+
+  func planned(fluid: OracleFluidParams; seed: int): FluidRun =
+    let plan = armPlan(fluid)
+    var effective = fluid
+    effective.stiffness = plan.effStiffness
+    var params = armWorldParams(effective, FLUID_PARTICLES)
+    params.maxVelocity = plan.effMaxVelocity.float32
+    FluidRun(params: params, substeps: plan.count, seed: seed)
+
+  func ownSpeciesShare(world: OracleWorld): float =
+    var counted = 0
+    for i in 0 ..< world.crowdDensity.len:
+      if world.crowdDensity[i] > 0.0'f32:
+        result += world.colonyDensity[i].float / world.crowdDensity[i].float
+        counted += 1
+    if counted > 0:
+      result /= counted.float
+
+  func crowdVariation(world: OracleWorld): float =
+    let mean = meanWeightedNeighbours(world)
+    var spread = 0.0
+    for value in world.crowdDensity:
+      spread += (value.float - mean) * (value.float - mean)
+    sqrt(spread / world.crowdDensity.len.float) / mean
+
+  proc runFluid(run: FluidRun): FluidReading {.gcsafe.} =
+    let speciesCount = fluidSpeciesCount()
+    var world = initOracleWorld(run.params, FLUID_PARTICLES, speciesCount,
+      selfAttraction(speciesCount), run.seed)
+    for step in 0 ..< FLUID_STEPS:
+      stepFrame(world, 1.0, run.substeps)
+      if step in FLUID_WINDOW:
+        result.share += ownSpeciesShare(world)
+        result.variation += crowdVariation(world)
+    result.share /= FLUID_WINDOW.len.float
+    result.variation /= FLUID_WINDOW.len.float
+    for density in world.sphDensity:
+      result.kernelNeighbours += density.float - 1.0
+    result.kernelNeighbours /= world.sphDensity.len.float
+
+  type FluidSlot = object
+    run: FluidRun
+    output: ptr FluidReading
+
+  proc runFluidSlot(slot: FluidSlot) {.thread.} =
+    slot.output[] = runFluid(slot.run)
+
+  var fluidMemo: Table[string, FluidReading]
+    ## The fluid-zero worlds every arm reads against step once per process.
+
+  proc fluidReadings(runs: seq[FluidRun]): seq[FluidReading] =
+    ## Every run not yet stepped in this process, stepped at once, one thread
+    ## each.
+    var missing: seq[FluidRun]
+    for run in runs:
+      if $run notin fluidMemo and run notin missing:
+        missing.add run
+    var stepped = newSeq[FluidReading](missing.len)
+    var threads = newSeq[Thread[FluidSlot]](missing.len)
+    let started = epochTime()
+    for i in 0 ..< missing.len:
+      createThread(threads[i], runFluidSlot,
+        FluidSlot(run: missing[i], output: addr stepped[i]))
+    joinThreads(threads)
+    echo "  stepped ", missing.len, " worlds of ", FLUID_PARTICLES,
+      " particles for ", FLUID_STEPS, " frames in ",
+      formatFloat(epochTime() - started, ffDecimal, 1), " s"
+    for i, run in missing:
+      fluidMemo[$run] = stepped[i]
+    for run in runs:
+      result.add fluidMemo[$run]
+
+  func shown(value: float): string = formatFloat(value, ffDecimal, 4)
+
+  func meanAndSpread(values: seq[float]): tuple[mean, spread: float] =
+    ## The mean and the largest single seed's distance from it (design C5).
+    for value in values:
+      result.mean += value
+    result.mean /= values.len.float
+    for value in values:
+      result.spread = max(result.spread, abs(value - result.mean))
+
+  func sideLabel(term: FluidTerm; side: OracleFluidParams): string =
+    case term
+    of ftBlend: "blend " & $side.blend
+    of ftPressureGain: "pressure gain " & $side.pressureGain
+    of ftRadiusFraction: "radius fraction " & $side.radiusFraction
+
+  proc reportArm(arm: FluidArm) =
+    ## sigma and E for every side against the fluid-zero world, per seed and
+    ## as the three-seed mean, and whether each step's mean sigma is not
+    ## lower than the reference's.
+    let speciesCount = fluidSpeciesCount()
+    let chance = 1.0 / speciesCount.float
+    let sides = @[arm.reference] & arm.steps
+    var fluidZero = arm.reference
+    fluidZero.strength = 0.0
+    var runs: seq[FluidRun]
+    for seed in FLUID_SEEDS:
+      runs.add planned(fluidZero, seed)
+    for side in sides:
+      for seed in FLUID_SEEDS:
+        runs.add planned(side, seed)
+    let zeroRun = runs[0]
+    echo "  ", FLUID_PARTICLES, " particles, radius ", FLUID_ARM_RADIUS,
+      ", Force Strength ", FLUID_ARM_FORCE_STRENGTH, " (force multiplier ",
+      zeroRun.params.forceMultiplier, "), crowding ",
+      zeroRun.params.crowdingStrength, ", world pressure K ",
+      zeroRun.params.pressureStiffness, " at onset ratio ", ONSET_RATIO,
+      " (onset density ", shown(zeroRun.params.pressureOnset.float), ")"
+    echo "  ", speciesCount, " species, each attracting itself at ",
+      MATRIX_MAX_VALUE, " and indifferent to the rest; ", FLUID_STEPS,
+      " frames at frame factor 1, window ", FLUID_WINDOW, "; seeds ",
+      FLUID_SEEDS
+    let readings = fluidReadings(runs)
+    let zero = readings[0 ..< FLUID_SEEDS.len]
+    for i, seed in FLUID_SEEDS:
+      echo "  fluid 0, seed ", seed, ": S ", shown(zero[i].share),
+        ", crowd variation ", shown(zero[i].variation)
+      checkpoint("seed " & $seed & ": fluid-zero S " & $zero[i].share &
+        " against chance " & $chance)
+      check zero[i].share > chance
+    var sigmaMeans: seq[float]
+    for index, side in sides:
+      let plan = armPlan(side)
+      echo "  ", (if index == 0: "reference " else: "step "),
+        sideLabel(arm.term, side), ": ", plan.count,
+        " substeps, effective stiffness ", shown(plan.effStiffness)
+      var sigmas, evens: seq[float]
+      for i, seed in FLUID_SEEDS:
+        let reading = readings[FLUID_SEEDS.len * (index + 1) + i]
+        let sigma = (reading.share - chance) / (zero[i].share - chance)
+        let evenness = reading.variation / zero[i].variation
+        sigmas.add sigma
+        evens.add evenness
+        echo "    seed ", seed, ": S ", shown(reading.share), ", sigma ",
+          shown(sigma), ", E ", shown(evenness), ", kernel neighbours ",
+          shown(reading.kernelNeighbours)
+        check sigma == sigma and evenness == evenness
+      let sigma = meanAndSpread(sigmas)
+      let evenness = meanAndSpread(evens)
+      echo "    mean sigma ", shown(sigma.mean), " (largest seed distance ",
+        shown(sigma.spread), "), mean E ", shown(evenness.mean),
+        " (largest seed distance ", shown(evenness.spread), ")"
+      sigmaMeans.add sigma.mean
+    for index in 1 ..< sides.len:
+      echo "  ", sideLabel(arm.term, sides[index]), ": mean sigma ",
+        shown(sigmaMeans[index]),
+        (if sigmaMeans[index] >= sigmaMeans[0]: " is not lower than "
+         else: " is lower than "), sideLabel(arm.term, sides[0]), "'s ",
+        shown(sigmaMeans[0])
+
+  suite "The Blend Arm":
+    test "the blend at SPH_XSPH_EPSILON against 0, at Viscosity 0":
+      reportArm(fluidArms()[ftBlend])
+
+  suite "The Pressure Arm":
+    test "the pressure gain at SPH_FORCE_SCALE against 0":
+      reportArm(fluidArms()[ftPressureGain])
+
+  suite "The Radius Fraction Arm":
+    test "radius fraction 1 against 0.75, 0.5, 0.25 and 0.1":
+      reportArm(fluidArms()[ftRadiusFraction])
+
 # ==============================================================================
 # THE CALIBRATION ARMS
 # ==============================================================================

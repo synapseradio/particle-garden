@@ -74,6 +74,13 @@ calibrate-balance-128k:
 # that has never built runs that test against an empty directory.
 check: shaders test test-ui test-shell lint-shell
 
+# The fluid arms (design N8), outside `check` and outside `test`: each arm steps
+# a fluid-zero world and every arm side on the three gate seeds at 128 000
+# particles for 900 frames, one thread per world. A test-name filter runs one
+# arm: `just calibrate-fluid 'The Blend Arm::*'`.
+calibrate-fluid *filter:
+    nim c -r {{native_flags}} -d:calibrateFluid tests/test_balance_core.nim {{filter}}
+
 # Sync project dependencies (idempotent; seconds when already satisfied).
 # Runs inside `be` so a nimble.lock bump can't strand the build.
 deps:
