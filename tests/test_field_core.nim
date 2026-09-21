@@ -1276,6 +1276,33 @@ suite "Chemotactic Collapse Bound":
         fieldForceScale = force, patternScale = bracket.scale).finite
 
 
+suite "A Regime Selection Reads The Row For The Nearest Step":
+  func nearestStep(scale: float): float =
+    result = RD_PATTERN_SCALE_STEPS[0]
+    for step in RD_PATTERN_SCALE_STEPS:
+      if abs(step - scale) < abs(result - scale): result = step
+
+  test "every scale row applies at its own step and nearer to it than any other":
+    for row in RD_REGIME_SCALE_ROWS:
+      for scale in [row.scale, row.scale * 1.1, row.scale * 0.95]:
+        if nearestStep(scale) != row.scale: continue
+        checkpoint("regime " & row.id & " at scale " & $scale)
+        let applied = regimeRow(row.id, scale)
+        check applied.feed == row.feed
+        check applied.kill == row.kill
+        check applied.minDeposit == row.minDeposit
+
+  test "a step with no row applies the scale-1 row":
+    for regime in RD_REGIMES:
+      for step in RD_PATTERN_SCALE_STEPS:
+        var hasRow = false
+        for row in RD_REGIME_SCALE_ROWS:
+          if row.id == regime.id and row.scale == step: hasRow = true
+        if hasRow: continue
+        checkpoint("regime " & regime.id & " at scale " & $step)
+        check regimeRow(regime.id, step) == regime
+
+
 suite "The Regime Deposit Floor Preserves The Regime":
   # Why this suite exists: two named regimes (Worms, Coral) do not ignite at the
   # default deposit, so the regime buttons raise it to

@@ -558,6 +558,36 @@ const
   FIELD_OPACITY_RANGE_MIN* = FIELD_OPACITY_MIN
   FIELD_OPACITY_RANGE_MAX* = FIELD_OPACITY_MAX
 
+# THE PATTERN-SCALE BAND. Gate G3 measured every scale-dependent field constant
+# at these steps (scratchpad/core-force-interface/g3__21-09-26-2010.md).
+const
+  RD_PATTERN_SCALE_MAX* = 1.0
+    ## The base diffusion rates; above 1 the activator crosses its Euler line.
+  RD_PATTERN_SCALE_MIN* = 0.25
+    ## G3's floor: no Coral row restores Coral at 0.22 or 0.2 anywhere in the
+    ## feed and kill ranges. The measured diameter here is 4.47 cells.
+  RD_PATTERN_SCALE_DEFAULT* = RD_PATTERN_SCALE_MIN
+  RD_PATTERN_SCALE_STEPS* = [RD_PATTERN_SCALE_MAX, 0.5, RD_PATTERN_SCALE_MIN]
+    ## Descending, ceiling first and floor last.
+  RD_REGIME_SCALE_ROWS* = [
+    (id: "coral", scale: 0.5, feed: 0.080, kill: 0.059,
+     minDeposit: RD_REGIME_HIGH_FEED_DEPOSIT),
+    (id: "coral", scale: 0.25, feed: 0.0825, kill: 0.058,
+     minDeposit: RD_REGIME_HIGH_FEED_DEPOSIT),
+    (id: "worms", scale: 0.25, feed: 0.080, kill: 0.061,
+     minDeposit: RD_REGIME_HIGH_FEED_DEPOSIT),
+  ]
+    ## Rows for the steps where a regime's scale-1 row drifts. MEASURED (64x64
+    ## harness, 150 frames, distance to own attractor / half the separation):
+    ## Coral 0.082 / 0.245 at 0.5, 0.202 / 0.348 at 0.25; Worms 0.197 / 0.559
+    ## at 0.25, where its scale-1 row ignites at the default deposit.
+
+func regimeRow*(id: string, scale: float): typeof(RD_REGIMES[0]) =
+  ## The regime `id` as a selection at `scale` applies it.
+  for regime in RD_REGIMES:
+    if regime.id == id: return regime
+  raise newException(KeyError, "no regime named " & id)
+
 # The largest impulse per reference frame, on one axis, each velocity writer
 # hands one particle at the range maxima. WGSL i32 atomics wrap
 # (https://www.w3.org/TR/WGSL/#atomic-rmw), so the velocity words must hold
