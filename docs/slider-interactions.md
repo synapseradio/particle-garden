@@ -159,7 +159,7 @@ the next frame; rkModulate moves only the effective copy through
 | 43 | sphViscosity — fluidStrength | mul | `(visc + 0.5)·fluidStrength` | `web/shaders/src/forces-sph.wgsl:262,274-278` |
 | 44 | fluidStrength — longRangeStrength | cost | fluid declusters; physics per substep ~3× lower | section 6 |
 | 45 | longRangeStrength — reach, mesh size | gate | longRangeOff; `acts()` skips the solve | `src/ui/api/dormancy.nim:42-43`, `src/sim_registry.nim:409-417` |
-| 46 | longRangeReach — longRangeGridIndex | shape | reach resolves in cells (half per axis on the coarse mesh); softening 1.5 cells | `src/ui/api/response_probe.nim:298-313`, `src/long_range_core.nim:113-141` |
+| 46 | longRangeReach — longRangeGridIndex | shape | reach resolves in cells (half per axis on the coarse mesh); softening 1.5 cells. The pull's magnitude is mesh-independent: `LR_FORCE_SCALE` divides out the cell area, so both sizes hand the same impulse a few cells from a clump, and the pull scales with interactionRadius as `R²(a + R)` | `src/ui/api/response_probe.nim:298-313`, `src/long_range_core.nim:102-142,148-163`, `src/webgpu_compute.nim:1154-1156` |
 | 47 | longRangeStrength — neighbour sweep (particleCount, interactionRadius) | cost | clustering fills cells the sweep walks | `web/shaders/src/forces.wgsl:141,193`, section 6 |
 | 48 | rdFeed — rdKill | shape, gate | pattern pair; fieldSubcritical | `src/ui/api/dormancy.nim:28-31,57-62` |
 | 49 | Regime buttons — rdFeed, rdKill, rdDeposit | write | rkFire; deposit floor raise-only | `src/web_api.nim:620-638` |
@@ -474,6 +474,5 @@ removes or rewires these edges:
 - Rewires the strengths onto one 0-1 calibrated contract, including Force
   Strength and Scent-following: 11-18, and section 7's unit mismatch.
 - Moves incompressibility to world pressure; crowding becomes texture: 27, 30.
-- Makes long range radius-scaled and mesh-independent: 46.
 - Adds a Pattern Scale chemistry control and profiler slots for every
   contributor (section 6's unmeasured items).

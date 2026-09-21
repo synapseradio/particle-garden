@@ -21,9 +21,14 @@ both dim while the strength is at zero.
   the solve does not run at all. Raising it turns scattered clusters into a
   world that organizes at its own scale, drawing distant colonies toward or
   away from each other according to the same matrix that governs contact.
-  Interacts with: the attraction matrix (shared); Reach and Mesh Size (dims
-  them at zero); Particles and Interaction Radius (its clusters make the
-  neighbour sweep costly); Fluid (loosens the clusters); Time Scale.
+  The pull is measured against the species force: at a fixed strength, a
+  larger interaction radius strengthens it about as the radius squared, the
+  way the species force's hold on a colony's edge grows, while the mesh
+  size leaves it unchanged.
+  Interacts with: the attraction matrix (shared); Interaction Radius (the
+  pull grows about as its square); Reach and Mesh Size (dims them at zero);
+  Particles and Interaction Radius (its clusters make the neighbour sweep
+  costly); Fluid (loosens the clusters); Time Scale.
 - `longRangeReach` — the distance past which the pull is screened away.
   Small reaches make the coupling a wider neighbourhood, barely past what
   the interaction radius already covers; large ones let one side of the
