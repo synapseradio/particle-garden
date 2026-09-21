@@ -289,7 +289,7 @@ Conventions every task below uses:
 
 ## 10. The fluid's three one-term arms
 
-- [ ] 10.1 **Red.** Extend `src/balance_core.nim`'s binned oracle world with a mirror of `sph_core`'s pair loop (`web/shaders/src/forces-sph.wgsl:240-280`). Add suite "The Fluid Mirror Steps As The Oracle Does" to `tests/test_balance_core.nim`, holding one mirrored step equal to `src/sph_core.nim`'s oracle within its tolerance. Add suite "Each Effect Is Read Alone", holding that each arm's two sides differ in exactly one term (sph-scale). Verify both fail against a stub mirror that drops the blend.
+- [x] 10.1 **Red.** Extend `src/balance_core.nim`'s binned oracle world with a mirror of `sph_core`'s pair loop (`web/shaders/src/forces-sph.wgsl:240-280`). Add suite "The Fluid Mirror Steps As The Oracle Does" to `tests/test_balance_core.nim`, holding one mirrored step equal to `src/sph_core.nim`'s oracle within its tolerance. Add suite "Each Effect Is Read Alone", holding that each arm's two sides differ in exactly one term (sph-scale). Verify both fail against a stub mirror that drops the blend.
 - [ ] 10.2 **Measurement for the arms; it gates 10.3.** Add recipe `calibrate-fluid` to `justfile`, outside `just check`. The conditions: the gate seeds at 128 000 particles, radius 50, Force Strength 0.2, the pressure acting, crowding 0, fluid 1, 900 steps, window 749–899. Run the three arms (N8), each reading σ and E against fluid 0:
   - blend at `SPH_XSPH_EPSILON` against 0, at Viscosity 0
   - the pressure gain at `SPH_FORCE_SCALE` against 0
