@@ -1641,10 +1641,16 @@ when defined(calibrateBalance):
         elif defined(calibrateFrictionPerFrame):
           "friction as retention^ff (diagnostic only)"
         else: "shipped oracle"
+      const
+        probeStiffnessOverride {.strdefine: "calibrateProbeStiffness".} = ""
+        probeStiffness =
+          if probeStiffnessOverride.len == 0: WORLD_PRESSURE_STIFFNESS
+          else: parseFloat(probeStiffnessOverride)
       printConditions("G1.5 cause probe, " & variant & ": one " &
-        "self-attracting species, K 540, shipped friction, no substeps")
-      let params = oracleParams(defaultSettings().friction,
-        WORLD_PRESSURE_STIFFNESS, 0.0)
+        "self-attracting species, K " & $probeStiffness &
+        ", shipped friction, no substeps")
+      let params = oracleParams(defaultSettings().friction, probeStiffness,
+        0.0)
       var runs: seq[WindowRun]
       for frameFactor in [1.0, 2.0, 4.0]:
         runs.add windowRuns(params, 1, fixedFactors(frameFactor), Inf)
