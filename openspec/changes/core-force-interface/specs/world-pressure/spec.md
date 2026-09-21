@@ -161,16 +161,20 @@ cap — a pressure world at 16 000 and 128 000 particles, at `FRICTION_MIN` and 
 settle no warmer per reference frame than at frame factor 1, with no more cap contact than a
 stiffness-zero control. The step limit (`coupling-contract`) SHALL hold this by construction: `ff ·
 λ_max ≤ θ < 4` for every frame factor, radius and particle count, where `λ_max` is a particle's own
-pair-Hessian bound. No substep count and no recorded stability limit SHALL be needed for it.
+pair-Hessian bound, for every restoring mode; and it SHALL never raise a sliding mode's growth per
+reference frame above frame factor 1's. No substep count and no recorded stability limit SHALL be
+needed for it.
 
 Enforced by: `tests/test_balance_core.nim` suite "Every Frame Factor Settles No Warmer" (G1), under the
 `just calibrate-balance` recipe, on 16 000 and 128 000 particles, radius 50 and 150. Four arms hold: A,
 sustained schedules at shipped friction; B, sustained schedules at `FRICTION_MIN`, against the
 stiffness-zero world's own frame-factor dependence; C, cap contact, no more than the stiffness-zero
 world's; D, unsteady schedules (uniform and alternating jitter, and held frames with single ff-30
-steps). `tests/test_balance_core.nim` suite "A Limited Step Cannot Overshoot" (T5) holds the linear
-one-step map's spectral radius at most 1 at every frame factor the app produces, on the oracle, apart
-from the recipe.
+steps). `tests/test_balance_core.nim` suite "A Limited Step Cannot Overshoot" (T5a–T5d) holds, on the
+oracle apart from the recipe: T5a, every restoring mode to `ff · s · λ ≤ θ/2`; T5b, every sliding mode
+to the limit's never-amplifies and ff-1 growth clauses; T5c, the coupled Hessian's largest eigenvalue to
+`θ` and its most negative mode to T5b's ff-1 clause; T5d, the unlimited control past the restoring bound
+at ff 30.
 
 #### Scenario: A sustained frame factor of 30 settles no warmer than frame factor 1
 

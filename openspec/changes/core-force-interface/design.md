@@ -316,16 +316,24 @@ Metal unless the browser chains that struct itself.
 
 ### C4b. The lumped stiffness step limit removes the explicit scheme's stability bound
 
-The explicit scheme (`v' = r·(v + ff·Δ)`, `x' = x + v'`) is stable only while `ff·λ < 2(1+r)/r`, where
-a particle's `λ` is bounded by twice its summed pair slope `D = Σ_j slope_ij`. Integrate decodes `D`
-from two stiffness words (fine at `STIFFNESS_FIXED_POINT_SCALE = 2^16`, coarse at
-`STIFFNESS_COARSE_SHIFT`, split and decoded as the velocity words are) and forms
-`s = min(1, θ/(2·ff·D))`, then multiplies the particle's whole decoded delta — every writer, not the
-pressure alone — by `s`. `s = 1` exactly where `2·ff·D ≤ θ`, so a below-onset particle's step is
-bit-identical to today's at every frame factor. `θ = PRESSURE_STEP_BOUND = 2`, half the symplectic
-bound of 4 at retention 1, leaving a factor of 2 for the density lag (C4, `ρ` carries a 0.7-retained
-smoothing) and for the slopes `D` omits (transverse pair terms, which only loosen the bound). The
-argument, and the code sites, are the crowding-redesign design's §3.1–§3.4; the tests are its §8, T1–T7.
+The explicit scheme (`v' = r·(v + ff·Δ)`, `x' = x + v'`) is stable only while `ff·λ < 2(1+r)/r`. A
+restoring mode (`λ ≥ 0`) has its `λ` bounded by twice the particle's summed pair slope
+`D = Σ_j slope_ij`. A sliding mode (`λ < 0`, the transverse pair term `-(f/r)(I - n̂n̂)` of a repulsive
+central force) is the continuous dynamics' own growth — a squeezed particle sliding sideways off a
+random, non-equilibrium neighbour set, not overshoot — and no `D` and no `θ` can hold its one-step
+radius at 1. The limit's promise there is narrower: it never amplifies a sliding mode past the
+unlimited map's own radius (`s ≤ 1` and the map's radius is increasing in `|ff·λ|`), and past frame
+factor 1 it never grows the mode faster per reference frame than at ff 1 (`ff·s` is non-decreasing in
+`ff`, and the map's log-radius is concave through zero, so a growing chord slope through the origin can
+only shrink). Integrate decodes `D` from two stiffness words (fine at
+`STIFFNESS_FIXED_POINT_SCALE = 2^16`, coarse at `STIFFNESS_COARSE_SHIFT`, split and decoded as the
+velocity words are) and forms `s = min(1, θ/(2·ff·D))`, then multiplies the particle's whole decoded
+delta — every writer, not the pressure alone — by `s`. `s = 1` exactly where `2·ff·D ≤ θ`, so a
+below-onset particle's step is bit-identical to today's at every frame factor. `θ = PRESSURE_STEP_BOUND
+= 2`, half the symplectic bound of 4 at retention 1, leaving a factor of 2 for the density lag alone
+(C4, `ρ` carries a 0.7-retained smoothing); the transverse term only lowers a restoring mode's `λ` and
+needs no margin. The argument, and the code sites, are the crowding-redesign design's §3.1–§3.4 and its
+addendum of 21-09-2026 23:50; the tests are its §8, T1–T4, T5a–T5d, T6–T7.
 
 **What it keeps.** A static balance — total force zero — is unchanged at every frame factor, since `s`
 scales every writer alike: the ratio between the pressure and the compressors on one particle holds, so
@@ -629,10 +637,13 @@ and a stub slope returning 0, so T1–T4, T6, T8 and T10 read red on values, not
 - T4 "The Stiffness Words Decode To The Summed Slope": a full crowd of `MAX_PARTICLES` pairs at
   `q_max/INTERACTION_RADIUS_MIN` encodes and decodes within `n · 2^-17` of the f64 sum; the two static
   assertions (C8) hold.
-- T5 "A Limited Step Cannot Overshoot" (property, on the oracle, not calibration): 20 random crowds'
-  linear one-step map, built from the oracle's pressure Hessian and `D`, has spectral radius ≤ 1 + 1e-6
-  at every frame factor the app produces and both frictions; the same map with `s ≡ 1` exceeds 1 at ff
-  30.
+- T5a–T5d "A Limited Step Cannot Overshoot" (property, on the oracle, not calibration), split by the
+  sign of the mode: T5a holds every restoring mode (`λ ≥ 0`) of 20 random crowds' block Hessian to
+  `ff·s·λ ≤ θ/2`; T5b holds every sliding mode (`λ < 0`) to the addendum's two clauses (the limit never
+  amplifies it, and past ff 1 it grows no faster per reference frame than at ff 1); T5c holds the
+  6-crowd coupled Hessian's largest eigenvalue to `θ` and its most negative mode to T5b's ff-1 clause;
+  T5d confirms the unlimited control (`s ≡ 1`) exceeds the restoring bound at ff 30, so the crowds are
+  hard enough to test T5a and T5c.
 - T6 "The Step Limit Scales Every Writer Alike": with species, pressure and body words set on one
   particle, the decoded delta is `s · ff · (sum)` for the hand-computed `s`.
 - T7 "A Balance Holds At Every Frame Factor" (integration, not calibration): a held crowd settles to the

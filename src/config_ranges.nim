@@ -706,8 +706,7 @@ const
     ## particle's summed pair stiffness `D`. The symplectic map `v' = r(v -
     ## ff*s*lambda*x), x' = x + v'` is stable while `ff*lambda < 2(1+r)/r`,
     ## which is 4 at retention 1; half of that leaves a factor of 2 for the
-    ## smoothed crowd density's one-step lag and for the transverse pair
-    ## terms the summed stiffness omits.
+    ## smoothed crowd density's one-step lag.
   STIFFNESS_FIXED_POINT_SCALE* = 65536.0
     ## The stiffness word's quanta per unit of radial slope, 2^16 (the same
     ## scale as the velocity words; a distinct constant because the two

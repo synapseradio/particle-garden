@@ -161,9 +161,9 @@ Conventions every task below uses:
     `tests/test_physics.nim:653`, with a `D > 0` arm), T10 (amend "Pressure Past The Onset",
     `tests/test_physics.nim:814`, for the new saturation order).
   - **Red, oracle grain (`tests/test_balance_core.nim`), against the same stub, needing only the
-    oracle:** T5 "A Limited Step Cannot Overshoot" (property, not calibration: the unlimited control
-    exceeds spectral radius 1 at ff 30), T7 "A Balance Holds At Every Frame Factor" (integration, not
-    calibration).
+    oracle:** T5a–T5d "A Limited Step Cannot Overshoot" (property, not calibration: the unlimited
+    control reads a restoring mode past the symplectic bound at ff 30), T7 "A Balance Holds At Every
+    Frame Factor" (integration, not calibration).
   - **Green.** `src/physics_core.nim`: `worldPressureSum` (the saturated sum before the proximity
     weight), `stepLimit`, the pair's radial slope, and `ParticleStiffness`/`decodeStiffness`.
     `src/balance_core.nim`: `sweepPairs` accumulates the stiffness words (both particles, since the
