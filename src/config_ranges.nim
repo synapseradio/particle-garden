@@ -17,7 +17,7 @@
 #
 # ==============================================================================
 
-from std/math import ceil
+from std/math import ceil, sqrt
 import memory_layout
 import sph_core
 import field_core
@@ -589,6 +589,29 @@ const
     ## scale-1 gain, over its scale-1 value. MEASURED as peak axis gradient
     ## times sqrt(scale) on a 128x128 torus settled 6000 steps at the Pearson
     ## defaults (peak 0.0837 at scale 1); sqrt(scale) misses by up to 7.3%.
+
+func rdScentGainFactor*(scale: float): float =
+  ## g_scent(s) / g_scent(1): what today's field-force gain must be
+  ## multiplied by so its strength-1 impulse stays the measured scale-1 value
+  ## at every pattern scale. The per-cell gradient grows as 1/sqrt(s), so
+  ## sqrt(s) alone would cancel it exactly if the measured impulse actually
+  ## tracked sqrt(s) — it does not (RD_SCENT_STEPPED_IMPULSE), so sqrt(s) is
+  ## corrected by the recorded ratio, interpolated linearly between steps.
+  let steps = RD_SCENT_STEPPED_IMPULSE
+  var ratio = steps[0].ratio
+  if scale >= steps[0].scale:
+    ratio = steps[0].ratio
+  elif scale <= steps[^1].scale:
+    ratio = steps[^1].ratio
+  else:
+    for index in 1 ..< steps.len:
+      let hi = steps[index - 1]
+      let lo = steps[index]
+      if scale >= lo.scale and scale <= hi.scale:
+        let t = (scale - lo.scale) / (hi.scale - lo.scale)
+        ratio = lo.ratio + t * (hi.ratio - lo.ratio)
+        break
+  sqrt(scale) / ratio
 
 func regimeRow*(id: string, scale: float): typeof(RD_REGIMES[0]) =
   ## The regime `id` as a selection at `scale` applies it: its row for the

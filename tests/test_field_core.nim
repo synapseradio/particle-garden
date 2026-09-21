@@ -1291,6 +1291,37 @@ suite "A Regime Selection Reads The Row For The Nearest Step":
         check regimeRow(regime.id, step) == regime
 
 
+suite "The Scent Gain Corrects sqrt(s) To The Measured Step":
+  # G3 measured the strength-1 stepped impulse under g(s) = g(1)*sqrt(s) and
+  # found it misses the recorded ratio by more than the scent oracle's
+  # tolerance from scale 0.5 down (scratchpad/core-force-interface/
+  # g3__21-09-26-2010.md). rdScentGainFactor corrects sqrt(s) by the
+  # recorded RD_SCENT_STEPPED_IMPULSE ratio, interpolated in s.
+
+  test "at scale 1 the factor leaves today's gain unchanged":
+    check rdScentGainFactor(RD_PATTERN_SCALE_MAX) == 1.0
+
+  test "at each recorded step the factor is sqrt(s) over the measured ratio":
+    for entry in RD_SCENT_STEPPED_IMPULSE:
+      let expected = sqrt(entry.scale) / entry.ratio
+      checkpoint("scale " & $entry.scale)
+      check abs(rdScentGainFactor(entry.scale) - expected) < 1e-12
+
+  test "below scale 1 the factor differs from raw sqrt(s), since sqrt(s) misses the recorded ratio":
+    for entry in RD_SCENT_STEPPED_IMPULSE:
+      if entry.scale == RD_PATTERN_SCALE_MAX: continue
+      checkpoint("scale " & $entry.scale)
+      check abs(rdScentGainFactor(entry.scale) - sqrt(entry.scale)) > 1e-9
+
+  test "between recorded steps the ratio interpolates linearly":
+    let midScale = (RD_SCENT_STEPPED_IMPULSE[0].scale +
+      RD_SCENT_STEPPED_IMPULSE[1].scale) / 2.0
+    let midRatio = (RD_SCENT_STEPPED_IMPULSE[0].ratio +
+      RD_SCENT_STEPPED_IMPULSE[1].ratio) / 2.0
+    let expected = sqrt(midScale) / midRatio
+    check abs(rdScentGainFactor(midScale) - expected) < 1e-12
+
+
 suite "The Regime Deposit Floor Preserves The Regime":
   # Why this suite exists: two named regimes (Worms, Coral) do not ignite at the
   # default deposit, so the regime buttons raise it to
