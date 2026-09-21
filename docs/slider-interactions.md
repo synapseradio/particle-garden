@@ -141,10 +141,10 @@ the next frame; rkModulate moves only the effective copy through
 | 24 | interactionRadius — sphRadiusFraction | mul | `h = r·fraction` | `web/shaders/src/forces-sph.wgsl:115` |
 | 25 | interactionRadius — sphStiffness | bound | ceiling ∝ `r·fraction` | `src/ui/api/param_descriptor.nim:240-253` |
 | 26 | forceStrength — crowding, force shape (5 sliders) | gate, mul | forceOff dims them; `fMul` scales the whole curve | `src/ui/api/dormancy.nim:36-37`, `web/shaders/src/forces.wgsl:282-283` |
-| 27 | forceStrength — fluidStrength | sum | the Hermite `-1` core is the only incompressibility while fluid sits at its default 0 | `web/shaders/src/forces.wgsl:243-247` |
+| 27 | forceStrength — fluidStrength | sum | the Hermite `-1` core is incompressibility only while fluid sits at its default 0; the pair law's fixed world pressure now resists compression above its onset regardless of either slider, formed apart from the species product so `forceMultiplier` never scales it | `web/shaders/src/forces.wgsl:268-272,291-294,327-341` |
 | 28 | forceStrength — longRangeStrength | cost | +12-28 ms physics at 128k in 2 of 3 seeds; seed variance exceeds it | `scratchpad/dev/tracer-reports/4.md:53` |
 | 29 | crowdingStrength — expAttractionBeta | gate | exponential crowding applies only where attraction > 0 | `web/shaders/src/forces.wgsl:73-78` |
-| 30 | crowdingStrength — attraction | mul | `1/(1+s·ln(1+ρ))` | `web/shaders/src/forces.wgsl:91-93,133-134` |
+| 30 | crowdingStrength — attraction | mul | `1/(1+s·ln(1+ρ))`; textures clump density only — the fixed world pressure that bounds collapse reads the same `crowdDensity` but ignores this slider | `web/shaders/src/forces.wgsl:100-102,286-287,302-303` |
 | 31 | ruleWildness — matrix (via New Rules) | write | spread of the next roll only | `src/web_api.nim:316-324` |
 | 32 | ruleWildness — Force Weather | absent | waypoints exclude wildness | `src/config_ranges.nim:140-176` |
 | 33 | repulsionEnd — attractionPeak | shape | two joints of one curve | `web/shaders/src/forces.wgsl:233-262` |

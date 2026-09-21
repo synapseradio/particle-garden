@@ -9,14 +9,18 @@ attraction matrix further down the panel. These controls scale and season
 those rules.
 
 - `forceStrength` — how strongly the matrix acts. At zero the species force
-  is off entirely: particles drift through each other, and every control
-  that shapes the force dims until you bring it back.
+  is off entirely: below a crowding onset, particles of different species
+  still pass through each other, and every control that shapes the force
+  dims until you bring it back. Above that onset, crowds push apart
+  regardless — that resistance is fixed and does not turn off with this
+  slider.
   Interacts with: Crowding and the force shape (dims them at zero); Fluid
   (its close-range push is what stops overlap while Fluid is off); Time
   Scale; Force Weather, MIDI and audio (move it).
-- `crowdingStrength` — how much a dense crowd weakens its own attraction.
-  Repulsion never weakens, so crowding loosens clumps without letting them
-  overlap. Dormant while the species force is off.
+- `crowdingStrength` — crowding shapes clump texture, and the pressure is
+  what bounds collapse: this slider only weakens a dense crowd's own
+  attraction. Repulsion never weakens, so crowding loosens clumps without
+  letting them overlap. Dormant while the species force is off.
   Interacts with: Force Strength (dims it at zero); Interaction Radius
   (counts the crowd inside it); the attraction matrix (weakens only the
   pull).

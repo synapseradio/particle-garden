@@ -61,13 +61,20 @@ its pass's entire output.
 
 ### Forces are the asymmetric case
 
-`forces.wgsl` carries three things: the species force, scaled inside the shader
-by `params.forceMultiplier`; the per-particle colony density the renderer reads
-for dot size, brightness and glow radius; and the mouse and blast input. Only the
-first belongs to a coupling. So the pass runs world-intrinsic, no force strength
-may skip it, and the neighbour sweep runs even in a world where no forces act.
-The frame pays that price rather than paying a discontinuity, and the test suite
-asserts the arrangement instead of leaving it assumed.
+`forces.wgsl` carries four things: the species force, scaled inside the shader
+by `params.forceMultiplier`; the world pressure, a crowd's resistance to
+compression once its own local density passes a fixed onset; the per-particle
+colony density the renderer reads for dot size, brightness and glow radius; and
+the mouse and blast input. Only the species force belongs to a coupling. So the
+pass runs world-intrinsic, no force strength may skip it, and the neighbour
+sweep runs even in a world where no forces act. The frame pays that price
+rather than paying a discontinuity, and the test suite asserts the arrangement
+instead of leaving it assumed.
+
+The pressure rides in the same pair loop as the species force, but it is part
+of the pair law itself rather than a coupling: fixed at one onset and one
+stiffness for the whole world, and local in that a crowd's resistance depends
+only on that crowd's own density.
 
 Three densities keep that split clean. `density` at particle offset 20 measures
 same-species proximity and leaves the physics through the intrinsic sweep alone;

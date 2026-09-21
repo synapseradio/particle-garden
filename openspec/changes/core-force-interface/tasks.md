@@ -232,7 +232,7 @@ Conventions every task below uses:
   - Record in `scratchpad/core-force-interface/g1-cost__<DD-MM-YY-HHmm>.md` and `docs/perf-report.md`.
   - Correct `src/config_ranges.nim:110-125`'s "settled 128k headroom of 3.75 ms" to cite `w1-128k`'s 11.65 ms as the working figure and a lower bound, with 3.75 ms as the 150 s run still climbing (N9.15).
   - A cost past the allotment goes back to the user without narrowing the time-scale range.
-- [ ] 4.10 Help and docs for the pressure:
+- [x] 4.10 Help and docs for the pressure:
   - `docs/help/12-species.md:11-12`: "particles drift through each other" becomes that below the onset they still pass through each other, while crowds above it push apart (N9.8).
   - The crowding line becomes "Crowding shapes clump texture, and the pressure is what bounds collapse".
   - `docs/one-world.md`: the pressure is part of the pair law, fixed and local.

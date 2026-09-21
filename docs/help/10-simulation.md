@@ -24,7 +24,10 @@ These controls set how much world there is and how fast it runs.
   Interacts with: every push at once (species, fluid, long range, field,
   bodies); Force Weather (moves it).
 - `timeScale` — how much simulated time passes per frame. Raising it speeds
-  everything up at once, including the field's growth.
+  everything up at once, including the field's growth. In a crowd dense
+  enough to push back, pushing Time Scale higher slows how quickly it
+  answers the mouse, a blast or a body — it still settles to the same
+  balance, just more gradually.
   Interacts with: every push's size per frame; Stiffness (lowers its safe
   ceiling); the field (more steps, more cost). Weather and Drift keep
   real time.
