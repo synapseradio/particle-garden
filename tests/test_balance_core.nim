@@ -509,6 +509,9 @@ func fluidOnlyParams(fluid: OracleFluidParams;
     forceModel: ofmPolynomial, forceMultiplier: 0.0'f32,
     repulsionEnd: 0.5'f32, attractionPeak: 0.75'f32,
     pressureOnset: 1.0'f32, pressureStiffness: 0.0'f32,
+    pressureStepBound: PRESSURE_STEP_BOUND.float32,
+    stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
+    stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
     friction: retention, maxVelocity: UNCAPPED_VELOCITY,
     fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
     crowdDensityScale: sphDensityFixedPointScale(MAX_PARTICLES).float32,
@@ -719,6 +722,9 @@ func armWorldParams(fluid: OracleFluidParams;
     pressureOnset: crowdOnsetDensity(cfg).float32,
     pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
     pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+    pressureStepBound: PRESSURE_STEP_BOUND.float32,
+    stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
+    stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
     friction: (1.0 - shipped.friction).float32,
     maxVelocity: shipped.maxVelocity.float32,
     fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
@@ -1111,12 +1117,6 @@ when defined(calibrateBalance):
       else: parseFloat(ONSET_RATIO_OVERRIDE)
       ## x_on for every arm the term acts in, so the stacked hold can run at
       ## the onset G1.1 records before config_ranges holds it.
-    FF_STABLE_OVERRIDE {.strdefine: "calibrateFfStable".} = ""
-    JITTER_FF_STABLE =
-      if FF_STABLE_OVERRIDE.len == 0: FF_STABLE
-      else: parseFloat(FF_STABLE_OVERRIDE)
-      ## The ff_stable the jittered reporting arms substep at, so they can run
-      ## at the bisection's value before config_ranges holds it.
 
   func scaled(frames: int): int = max(frames div FRAME_DIVISOR, 1)
 
@@ -1186,6 +1186,9 @@ when defined(calibrateBalance):
       pressureOnset: crowdOnsetDensity(cfg).float32,
       pressureStiffness: pressureStiffness.float32,
       pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+      pressureStepBound: PRESSURE_STEP_BOUND.float32,
+      stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
+      stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
       friction: (1.0 - sliderFriction).float32,
       maxVelocity: shipped.maxVelocity.float32,
       fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
@@ -1209,17 +1212,15 @@ when defined(calibrateBalance):
       bodyBand: BODY_DEFAULT_BAND,
       bodyLive: bodiesLive)
 
-  func ruleSubsteps(frameFactor, ffStable: float): int =
-    ## substepPlan's n_ff under SUBSTEPS_MAX, at a stated ff_stable. With no
-    ## body live and no fluid acting it is the whole plan; Inf substeps nothing.
-    int(min(max(1.0, ceil(frameFactor / ffStable)), SUBSTEPS_MAX.float))
-
   static:
+    # The arms below step every schedule at one substep: with no fluid
+    # acting and no live body, substepPlan asks for no more (integrate's step
+    # limit, crowding-redesign design §3.4, holds every frame factor stable
+    # without a substep count of its own).
     for frameFactor in 1 .. 30:
-      doAssert ruleSubsteps(frameFactor.float, FF_STABLE) ==
-        substepPlan(frameFactor.float, liveValues(false)).count,
-        "the arms' substep rule departs from substepPlan at frame factor " &
-          $frameFactor
+      doAssert substepPlan(frameFactor.float, liveValues(false)).count == 1,
+        "a species-only world asks for more than one substep at frame " &
+          "factor " & $frameFactor
 
   func attractingMatrix(speciesCount: int): seq[float32] =
     ## Each species attracting itself at the matrix maximum and indifferent to
@@ -1278,6 +1279,9 @@ when defined(calibrateBalance):
         ## per reference frame, which compares one world across frame rates.
       crowdP999: seq[float]
         ## The p99.9 smoothed crowd density at each of WINDOW_STEPS.
+      capContact: int
+        ## Particle-steps at a WINDOW_STEPS frame whose per-reference-frame
+        ## speed passes integrate.wgsl's soft-cap threshold (arm C, §3.5).
 
     Schedule = proc (seed: int): seq[float] {.noSideEffect, gcsafe.}
 
@@ -1285,6 +1289,17 @@ when defined(calibrateBalance):
     var ordered = values
     ordered.sort()
     ordered[max(int(ceil(0.999 * ordered.len.float)) - 1, 0)].float
+
+  func capContactCount(world: OracleWorld; frameFactor,
+      maxVelocity: float32): int =
+    ## Particles whose per-reference-frame speed passes integrate.wgsl's
+    ## soft-cap threshold (integrate.wgsl:107).
+    let threshold = maxVelocity * 0.5'f32
+    for i in 0 ..< world.velX.len:
+      let speed = sqrt(world.velX[i] * world.velX[i] +
+        world.velY[i] * world.velY[i]) / frameFactor
+      if speed > threshold:
+        inc result
 
   proc runWindow(run: WindowRun): WindowReading {.gcsafe.} =
     var world = initOracleWorld(run.params, CALIBRATION_PARTICLES,
@@ -1294,16 +1309,20 @@ when defined(calibrateBalance):
       if step in WINDOW_STEPS:
         result.motion += meanSpeed(world) / run.frameFactors[step]
         result.crowdP999.add percentile999(world.crowdDensity)
+        result.capContact += capContactCount(world,
+          run.frameFactors[step].float32, run.params.maxVelocity)
     result.motion /= WINDOW_STEPS.len.float
 
-  func windowRuns(params: OracleParams; speciesCount: int; schedule: Schedule;
-      ffStable: float): seq[WindowRun] =
-    ## One run per gate seed, each substepped by the rule at `ffStable`.
+  func windowRuns(params: OracleParams; speciesCount: int;
+      schedule: Schedule): seq[WindowRun] =
+    ## One run per gate seed. No coupling here asks for more than one
+    ## substep (fluid off, no live body): the step limit holds every frame
+    ## factor stable without a substep count of its own.
     for seed in GATE_SEEDS:
       let factors = schedule(seed)
       var substeps: seq[int]
       for frameFactor in factors:
-        substeps.add ruleSubsteps(frameFactor, ffStable)
+        substeps.add 1
       result.add WindowRun(params: params, speciesCount: speciesCount,
         seed: seed, frameFactors: factors, substeps: substeps)
 
@@ -1346,29 +1365,48 @@ when defined(calibrateBalance):
     for _ in 0 ..< STEP_COUNT:
       result.add nextJitter(state, 8, 16)
 
+  func heldFrames(seed: int): seq[float] =
+    ## ff 0.42 with single ff-30 steps at 300, 500 and 700 (§3.5 arm D).
+    for step in 0 ..< STEP_COUNT:
+      result.add (if step in [300, 500, 700]: 30.0 else: 0.42)
+
   func motions(readings: seq[WindowReading]): seq[float] =
     for reading in readings:
       result.add reading.motion
+
+  func capContacts(readings: seq[WindowReading]): seq[int] =
+    for reading in readings:
+      result.add reading.capContact
 
   func ratios(numerators, denominators: seq[float]): seq[float] =
     for i in 0 ..< numerators.len:
       result.add numerators[i] / denominators[i]
 
-  proc shippedFrictionMotion(schedule: Schedule; ffStable: float): seq[float] =
+  proc frictionMotion(friction, stiffness: float; schedule: Schedule):
+      seq[float] =
+    ## The self-attracting world at `stiffness` and `friction` through
+    ## `schedule`.
+    motions(readings(windowRuns(oracleParams(friction, stiffness, 0.0), 1,
+      schedule)))
+
+  proc frictionCapContact(friction, stiffness: float;
+      schedule: Schedule): seq[int] =
+    capContacts(readings(windowRuns(oracleParams(friction, stiffness, 0.0),
+      1, schedule)))
+
+  proc shippedFrictionMotion(schedule: Schedule): seq[float] =
     ## The self-attracting world at K and shipped friction through `schedule`.
-    motions(readings(windowRuns(oracleParams(defaultSettings().friction,
-      WORLD_PRESSURE_STIFFNESS, 0.0), 1, schedule, ffStable)))
+    frictionMotion(defaultSettings().friction, WORLD_PRESSURE_STIFFNESS,
+      schedule)
 
   proc frameFactorOneMotion(): seq[float] =
-    shippedFrictionMotion(fixedFactors(1.0), Inf)
+    shippedFrictionMotion(fixedFactors(1.0))
 
   proc settleStatistics(stiffness: float): seq[float] =
     ## L per seed: the friction-zero late-window speed with the term at
     ## `stiffness` over the same seed's without it.
-    let without = motions(readings(windowRuns(
-      oracleParams(FRICTION_MIN, 0.0, 0.0), 1, fixedFactors(1.0), Inf)))
-    let with = motions(readings(windowRuns(
-      oracleParams(FRICTION_MIN, stiffness, 0.0), 1, fixedFactors(1.0), Inf)))
+    let without = frictionMotion(FRICTION_MIN, 0.0, fixedFactors(1.0))
+    let with = frictionMotion(FRICTION_MIN, stiffness, fixedFactors(1.0))
     ratios(with, without)
 
   # --- The stacked hold --------------------------------------------------------
@@ -1479,12 +1517,20 @@ when defined(calibrateBalance):
         $meanOf(settles) & " against " & $SETTLE_BOUND)
       check meanOf(settles) <= SETTLE_BOUND
 
-    test "no frame factor moves a world warmer per reference frame than frame factor 1":
+  const ARM_AB_FRAME_FACTORS = [0.42, 2.0, 4.2, 10.0, 30.0]
+    ## §3.5's sustained schedules, arms A and B.
+
+  suite "Every Frame Factor Settles No Warmer":
+    ## Gate G1, §3.5 arms A-D: the criterion holds only when every arm below
+    ## passes, at 128 000 (and, per the coverage note, 16 000 at radius 150,
+    ## run separately).
+
+    test "arm A: every sustained frame factor settles no warmer at shipped friction":
       let reference = frameFactorOneMotion()
       var verdicts: Verdicts
-      for frameFactor in [2.0, 10.0, 30.0]:
-        let warmth = ratios(shippedFrictionMotion(fixedFactors(frameFactor),
-          FF_STABLE), reference)
+      for frameFactor in ARM_AB_FRAME_FACTORS:
+        let warmth = ratios(shippedFrictionMotion(fixedFactors(frameFactor)),
+          reference)
         checkpoint("frame factor " & $frameFactor & ": mean ratio " &
           $meanOf(warmth))
         if not (meanOf(warmth) <= 1.0):
@@ -1492,17 +1538,64 @@ when defined(calibrateBalance):
             $meanOf(warmth) & " runs warmer than frame factor 1"
       checkNoVerdicts(verdicts)
 
-    test "no jittered frame factor moves a world warmer per reference frame than frame factor 1":
-      let reference = frameFactorOneMotion()
+    test "arm B: at friction zero, the stiffness term worsens no sustained frame factor past the species world":
       var verdicts: Verdicts
-      for arm in [("uniform 8-16", shippedFrictionMotion(uniformFactors,
-          FF_STABLE)), ("alternating 10/13",
-          shippedFrictionMotion(alternatingFactors, FF_STABLE))]:
-        let warmth = ratios(arm[1], reference)
+      for frameFactor in ARM_AB_FRAME_FACTORS:
+        let withTerm = ratios(frictionMotion(FRICTION_MIN,
+          WORLD_PRESSURE_STIFFNESS, fixedFactors(frameFactor)),
+          frictionMotion(FRICTION_MIN, WORLD_PRESSURE_STIFFNESS,
+            fixedFactors(1.0)))
+        let withoutTerm = ratios(frictionMotion(FRICTION_MIN, 0.0,
+          fixedFactors(frameFactor)), frictionMotion(FRICTION_MIN, 0.0,
+            fixedFactors(1.0)))
+        let bound = derivedBound(withoutTerm)
+        checkpoint("frame factor " & $frameFactor & ": mean ratio " &
+          $meanOf(withTerm) & " against the stiffness-zero bound " & $bound)
+        if not (meanOf(withTerm) <= bound):
+          verdicts.add "frame factor " & $frameFactor & ": a mean ratio of " &
+            $meanOf(withTerm) & " exceeds the stiffness-zero bound of " &
+            $bound
+      checkNoVerdicts(verdicts)
+
+    test "arm C: no schedule holds more particle-steps against the cap than the stiffness-zero world":
+      var verdicts: Verdicts
+      proc checkArm(label: string; friction: float; schedule: Schedule) =
+        let withTerm = frictionCapContact(friction, WORLD_PRESSURE_STIFFNESS,
+          schedule)
+        let withoutTerm = frictionCapContact(friction, 0.0, schedule)
+        checkpoint(label & ": cap contact " & $withTerm &
+          " against the stiffness-zero world's " & $withoutTerm)
+        for i in 0 ..< withTerm.len:
+          if withTerm[i] > withoutTerm[i]:
+            verdicts.add label & " seed " & $GATE_SEEDS[i] &
+              ": cap contact " & $withTerm[i] &
+              " exceeds the stiffness-zero world's " & $withoutTerm[i]
+      for frameFactor in ARM_AB_FRAME_FACTORS:
+        checkArm("frame factor " & $frameFactor & " (shipped friction)",
+          defaultSettings().friction, fixedFactors(frameFactor))
+        checkArm("frame factor " & $frameFactor & " (friction zero)",
+          FRICTION_MIN, fixedFactors(frameFactor))
+      checkArm("uniform 8-16", defaultSettings().friction, uniformFactors)
+      checkArm("alternating 10/13", defaultSettings().friction,
+        alternatingFactors)
+      checkArm("held frames", defaultSettings().friction, heldFrames)
+      checkNoVerdicts(verdicts)
+
+    test "arm D: unsteady schedules settle no warmer at shipped friction":
+      let reference = frameFactorOneMotion()
+      let heldReference = shippedFrictionMotion(fixedFactors(0.42))
+      let arms = [
+        ("uniform 8-16", shippedFrictionMotion(uniformFactors), reference),
+        ("alternating 10/13", shippedFrictionMotion(alternatingFactors),
+          reference),
+        ("held frames", shippedFrictionMotion(heldFrames), heldReference)]
+      var verdicts: Verdicts
+      for arm in arms:
+        let warmth = ratios(arm[1], arm[2])
         checkpoint(arm[0] & ": mean ratio " & $meanOf(warmth))
         if not (meanOf(warmth) <= 1.0):
           verdicts.add arm[0] & ": a mean ratio of " & $meanOf(warmth) &
-            " runs warmer than frame factor 1"
+            " runs warmer than its reference"
       checkNoVerdicts(verdicts)
 
   # --- The reporting arms ------------------------------------------------------
@@ -1544,7 +1637,7 @@ when defined(calibrateBalance):
       let params = oracleParams(defaultSettings().friction, 0.0, 0.0)
       var runs: seq[WindowRun]
       for species in [1, 4]:
-        runs.add windowRuns(params, species, fixedFactors(1.0), Inf)
+        runs.add windowRuns(params, species, fixedFactors(1.0))
       let got = readings(runs)
       echo "- uniform crowd density rho-bar ", shown(mean)
       echo "- contact floor at the preset repulsionEnd ", cfg.repulsionEnd,
@@ -1580,7 +1673,7 @@ when defined(calibrateBalance):
       var runs: seq[WindowRun]
       for stiffness in stiffnesses:
         runs.add windowRuns(oracleParams(FRICTION_MIN, stiffness, 0.0), 1,
-          fixedFactors(1.0), Inf)
+          fixedFactors(1.0))
       discard readings(runs)
       let chosen = settleStatistics(WORLD_PRESSURE_STIFFNESS)
       let stiffer = settleStatistics(1728.0)
@@ -1596,103 +1689,6 @@ when defined(calibrateBalance):
         shown(largestDistance(chosen)), ", B_L ", shown(bound)
       echo "- mean L at K 1728 ", shown(meanOf(stiffer)), ": ",
         (if meanOf(stiffer) > bound: "exceeds B_L" else: "DOES NOT exceed B_L")
-
-  suite "Gate G1.5 Readings":
-
-    test "the frame-factor arm bisects ff_stable without substeps":
-      printConditions("G1.5 ff_stable: one self-attracting species, K 540, " &
-        "shipped friction, per-reference-frame cap, no substeps; a frame " &
-        "factor is warmer when its mean motion ratio over frame factor 1 " &
-        "is above 1")
-      let params = oracleParams(defaultSettings().friction,
-        WORLD_PRESSURE_STIFFNESS, 0.0)
-      let referenceRuns = windowRuns(params, 1, fixedFactors(1.0), Inf)
-      discard readings(referenceRuns &
-        windowRuns(params, 1, fixedFactors(30.0), Inf))
-      let reference = motions(readings(referenceRuns))
-      echo "- frame factor 1 motion per reference frame: ", shownAll(reference)
-      echo ""
-      echo "| frame factor | per-seed ratio over ff 1 | mean | warmer |"
-      echo "|---|---|---|---|"
-      proc warmer(frameFactor: int): bool =
-        let warmth = ratios(motions(readings(windowRuns(params, 1,
-          fixedFactors(frameFactor.float), Inf))), reference)
-        result = meanOf(warmth) > 1.0
-        echo "| ", frameFactor, " | ", shownAll(warmth), " | ",
-          shown(meanOf(warmth)), " | ", (if result: "yes" else: "no"), " |"
-      var stable = 1
-      var warm = 30
-      if not warmer(warm):
-        echo ""
-        echo "- no frame factor up to 30 runs warmer: ff_stable >= 30"
-      else:
-        while warm - stable > 1:
-          let middle = (stable + warm) div 2
-          if warmer(middle): warm = middle
-          else: stable = middle
-        echo ""
-        echo "- ff_stable ", stable, " (", warm, " is the first warmer)"
-
-    test "the cause probe prints frame factors 2 and 4 against frame factor 1":
-      let variant =
-        when defined(calibratePerStepCap): "per-step cap"
-        elif defined(calibrateFrictionPerFrame):
-          "friction as retention^ff (diagnostic only)"
-        else: "shipped oracle"
-      const
-        probeStiffnessOverride {.strdefine: "calibrateProbeStiffness".} = ""
-        probeStiffness =
-          if probeStiffnessOverride.len == 0: WORLD_PRESSURE_STIFFNESS
-          else: parseFloat(probeStiffnessOverride)
-      printConditions("G1.5 cause probe, " & variant & ": one " &
-        "self-attracting species, K " & $probeStiffness &
-        ", shipped friction, no substeps")
-      let params = oracleParams(defaultSettings().friction, probeStiffness,
-        0.0)
-      var runs: seq[WindowRun]
-      for frameFactor in [1.0, 2.0, 4.0]:
-        runs.add windowRuns(params, 1, fixedFactors(frameFactor), Inf)
-      let got = motions(readings(runs))
-      let reference = got[0 ..< GATE_SEEDS.len]
-      echo "- frame factor 1 motion per reference frame: ", shownAll(reference)
-      echo ""
-      echo "| frame factor | per-seed ratio over ff 1 | mean | warmer |"
-      echo "|---|---|---|---|"
-      for index, frameFactor in [2, 4]:
-        let start = (index + 1) * GATE_SEEDS.len
-        let warmth = ratios(got[start ..< start + GATE_SEEDS.len], reference)
-        echo "| ", frameFactor, " | ", shownAll(warmth), " | ",
-          shown(meanOf(warmth)), " | ",
-          (if meanOf(warmth) > 1.0: "yes" else: "no"), " |"
-
-    test "the jittered arms print their motion through the substep rule":
-      printConditions("G1.5 jittered arms: one self-attracting species, " &
-        "K 540, shipped friction, substeps by the rule at ff_stable " &
-        $JITTER_FF_STABLE)
-      let params = oracleParams(defaultSettings().friction,
-        WORLD_PRESSURE_STIFFNESS, 0.0)
-      let referenceRuns = windowRuns(params, 1, fixedFactors(1.0), Inf)
-      let arms = [("uniform 8-16",
-          windowRuns(params, 1, uniformFactors, JITTER_FF_STABLE)),
-        ("alternating 10/13",
-          windowRuns(params, 1, alternatingFactors, JITTER_FF_STABLE))]
-      discard readings(referenceRuns & arms[0][1] & arms[1][1])
-      let reference = motions(readings(referenceRuns))
-      echo "| arm | seed | substepped steps | toggles | ratio over ff 1 |"
-      echo "|---|---|---|---|---|"
-      for arm in arms:
-        let warmth = ratios(motions(readings(arm[1])), reference)
-        for i, run in arm[1]:
-          var substepped, toggles = 0
-          for step in 0 ..< run.substeps.len:
-            if run.substeps[step] > 1: substepped += 1
-            if step > 0 and run.substeps[step] != run.substeps[step - 1]:
-              toggles += 1
-          echo "| ", arm[0], " | ", run.seed, " | ", substepped, " | ",
-            toggles, " | ", shown(warmth[i]), " |"
-        echo "| ", arm[0], " | mean | | | ", shown(meanOf(warmth)), " (",
-          (if meanOf(warmth) > 1.0: "WARMER than ff 1" else: "not warmer"),
-          ") |"
 
   suite "Gate G1.3 Readings":
 

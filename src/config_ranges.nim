@@ -184,12 +184,6 @@ const
     ## re-encodes every per-substep pass: at 128 000 particles that measured
     ## 1.56 ms of grid plus physics over a 30 s window and 7.95 ms over a 150 s
     ## one, both lower bounds on the settled cost (docs/perf-report.md).
-  FF_STABLE* = 12.0
-    ## The largest frame factor one substep carries before the count grows.
-    ## PROVISIONAL, and the frame-factor path is open: G1.5 at 128 000
-    ## particles, K 540, shipped friction, bisected it to 1, every ff from 2 to
-    ## 30 warmer than ff 1 (scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md).
-    ## Friction acts once per step, the condition that run was measured under.
   PARTICLE_SIZE_MIN* = 1
   PARTICLE_SIZE_MAX* = 8
   PARTICLE_VISIBLE_RADIUS_FLOOR_PX* = 0.5
@@ -707,6 +701,22 @@ const
     ## per-pair ceiling after the fluid's share, in the units the pair impulse
     ## saturates at.
 
+  PRESSURE_STEP_BOUND* = 2.0
+    ## theta: the bound integrate's step limit holds `2 * ff * D` to for a
+    ## particle's summed pair stiffness `D`. The symplectic map `v' = r(v -
+    ## ff*s*lambda*x), x' = x + v'` is stable while `ff*lambda < 2(1+r)/r`,
+    ## which is 4 at retention 1; half of that leaves a factor of 2 for the
+    ## smoothed crowd density's one-step lag and for the transverse pair
+    ## terms the summed stiffness omits.
+  STIFFNESS_FIXED_POINT_SCALE* = 65536.0
+    ## The stiffness word's quanta per unit of radial slope, 2^16 (the same
+    ## scale as the velocity words; a distinct constant because the two
+    ## quantities are not interchangeable).
+  STIFFNESS_COARSE_SHIFT* = 12
+    ## The largest shift a full crowd's summed stiffness fits under: at 13
+    ## the fine word's full-crowd sum, `MAX_PARTICLES * (2^13 - 1)`, no
+    ## longer fits `high(int32)`.
+
 static:
   # Every range must be non-empty, or clamping inverts.
   doAssert PARTICLE_COUNT_MIN < PARTICLE_COUNT_MAX
@@ -959,3 +969,13 @@ static:
     MAX_PARTICLES * (FLUID_COARSE_UNITS_PER_PAIR + PRESSURE_COARSE_MAX) <=
       int(high(int32)),
     "a full crowd of fluid and pressure pairs wraps the coarse velocity word"
+  # The two stiffness words each hold a full crowd's summed pair slopes: every
+  # above-onset pair adds a slope bounded by q_max / INTERACTION_RADIUS_MIN.
+  doAssert float(MAX_PARTICLES) * float((1 shl STIFFNESS_COARSE_SHIFT) - 1) <=
+    float(high(int32)),
+    "a full crowd's stiffness fine-word remainder wraps the fine word"
+  doAssert float(MAX_PARTICLES) *
+    (WORLD_PRESSURE_IMPULSE_MAX / float(INTERACTION_RADIUS_MIN)) *
+    STIFFNESS_FIXED_POINT_SCALE / float(1 shl STIFFNESS_COARSE_SHIFT) <=
+    float(high(int32)),
+    "a full crowd's summed stiffness wraps the coarse word"

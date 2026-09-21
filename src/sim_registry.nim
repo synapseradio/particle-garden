@@ -31,8 +31,7 @@ from std/math import ceil
 # The substep plan reads the range authority's ceilings and the fluid's own
 # stiffness law; the pressure onset reads the crowd onset ratio. Both modules
 # are pure, so importing them keeps this module's purity.
-from config_ranges import SUBSTEPS_MAX, FF_STABLE, SPH_STIFFNESS_MAX,
-  CROWD_ONSET_RATIO
+from config_ranges import SUBSTEPS_MAX, SPH_STIFFNESS_MAX, CROWD_ONSET_RATIO
 from sph_core import SPH_STABILITY_COEFFICIENT,
   SPH_CEILING_REFERENCE_FRAME_SECONDS, stableStiffnessCeiling
 from physics_core import FRAME_DT_REFERENCE
@@ -680,12 +679,11 @@ type
       ## is a surface this frame's travel could carry a particle through.
 
   SubstepCountSource* = enum
-    ## Which of the three counts the plan's count came from, or that none of
-    ## them asked for more than one substep. Distinct from SubstepNeedId,
-    ## which says what one coupling declares; this says which count won
-    ## across the whole plan.
+    ## Which of the two counts the plan's count came from, or that neither
+    ## asked for more than one substep. Distinct from SubstepNeedId, which
+    ## says what one coupling declares; this says which count won across the
+    ## whole plan.
     scNone
-    scFrameFactor    ## n_ff = ceil(ff / ff_stable)
     scTravelBound    ## n_T = ceil(maxVelocity * ff / T)
     scCouplingNeed   ## n_c, a coupling's own declared need
 
@@ -725,9 +723,10 @@ func travelBound(live: LiveValues): float =
   if acts(live.bodies) and live.bodyLive: live.bodyBand else: 0.0
 
 func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
-  ## What this rendered frame runs: count = min(max(n_ff, n_T, n_c),
-  ## SUBSTEPS_MAX), the largest of three asks under the ceiling.
-  ##   n_ff = ceil(ff / FF_STABLE), the frame factor on its own
+  ## What this rendered frame runs: count = min(max(n_T, n_c), SUBSTEPS_MAX),
+  ## the larger of two asks under the ceiling. The frame factor sets no count
+  ## of its own: integrate's step limit (crowding-redesign design §3.4) holds
+  ## every frame factor stable on its own.
   ##   n_T  = ceil(maxVelocity * ff / T), the travel bound, where T is the
   ##          length travelBound above states
   ##   n_c  = what an acting coupling's own substepNeed asks for
@@ -735,7 +734,6 @@ func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
   ## the bounds instead. Each is a min against the stored value and neither is
   ## written back: below the ceiling the min is the stored value itself, since
   ## n_T <= SUBSTEPS_MAX says exactly that maxVelocity <= T * SUBSTEPS_MAX / ff.
-  let askedByFrame = max(1.0, ceil(ff / FF_STABLE))
   let bound = travelBound(live)
   let askedByTravel =
     if bound > 0.0 and ff > 0.0:
@@ -766,15 +764,14 @@ func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
               SPH_STIFFNESS_MAX)),
           holds * SUBSTEPS_MAX.float / ff)
 
-  let asked = max(max(askedByFrame, askedByTravel), askedByCoupling)
+  let asked = max(askedByTravel, askedByCoupling)
   result.count = int(min(asked, SUBSTEPS_MAX.float))
-  # A tie is named by the most particular asker: a coupling's own declaration
-  # over the world's travel bound, and either over the bare frame factor.
+  # A tie is named by the more particular asker: a coupling's own declaration
+  # over the world's travel bound.
   result.source =
     if asked <= 1.0: scNone
     elif askedByCoupling == asked: scCouplingNeed
-    elif askedByTravel == asked: scTravelBound
-    else: scFrameFactor
+    else: scTravelBound
 
 # ==============================================================================
 # SECTION 5: THE WORLD PRESSURE'S ONSET

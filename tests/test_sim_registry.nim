@@ -793,14 +793,14 @@ suite "Every Size Names Its Space":
 
 
 suite "Substeps Follow The Tightest Coupling":
-  # substepPlan's count is the largest of three counts, capped at 3: the
-  # frame-factor count n_ff = ceil(ff / 12); the travel count n_T =
-  # ceil(maxVelocity * ff / T), only where some coupling declares a travel
-  # length T; and n_c, a coupling's own declared need (only the fluid
-  # declares one, from its stiffness). Over the stub substepPlan (count 1,
-  # source scNone, always), each test below works this arithmetic against
-  # its own live values; the divisor (12) and the cap (3) are not yet named
-  # constants, so the literals stand in for them.
+  # substepPlan's count is the larger of two counts, capped at 3: the
+  # travel count n_T = ceil(maxVelocity * ff / T), only where some coupling
+  # declares a travel length T; and n_c, a coupling's own declared need
+  # (only the fluid declares one, from its stiffness). The frame factor sets
+  # no count of its own: integrate's step limit (crowding-redesign design
+  # §3.4) holds every frame factor stable on its own. Each test below works
+  # this arithmetic against its own live values; the cap (3) is not yet a
+  # named constant, so the literal stands in for it.
 
   test "shipped settings give one substep at frame factor one":
     # Band 120, Max Velocity 50, ff 1, fluid off. Bodies are on
@@ -857,10 +857,11 @@ suite "Substeps Follow The Tightest Coupling":
     check plan.effMaxVelocity == 36.0
     check plan.source == scTravelBound
 
-  test "frame factor 30 alone needs three substeps":
-    # The frame-factor count is n_ff = ceil(ff / 12) = ceil(30 / 12) = 3,
-    # with fluid off and no live body so neither other count reaches it:
-    # the frame factor is what asked for the count.
+  test "frame factor 30 alone needs one substep":
+    # The frame factor no longer sets a count on its own: integrate's step
+    # limit (crowding-redesign design §3.4) holds every frame factor stable.
+    # With fluid off and no live body, no travel or coupling count asks for
+    # more than one substep.
     let live = LiveValues(
       fluid: 0.0,
       bodies: BODIES_DEFAULT_STRENGTH,
@@ -868,8 +869,8 @@ suite "Substeps Follow The Tightest Coupling":
       bodyLive: false,
       maxVelocity: 50.0)
     let plan = substepPlan(30.0, live)
-    check plan.count == 3
-    check plan.source == scFrameFactor
+    check plan.count == 1
+    check plan.source == scNone
 
   test "a live body at the band floor needs two substeps at frame factor one":
     # T = BODY_BAND_MIN (25), Max Velocity 50, ff 1: the travel bound is

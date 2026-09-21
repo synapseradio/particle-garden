@@ -403,14 +403,17 @@ func decodeVelocityWords*(words: VelocityWords;
 
 func integrateVelocity*(velocity: tuple[x, y: float32];
     deltaFixed: tuple[x, y: int32];
-    invFixedPointScale, frameFactor, friction, maxVelocity: float32):
+    invFixedPointScale, frameFactor, stepLimit, friction, maxVelocity: float32):
     tuple[x, y: float32] =
-  ## integrate.wgsl: the decoded delta added to the velocity, friction
-  ## applied, then the soft cap postStepSpeed states for the speed.
+  ## integrate.wgsl: the decoded delta scaled by the particle's step limit
+  ## (crowding-redesign design §3.4), friction applied, then the soft cap
+  ## postStepSpeed states for the speed. `stepLimit` is 1 for a particle with
+  ## zero summed stiffness, so this is bit-identical to multiplying by
+  ## `frameFactor` alone in that case.
   var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
-    invFixedPointScale, frameFactor)) * friction
+    invFixedPointScale, frameFactor) * stepLimit) * friction
   var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
-    invFixedPointScale, frameFactor)) * friction
+    invFixedPointScale, frameFactor) * stepLimit) * friction
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
   # The cap bounds travel per reference frame, so a substep spanning
   # frameFactor of them may carry a particle maxVelocity * frameFactor. The
@@ -460,16 +463,46 @@ func crowdPressure*(density, onset: float32): float32 =
   let excess = max(density - onset, 0.0'f32) / onset
   excess * excess
 
+func worldPressureSum*(pressureThis, pressureOther, stiffness,
+    impulseMax: float32): float32 =
+  ## A pair's pressure over one reference frame before the proximity weight,
+  ## saturated here so the pair's radial slope stays bounded by
+  ## `impulseMax / R` at every distance (crowding-redesign design §3.2).
+  min(stiffness * (pressureThis + pressureOther) *
+    FRAME_DT_REFERENCE.float32, impulseMax)
+
 func worldPressureMagnitude*(pressureThis, pressureOther, normalizedDistance,
     stiffness, impulseMax: float32): float32 =
   ## The repulsive impulse a pair exchanges over one reference frame: the
-  ## stiffness times the sum of both pressures, times the proximity weight
-  ## `1 - r/R`, over one reference frame, saturating at `impulseMax`.
-  ##
-  ## The saturation acts on the magnitude, before any direction is applied, so
-  ## a saturated pair still pushes along its own separation.
-  min(stiffness * (pressureThis + pressureOther) *
-    (1.0'f32 - normalizedDistance) * FRAME_DT_REFERENCE.float32, impulseMax)
+  ## saturated sum times the proximity weight `1 - r/R`.
+  worldPressureSum(pressureThis, pressureOther, stiffness, impulseMax) *
+    (1.0'f32 - normalizedDistance)
+
+func pairStiffnessSlope*(pressureThis, pressureOther, stiffness, impulseMax,
+    invRadius: float32): float32 =
+  ## The pair's contribution to a particle's summed stiffness `D`: the
+  ## saturated pressure sum's radial slope, `d/dr[sum * (1 - r/R)]` at fixed
+  ## sum, which is `-sum / R`.
+  worldPressureSum(pressureThis, pressureOther, stiffness, impulseMax) *
+    invRadius
+
+func stepLimit*(frameFactor, stiffness, bound: float32): float32 =
+  ## The factor integrate applies to a particle's whole delta: 1 unless one
+  ## step would carry `frameFactor * 2 * stiffness` past `bound`.
+  let reach = 2.0'f32 * frameFactor * stiffness
+  if reach > bound: bound / reach else: 1.0'f32
+
+func encodeStiffness*(slope, fixedPointScale: float32): int32 =
+  int32(round(slope * fixedPointScale))
+
+func decodeStiffness*(words: VelocityWords; invFixedPointScale: float32;
+    coarseShift: int): float32 =
+  ## The stiffness words decoded, as decodeVelocityWords decodes a velocity
+  ## delta, minus the frame-factor multiply: `D` is a per-reference-frame
+  ## quantity integrate itself multiplies by the frame factor inside
+  ## `stepLimit`.
+  (float32(words.fine) + float32(words.coarse) * float32(1 shl coarseShift)) *
+    invFixedPointScale
 
 type
   PairImpulseParams* = object

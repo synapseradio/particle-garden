@@ -1,4 +1,5 @@
 import std/math
+import std/random
 import std/sequtils
 import std/unittest
 import ../src/physics_core
@@ -471,7 +472,7 @@ suite "Post-Step Speed Mirror":
     let word = (x: int32(2 * 65536), y: int32(1 * 65536))
     for maxVelocity in [6.0'f32, 100.0'f32]:
       let stepped = integrateVelocity((x: 3.0'f32, y: -4.0'f32), word,
-        invScale, 1.0'f32, 0.9'f32, maxVelocity)
+        invScale, 1.0'f32, 1.0'f32, 0.9'f32, maxVelocity)
       # The decoded word is (2, 1), so friction and the cap act on (5, -3).
       let expectedSpeed = postStepSpeed(sqrt(34.0'f32), 0.9'f32, maxVelocity)
       check abs(hypot(stepped.x, stepped.y) - expectedSpeed) < 1e-5
@@ -490,7 +491,7 @@ suite "Post-Step Speed Mirror":
     let friction = 1.0'f32
     let word = (x: int32(40 * 65536), y: int32(0))
     let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
-      invScale, ffSub, friction, maxVelocity)
+      invScale, ffSub, 1.0'f32, friction, maxVelocity)
     let expected =
       postStepSpeed(120.0'f32 / ffSub, friction, maxVelocity) * ffSub
     check abs(hypot(stepped.x, stepped.y) - expected) < 1e-3'f32
@@ -506,7 +507,7 @@ suite "Post-Step Speed Mirror":
     let friction = 1.0'f32
     let word = (x: int32(200 * 65536), y: int32(0))
     let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
-      invScale, ffSub, friction, maxVelocity)
+      invScale, ffSub, 1.0'f32, friction, maxVelocity)
     check hypot(stepped.x, stepped.y) <= maxVelocity * ffSub
 
   test "the per-step cap matches today's flat cap when ff_sub equals one":
@@ -522,7 +523,7 @@ suite "Post-Step Speed Mirror":
     let friction = 0.9'f32
     let word = (x: int32(40 * 65536), y: int32(0))
     let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
-      invScale, ffSub, friction, maxVelocity)
+      invScale, ffSub, 1.0'f32, friction, maxVelocity)
     let expected = postStepSpeed(40.0'f32 / ffSub, friction, maxVelocity) * ffSub
     check abs(hypot(stepped.x, stepped.y) - expected) < 1e-5'f32
 
@@ -751,6 +752,29 @@ suite "A Full Crowd Decodes To Its Impulse":
       verdicts.judge("every writer, sign " & $sign, words, impulse, adds)
     checkNoVerdicts(verdicts)
 
+  test "a full crowd decodes to its impulse times the step limit when D > 0 (T8)":
+    let ff = 2.0'f32
+    let bound = PRESSURE_STEP_BOUND.float32
+    let trueSlope = 100.0'f32
+    let expectedS = bound / (2.0'f32 * ff * trueSlope)
+    let stiffnessWords = splitVelocityWord(encodeStiffness(trueSlope,
+      STIFFNESS_FIXED_POINT_SCALE.float32), STIFFNESS_COARSE_SHIFT)
+    let decodedD = decodeStiffness(stiffnessWords,
+      1.0'f32 / STIFFNESS_FIXED_POINT_SCALE.float32, STIFFNESS_COARSE_SHIFT)
+    let s = stepLimit(ff, decodedD, bound)
+    let pairWord = forcesVelocityDeltaFixed(speciesPair(1.0), fixedScale)
+    var words: VelocityWords
+    for _ in 0 ..< MAX_PARTICLES:
+      words = addVelocityWords(words, (fine: pairWord, coarse: 0'i32))
+    let decoded = decodeVelocityWords(words, invScale, ff,
+      VELOCITY_COARSE_SHIFT).float * s.float
+    let impulse = MAX_PARTICLES.float *
+      (speciesPair(1.0) * FRAME_DT_REFERENCE.float32).float
+    let expected = impulse * ff.float * expectedS.float
+    let tolerance = MAX_PARTICLES.float * ff.float / fixedScale.float +
+      1.0e-6 * abs(expected)
+    check abs(decoded - expected) <= tolerance
+
 # ==============================================================================
 # THE WORLD PRESSURE
 # ==============================================================================
@@ -770,8 +794,8 @@ const
     (30.0'f32, 0.0'f32), (0.0'f32, -18.0'f32), (-9.0'f32, -9.0'f32)]
   BELOW_ONSET_RATIOS = [0.0, 0.25, 0.5, 0.9, 1.0]
   PAST_ONSET_RATIOS = [1.0, 1.5, 2.0, 3.0, 5.0, 8.0, 9.5, 12.0, 20.0, 30.0]
-    ## Past 9.86 times the onset the magnitude saturates at q_max, so this
-    ## sweep covers the rise and the saturated tail at once.
+    ## Past 9.86 times the onset the pressure sum saturates at q_max, so this
+    ## sweep covers the rise and the saturated-sum tail at once.
 
 let pressureScale = PRODUCTION_TUNING.fixedPointScale.float32
 let invPressureScale = 1.0'f32 / pressureScale
@@ -899,8 +923,8 @@ suite "Pressure Past The Onset":
 
   test "a saturated pair keeps the direction of its separation":
     # Saturating each component on its own would turn every saturated pair
-    # toward a diagonal, so the magnitude saturates before the direction is
-    # applied.
+    # toward a diagonal, so the sum saturates before the direction, and
+    # before the proximity weight, is applied.
     let ceilingMagnitude = WORLD_PRESSURE_IMPULSE_MAX.float32
     var verdicts: seq[string]
     for onset in PRESSURE_ONSETS:
@@ -909,10 +933,12 @@ suite "Pressure Past The Onset":
         let geometry = pairGeometry(separation)
         let words = pairAt(params, separation, onset * 30.0,
           onset * 30.0).pressureOnThis
+        let expectedMagnitude =
+          ceilingMagnitude * (1.0'f32 - geometry.normalizedDistance)
         let expected = (
-          x: encodeVelocityDelta(-ceilingMagnitude * separation[0] *
+          x: encodeVelocityDelta(-expectedMagnitude * separation[0] *
             geometry.invDistance, pressureScale),
-          y: encodeVelocityDelta(-ceilingMagnitude * separation[1] *
+          y: encodeVelocityDelta(-expectedMagnitude * separation[1] *
             geometry.invDistance, pressureScale))
         if words != expected:
           verdicts.add "onset " & $onset & " separation " & $separation &
@@ -1031,6 +1057,161 @@ suite "Pressure Past The Onset":
             ": every swept friction and velocity left the same speed " &
             $speeds[0] & ", so the sweep moves nothing"
     checkNoVerdicts(verdicts)
+
+  test "the sum saturates before the proximity weight, even where the old order would not (T10)":
+    # c (the pre-weight sum) exceeds q_max at density ratio 30, but the old
+    # order applies the weight before saturating, so at r/R 0.95 the old
+    # magnitude (378.45) is far short of q_max and the new one (35.34,
+    # q_max * 0.05) is not.
+    let onset = 40.0
+    let density = onset * 30.0
+    let pressureEach = crowdPressure(density.float32, onset.float32)
+    let sum = min(WORLD_PRESSURE_STIFFNESS.float32 *
+      (pressureEach + pressureEach) * FRAME_DT_REFERENCE.float32,
+      WORLD_PRESSURE_IMPULSE_MAX.float32)
+    let normalizedDistance = 0.95'f32
+    let expected = sum * (1.0'f32 - normalizedDistance)
+    let actual = magnitudeAt(onset, density, density, normalizedDistance)
+    check abs(actual - expected) < 1e-3'f32
+
+# ==============================================================================
+# THE STEP LIMIT
+# ==============================================================================
+# integrate scales a particle's whole decoded delta by s = min(1, theta / (2 *
+# ff * D)), D being its summed pair stiffness, so the step is stable at every
+# frame factor by construction. A particle with zero stiffness gets s = 1
+# exactly. Mirrors crowding-redesign design section 3.
+
+func todayIntegrateVelocity(velocity: tuple[x, y: float32];
+    deltaFixed: tuple[x, y: int32];
+    invFixedPointScale, frameFactor, friction, maxVelocity: float32):
+    tuple[x, y: float32] =
+  ## A copy of integrateVelocity from before the step limit landed, kept
+  ## test-local so T1 compares against unmodified behaviour rather than
+  ## against physics_core's own claim of it.
+  var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
+    invFixedPointScale, frameFactor)) * friction
+  var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
+    invFixedPointScale, frameFactor)) * friction
+  let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
+  let perFrame = if frameFactor > 0.0'f32: frameFactor else: 1.0'f32
+  let frameSpeed = speed / perFrame
+  let softCapThreshold = maxVelocity * 0.5'f32
+  if frameSpeed > softCapThreshold and frameSpeed > 0.0'f32:
+    let excess = frameSpeed - softCapThreshold
+    let cappedSpeed =
+      min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity) * perFrame
+    let scale = cappedSpeed / speed
+    newVelX *= scale
+    newVelY *= scale
+  (x: newVelX, y: newVelY)
+
+const STEP_LIMIT_FRAME_FACTORS = [0.0'f32, 0.42'f32, 1.0'f32, 2.0'f32, 30.0'f32]
+
+suite "The Step Limit":
+  test "a calm particle's step is untouched at every frame factor (T1)":
+    var rng = initRand(2200)
+    var verdicts: seq[string]
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    for trial in 0 ..< 20:
+      let velocity = (x: rng.rand(-40.0'f32 .. 40.0'f32),
+        y: rng.rand(-40.0'f32 .. 40.0'f32))
+      let word = (x: int32(rng.rand(-2_000_000 .. 2_000_000)),
+        y: int32(rng.rand(-2_000_000 .. 2_000_000)))
+      for ff in STEP_LIMIT_FRAME_FACTORS:
+        let s = stepLimit(ff, 0.0'f32, PRESSURE_STEP_BOUND.float32)
+        let limited = integrateVelocity(velocity, word, invScale, ff, s,
+          0.9'f32, 60.0'f32)
+        let today = todayIntegrateVelocity(velocity, word, invScale, ff,
+          0.9'f32, 60.0'f32)
+        if limited != today:
+          verdicts.add "trial " & $trial & " ff " & $ff & ": limited " &
+            $limited & " against today's " & $today
+    checkNoVerdicts(verdicts)
+
+  test "a limited step never carries 2 * ff * s * D past the bound (T2)":
+    var rng = initRand(4100)
+    var verdicts: seq[string]
+    let bound = PRESSURE_STEP_BOUND.float32
+    for trial in 0 ..< 200:
+      let ff = rng.rand(0.0'f32 .. 30.0'f32)
+      let stiffness = rng.rand(0.0'f32 .. 1000.0'f32)
+      let s = stepLimit(ff, stiffness, bound)
+      let reach = 2.0'f32 * ff * s * stiffness
+      if reach > bound + 1e-3'f32:
+        verdicts.add "trial " & $trial & " ff " & $ff & " D " & $stiffness &
+          ": 2*ff*s*D is " & $reach & ", past the bound " & $bound
+      if 2.0'f32 * ff * stiffness <= bound and s != 1.0'f32:
+        verdicts.add "trial " & $trial & " ff " & $ff & " D " & $stiffness &
+          ": s is " & $s & ", not 1, though 2*ff*D does not reach the bound"
+    checkNoVerdicts(verdicts)
+
+  test "a pair's stiffness is the radial slope of its impulse (T3)":
+    var verdicts: seq[string]
+    let onset = 40.0'f32
+    for ratio in [0.0'f32, 0.5'f32, 1.0'f32, 2.0'f32, 4.0'f32]:
+      # Kept well under q_max (706.9) so the derivative is not entangled
+      # with the saturation T10 covers: at ratio 4 the sum is 540 * 2 *
+      # 16 / 120 = 144.
+      let density = onset * (1.0'f32 + ratio)
+      let pressureEach = crowdPressure(density, onset)
+      let sum = min(WORLD_PRESSURE_STIFFNESS.float32 *
+        (pressureEach + pressureEach) * FRAME_DT_REFERENCE.float32,
+        WORLD_PRESSURE_IMPULSE_MAX.float32)
+      let slope = pairStiffnessSlope(pressureEach, pressureEach,
+        WORLD_PRESSURE_STIFFNESS.float32, WORLD_PRESSURE_IMPULSE_MAX.float32,
+        1.0'f32 / PRESSURE_RADIUS)
+      let h = 0.001'f32
+      let impulseAt = proc(normalizedDistance: float32): float32 =
+        sum * (1.0'f32 - normalizedDistance)
+      let numeric = -(impulseAt(0.5'f32 + h) - impulseAt(0.5'f32 - h)) /
+        (2.0'f32 * h * PRESSURE_RADIUS)
+      if ratio == 0.0'f32:
+        if slope != 0.0'f32:
+          verdicts.add "at the onset: slope is " & $slope & ", not 0"
+      else:
+        if not approxEq(slope, numeric, 1e-3'f32 * abs(numeric)):
+          verdicts.add "ratio " & $ratio & ": slope " & $slope &
+            " against the numeric derivative " & $numeric
+      let ceiling = WORLD_PRESSURE_IMPULSE_MAX.float32 / PRESSURE_RADIUS
+      if slope > ceiling + 1e-3'f32:
+        verdicts.add "ratio " & $ratio & ": slope " & $slope &
+          " exceeds q_max/R " & $ceiling
+    checkNoVerdicts(verdicts)
+
+  test "the stiffness words decode to the summed slope (T4)":
+    let slopePerPair = (WORLD_PRESSURE_IMPULSE_MAX / INTERACTION_RADIUS_MIN.float).float32
+    let word = splitVelocityWord(encodeStiffness(slopePerPair,
+      STIFFNESS_FIXED_POINT_SCALE.float32), STIFFNESS_COARSE_SHIFT)
+    var words: VelocityWords
+    for _ in 0 ..< MAX_PARTICLES:
+      words = addVelocityWords(words, word)
+    let decoded = decodeStiffness(words,
+      1.0'f32 / STIFFNESS_FIXED_POINT_SCALE.float32, STIFFNESS_COARSE_SHIFT)
+    let expected = MAX_PARTICLES.float * slopePerPair.float
+    let tolerance = MAX_PARTICLES.float * pow(2.0, -17.0)
+    check abs(decoded.float - expected) <= tolerance
+
+  test "the step limit scales every writer's contribution alike (T6)":
+    let scale = PRODUCTION_TUNING.fixedPointScale.float32
+    let invScale = 1.0'f32 / scale
+    let ff = 4.0'f32
+    let bound = PRESSURE_STEP_BOUND.float32
+    let trueSlope = 50.0'f32
+    let expectedS = bound / (2.0'f32 * ff * trueSlope)
+    let words = splitVelocityWord(encodeStiffness(trueSlope,
+      STIFFNESS_FIXED_POINT_SCALE.float32), STIFFNESS_COARSE_SHIFT)
+    let decodedD = decodeStiffness(words,
+      1.0'f32 / STIFFNESS_FIXED_POINT_SCALE.float32, STIFFNESS_COARSE_SHIFT)
+    let s = stepLimit(ff, decodedD, bound)
+    let speciesFixed = encodeVelocityDelta(3.0'f32, scale)
+    let pressureFixed = encodeVelocityDelta(-1.5'f32, scale)
+    let bodyFixed = encodeVelocityDelta(0.7'f32, scale)
+    let combinedFixed = speciesFixed + pressureFixed + bodyFixed
+    let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32),
+      (x: combinedFixed, y: 0'i32), invScale, ff, s, 1.0'f32, 1.0e6'f32)
+    let expectedX = expectedS * decodeVelocityDelta(combinedFixed, invScale, ff)
+    check abs(stepped.x - expectedX) < 1e-3'f32
 
 suite "The Species Term Is Zero At Strength Zero":
   test "the species force is exactly zero on both particles":

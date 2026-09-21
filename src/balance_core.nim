@@ -224,7 +224,7 @@ func longRangeFullEffectGain*(cfg: UnitConfig): float =
 # pair block over a uniform bin grid, forces-sph.wgsl's fluid block while the
 # fluid acts, body-force.wgsl's body block, then integrate.wgsl.
 #
-# Four differences from a GPU frame, each of which moves the low bits of a
+# Three differences from a GPU frame, each of which moves the low bits of a
 # result:
 #   - The fluid block evaluates sph_core's kernels and equation of state in
 #     f64 where the shader runs f32, and sums a particle's own register in f64
@@ -235,8 +235,6 @@ func longRangeFullEffectGain*(cfg: UnitConfig): float =
 #     particle.
 #   - Float summation order differs from the shader's, which accumulates in
 #     cell order.
-#   - The pair block here carries the world pressure, which forces.wgsl does
-#     not yet carry.
 
 type
   OracleForceModel* = enum
@@ -279,6 +277,10 @@ type
       ## rho_on. Zero stiffness leaves it unread.
     pressureStiffness*: float32
     pressureImpulseMax*: float32
+    pressureStepBound*: float32
+      ## theta: integrate.wgsl's PRESSURE_STEP_BOUND.
+    stiffnessFixedPointScale*: float32
+    stiffnessCoarseShift*: int
     friction*: float32
       ## The retention factor the shader's `params.friction` holds, which is
       ## one minus the slider's friction (src/app.nim:193). Retention 1 damps
@@ -316,6 +318,9 @@ type
     cellOf, ordered: seq[int]
     deltaFixed, coarseFixed: seq[int32]
     colonyFixed, crowdFixed, sphFixed: seq[int32]
+    stiffnessFixed, stiffnessCoarseFixed: seq[int32]
+      ## A particle's summed pair stiffness `D` (crowding-redesign design
+      ## §3.4), one scalar per particle rather than one per axis.
     bodyAccumulators: seq[BodyAccumulator]
     rngState: uint64
 
@@ -369,6 +374,8 @@ proc initOracleWorld*(params: OracleParams; particleCount, speciesCount: int;
     colonyFixed: newSeq[int32](particleCount),
     crowdFixed: newSeq[int32](particleCount),
     sphFixed: newSeq[int32](particleCount),
+    stiffnessFixed: newSeq[int32](particleCount),
+    stiffnessCoarseFixed: newSeq[int32](particleCount),
     rngState: cast[uint64](seed.int64))
   for i in 0 ..< particleCount:
     result.posX[i] = nextUnit(result.rngState) * params.worldWidth
@@ -396,6 +403,22 @@ proc rebin(world: var OracleWorld) =
     world.ordered[world.cursor[cell]] = i
     world.cursor[cell] += 1
 
+proc addSplit(world: var OracleWorld; slot: int; words: VelocityWords) =
+  world.deltaFixed[slot] = wrapAdd(world.deltaFixed[slot], words.fine)
+  world.coarseFixed[slot] = wrapAdd(world.coarseFixed[slot], words.coarse)
+
+proc addStiffness(world: var OracleWorld; index: int; slope: float32) =
+  ## forces.wgsl's stiffness accumulation: the pair's radial slope, encoded
+  ## and split across the stiffness words the same way a velocity delta is.
+  let p = world.params
+  let words = splitVelocityWord(
+    encodeStiffness(slope, p.stiffnessFixedPointScale),
+    p.stiffnessCoarseShift)
+  world.stiffnessFixed[index] = wrapAdd(world.stiffnessFixed[index],
+    words.fine)
+  world.stiffnessCoarseFixed[index] = wrapAdd(
+    world.stiffnessCoarseFixed[index], words.coarse)
+
 proc sweepPairs(world: var OracleWorld) =
   ## forces.wgsl's neighbour loop: both density channels and both force terms,
   ## each pair visited once.
@@ -422,6 +445,7 @@ proc sweepPairs(world: var OracleWorld) =
     var forceOnThisY = 0.0'f32
     var colonyAccum = 0.0'f32
     var crowdAccum = 0.0'f32
+    var stiffnessAccum = 0.0'f32
     let coords = computeCellCoords(thisX, thisY, world.gridW, world.gridH,
       invCellW, invCellH)
     for dy in -1 .. 1:
@@ -475,16 +499,25 @@ proc sweepPairs(world: var OracleWorld) =
               forcesVelocityDeltaFixed(impulse.speciesOnOther.y,
                 p.fixedPointScale))
           # The pressure is quantized once for the pair and negated, so the two
-          # sides cannot disagree.
+          # sides cannot disagree. A pair's pressure integer outruns the fine
+          # word once the crowd is deep, so each side's splits across both
+          # words (forces.wgsl:346-363).
           let onOther = pressureOnOther(impulse)
-          world.deltaFixed[this * 2] = wrapAdd(world.deltaFixed[this * 2],
-            impulse.pressureOnThis.x)
-          world.deltaFixed[this * 2 + 1] =
-            wrapAdd(world.deltaFixed[this * 2 + 1], impulse.pressureOnThis.y)
-          world.deltaFixed[other * 2] = wrapAdd(world.deltaFixed[other * 2],
-            onOther.x)
-          world.deltaFixed[other * 2 + 1] =
-            wrapAdd(world.deltaFixed[other * 2 + 1], onOther.y)
+          world.addSplit(this * 2,
+            splitVelocityWord(impulse.pressureOnThis.x, p.fluid.coarseShift))
+          world.addSplit(this * 2 + 1,
+            splitVelocityWord(impulse.pressureOnThis.y, p.fluid.coarseShift))
+          world.addSplit(other * 2,
+            splitVelocityWord(onOther.x, p.fluid.coarseShift))
+          world.addSplit(other * 2 + 1,
+            splitVelocityWord(onOther.y, p.fluid.coarseShift))
+          let pressureSlope = pairStiffnessSlope(
+            crowdPressure(crowdThis, p.pressureOnset),
+            crowdPressure(crowdOther, p.pressureOnset), p.pressureStiffness,
+            p.pressureImpulseMax, invRadius)
+          if pressureSlope > 0.0'f32:
+            stiffnessAccum += pressureSlope
+            world.addStiffness(other, pressureSlope)
           let proximityWeight = 1.0'f32 - normalizedDist
           crowdAccum += proximityWeight
           world.crowdFixed[other] = wrapAdd(world.crowdFixed[other],
@@ -501,10 +534,7 @@ proc sweepPairs(world: var OracleWorld) =
       int32(colonyAccum * p.fixedPointScale))
     world.crowdFixed[this] = wrapAdd(world.crowdFixed[this],
       int32(crowdAccum * p.crowdDensityScale))
-
-proc addSplit(world: var OracleWorld; slot: int; words: VelocityWords) =
-  world.deltaFixed[slot] = wrapAdd(world.deltaFixed[slot], words.fine)
-  world.coarseFixed[slot] = wrapAdd(world.coarseFixed[slot], words.coarse)
+    world.addStiffness(this, stiffnessAccum)
 
 proc sweepFluid(world: var OracleWorld) =
   ## forces-sph.wgsl's neighbour loop (:240-326): the pressure and the
@@ -660,6 +690,10 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
   let fluidActs = p.fluid.strength != 0.0
   let invSph =
     if fluidActs: 1.0'f32 / p.fluid.densityScale.float32 else: 0.0'f32
+  let invStiffnessFixed =
+    if p.stiffnessFixedPointScale != 0.0'f32:
+      1.0'f32 / p.stiffnessFixedPointScale
+    else: 0.0'f32
   for i in 0 ..< world.posX.len:
     world.colonyDensity[i] = world.colonyDensity[i] * carried +
       float32(world.colonyFixed[i]) * invFixed * arriving
@@ -675,6 +709,10 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     # integrateVelocity decodes one word, so the two are rejoined above and a
     # zero word passed, which adds exactly nothing.
     let joined = (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY)
+    let stiffness = decodeStiffness(
+      (fine: world.stiffnessFixed[i], coarse: world.stiffnessCoarseFixed[i]),
+      invStiffnessFixed, p.stiffnessCoarseShift)
+    let limit = stepLimit(subFrameFactor, stiffness, p.pressureStepBound)
     # Two diagnostic variants, never the shipped integrate: the per-step cap
     # of before the per-reference-frame one, and friction as retention^ff.
     let retention = when defined(calibrateFrictionPerFrame):
@@ -685,7 +723,7 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
           subFrameFactor, retention, p.maxVelocity)
       else:
         integrateVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
-          subFrameFactor, retention, p.maxVelocity)
+          subFrameFactor, limit, retention, p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
     world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)
@@ -705,6 +743,8 @@ proc stepFrame*(world: var OracleWorld; frameFactor: float; substeps: int) =
       world.colonyFixed[i] = 0
       world.crowdFixed[i] = 0
       world.sphFixed[i] = 0
+      world.stiffnessFixed[i] = 0
+      world.stiffnessCoarseFixed[i] = 0
     rebin(world)
     sweepPairs(world)
     if world.params.fluid.strength != 0.0:
