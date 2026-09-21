@@ -82,7 +82,7 @@ suite "Every Descriptor Is Probed Or Exempted":
     check exempted == @["particleCount", "speciesCount", "longRangeGridIndex"]
 
 const
-  MustPass = ["friction", "fieldOpacity", "exposure", "contrast",
+  MustPass = ["friction", "rdFieldForce", "exposure", "contrast",
     "sphViscosity"]
     ## Live across their whole range by inspection of the math they feed; a
     ## metric that fails one of these is measuring wrong, and the remedy is

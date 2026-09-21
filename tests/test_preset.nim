@@ -235,6 +235,16 @@ suite "Preset Round-Trip Contract":
     ## label, and every reader then has to decide what it means.
     check not toJson(defaultPreset()).hasKey("mode")
 
+suite "A Saved Colour Choice Is Dropped":
+  test "a preset carrying a colormap index and a field opacity applies without error, and neither reaches the decoded preset":
+    let older = validate(%*{
+      "schemaVersion": CURRENT_SCHEMA_VERSION,
+      "settings": {"colormapIndex": 3, "fieldOpacity": 0.6}})
+    check older.isOk
+    for fieldName, _ in older.preset.settings.fieldPairs:
+      check fieldName != "colormapIndex"
+      check fieldName != "fieldOpacity"
+
 suite "The Camera Drift Survives A Preset":
   test "a saved camera drift round-trips its switch and its speed":
     var saved = defaultPreset()

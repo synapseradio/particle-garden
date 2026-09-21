@@ -181,3 +181,50 @@ suite "The Bundled Shaders Declare Their Registered Bindings":
     # test_meta_vacuity.nim can read: a machine cannot see that a set equality
     # is non-vacuous, and this line says so in the form the gate checks.
     check bundled.len > 0
+
+
+proc shaderNamesWebgpuRenderEmbeds(): seq[string] =
+  ## The bundled shader names behind src/webgpu_render.nim's staticRead
+  ## consts, in the order those consts appear.
+  for line in readFile("src/webgpu_render.nim").splitLines:
+    let trimmed = line.strip
+    if "staticRead(" in trimmed and ".wgsl" in trimmed:
+      let quoteStart = trimmed.find('"', trimmed.find("staticRead(")) + 1
+      let quoteEnd = trimmed.find('"', quoteStart)
+      result.add trimmed[quoteStart ..< quoteEnd].extractFilename.replace(".wgsl", "")
+
+proc bundledModulesOf(bundledShaderContent: string): seq[string] =
+  ## The module list the bundler recorded on its banner line, which is
+  ## exactly the set of `//! import` directives its source resolved.
+  for line in bundledShaderContent.splitLines:
+    if line.startsWith("// Bundled modules: "):
+      return line["// Bundled modules: ".len .. ^1].split(", ")
+
+suite "No Render Shader Reads The Field":
+  test "no shader src/webgpu_render.nim embeds imports field_grid or colormap, or names fieldTexture":
+    let names = shaderNamesWebgpuRenderEmbeds()
+    check names.len > 0
+    var offenders: seq[string]
+    var scanned = 0
+    for name in names:
+      let path = "web/shaders" / name & ".wgsl"
+      if not fileExists(path):
+        continue
+      inc scanned
+      let content = readFile(path)
+      let modules = bundledModulesOf(content)
+      if "field_grid" in modules or "colormap" in modules:
+        offenders.add(name & ": imports " & modules.join(", "))
+      if "fieldTexture" in content:
+        offenders.add(name & ": names fieldTexture")
+    if offenders.len > 0:
+      checkpoint(offenders.join("; "))
+    check offenders.len == 0
+    check scanned > 0
+
+  test "src/webgpu_render.nim names neither activeFieldView nor fieldSampledView":
+    let source = readFile("src/webgpu_render.nim")
+    let namesActiveFieldView = "activeFieldView" in source
+    let namesFieldSampledView = "fieldSampledView" in source
+    check not namesActiveFieldView
+    check not namesFieldSampledView
