@@ -100,18 +100,18 @@ All run records go to `scratchpad/main/calibrate-shipped-defaults__<DD-MM-YY-HHm
 run: fixture, swept value, repeat index, the `L` values at each mark, mean frame rate, canvas
 dimensions.
 
-## Decision 3: the two crowding thresholds are ratios, not absolute occupancies
+## Decision 3: the crowding ceiling is a ratio, not an absolute occupancy
 
-The constant's own record names what to find: the strength at which a collapsing world stops
-tightening, and the strength at which ordinary colonies visibly soften
-(`src/config_ranges.nim:46-54`). Both are stated below as a comparison between `L` values from the
-same session, so neither depends on canvas size, particle count or the luminance threshold.
+The constant's own record names what to find: the strength at which ordinary colonies visibly
+soften (`src/config_ranges.nim:46-54`). It is stated below as a comparison between `L` values from
+the same session, so it depends on neither canvas size, particle count nor the luminance threshold.
 
-**Fixture C, the collapsing world.** Export a fresh session, then set: `speciesCount` to
-`SPECIES_COUNT_MIN`, which is 2 because a one-species world is unrepresentable
+**Fixture C, a world whose crowd rises past the onset.** Export a fresh session, then set:
+`speciesCount` to `SPECIES_COUNT_MIN`, which is 2 because a one-species world is unrepresentable
 (`src/config_ranges.nim:29`); every matrix entry to `MATRIX_MAX_VALUE`, so every pair attracts at
-the strongest authorable value and the whole world collapses regardless of species;
-`fluidStrength` 0; the confound suppressions above; everything else at its shipped default.
+the strongest authorable value and the crowd compresses past the world-pressure onset regardless of
+species (`core-force-interface`, "A crowd denser than the onset pushes itself apart"); `fluidStrength`
+0; the confound suppressions above; everything else at its shipped default.
 
 **Fixture D, ordinary colonies.** Export a fresh session after one `randomizeMatrix()` at the
 shipped `ruleWildness`, and reuse that exported matrix for every run so the colony world is fixed.
@@ -126,35 +126,36 @@ differing only in the reseed. A run costs 90 world-seconds, which is 180 wall se
 time scale, so the coarse pass over both fixtures takes about 70 minutes and the refinement below
 about another hour.
 
-**Validity gate on fixture C.** At crowding 0, require `L(90) <= L(2) / 3`. A world that does not
-collapse cannot show a strength that stops it collapsing, and a failure here means the fixture is
-wrong.
+**Validity gate on fixture C.** At crowding 0, require `L(2) > L(20)` (the crowd is still
+compressing at 20 s) and `L(90) >= 0.9 × L(20)` (it has stopped compressing by 90 s). The world-
+pressure term holds a crowd once it crosses the onset, so a world that keeps compressing past 20 s
+has not reached the onset, and a failure here means the fixture is wrong.
 
-**c_hold**, the strength at which a collapsing world stops tightening: the smallest swept value
-whose mean `L(90)` reaches `0.9 × ` its own mean `L(20)`. Occupancy has stopped shrinking over the
-last 70 world-seconds. If the repeat standard deviation straddles that line at the chosen value, add
-repeats up to nine before accepting it.
+**`c_hold` is removed.** The strength at which a compressing world stops tightening was once read
+off crowding; it is now read off the world-pressure term instead, which holds any crowd past the
+onset whether or not crowding acts (`core-force-interface`, C12). The validity gate above already
+requires that hold to show at crowding 0, so no swept crowding value identifies a meaningful
+"holds" threshold, and crowding is calibrated by `c_soften` alone.
 
 **c_soften**, the strength at which ordinary colonies visibly soften: the smallest swept value on
 fixture D whose mean `L(90)` exceeds the crowding-zero mean `L(90)` by more than 25% and by more
 than three standard deviations of the crowding-zero repeats.
 
-**Refinement.** Bisect three times between the two adjacent sweep values that bracket each
-threshold, three repeats per bisection point, which locates each threshold to a fortieth of the
-slider's travel.
+**Refinement.** Bisect three times between the two adjacent sweep values that bracket the
+threshold, three repeats per bisection point, which locates it to a fortieth of the slider's
+travel.
 
 **Setting the ceiling.** `CROWDING_STRENGTH_MAX` becomes the smallest value representable at the
 control's step that reaches `1.5 × c_soften`. Half again as much strength as visible softening
 needs, so the top of the slider is past the useful region without being unreachable nonsense.
 
-**If no swept value satisfies the hold criterion**, the range is too narrow, not the mechanism too
-weak. Double `CROWDING_STRENGTH_MAX`, re-run the sweep over the widened range, and repeat. Never
+**If no swept value satisfies the softening criterion**, the range is too narrow, not the mechanism
+too weak. Double `CROWDING_STRENGTH_MAX`, re-run the sweep over the widened range, and repeat. Never
 declare the current ceiling measured because the sweep found nothing inside it.
 
-**What gets recorded beside the constant**: `c_hold`, `c_soften`, the `1.5 ×` margin, and the
-conditions. Both fixtures in full, particle count, interaction radius, time scale, the matrix bounds
-they were measured against, fluid off, field off, canvas dimensions, and the world-seconds of
-settling.
+**What gets recorded beside the constant**: `c_soften`, the `1.5 ×` margin, and the conditions. Both
+fixtures in full, particle count, interaction radius, time scale, the matrix bounds they were
+measured against, fluid off, field off, canvas dimensions, and the world-seconds of settling.
 
 ## Decision 4: the SPH fraction floor is set from where the fluid stops computing
 
@@ -256,5 +257,5 @@ known collapse from a known spread, and until that gate passes no threshold belo
 ## Open question
 
 Whether the calibrated crowding default should be nonzero. Stated with its options and its evidence
-in `proposal.md`. The measurement tasks do not depend on the answer: they produce `c_hold` and
-`c_soften` either way, and only the single task that writes the default waits on it.
+in `proposal.md`. The measurement tasks do not depend on the answer: they produce `c_soften` either
+way, and only the single task that writes the default waits on it.

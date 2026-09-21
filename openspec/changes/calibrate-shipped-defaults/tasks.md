@@ -36,10 +36,12 @@ The rig is designed and unexercised. Nothing after this group means anything unt
       editing the parsed JSON per `design.md` decision 3: `speciesCount` at `SPECIES_COUNT_MIN`,
       every matrix entry at `MATRIX_MAX_VALUE`, fluid off, field off, and the confound suppressions.
       Verify by applying it and reading every edited field back through `gardenAPI.getParam`
-- [ ] 2.5 **The red step.** Run fixture C at crowding strength zero and confirm the world collapses:
-      `L(90) <= L(2) / 3`. This is the failing observation the whole change exists to bound. If it
-      does not collapse, the fixture is wrong and 2.4 repeats; nothing below runs until it holds.
-      Record the run in `scratchpad/main/calibrate-shipped-defaults__<DD-MM-YY-HHmm>.md`
+- [ ] 2.5 **The red step.** Run fixture C at crowding strength zero and confirm the crowd rises past
+      the world-pressure onset and holds there: `L(2) > L(20)` (still compressing at 20 s) and
+      `L(90) >= 0.9 × L(20)` (stopped compressing by 90 s). This is the observation the crowding
+      calibration rests on. If the crowd never stops compressing, the fixture is wrong and 2.4
+      repeats; nothing below runs until it holds. Record the run in
+      `scratchpad/main/calibrate-shipped-defaults__<DD-MM-YY-HHmm>.md`
 - [ ] 2.6 Build fixture D: export a fresh session after one `randomizeMatrix()` at the shipped
       `ruleWildness`, apply the same suppressions, and pin that exported matrix for every later run.
       Verify by applying it twice and confirming `gardenAPI.matrix()` reads identically both times
@@ -48,12 +50,13 @@ The rig is designed and unexercised. Nothing after this group means anything unt
 
 ## 3. Calibrate the crowding ceiling
 
-This group waits on the `coupling-balance` change. On 13-09-26, crowding at its maximum was measured
+This group waits on `core-force-interface` (C12). On 13-09-26, crowding at its maximum was measured
 to remove at most about 1.2 of attraction at a clump edge, against long-range impulses of 26 to 112.
 Crowding only scales positive attraction (`web/shaders/src/forces.wgsl:73-93`), so it cannot oppose
-an outside pull (`scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`). That change designs
-the pressure term and the shared scale that crowding's ceiling is measured against, so a ceiling
-calibrated before it lands measures a force law about to change.
+an outside pull (`scratchpad/parametric-bodies/diagnosis__13-09-26-report.md`). That change lands the
+world-pressure term and the shared scale crowding's ceiling is measured against, and it is the
+pressure term, not crowding, that holds fixture C's crowd once it crosses the onset (design.md
+decision 3), so a ceiling calibrated before it lands measures a force law about to change.
 
 Budget about two hours of wall clock. Runs are sequential: one app instance, one GPU.
 
@@ -63,27 +66,23 @@ Budget about two hours of wall clock. Runs are sequential: one app instance, one
       recording that as a condition. Append every run to the scratchpad record. Touches no source
       file
 - [ ] 3.2 Sweep fixture D the same way. Touches no source file
-- [ ] 3.3 Locate `c_hold` from the fixture C rows: the smallest value whose mean `L(90)` reaches
-      `0.9 × ` its own mean `L(20)`. Bisect three times between the bracketing sweep values, three
-      repeats per point. If no swept value qualifies, double `CROWDING_STRENGTH_MAX` in
-      `src/config_ranges.nim:46`, rebuild with `just happen`, and re-run 3.1 over the widened range
-      before continuing. The observation that settles it: two consecutive bisection points agreeing
-      on which side of the criterion they fall, outside the repeat spread
-- [ ] 3.4 Locate `c_soften` from the fixture D rows: the smallest value whose mean `L(90)` exceeds
+- [ ] 3.3 Locate `c_soften` from the fixture D rows: the smallest value whose mean `L(90)` exceeds
       the crowding-zero mean `L(90)` by more than 25% and by more than three standard deviations of
-      the crowding-zero repeats. Bisect the same way. Same settling observation
-- [ ] 3.5 Set `CROWDING_STRENGTH_MAX` in `src/config_ranges.nim:46` to the smallest value
+      the crowding-zero repeats. Bisect three times between the bracketing sweep values, three
+      repeats per point. The observation that settles it: two consecutive bisection points agreeing
+      on which side of the criterion they fall, outside the repeat spread
+- [ ] 3.4 Set `CROWDING_STRENGTH_MAX` in `src/config_ranges.nim:46` to the smallest value
       representable at the control's step reaching `1.5 × c_soften`. Replace the PROVISIONAL comment
-      at `:47-54` with the record: `c_hold`, `c_soften`, the margin, both fixtures, particle count,
+      at `:47-54` with the record: `c_soften`, the margin, both fixtures, particle count,
       interaction radius, time scale, the matrix bounds, fluid and field settings, canvas
       dimensions, and the settling window. Keep it to the few lines `CLAUDE.md` allows, and carry no
       `[?]`. Verify with `just happen`, whose static assertions reject an empty range or an
       out-of-range default, then `nim c -r tests/test_physics.nim`, whose ceiling sweep re-scopes
       itself from the new bound
-- [ ] 3.6 Re-run the fixture C sweep at the new `CROWDING_STRENGTH_MAX` and confirm `c_hold` and
-      `c_soften` land where the record says, inside the recorded repeat spread. This is the
-      agent-checkable procedure the delta spec names, run once against its own record
-- [ ] 3.7 `just happen` builds and `just check` is green
+- [ ] 3.5 Re-run the fixture C sweep at the new `CROWDING_STRENGTH_MAX` and confirm `c_soften` lands
+      where the record says, inside the recorded repeat spread. This is the agent-checkable procedure
+      the delta spec names, run once against its own record
+- [ ] 3.6 `just happen` builds and `just check` is green
 
 ## 4. Calibrate the SPH radius fraction floor
 
