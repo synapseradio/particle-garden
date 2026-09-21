@@ -482,6 +482,16 @@ const
     ##
     ## If the finite half of the bracket ever goes red, halve this constant and
     ## record the failing value here. Never widen the test's ceiling instead.
+  TROPISM_COLLAPSE_BRACKETS* = [
+    (scale: 1.0, safe: 5.0, collapse: 7.5, witness: 2.0),
+    (scale: 0.5, safe: 3.0, collapse: 5.0, witness: 2.0),
+    (scale: 0.25, safe: 7.5, collapse: 10.0, witness: 2.0)]
+    ## The collapse bracket at each pattern-scale step, deposits in multiples
+    ## of RD_DEPOSIT_MAX and the witness in multiples of this bound. MEASURED
+    ## (64x64 harness, 1.875 world units per cell, 120 frames, tropism 0 to
+    ## 1024x, fieldForceScale 37.5 * sqrt(scale)): no sampled tropism diverges
+    ## at `safe`, the witness diverges at `collapse` and a frozen population
+    ## does not. The lower edge sits at 3x or more at every step.
   # Parametric bodies. Every bound below is body_core's, imported rather than
   # restated: the overflow assertion on the per-body accumulator and the
   # stability sweep that warrants the rigid step's constants both read these,
@@ -581,11 +591,29 @@ const
     ## harness, 150 frames, distance to own attractor / half the separation):
     ## Coral 0.082 / 0.245 at 0.5, 0.202 / 0.348 at 0.25; Worms 0.197 / 0.559
     ## at 0.25, where its scale-1 row ignites at the default deposit.
+  RD_SCENT_STEPPED_IMPULSE* = [
+    (scale: 1.0, ratio: 1.0), (scale: 0.5, ratio: 0.983),
+    (scale: 0.25, ratio: 0.927)]
+    ## The scent's strength-1 impulse under a gain of sqrt(scale) times its
+    ## scale-1 gain, over its scale-1 value. MEASURED as peak axis gradient
+    ## times sqrt(scale) on a 128x128 torus settled 6000 steps at the Pearson
+    ## defaults (peak 0.0837 at scale 1); sqrt(scale) misses by up to 7.3%.
 
 func regimeRow*(id: string, scale: float): typeof(RD_REGIMES[0]) =
-  ## The regime `id` as a selection at `scale` applies it.
+  ## The regime `id` as a selection at `scale` applies it: its row for the
+  ## band step nearest `scale`, the larger step on a tie, else its scale-1 row.
+  var step = RD_PATTERN_SCALE_STEPS[0]
+  for candidate in RD_PATTERN_SCALE_STEPS:
+    if abs(candidate - scale) < abs(step - scale): step = candidate
   for regime in RD_REGIMES:
-    if regime.id == id: return regime
+    if regime.id != id: continue
+    result = regime
+    for row in RD_REGIME_SCALE_ROWS:
+      if row.id == id and row.scale == step:
+        result.feed = row.feed
+        result.kill = row.kill
+        result.minDeposit = row.minDeposit
+    return
   raise newException(KeyError, "no regime named " & id)
 
 # The largest impulse per reference frame, on one axis, each velocity writer
@@ -801,6 +829,46 @@ static:
       "regime " & regime.id & " needs a deposit outside the deposit range"
   doAssert RD_REGIME_HIGH_FEED_DEPOSIT >= RD_DEPOSIT_MIN and
     RD_REGIME_HIGH_FEED_DEPOSIT <= RD_DEPOSIT_MAX
+  for row in RD_REGIME_SCALE_ROWS:
+    doAssert row.feed >= RD_FEED_MIN and row.feed <= RD_FEED_MAX,
+      "regime " & row.id & "'s scale row has a feed outside the feed slider"
+    doAssert row.kill >= RD_KILL_MIN and row.kill <= RD_KILL_MAX,
+      "regime " & row.id & "'s scale row has a kill outside the kill slider"
+    doAssert row.minDeposit >= RD_DEPOSIT_MIN and
+      row.minDeposit <= RD_DEPOSIT_MAX,
+      "regime " & row.id & "'s scale row needs a deposit outside the range"
+    doAssert row.scale in RD_PATTERN_SCALE_STEPS,
+      "regime " & row.id & "'s scale row sits off the band steps"
+    var named = false
+    for regime in RD_REGIMES:
+      if regime.id == row.id: named = true
+    doAssert named, "a scale row names no regime: " & row.id
+  # The pattern-scale band.
+  doAssert RD_PATTERN_SCALE_MAX == 1.0,
+    "the ceiling is the base diffusion rates"
+  doAssert RD_DIFFUSION_A * RD_PATTERN_SCALE_MAX * RD_DELTA_T <= 1.0,
+    "the ceiling carries the activator past its explicit-Euler line"
+  doAssert patternDiameterCells(RD_DIFFUSION_A * RD_PATTERN_SCALE_MIN) >=
+    RD_MIN_RESOLVED_DIAMETER_CELLS,
+    "the floor draws a pattern narrower than the grid resolves"
+  doAssert RD_PATTERN_SCALE_DEFAULT >= RD_PATTERN_SCALE_MIN and
+    RD_PATTERN_SCALE_DEFAULT <= RD_PATTERN_SCALE_MAX
+  doAssert RD_PATTERN_SCALE_DEFAULT == RD_PATTERN_SCALE_MIN,
+    "the default is the band's floor"
+  doAssert RD_PATTERN_SCALE_STEPS[0] == RD_PATTERN_SCALE_MAX and
+    RD_PATTERN_SCALE_STEPS[^1] == RD_PATTERN_SCALE_MIN,
+    "the band steps run from the ceiling to the floor"
+  for index in 1 ..< RD_PATTERN_SCALE_STEPS.len:
+    doAssert RD_PATTERN_SCALE_STEPS[index] < RD_PATTERN_SCALE_STEPS[index - 1]
+  doAssert RD_SCENT_STEPPED_IMPULSE.len == RD_PATTERN_SCALE_STEPS.len and
+    TROPISM_COLLAPSE_BRACKETS.len == RD_PATTERN_SCALE_STEPS.len
+  for index, step in RD_PATTERN_SCALE_STEPS:
+    doAssert RD_SCENT_STEPPED_IMPULSE[index].scale == step,
+      "the stepped scent impulse is recorded off the band steps"
+    doAssert TROPISM_COLLAPSE_BRACKETS[index].scale == step,
+      "a collapse bracket is recorded off the band steps"
+    doAssert TROPISM_COLLAPSE_BRACKETS[index].safe > 1.0,
+      "a collapse bracket's lower deposit edge falls within the deposit range"
   # The force weather's waypoints answer to the same reachability rule, and for
   # a sharper reason than the regime notches: the tour INTERPOLATES between
   # them, so a waypoint outside its range would drag the running simulation

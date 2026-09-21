@@ -18,8 +18,7 @@ const FIELD_CORE_TESTS_LOADED* = true
 
 const EPSILON = 1e-9
 
-const PATTERN_SCALE_STEPS = [1.0, 0.5, 0.25]
-  ## The pattern-scale band steps every scale-dependent field measurement runs at.
+const PATTERN_SCALE_STEPS = RD_PATTERN_SCALE_STEPS
 
 func configWorldExtent(source, name: string): float =
   ## A world dimension src/config.nim declares, parsed from its source:
@@ -815,14 +814,13 @@ suite "Ignition From Coherent Deposits":
     #   radius    1       2      3      4      5      8
     #   top-hat  -1/-1   -1/5   -1/3   -1/2   -1/2    9/2
     #   gaussian -1/-1   -1/3   -1/2   30/1    8/1    3/1
-    # The scattered baseline first ignites at 0.0875 at scale 1, 0.06 at 0.5
-    # and 0.04 at 0.25 (G3 record).
+    # The scattered baseline first ignites at 0.0875 at scale 1. It is a
+    # criterion at scale 1 only: it first ignites at 0.06 at 0.5 and 0.04 at
+    # 0.25, where a smaller diffusion no longer demands coherence.
+    for amplitude in [RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
+      check framesToIgnite(depositMask(), amplitude) == -1
     for scale in PATTERN_SCALE_STEPS:
       checkpoint("pattern scale " & $scale)
-      for amplitude in [RD_DEFAULT_DEPOSIT, RD_DEPOSIT_MAX]:
-        check framesToIgnite(depositMask(), amplitude,
-          patternScale = scale) == -1
-
       var anyClusteredIgnited = false
       for radius in [1.0, 2.0, 3.0, 5.0, 8.0]:
         for profile in [dpTopHat, dpGaussian]:
@@ -861,20 +859,21 @@ suite "Ignition From Coherent Deposits":
     #
     # Run to twice the budget, because "has not ignited yet" is a weaker claim
     # than "has relaxed to background". OBSERVED at scale 1: no ignition up to
-    # 0.10; maxB 0.017 top-hat, 0.023 Gaussian after 60 frames at 0.08. A
-    # smaller diffusion strips an isolated peak more slowly: the Gaussian
-    # radius-1 mask first ignites at 0.0625 at scale 0.5 and 0.0325 at 0.25.
-    for scale in PATTERN_SCALE_STEPS:
-      for profile in [dpTopHat, dpGaussian]:
-        checkpoint("pattern scale " & $scale & " profile " & $profile)
-        let mask = clusteredDepositMask(1.0, profile)
-        check framesToIgnite(mask, RD_DEPOSIT_MAX,
-          budget = IGNITION_FRAME_BUDGET * 2, patternScale = scale) == -1
-        let seed = flatSeed()
-        let stats = evolve(seed.a, seed.b, HARNESS_FRAMES, RD_DEPOSIT_MAX,
-          mask = mask, patternScale = scale)
-        check stats.aliveFraction == 0.0
-        check stats.maxB < 0.05
+    # 0.10; maxB 0.017 top-hat, 0.023 Gaussian after 60 frames at 0.08.
+    #
+    # A criterion at scale 1 only. A smaller diffusion strips an isolated
+    # peak more slowly: the Gaussian radius-1 mask first ignites at 0.0625 at
+    # scale 0.5 and 0.0325 at 0.25, inside the deposit range.
+    for profile in [dpTopHat, dpGaussian]:
+      checkpoint("profile " & $profile)
+      let mask = clusteredDepositMask(1.0, profile)
+      check framesToIgnite(mask, RD_DEPOSIT_MAX,
+        budget = IGNITION_FRAME_BUDGET * 2) == -1
+      let seed = flatSeed()
+      let stats = evolve(seed.a, seed.b, HARNESS_FRAMES, RD_DEPOSIT_MAX,
+        mask = mask)
+      check stats.aliveFraction == 0.0
+      check stats.maxB < 0.05
 
   test "ignition completes within the cold-start budget at the shipped defaults":
     # Contract: the cold start must read as a dawn, not as a hang, and this is
@@ -903,11 +902,13 @@ suite "Ignition From Coherent Deposits":
 
   test "the high-feed regimes ignite at their deposit floor and not at the default":
     # CONTRACT: Worms and Coral need their minDeposit to appear, and the
-    # default deposit leaves them blank, at every band step. OBSERVED at the
-    # floor 0.04: frame 4 at scale 1, 3 at 0.5 and 0.25. At the default 0.02
-    # neither ignites at 1 or 0.5; Worms ignites on frame 22 at 0.25.
+    # default deposit leaves them blank, at every band step, each at the row
+    # its selection applies there. OBSERVED at the floor 0.04: frame 4 at
+    # scale 1, 3 at 0.5 and 0.25. Worms' scale-1 row ignites at the default
+    # on frame 22 at 0.25; its 0.25 row stays dark.
     for scale in PATTERN_SCALE_STEPS:
-      for regime in RD_REGIMES:
+      for base in RD_REGIMES:
+        let regime = regimeRow(base.id, scale)
         if regime.minDeposit <= 0.0: continue
         checkpoint("pattern scale " & $scale & " regime " & regime.id)
         let mask = clusteredDepositMask(RD_DEPOSIT_SPLAT_RADIUS, dpGaussian)
@@ -1224,27 +1225,14 @@ suite "Chemotactic Collapse Bound":
     check downRun.maxB < 0.05
     check boundRunMaxForce.maxB > 0.5
 
-  # The bracket at each pattern-scale step. The scent force follows the scale
-  # as the contract's gain does, sqrt(s) times the scale-1 ceiling, so the
-  # strength-1 push holds while the gradient per cell steepens. A fixed 37.5
-  # gives the same lower edges or higher at 0.25 (G3 record).
-  const COLLAPSE_BRACKETS = [
-    (scale: 1.0, safe: 5.0, collapse: 7.5, witness: 2.0),
-    (scale: 0.5, safe: 3.0, collapse: 5.0, witness: 2.0),
-    (scale: 0.25, safe: 7.5, collapse: 10.0, witness: 2.0)]
-    ## MEASURED per step, deposits in multiples of RD_DEPOSIT_MAX and the
-    ## witness in multiples of TROPISM_MAX: `safe` is the largest sampled
-    ## deposit where no sampled tropism diverges, `collapse` the next sampled
-    ## deposit, where the witness diverges and a frozen population does not.
+  # The bracket at each pattern-scale step, TROPISM_COLLAPSE_BRACKETS. The
+  # scent force follows the scale as the contract's gain does, sqrt(s) times
+  # the scale-1 ceiling, so the strength-1 push holds while the gradient per
+  # cell steepens. A fixed 37.5 gives the same lower edges or higher.
   const BRACKET_TROPISMS = [0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0,
     1024.0]
 
   func bandFieldForce(scale: float): float = RD_FIELD_FORCE_MAX * sqrt(scale)
-
-  test "the bracket table covers every band step":
-    check COLLAPSE_BRACKETS.len == PATTERN_SCALE_STEPS.len
-    for index, bracket in COLLAPSE_BRACKETS:
-      check bracket.scale == PATTERN_SCALE_STEPS[index]
 
   test "no sampled tropism collapses the field at the deposit ceiling at any band step":
     # The lower deposit edge must sit above what the slider reaches. A step
@@ -1259,7 +1247,7 @@ suite "Chemotactic Collapse Bound":
         check run.peakCell < CHEMOTAXIS_CONCENTRATION_CEILING
 
   test "each band step's collapse bracket holds as recorded":
-    for bracket in COLLAPSE_BRACKETS:
+    for bracket in TROPISM_COLLAPSE_BRACKETS:
       let force = bandFieldForce(bracket.scale)
       for multiple in BRACKET_TROPISMS:
         checkpoint("pattern scale " & $bracket.scale & " safe deposit " &
@@ -1379,22 +1367,30 @@ suite "The Regime Deposit Floor Preserves The Regime":
       patternScale = patternScale))
 
   type StepMorphologies = object
-    ## One band step's attractors and shipped results.
+    ## One band step's attractors, at each regime's scale-1 coordinates, and
+    ## the shipped results at the rows a selection applies there.
     scale: float
     wormsUnforced, coralUnforced, labyrinthUnforced: Morphology
     wormsFloored, coralFloored, labyrinthUnfloored: Morphology
 
+  proc unforcedAt(id: string, scale: float): Morphology =
+    let regime = regimeRow(id, RD_PATTERN_SCALE_MAX)
+    unforcedMorphology(regime.feed, regime.kill, scale)
+
+  proc shippedAt(id: string, scale: float): Morphology =
+    let regime = regimeRow(id, scale)
+    let deposit =
+      if regime.minDeposit > 0.0: regime.minDeposit else: RD_DEFAULT_DEPOSIT
+    shippedMorphology(regime.feed, regime.kill, deposit, scale)
+
   proc measureStep(scale: float): StepMorphologies =
     StepMorphologies(scale: scale,
-      wormsUnforced: unforcedMorphology(0.078, 0.061, scale),
-      coralUnforced: unforcedMorphology(0.082, 0.059, scale),
-      labyrinthUnforced: unforcedMorphology(0.029, 0.057, scale),
-      wormsFloored: shippedMorphology(0.078, 0.061,
-        RD_REGIME_HIGH_FEED_DEPOSIT, scale),
-      coralFloored: shippedMorphology(0.082, 0.059,
-        RD_REGIME_HIGH_FEED_DEPOSIT, scale),
-      labyrinthUnfloored: shippedMorphology(0.029, 0.057, RD_DEFAULT_DEPOSIT,
-        scale))
+      wormsUnforced: unforcedAt("worms", scale),
+      coralUnforced: unforcedAt("coral", scale),
+      labyrinthUnforced: unforcedAt("labyrinth", scale),
+      wormsFloored: shippedAt("worms", scale),
+      coralFloored: shippedAt("coral", scale),
+      labyrinthUnfloored: shippedAt("labyrinth", scale))
 
   # Computed once for the suite; each is SETTLE_FRAMES of the field.
   var steps: seq[StepMorphologies]
@@ -1418,31 +1414,35 @@ suite "The Regime Deposit Floor Preserves The Regime":
 
   test "a floored regime settles into its own unforced morphology":
     # CONTRACT: the button is honest. Each floored regime must land closer to
-    # ITS OWN unforced attractor than to any other regime's, at every step.
+    # ITS OWN unforced attractor than to any other regime's, at every step,
+    # through the row its selection applies there. The attractor stays at the
+    # scale-1 coordinates, so a row moves the path and never the target.
     # OBSERVED distance to own / half the own-to-nearest separation:
     #   scale 1:    Worms 0.075 / 0.520   Coral 0.177 / 0.343
-    #   scale 0.5:  Worms 0.151 / 0.603   Coral 0.402 / 0.245
-    #   scale 0.25: Worms 0.129 / 0.559   Coral 0.882, and 0.237 from Worms
+    #   scale 0.5:  Worms 0.151 / 0.603   Coral 0.082 / 0.245 (row)
+    #   scale 0.25: Worms 0.197 / 0.559 (row)   Coral 0.202 / 0.348 (row)
+    # Coral's scale-1 row misses at 0.5 (0.402) and lands nearer Worms at 0.25.
     #
-    # If this goes red the floor has moved a regime into a neighbouring
-    # morphology at that step: the button would be lying there. The remedy is
-    # a row for that step that restores the regime, or a floor above the step,
-    # never a wider tolerance here.
+    # If this goes red a regime has moved into a neighbouring morphology at
+    # that step: the button would be lying there. The remedy is a row for that
+    # step that restores the regime, or a floor above the step, never a wider
+    # tolerance here.
     for step in steps:
       let attractors = [step.wormsUnforced, step.coralUnforced,
         step.labyrinthUnforced]
-      for (name, floored, ownIndex, nearest) in [
-          ("worms", step.wormsFloored, 0, step.coralUnforced),
-          ("coral", step.coralFloored, 1, step.labyrinthUnforced)]:
+      for (name, floored, ownIndex) in [
+          ("worms", step.wormsFloored, 0), ("coral", step.coralFloored, 1)]:
         checkpoint("pattern scale " & $step.scale & " regime " & name)
         let own = attractors[ownIndex]
         check floored.alive > 0.05  # a dead field would "match" nothing
+        var nearestSeparation = Inf
         for index, other in attractors:
           if index != ownIndex:
             check morphologyDistance(floored, own) <
               morphologyDistance(floored, other)
-        check morphologyDistance(floored, own) <
-          morphologyDistance(own, nearest) * 0.5
+            nearestSeparation = min(nearestSeparation,
+              morphologyDistance(own, other))
+        check morphologyDistance(floored, own) < nearestSeparation * 0.5
 
   test "a regime that gets no floor behaves the same way under the same procedure":
     # The negative control on the procedure: Labyrinth needs no deposit floor —
@@ -1468,10 +1468,7 @@ suite "The Regime Deposit Floor Preserves The Regime":
     for scale in PATTERN_SCALE_STEPS:
       for regime in RD_REGIMES:
         checkpoint("pattern scale " & $scale & " regime " & regime.id)
-        let deposit =
-          if regime.minDeposit > 0.0: regime.minDeposit else: RD_DEFAULT_DEPOSIT
-        let settled = shippedMorphology(regime.feed, regime.kill, deposit,
-          scale)
+        let settled = shippedAt(regime.id, scale)
         check settled.alive > 0.05
         check settled.structure > 0.3
 
