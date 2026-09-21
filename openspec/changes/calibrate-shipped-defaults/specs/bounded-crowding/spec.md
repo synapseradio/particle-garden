@@ -15,35 +15,38 @@ exactly zero, so that force law stays reachable from the slider (`src/config_ran
 static assertion at `:436-437`).
 
 `CROWDING_STRENGTH_MAX` SHALL be a measured bound, recorded beside itself under the range
-authority's measured-bound rule (`src/config_ranges.nim:46-54`). The calibration finds two
-strengths, measured against the shipped attraction-matrix bounds and force-strength range, with the
+authority's measured-bound rule (`src/config_ranges.nim:46-54`). The calibration finds one
+strength, measured against the shipped attraction-matrix bounds and force-strength range, with the
 fluid off and the chemical field off:
 
-- **c_hold**, the strength at which a collapsing world stops tightening. A world whose every matrix
-  entry sits at `MATRIX_MAX_VALUE` collapses. `c_hold` is the smallest strength at which the share
-  of the canvas its particles light stops shrinking over the second half of a 90 world-second run.
 - **c_soften**, the strength at which ordinary colonies visibly soften. Measured on a world at the
   shipped defaults with a pinned attraction matrix. `c_soften` is the smallest strength whose
   settled lit share exceeds the crowding-zero lit share by more than a quarter and by more than
   three standard deviations of the crowding-zero repeats.
 
-`CROWDING_STRENGTH_MAX` SHALL sit above `c_soften` by a stated margin, so a user reaches every
-strength past visible softening and the slider ends past the useful region. Both measured values,
-the margin, and the conditions they were taken under SHALL appear beside the constant: the two
-fixtures in full, particle count, interaction radius, time scale, the matrix bounds, the fluid and
-field settings, the canvas dimensions, and the world-seconds of settling.
+A second world, every matrix entry at `MATRIX_MAX_VALUE`, crowds past the world-pressure onset at
+crowding zero and holds there: this is a validity gate on that fixture, confirming it compresses
+before it stops shrinking, not a swept measurement. The world-pressure term, not crowding, is what
+holds a crowd past the onset (`core-force-interface`, "A crowd denser than the onset pushes itself
+apart"), so no crowding strength in this fixture identifies a further threshold.
 
-Where the sweep finds no strength inside the current range satisfying the hold criterion, the range
-SHALL be widened and the sweep re-run. The ceiling is never recorded as measured because a sweep
-found nothing under it.
+`CROWDING_STRENGTH_MAX` SHALL sit above `c_soften` by a stated margin, so a user reaches every
+strength past visible softening and the slider ends past the useful region. The measured value, the
+margin, and the conditions it was taken under SHALL appear beside the constant: the two fixtures in
+full, particle count, interaction radius, time scale, the matrix bounds, the fluid and field
+settings, the canvas dimensions, and the world-seconds of settling.
+
+Where the sweep finds no strength inside the current range satisfying the softening criterion, the
+range SHALL be widened and the sweep re-run. The ceiling is never recorded as measured because a
+sweep found nothing under it.
 
 The ceiling sweep in `tests/test_physics.nim:186-190` reads the bound from the range authority, so
 replacing the constant re-scopes the sweep with no second edit.
 
 **agent-checkable** for the ceiling matching its record: an agent launches the app, applies the
-collapsing-world fixture the record names, sweeps crowding strength across its slider travel with
-`gardenAPI.paramValueAt`, captures the canvas at the recorded world-time marks, and recovers the two
-thresholds. A recovered threshold outside the recorded repeat spread means the record and the
+pinned-matrix fixture the record names, sweeps crowding strength across its slider travel with
+`gardenAPI.paramValueAt`, captures the canvas at the recorded world-time marks, and recovers the
+threshold. A recovered threshold outside the recorded repeat spread means the record and the
 constant have parted, and the calibration re-runs. No automated gate detects this, because the
 measurement runs against rendered frames and the native suite executes no GPU.
 
@@ -52,9 +55,9 @@ measurement runs against rendered frames and the native suite executes no GPU.
 - **WHEN** the recorded `c_soften` is read beside `CROWDING_STRENGTH_MAX`
 - **THEN** the ceiling exceeds it by the recorded margin
 
-#### Scenario: No strength inside the range holds the world open
+#### Scenario: No strength inside the range shows softening
 
-- **WHEN** the sweep finds no crowding strength at which the collapsing fixture stops tightening
+- **WHEN** the sweep finds no crowding strength at which ordinary colonies visibly soften
 - **THEN** the range is widened and the sweep re-runs, and the ceiling is not recorded as measured
   against a range that never contained the answer
 
