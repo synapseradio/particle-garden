@@ -508,10 +508,13 @@ when defined(calibrateBalance) or defined(calibrateBalance128k):
     sqrt(result / (values.len - 1).float)
 
   func boundMargin(calibrationValues: seq[float]; heldOutCount: int): float =
-    ## The two-sample allowance a gate carries: fitted on
-    ## `calibrationValues` and checked on `heldOutCount` disjoint seeds.
-    T_95_ONE_SIDED_15_DF * sampleDeviation(calibrationValues) *
-      sqrt(1.0 / calibrationValues.len.float + 1.0 / heldOutCount.float)
+    ## The allowance a gate against a fixed bound carries: the standard error
+    ## of the held-out mean, with the deviation fitted on the disjoint
+    ## calibration seeds. A bound that is itself a calibration mean carries
+    ## the wider two-sample form `t * s * sqrt(1/n_cal + 1/n_held)` instead;
+    ## `B_L` and `B_r` are those, and each is checked against directly.
+    T_95_ONE_SIDED_15_DF * sampleDeviation(calibrationValues) /
+      sqrt(heldOutCount.float)
 
   func oracleParams(particleCount: int;
       sliderFriction, pressureStiffness, bodiesStrength: float): OracleParams =
