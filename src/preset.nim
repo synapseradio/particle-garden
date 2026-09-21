@@ -227,7 +227,7 @@ const DEFAULT_PALETTE*: Palette = openColorDefaultPalette()
 func defaultSettings*(): PresetSettings =
   ## Mirrors config.nim's createConfig() defaults exactly.
   PresetSettings(
-    particleCount: 16000,
+    particleCount: 32000,
     speciesCount: 4,
     interactionRadius: 50,
     forceStrength: 1.0,

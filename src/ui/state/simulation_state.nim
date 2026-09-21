@@ -122,7 +122,7 @@ type
 func initSimulationState*(): SimulationState =
   ## The authoritative physics defaults (copied into CONFIG by createConfig).
   SimulationState(
-    particleCount: 16000,
+    particleCount: 32000,
     speciesCount: 4,
     interactionRadius: 50,
     forceStrength: 1.0,

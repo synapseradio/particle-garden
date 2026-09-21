@@ -14,7 +14,7 @@ const CONFIG_TESTS_LOADED* = true
 # If defaults change, update both config.nim and these test values.
 
 const
-  DEFAULT_PARTICLE_COUNT = 16000
+  DEFAULT_PARTICLE_COUNT = 32000
   DEFAULT_SPECIES_COUNT = 4
   DEFAULT_INTERACTION_RADIUS = 50
   DEFAULT_FORCE_STRENGTH = 1.0
