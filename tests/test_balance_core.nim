@@ -1088,74 +1088,92 @@ when defined(calibrateFluid):
 # ==============================================================================
 # THE CALIBRATION ARMS
 # ==============================================================================
-# Each arm steps the oracle world for hundreds of frames on sixteen seeds, so
-# each one sits behind the define its own justfile recipe sets and outside the
-# suite `just test` compiles. The 16 000-particle arms answer to
-# `calibrateBalance`; the 128 000-particle arms to `calibrateBalance128k`.
+# Each arm steps the oracle world at 128 000 particles for hundreds of frames on
+# the three gate seeds, so every arm sits behind `calibrateBalance`, outside the
+# suite `just test` compiles. Each test holds its own work, so a test-name
+# filter on the command line (`'Suite Name::*'`) runs one arm alone.
 
-when defined(calibrateBalance) or defined(calibrateBalance128k):
+when defined(calibrateBalance):
+  import std/[algorithm, strutils, tables, typedthreads]
   import ../src/preset
   import ../src/sim_registry
 
   const
-    CALIBRATION_SEEDS = [
-      20_149, 20_161, 20_173, 20_177, 20_183, 20_201, 20_219, 20_231,
-      20_233, 20_249, 20_261, 20_269, 20_287, 20_297, 20_323, 20_327]
-      ## PROVISIONAL. Sixteen seeds every fitted statistic in this file is
-      ## measured on.
-    HELD_OUT_SEEDS = [
-      20_011, 20_023, 20_029, 20_047, 20_051, 20_063, 20_071, 20_089,
-      20_101, 20_107, 20_113, 20_117, 20_123, 20_129, 20_143, 20_147]
-      ## PROVISIONAL. Sixteen seeds disjoint from CALIBRATION_SEEDS. Every
-      ## gate in this file checks against these and only these.
-    T_95_ONE_SIDED_15_DF = 1.753
-      ## Student's t at 5% one sided on 15 degrees of freedom, which is the
-      ## sixteen calibration seeds above.
-    SETTLE_FRAMES = 600
+    GATE_SEEDS = [42, 7, 1001]
+    SMOKE_PARTICLES = 8_000
+    CALIBRATION_PARTICLES {.intdefine: "calibrateParticles".} =
+      when defined(calibrateSmoke): SMOKE_PARTICLES else: MAX_PARTICLES
+    FRAME_DIVISOR = when defined(calibrateSmoke): 15 else: 1
+      ## A smoke run steps this fraction of the recipe's frames. Its readings
+      ## show the arm runs and say nothing about the values it records.
+    CALIBRATION_RADIUS = 50.0
+    ONSET_RATIO_OVERRIDE {.strdefine: "calibrateOnsetRatio".} = ""
+    CALIBRATION_ONSET_RATIO =
+      if ONSET_RATIO_OVERRIDE.len == 0: CROWD_ONSET_RATIO
+      else: parseFloat(ONSET_RATIO_OVERRIDE)
+
+  func scaled(frames: int): int = max(frames div FRAME_DIVISOR, 1)
+
+  const
+    SETTLE_FRAMES = scaled(600)
       ## Frames a world runs before a body touches it, so the hold acts on a
       ## settled crowd rather than on uniform noise.
-    HOLD_FRAMES = 100
-    RELAXATION_FRAMES = 900
-    STEP_COUNT = 900
-    WINDOW_STEPS = [749, 799, 849, 899]
-      ## The late window every settle statistic is read on.
+    HOLD_FRAMES = scaled(100)
+    RELAXATION_FRAMES = scaled(900)
+    STEP_COUNT = scaled(900)
+    WINDOW_STEPS = [scaled(750) - 1, scaled(800) - 1, scaled(850) - 1,
+      scaled(900) - 1]
+      ## The late window every settle statistic is read on: 749, 799, 849 and
+      ## 899 in the recipe.
+    SETTLE_BOUND = 1.177
+      ## PROVISIONAL. B_L, the bound on the friction-zero settle statistic.
+    FAR_SPEED_MARGIN = 0.10
+      ## PROVISIONAL. How much faster the crowd beyond a body's reach may run
+      ## while the body holds, as a fraction of the same seed's no-body run.
+    STACK_CLEARANCE = 2.0 * BODY_DEFAULT_BAND
+      ## Enclosure falls to exactly zero at twice the band
+      ## (src/body_core.nim:376-380), so past this a stacked body hands a
+      ## particle nothing and the crowd out there is the far crowd.
 
   func meanOf(values: seq[float]): float =
     for value in values:
       result += value
     result /= values.len.float
 
-  func sampleDeviation(values: seq[float]): float =
+  func largestDistance(values: seq[float]): float =
     let centre = meanOf(values)
     for value in values:
-      result += (value - centre) * (value - centre)
-    sqrt(result / (values.len - 1).float)
+      result = max(result, abs(value - centre))
 
-  func boundMargin(calibrationValues: seq[float]; heldOutCount: int): float =
-    ## The allowance a gate against a fixed bound carries: the standard error
-    ## of the held-out mean, with the deviation fitted on the disjoint
-    ## calibration seeds. A bound that is itself a calibration mean carries
-    ## the wider two-sample form `t * s * sqrt(1/n_cal + 1/n_held)` instead;
-    ## `B_L` and `B_r` are those, and each is checked against directly.
-    T_95_ONE_SIDED_15_DF * sampleDeviation(calibrationValues) /
-      sqrt(heldOutCount.float)
+  func derivedBound(values: seq[float]): float =
+    ## design C5: a run's mean plus its largest single seed's distance from it.
+    meanOf(values) + largestDistance(values)
 
-  func oracleParams(particleCount: int;
-      sliderFriction, pressureStiffness, bodiesStrength: float): OracleParams =
-    ## The shipped world at radius 50, with the three numbers each arm varies
-    ## passed in. `sliderFriction` is the slider's value, which reaches the
-    ## integrator as the retention factor one minus it (src/app.nim:193).
+  func calibrationConfig(): UnitConfig =
     let shipped = defaultSettings()
-    var cfg = referenceConfig()
-    cfg.particleCount = particleCount
+    result = referenceConfig()
+    result.particleCount = CALIBRATION_PARTICLES
+    result.interactionRadius = CALIBRATION_RADIUS
+    result.onsetRatio = CALIBRATION_ONSET_RATIO
+    result.repulsionEnd = shipped.repulsionEnd
+    result.attractionPeak = shipped.attractionPeak
+
+  func oracleParams(sliderFriction, pressureStiffness,
+      bodiesStrength: float): OracleParams =
+    ## The shipped world at radius 50 and the calibration particle count, with
+    ## the three numbers each arm varies passed in. `sliderFriction` is the
+    ## slider's value, which reaches the integrator as the retention factor one
+    ## minus it (src/app.nim:193), applied once per step.
+    let shipped = defaultSettings()
+    let cfg = calibrationConfig()
     OracleParams(
-      interactionRadius: shipped.interactionRadius.float32,
-      worldWidth: BODY_WORLD_W.float32, worldHeight: BODY_WORLD_H.float32,
+      interactionRadius: cfg.interactionRadius.float32,
+      worldWidth: cfg.worldWidth.float32, worldHeight: cfg.worldHeight.float32,
       minDistanceSq: PRODUCTION_TUNING.minDistanceSq.float32,
       forceModel: ofmPolynomial,
       forceMultiplier: shipped.forceStrength.float32,
-      repulsionEnd: shipped.repulsionEnd.float32,
-      attractionPeak: shipped.attractionPeak.float32,
+      repulsionEnd: cfg.repulsionEnd.float32,
+      attractionPeak: cfg.attractionPeak.float32,
       expAlpha: shipped.expRepulsionAlpha.float32,
       expBeta: shipped.expAttractionBeta.float32,
       crowdingStrength: shipped.crowdingStrength.float32,
@@ -1178,18 +1196,29 @@ when defined(calibrateBalance) or defined(calibrateBalance128k):
       bodies: (if bodiesLive: BODIES_DEFAULT_STRENGTH else: 0.0),
       longRange: 0.0,
       maxVelocity: shipped.maxVelocity,
-      interactionRadius: shipped.interactionRadius.float,
+      interactionRadius: CALIBRATION_RADIUS,
       sphRadiusFraction: shipped.sphRadiusFraction,
       sphStiffness: shipped.sphStiffness,
       timeScale: shipped.timeScale,
       bodyBand: BODY_DEFAULT_BAND,
       bodyLive: bodiesLive)
 
-  func plannedSubsteps(frameFactor: float; bodiesLive: bool): int =
-    substepPlan(frameFactor, liveValues(bodiesLive)).count
+  func ruleSubsteps(frameFactor, ffStable: float): int =
+    ## substepPlan's n_ff under SUBSTEPS_MAX, at a stated ff_stable. With no
+    ## body live and no fluid acting it is the whole plan; Inf substeps nothing.
+    int(min(max(1.0, ceil(frameFactor / ffStable)), SUBSTEPS_MAX.float))
 
-  func selfAttractingMatrix(): seq[float32] =
-    @[MATRIX_MAX_VALUE.float32]
+  static:
+    for frameFactor in 1 .. 30:
+      doAssert ruleSubsteps(frameFactor.float, FF_STABLE) ==
+        substepPlan(frameFactor.float, liveValues(false)).count,
+        "the arms' substep rule departs from substepPlan at frame factor " &
+          $frameFactor
+
+  func attractingMatrix(speciesCount: int): seq[float32] =
+    ## Every species attracting every species at the matrix maximum.
+    for _ in 0 ..< speciesCount * speciesCount:
+      result.add MATRIX_MAX_VALUE.float32
 
   func stackedBodies(): seq[Body] =
     ## MAX_BODIES shells on one centre with their normals aligned, each gain at
@@ -1203,106 +1232,89 @@ when defined(calibrateBalance) or defined(calibrateBalance128k):
         proximity: BODY_PROXIMITY_MAX, enclosure: BODY_ENCLOSURE_MAX,
         invMass: masses.invMass, invInertia: masses.invInertia)
 
-  func holdingEnvelopes(): seq[float] =
-    for _ in 0 ..< MAX_BODIES:
-      result.add 1.0
+  # --- One thread per seed -----------------------------------------------------
 
-  proc runFrames(world: var OracleWorld; frames: int; bodiesLive: bool) =
-    let substeps = plannedSubsteps(1.0, bodiesLive)
-    for _ in 0 ..< frames:
-      stepFrame(world, 1.0, substeps)
+  type Slot[A, R] = object
+    input: A
+    work: proc (input: A): R {.nimcall, gcsafe.}
+    output: ptr R
 
-  proc relaxationRatio(particleCount, seed: int): float =
-    ## The weighted neighbour count a released crowd carries, over what the
-    ## same seed reaches having never been compressed.
-    let params = oracleParams(particleCount, defaultSettings().friction,
-      WORLD_PRESSURE_STIFFNESS, BODY_STRENGTH_CEILING)
-    var compressed = initOracleWorld(params, particleCount, 1,
-      selfAttractingMatrix(), seed)
-    var fresh = compressed
+  proc runSlot[A, R](slot: Slot[A, R]) {.thread.} =
+    slot.output[] = slot.work(slot.input)
 
-    runFrames(compressed, SETTLE_FRAMES, false)
-    compressed.bodies = stackedBodies()
-    compressed.bodyEnvelopes = holdingEnvelopes()
-    runFrames(compressed, HOLD_FRAMES, true)
-    compressed.bodies = @[]
-    compressed.bodyEnvelopes = @[]
-    runFrames(compressed, RELAXATION_FRAMES, false)
+  proc inParallel[A, R](inputs: seq[A];
+      work: proc (input: A): R {.nimcall, gcsafe.}): seq[R] =
+    ## `work` over every input at once, one thread each, results in input order.
+    result = newSeq[R](inputs.len)
+    var threads = newSeq[Thread[Slot[A, R]]](inputs.len)
+    for i in 0 ..< inputs.len:
+      createThread(threads[i], runSlot[A, R],
+        Slot[A, R](input: inputs[i], work: work, output: addr result[i]))
+    joinThreads(threads)
 
-    runFrames(fresh, SETTLE_FRAMES + HOLD_FRAMES + RELAXATION_FRAMES, false)
-    meanWeightedNeighbours(compressed) / meanWeightedNeighbours(fresh)
+  # --- Windowed runs -----------------------------------------------------------
 
-when defined(calibrateBalance):
+  type
+    WindowRun = object
+      ## One world stepped through a frame-factor schedule.
+      params: OracleParams
+      speciesCount: int
+      seed: int
+      frameFactors: seq[float]
+      substeps: seq[int]
 
-  const
-    RELAXATION_BOUND_16K = 1.05
-      ## PROVISIONAL. The bound on the released crowd's neighbour count over a
-      ## fresh settle's at 16 000 particles. The calibration run replaces it.
-    FAR_SPEED_MARGIN = 0.10
-      ## PROVISIONAL. How much faster the crowd beyond a body's reach may run
-      ## while the body holds, as a fraction of the same seed's no-body run.
-    STACK_CLEARANCE = 2.0 * BODY_DEFAULT_BAND
-      ## Enclosure falls to exactly zero at twice the band
-      ## (src/body_core.nim:376-380), so past this a stacked body hands a
-      ## particle nothing and the crowd out there is the far crowd.
+    WindowReading = object
+      motion: float
+        ## Mean speed over the frame factor, averaged over WINDOW_STEPS: motion
+        ## per reference frame, which compares one world across frame rates.
+      crowdP999: seq[float]
+        ## The p99.9 smoothed crowd density at each of WINDOW_STEPS.
 
-  type CompressionTrial = object
-    ## One seed's three arms of the stacked hold, read at the same held frame.
-    seed: int
-    pressuredPeak, controlPeak: float
-    farHeld, farFree: float
+    Schedule = proc (seed: int): seq[float] {.noSideEffect, gcsafe.}
 
-  func attractingMatrix(speciesCount: int): seq[float32] =
-    for _ in 0 ..< speciesCount * speciesCount:
-      result.add MATRIX_MAX_VALUE.float32
+  func percentile999(values: seq[float32]): float =
+    var ordered = values
+    ordered.sort()
+    ordered[max(int(ceil(0.999 * ordered.len.float)) - 1, 0)].float
 
-  func armSpecies(index: int): int =
-    ## One arm of the sixteen runs the self-attracting single species, which
-    ## is the configuration that piles up hardest; the rest run four species
-    ## that all attract.
-    if index == 0: 1 else: 4
+  proc runWindow(run: WindowRun): WindowReading {.gcsafe.} =
+    var world = initOracleWorld(run.params, CALIBRATION_PARTICLES,
+      run.speciesCount, attractingMatrix(run.speciesCount), run.seed)
+    for step in 0 ..< run.frameFactors.len:
+      stepFrame(world, run.frameFactors[step], run.substeps[step])
+      if step in WINDOW_STEPS:
+        result.motion += meanSpeed(world) / run.frameFactors[step]
+        result.crowdP999.add percentile999(world.crowdDensity)
+    result.motion /= WINDOW_STEPS.len.float
 
-  func armMatrix(index: int): seq[float32] =
-    if armSpecies(index) == 1: selfAttractingMatrix()
-    else: attractingMatrix(armSpecies(index))
+  func windowRuns(params: OracleParams; speciesCount: int; schedule: Schedule;
+      ffStable: float): seq[WindowRun] =
+    ## One run per gate seed, each substepped by the rule at `ffStable`.
+    for seed in GATE_SEEDS:
+      let factors = schedule(seed)
+      var substeps: seq[int]
+      for frameFactor in factors:
+        substeps.add ruleSubsteps(frameFactor, ffStable)
+      result.add WindowRun(params: params, speciesCount: speciesCount,
+        seed: seed, frameFactors: factors, substeps: substeps)
 
-  proc compressionTrial(seed, index: int): CompressionTrial =
-    ## One settled world held by the stacked bodies, the same world held with
-    ## the world pressure switched off, and the same world left alone.
-    let params = oracleParams(16_000, defaultSettings().friction,
-      WORLD_PRESSURE_STIFFNESS, BODY_STRENGTH_CEILING)
-    var settled = initOracleWorld(params, 16_000, armSpecies(index),
-      armMatrix(index), seed)
-    runFrames(settled, SETTLE_FRAMES, false)
-    let stack = stackedBodies()
+  var windowMemo: Table[string, seq[WindowReading]]
+    ## A gate and a reporting arm that read the same worlds step them once.
 
-    var held = settled
-    held.bodies = stack
-    held.bodyEnvelopes = holdingEnvelopes()
-    runFrames(held, HOLD_FRAMES, true)
+  proc readings(runs: seq[WindowRun]): seq[WindowReading] =
+    let key = $runs
+    if key notin windowMemo:
+      windowMemo[key] = inParallel(runs, runWindow)
+    windowMemo[key]
 
-    var control = settled
-    control.params.pressureStiffness = 0.0
-    control.bodies = stack
-    control.bodyEnvelopes = holdingEnvelopes()
-    runFrames(control, HOLD_FRAMES, true)
+  func fixedFactors(frameFactor: float): Schedule =
+    result = func (seed: int): seq[float] =
+      for _ in 0 ..< STEP_COUNT:
+        result.add frameFactor
 
-    var free = settled
-    runFrames(free, HOLD_FRAMES, false)
-
-    CompressionTrial(seed: seed,
-      pressuredPeak: peakCrowdDensity(held),
-      controlPeak: peakCrowdDensity(control),
-      farHeld: meanSpeedBeyond(held, stack, STACK_CLEARANCE),
-      farFree: meanSpeedBeyond(free, stack, STACK_CLEARANCE))
-
-  func fixedFactors(frameFactor: float): seq[float] =
-    for _ in 0 ..< STEP_COUNT:
-      result.add frameFactor
-
-  func alternatingFactors(lower, upper: float): seq[float] =
+  func alternatingFactors(seed: int): seq[float] =
     for step in 0 ..< STEP_COUNT:
-      result.add (if step mod 2 == 0: lower else: upper)
+      result.add (if step mod 2 == 0: 10.0 else: 13.0)
 
   func nextJitter(state: var uint64; lowest, highest: int): float =
     ## SplitMix64 again, so a seed reproduces a jittered arm exactly.
@@ -1313,180 +1325,167 @@ when defined(calibrateBalance):
     z = z xor (z shr 31)
     float(lowest + int(z mod uint64(highest - lowest + 1)))
 
-  func uniformFactors(seed, lowest, highest: int): seq[float] =
+  func uniformFactors(seed: int): seq[float] =
+    ## Frame factors drawn uniformly from the integers 8 to 16.
     var state = cast[uint64](seed.int64)
     for _ in 0 ..< STEP_COUNT:
-      result.add nextJitter(state, lowest, highest)
+      result.add nextJitter(state, 8, 16)
 
-  proc motionPerReferenceFrame(seed: int; frameFactors: seq[float];
-      substepped: bool): float =
-    ## The late window's mean speed divided by the frame factor the step that
-    ## reached it advanced, which is the reading that compares one world
-    ## across frame rates.
-    let params = oracleParams(16_000, defaultSettings().friction,
-      WORLD_PRESSURE_STIFFNESS, 0.0)
-    var world = initOracleWorld(params, 16_000, 1, selfAttractingMatrix(),
-      seed)
-    var sampled = 0
-    for step in 0 ..< frameFactors.len:
-      let frameFactor = frameFactors[step]
-      let substeps = if substepped: plannedSubsteps(frameFactor, false) else: 1
-      stepFrame(world, frameFactor, substeps)
-      if step in WINDOW_STEPS:
-        result += meanSpeed(world) / frameFactor
-        sampled += 1
-    result /= sampled.float
+  func motions(readings: seq[WindowReading]): seq[float] =
+    for reading in readings:
+      result.add reading.motion
+
+  func ratios(numerators, denominators: seq[float]): seq[float] =
+    for i in 0 ..< numerators.len:
+      result.add numerators[i] / denominators[i]
+
+  proc shippedFrictionMotion(schedule: Schedule; ffStable: float): seq[float] =
+    ## The self-attracting world at K and shipped friction through `schedule`.
+    motions(readings(windowRuns(oracleParams(defaultSettings().friction,
+      WORLD_PRESSURE_STIFFNESS, 0.0), 1, schedule, ffStable)))
+
+  proc frameFactorOneMotion(): seq[float] =
+    shippedFrictionMotion(fixedFactors(1.0), Inf)
+
+  proc settleStatistics(stiffness: float): seq[float] =
+    ## L per seed: the friction-zero late-window speed with the term at
+    ## `stiffness` over the same seed's without it.
+    let without = motions(readings(windowRuns(
+      oracleParams(FRICTION_MIN, 0.0, 0.0), 1, fixedFactors(1.0), Inf)))
+    let with = motions(readings(windowRuns(
+      oracleParams(FRICTION_MIN, stiffness, 0.0), 1, fixedFactors(1.0), Inf)))
+    ratios(with, without)
+
+  # --- The stacked hold --------------------------------------------------------
+
+  type
+    CompressionRun = object
+      params: OracleParams
+      seed: int
+      stack: seq[Body]
+      freeSubsteps, heldSubsteps: int
+
+    CompressionTrial = object
+      ## One seed's settled world held by the stacked bodies, the same world
+      ## held at stiffness zero, and the same world left alone, then the held
+      ## world released beside the untouched one.
+      seed: int
+      heldPeaks, controlPeaks: seq[float]
+        ## The busiest particle's crowd density at each held frame.
+      farHeld, farFree: float
+      afterRelease, fresh: float
+        ## Mean weighted neighbours RELAXATION_FRAMES after the release, and
+        ## the untouched world's at the same frame.
+
+  proc runCompression(run: CompressionRun): CompressionTrial {.gcsafe.} =
+    result.seed = run.seed
+    var settled = initOracleWorld(run.params, CALIBRATION_PARTICLES, 1,
+      attractingMatrix(1), run.seed)
+    for _ in 0 ..< SETTLE_FRAMES:
+      stepFrame(settled, 1.0, run.freeSubsteps)
+    var held = settled
+    held.bodies = run.stack
+    held.bodyEnvelopes = newSeq[float](run.stack.len)
+    for envelope in held.bodyEnvelopes.mitems:
+      envelope = 1.0
+    var control = held
+    control.params.pressureStiffness = 0.0
+    var free = settled
+    for _ in 0 ..< HOLD_FRAMES:
+      stepFrame(held, 1.0, run.heldSubsteps)
+      stepFrame(control, 1.0, run.heldSubsteps)
+      stepFrame(free, 1.0, run.freeSubsteps)
+      result.heldPeaks.add peakCrowdDensity(held)
+      result.controlPeaks.add peakCrowdDensity(control)
+    result.farHeld = meanSpeedBeyond(held, run.stack, STACK_CLEARANCE)
+    result.farFree = meanSpeedBeyond(free, run.stack, STACK_CLEARANCE)
+    held.bodies = @[]
+    held.bodyEnvelopes = @[]
+    for _ in 0 ..< RELAXATION_FRAMES:
+      stepFrame(held, 1.0, run.freeSubsteps)
+      stepFrame(free, 1.0, run.freeSubsteps)
+    result.afterRelease = meanWeightedNeighbours(held)
+    result.fresh = meanWeightedNeighbours(free)
+
+  var compressionMemo: seq[CompressionTrial]
+
+  proc compressionTrials(): seq[CompressionTrial] =
+    if compressionMemo.len == 0:
+      let params = oracleParams(defaultSettings().friction,
+        WORLD_PRESSURE_STIFFNESS, BODY_STRENGTH_CEILING)
+      var runs: seq[CompressionRun]
+      for seed in GATE_SEEDS:
+        runs.add CompressionRun(params: params, seed: seed,
+          stack: stackedBodies(),
+          freeSubsteps: substepPlan(1.0, liveValues(false)).count,
+          heldSubsteps: substepPlan(1.0, liveValues(true)).count)
+      compressionMemo = inParallel(runs, runCompression)
+    compressionMemo
+
+  # --- The gates ---------------------------------------------------------------
 
   suite "A Compressed Crowd Stays Local And Below Its Collapse":
-    var trials: seq[CompressionTrial]
-    for index, seed in HELD_OUT_SEEDS:
-      trials.add compressionTrial(seed, index)
-    var calTrials: seq[CompressionTrial]
-    for index, seed in CALIBRATION_SEEDS:
-      calTrials.add compressionTrial(seed, index)
 
-    test "the held crowd's peak density stays below the stiffness-zero control's":
-      var verdicts: Verdicts
-      for trial in trials:
+    test "the held crowd's mean peak density stays below the stiffness-zero control's":
+      var held, control: seq[float]
+      for trial in compressionTrials():
         checkpoint("seed " & $trial.seed & ": held peak " &
-          $trial.pressuredPeak & " against control " & $trial.controlPeak)
-        if not (trial.pressuredPeak < trial.controlPeak):
-          verdicts.add "seed " & $trial.seed & ": a held peak of " &
-            $trial.pressuredPeak & " is not below the stiffness-zero " &
-            "control's " & $trial.controlPeak
-      checkNoVerdicts(verdicts)
+          $trial.heldPeaks[^1] & " against control " & $trial.controlPeaks[^1])
+        held.add trial.heldPeaks[^1]
+        control.add trial.controlPeaks[^1]
+      check meanOf(held) < meanOf(control)
 
     test "the crowd beyond the bodies' reach runs within the margin of a no-body world":
-      var ratios: seq[float]
-      for trial in trials:
+      var far: seq[float]
+      for trial in compressionTrials():
         checkpoint("seed " & $trial.seed & ": far held " & $trial.farHeld &
           " against far free " & $trial.farFree)
-        ratios.add trial.farHeld / trial.farFree
-      var calRatios: seq[float]
-      for trial in calTrials:
-        calRatios.add trial.farHeld / trial.farFree
-      let bound = 1.0 + FAR_SPEED_MARGIN
-      let margin = boundMargin(calRatios, ratios.len)
-      checkpoint("mean ratio " & $meanOf(ratios) & " against " & $bound &
-        " + margin " & $margin)
-      check meanOf(ratios) <= bound + margin
+        far.add trial.farHeld / trial.farFree
+      checkpoint("mean ratio " & $meanOf(far) & " against " &
+        $(1.0 + FAR_SPEED_MARGIN))
+      check meanOf(far) <= 1.0 + FAR_SPEED_MARGIN
 
   suite "Compression Is Not Remembered":
-    var ratios: seq[float]
-    for seed in HELD_OUT_SEEDS:
-      ratios.add relaxationRatio(16_000, seed)
 
-    test "a released crowd's neighbour count returns to a fresh settle's at 16 000 particles":
-      for index, seed in HELD_OUT_SEEDS:
-        checkpoint("seed " & $seed & ": ratio " & $ratios[index])
-      checkpoint("mean ratio " & $meanOf(ratios) & " against " &
-        $RELAXATION_BOUND_16K)
-      check meanOf(ratios) <= RELAXATION_BOUND_16K
+    test "a released crowd's mean neighbour count returns to a fresh settle's":
+      var relaxation: seq[float]
+      for trial in compressionTrials():
+        checkpoint("seed " & $trial.seed & ": after " & $trial.afterRelease &
+          " fresh " & $trial.fresh)
+        relaxation.add trial.afterRelease / trial.fresh
+      checkpoint("mean ratio " & $meanOf(relaxation) & " against 1")
+      check meanOf(relaxation) <= 1.0
 
   suite "A Settling World Still Settles":
-    let reference = block:
-      var speeds: seq[float]
-      for seed in HELD_OUT_SEEDS:
-        speeds.add motionPerReferenceFrame(seed, fixedFactors(1.0), false)
-      speeds
-    let calReference = block:
-      var speeds: seq[float]
-      for seed in CALIBRATION_SEEDS:
-        speeds.add motionPerReferenceFrame(seed, fixedFactors(1.0), false)
-      speeds
+
+    test "the world pressure leaves a friction-zero world settling within B_L":
+      let settles = settleStatistics(WORLD_PRESSURE_STIFFNESS)
+      checkpoint("settle statistics " & $settles & ", mean " &
+        $meanOf(settles) & " against " & $SETTLE_BOUND)
+      check meanOf(settles) <= SETTLE_BOUND
 
     test "no frame factor moves a world warmer per reference frame than frame factor 1":
+      let reference = frameFactorOneMotion()
       var verdicts: Verdicts
       for frameFactor in [2.0, 10.0, 30.0]:
-        var ratios: seq[float]
-        for index, seed in HELD_OUT_SEEDS:
-          ratios.add motionPerReferenceFrame(seed,
-            fixedFactors(frameFactor), true) / reference[index]
-        var calRatios: seq[float]
-        for index, seed in CALIBRATION_SEEDS:
-          calRatios.add motionPerReferenceFrame(seed,
-            fixedFactors(frameFactor), true) / calReference[index]
-        let allowed = 1.0 + boundMargin(calRatios, ratios.len)
+        let warmth = ratios(shippedFrictionMotion(fixedFactors(frameFactor),
+          FF_STABLE), reference)
         checkpoint("frame factor " & $frameFactor & ": mean ratio " &
-          $meanOf(ratios) & " against " & $allowed)
-        if not (meanOf(ratios) <= allowed):
+          $meanOf(warmth))
+        if not (meanOf(warmth) <= 1.0):
           verdicts.add "frame factor " & $frameFactor & ": a mean ratio of " &
-            $meanOf(ratios) & " runs warmer than frame factor 1's " & $allowed
+            $meanOf(warmth) & " runs warmer than frame factor 1"
       checkNoVerdicts(verdicts)
 
     test "no jittered frame factor moves a world warmer per reference frame than frame factor 1":
+      let reference = frameFactorOneMotion()
       var verdicts: Verdicts
-      var uniform: seq[float]
-      var alternating: seq[float]
-      for index, seed in HELD_OUT_SEEDS:
-        uniform.add motionPerReferenceFrame(seed,
-          uniformFactors(seed, 8, 16), true) / reference[index]
-        alternating.add motionPerReferenceFrame(seed,
-          alternatingFactors(10.0, 13.0), true) / reference[index]
-      var calUniform: seq[float]
-      var calAlternating: seq[float]
-      for index, seed in CALIBRATION_SEEDS:
-        calUniform.add motionPerReferenceFrame(seed,
-          uniformFactors(seed, 8, 16), true) / calReference[index]
-        calAlternating.add motionPerReferenceFrame(seed,
-          alternatingFactors(10.0, 13.0), true) / calReference[index]
-      for arm in [("uniform 8-16", uniform, calUniform),
-          ("alternating 10/13", alternating, calAlternating)]:
-        let allowed = 1.0 + boundMargin(arm[2], arm[1].len)
-        checkpoint(arm[0] & ": mean ratio " & $meanOf(arm[1]) & " against " &
-          $allowed)
-        if not (meanOf(arm[1]) <= allowed):
-          verdicts.add arm[0] & ": a mean ratio of " & $meanOf(arm[1]) &
-            " runs warmer than frame factor 1's " & $allowed
+      for arm in [("uniform 8-16", shippedFrictionMotion(uniformFactors,
+          FF_STABLE)), ("alternating 10/13",
+          shippedFrictionMotion(alternatingFactors, FF_STABLE))]:
+        let warmth = ratios(arm[1], reference)
+        checkpoint(arm[0] & ": mean ratio " & $meanOf(warmth))
+        if not (meanOf(warmth) <= 1.0):
+          verdicts.add arm[0] & ": a mean ratio of " & $meanOf(warmth) &
+            " runs warmer than frame factor 1"
       checkNoVerdicts(verdicts)
-
-when defined(calibrateBalance128k):
-
-  const SETTLE_BOUND = 1.177
-    ## PROVISIONAL. The bound on the settle statistic: the late-window mean
-    ## speed with the world pressure over the same seed's without it, at
-    ## friction zero. The calibration run replaces it with the bound its own
-    ## seeds derive.
-
-  proc lateWindowSpeed(particleCount, seed: int; stiffness: float): float =
-    ## The late-window mean speed of a world at friction zero, which is the
-    ## denominator's conditions as much as the numerator's.
-    let params = oracleParams(particleCount, FRICTION_MIN, stiffness, 0.0)
-    var world = initOracleWorld(params, particleCount, 1,
-      selfAttractingMatrix(), seed)
-    var sampled = 0
-    for step in 0 ..< STEP_COUNT:
-      stepFrame(world, 1.0, 1)
-      if step in WINDOW_STEPS:
-        result += meanSpeed(world)
-        sampled += 1
-    result /= sampled.float
-
-  suite "Compression Is Not Remembered":
-    var ratios: seq[float]
-    for seed in HELD_OUT_SEEDS:
-      ratios.add relaxationRatio(128_000, seed)
-    var calRatios: seq[float]
-    for seed in CALIBRATION_SEEDS:
-      calRatios.add relaxationRatio(128_000, seed)
-
-    test "a released crowd's neighbour count returns to a fresh settle's at 128 000 particles":
-      for index, seed in HELD_OUT_SEEDS:
-        checkpoint("seed " & $seed & ": ratio " & $ratios[index])
-      let allowed = 1.0 + boundMargin(calRatios, ratios.len)
-      checkpoint("mean ratio " & $meanOf(ratios) & " against " & $allowed)
-      check meanOf(ratios) <= allowed
-
-  suite "A Settling World Still Settles":
-
-    test "the world pressure leaves a friction-zero world settling at 128 000 particles":
-      var settles: seq[float]
-      for seed in HELD_OUT_SEEDS:
-        let withTerm = lateWindowSpeed(128_000, seed, WORLD_PRESSURE_STIFFNESS)
-        let withoutTerm = lateWindowSpeed(128_000, seed, 0.0)
-        checkpoint("seed " & $seed & ": with " & $withTerm & " without " &
-          $withoutTerm)
-        settles.add withTerm / withoutTerm
-      checkpoint("mean settle statistic " & $meanOf(settles) & " against " &
-        $SETTLE_BOUND)
-      check meanOf(settles) <= SETTLE_BOUND

@@ -58,16 +58,11 @@ lint-shell:
     shellcheck -s bash -S style -x enter leave tools/garden.sh scripts/lib/*.sh
 
 # The balance calibration arms, outside `check` and outside `test`: each one
-# steps the native oracle world for hundreds of frames, and every arm carrying a
-# fitted margin runs the calibration seeds as well as the held-out ones, so
-# thirty-two worlds where the rest run sixteen. The 16 000-particle arms take
-# close to forty minutes; the 128 000-particle arms about fifty core-hours. Each
-# define selects its own arms, so neither recipe runs the other's.
+# steps the native oracle world at 128 000 particles on the three gate seeds 42,
+# 7 and 1001 for hundreds of frames, so the whole run costs core-hours. A
+# test-name filter after the binary, `'Suite Name::*'`, runs one arm alone.
 calibrate-balance:
     nim c -r {{native_flags}} -d:calibrateBalance tests/test_balance_core.nim
-
-calibrate-balance-128k:
-    nim c -r {{native_flags}} -d:calibrateBalance128k tests/test_balance_core.nim
 
 # Shaders first: the bundled web/shaders/*.wgsl are gitignored output, and the
 # binding-set test in tests/test_wgsl_lint.nim reads them. Without this a clone
