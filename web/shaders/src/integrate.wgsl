@@ -38,10 +38,13 @@ struct IntegrationParams {
 @group(0) @binding(2) var<storage, read> velocityDeltaFixed: array<i32>;
 @group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
 @group(0) @binding(4) var<storage, read> sphDensityDeltaFixed: array<i32>;
+// Stride 3 per particle: [crowd, stiffnessFine, stiffnessCoarse]. See
+// forces.wgsl's binding 7 for what each word carries.
 @group(0) @binding(5) var<storage, read> crowdDensityDeltaFixed: array<i32>;
 @group(0) @binding(6) var<storage, read> velocityCoarseFixed: array<i32>;
 
 const DENSITY_SMOOTH_FACTOR: f32 = {{TUNABLE_DENSITY_SMOOTH_FACTOR}};  // 70% old + 30% new for temporal smoothing
+const PRESSURE_STEP_BOUND: f32 = {{PRESSURE_STEP_BOUND}};
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -74,9 +77,21 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // the crowding cap reading a flickering density would make the force law
   // flicker with it — the opposite of what a cap is for.
   let deltaCrowdDensity =
-    f32(crowdDensityDeltaFixed[particleIdx]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
+    f32(crowdDensityDeltaFixed[particleIdx * 3u]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
   p.crowdDensity = p.crowdDensity * DENSITY_SMOOTH_FACTOR +
     deltaCrowdDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
+
+  // This particle's summed pair stiffness D, decoded from the crowd buffer's
+  // two stiffness words the way the velocity words are rejoined above. The
+  // factor the whole decoded delta is scaled by below: 1 unless one step
+  // would carry frameFactor * 2 * D past PRESSURE_STEP_BOUND (crowding-
+  // redesign design §3.2-3.4). Mirrored by physics_core.stepLimit.
+  let stiffness = (f32(crowdDensityDeltaFixed[particleIdx * 3u + 1u]) +
+    f32(crowdDensityDeltaFixed[particleIdx * 3u + 2u]) * STIFFNESS_COARSE_UNIT) *
+    STIFFNESS_INV_FIXED_POINT_SCALE;
+  let stiffnessReach = 2.0 * params.frameFactor * stiffness;
+  let stepLimit = select(1.0, PRESSURE_STEP_BOUND / stiffnessReach,
+    stiffnessReach > PRESSURE_STEP_BOUND);
 
   // The fluid's kernel density, resolved the same way but kept in its own
   // field. Unsmoothed: the Tait equation of state wants this frame's density,
@@ -89,8 +104,8 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   p.sphDensity =
     f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
-  var newVelX = (p.vel.x + deltaVx) * params.friction;
-  var newVelY = (p.vel.y + deltaVy) * params.friction;
+  var newVelX = (p.vel.x + deltaVx * stepLimit) * params.friction;
+  var newVelY = (p.vel.y + deltaVy * stepLimit) * params.friction;
 
   // Logarithmic velocity capping reduces jank in high-activity areas.
   //

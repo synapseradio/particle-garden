@@ -54,3 +54,13 @@ const SPH_DENSITY_INV_FIXED_POINT_SCALE: f32 = {{SPH_DENSITY_INV_FIXED_POINT_SCA
 // a negative argument and the NaN spreads through every force in the frame.
 const CROWD_DENSITY_FIXED_POINT_SCALE: f32 = {{CROWD_DENSITY_FIXED_POINT_SCALE}};
 const CROWD_DENSITY_INV_FIXED_POINT_SCALE: f32 = {{CROWD_DENSITY_INV_FIXED_POINT_SCALE}};
+
+// The stiffness words: forces.wgsl encodes each pair's radial slope into
+// them, split as the velocity words are; integrate.wgsl decodes the sum and
+// holds the step to PRESSURE_STEP_BOUND. Own scale because the slope is not
+// interchangeable with a velocity delta (src/config_ranges.nim).
+const STIFFNESS_FIXED_POINT_SCALE: f32 = {{STIFFNESS_FIXED_POINT_SCALE}};
+const STIFFNESS_INV_FIXED_POINT_SCALE: f32 = {{STIFFNESS_INV_FIXED_POINT_SCALE}};
+const STIFFNESS_COARSE_SHIFT: u32 = {{STIFFNESS_COARSE_SHIFT}}u;
+const STIFFNESS_FINE_MASK: i32 = (1i << STIFFNESS_COARSE_SHIFT) - 1i;
+const STIFFNESS_COARSE_UNIT: f32 = f32(1i << STIFFNESS_COARSE_SHIFT);

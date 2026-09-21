@@ -450,7 +450,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard forcesEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.gridCounts)))
   discard forcesEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.velocityDelta)))
   discard forcesEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.densityDelta)))  # Symmetric colony density
-  discard forcesEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Species-blind crowd density
+  discard forcesEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Species-blind crowd density + the two stiffness words (stride 3)
   discard forcesEntries.push(createBindGroupEntry(8, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
@@ -491,7 +491,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard integrateEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.velocityDelta)))
   discard integrateEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.densityDelta)))  # Colony density
   discard integrateEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.sphDensityDelta)))  # Fluid's kernel density
-  discard integrateEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Crowd density
+  discard integrateEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Crowd density + the two stiffness words (stride 3)
   discard integrateEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(integrateEntries, "integrate", "bind group creation")
@@ -1211,8 +1211,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       # TWO i32 per particle — x and y. Clearing only particleCount * 4 would
       # zero every x and leave every y holding the previous frame's impulse,
       # which reads as a world that drifts steadily downward.
-    of sbDensityDelta, sbSphDensityDelta, sbCrowdDensityDelta:
-      particleCount * 4  # i32 per particle
+    of sbDensityDelta, sbSphDensityDelta: particleCount * 4  # i32 per particle
+    of sbCrowdDensityDelta: particleCount * 3 * 4
+      # Three i32 per particle: crowd, stiffnessFine, stiffnessCoarse. A clear
+      # sized like the single-word deltas above would leave the two stiffness
+      # words holding the previous frame's slope.
     of sbFieldAlive: 4  # one u32: the frame's alive-cell census
     of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
     of sbBodies: MAX_BODIES * BodyLayout.totalSize

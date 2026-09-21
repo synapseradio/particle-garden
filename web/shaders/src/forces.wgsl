@@ -43,9 +43,12 @@
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
-// The second density channel: every neighbour, no species gate. Encoded at the
-// crowd scale rather than the velocity one — see fixed_point.wgsl for why a
-// neighbour count needs the coarser of the two.
+// Stride 3 per particle: [crowd, stiffnessFine, stiffnessCoarse]. crowd is
+// the second density channel, every neighbour with no species gate, encoded
+// at the crowd scale rather than the velocity one — see fixed_point.wgsl for
+// why a neighbour count needs the coarser of the two. The two stiffness words
+// carry the particle's summed pair slope D that integrate.wgsl's step limit
+// reads (crowding-redesign design §3.2-3.4).
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
 // The coarse velocity word, which the world pressure below splits into.
@@ -90,8 +93,7 @@ fn exponentialForce(r: f32, attraction: f32, alpha: f32, beta: f32, attenuation:
 // CROWDING ATTENUATION
 // =============================================================================
 // The fraction of its attraction a particle keeps at this local density.
-// Mirrored by physics_core.crowdingAttenuation, which the native suite checks;
-// read the density-ceiling block there for what the cap does and does not claim.
+// Mirrored by physics_core.crowdingAttenuation, which the native suite checks.
 //
 // Logarithmic because the range that matters spans two orders of magnitude — a
 // few neighbours against a collapsing blob. Three properties follow by
@@ -138,6 +140,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var forceOnThisY = 0.0;
   var densityAccum = 0.0;
   var crowdDensityAccum = 0.0;
+  var stiffnessAccum = 0.0;
 
   // THIS PASS ACCUMULATES ONLY. The frame clears velocityDelta and both density
   // deltas before anything writes them (sim_registry.buildFrame opens with those
@@ -335,10 +338,14 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // second FRAME_DT_REFERENCE at the atomics.
         let crowdPressureOnOther =
           crowdPressure(otherParticle.crowdDensity, params.pressureOnset);
-        let pressureMagnitude = min(
+        // Saturated here, before the proximity weight, so the pair's radial
+        // slope below stays bounded by WORLD_PRESSURE_IMPULSE_MAX / R at every
+        // distance. Mirrored by physics_core.worldPressureSum.
+        let pressureSum = min(
           WORLD_PRESSURE_STIFFNESS * (crowdPressureOnThis + crowdPressureOnOther)
-            * (1.0 - normalizedDist) * FRAME_DT_REFERENCE,
+            * FRAME_DT_REFERENCE,
           WORLD_PRESSURE_IMPULSE_MAX);
+        let pressureMagnitude = pressureSum * (1.0 - normalizedDist);
         let pressureVxFixed =
           i32(-pressureMagnitude * separationX * invDistance * FIXED_POINT_SCALE);
         let pressureVyFixed =
@@ -362,6 +369,27 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         atomicAdd(&velocityCoarseFixed[otherOriginalIdx * 2u + 1u],
           (-pressureVyFixed) >> VELOCITY_COARSE_SHIFT);
 
+        // The pair's contribution to each particle's summed stiffness D: the
+        // saturated sum's radial slope, the same for both sides (crowding-
+        // redesign design §3.2). Mirrored by physics_core.pairStiffnessSlope /
+        // balance_core.addStiffness. THIS's share accumulates in a register
+        // and splits once after the loop; OTHER's goes by atomic here, and
+        // the coarse word only when the pair's slope reaches it — below the
+        // onset no add happens at all.
+        let pairStiffness = pressureSum * invRadius;
+        if (pairStiffness > 0.0) {
+          stiffnessAccum += pairStiffness;
+          let stiffnessOtherFixed =
+            i32(round(pairStiffness * STIFFNESS_FIXED_POINT_SCALE));
+          atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u + 1u],
+            stiffnessOtherFixed & STIFFNESS_FINE_MASK);
+          let stiffnessOtherCoarse = stiffnessOtherFixed >> STIFFNESS_COARSE_SHIFT;
+          if (stiffnessOtherCoarse != 0) {
+            atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u + 2u],
+              stiffnessOtherCoarse);
+          }
+        }
+
         // Symmetric density accumulation into two channels, colony
         // (species-gated) and crowd (ungated); what each answers and why they
         // stay separate: particle.wgsl's THREE DENSITIES block. Both share one
@@ -375,7 +403,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let proximityWeight = 1.0 - normalizedDist;
 
         crowdDensityAccum += proximityWeight;
-        atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx],
+        atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u],
           i32(proximityWeight * CROWD_DENSITY_FIXED_POINT_SCALE));
 
         if (otherParticle.species == thisParticle.species) {
@@ -447,6 +475,21 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let densityThisFixed = i32(densityAccum * FIXED_POINT_SCALE);
   atomicAdd(&densityDeltaFixed[thisOriginalIdx], densityThisFixed);
 
-  atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx],
+  atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 3u],
     i32(crowdDensityAccum * CROWD_DENSITY_FIXED_POINT_SCALE));
+
+  // THIS particle's summed stiffness, split once rather than per pair
+  // (forces-sph.wgsl:317-322 splits a register the same way). Below the
+  // onset stiffnessAccum stays exactly 0 and no add happens.
+  if (stiffnessAccum > 0.0) {
+    let stiffnessThisFixed =
+      i32(round(stiffnessAccum * STIFFNESS_FIXED_POINT_SCALE));
+    atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 3u + 1u],
+      stiffnessThisFixed & STIFFNESS_FINE_MASK);
+    let stiffnessThisCoarse = stiffnessThisFixed >> STIFFNESS_COARSE_SHIFT;
+    if (stiffnessThisCoarse != 0) {
+      atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 3u + 2u],
+        stiffnessThisCoarse);
+    }
+  }
 }
