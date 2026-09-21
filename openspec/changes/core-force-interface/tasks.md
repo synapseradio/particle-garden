@@ -159,14 +159,14 @@ Conventions every task below uses:
 
 ## 5. The field reaches particles only as force
 
-- [ ] 5.1 **Red.** Four failing checks:
+- [x] 5.1 **Red.** Four failing checks:
   - Suite "No Render Shader Reads The Field" in `tests/test_wgsl_lint.nim`. It reads the shader names `src/webgpu_render.nim` embeds from its `staticRead` lines, and holds that none of those sources imports `field_grid` or `colormap` or names `fieldTexture`, and that `src/webgpu_render.nim` names neither `activeFieldView` nor `fieldSampledView`. It fails today on `render`, `fade`, `tonemap` and `field-composite`, and on the view names.
   - `tests/test_param_descriptor.nim`'s id set drops `fieldOpacity`.
   - `tests/test_response_probe.nim`'s `MustPass` swaps `fieldOpacity` for `rdFieldForce`, per control-legibility.
   - `tests/test_preset.nim`: a previous-version preset carrying `colormapIndex` and `fieldOpacity` applies without error, and neither value reaches the decoded preset.
 
   Verify each fails for its stated reason.
-- [ ] 5.2 Remove every visual path from the field (design N6):
+- [x] 5.2 Remove every visual path from the field (design N6):
   - **Delete** `web/shaders/src/field-composite.wgsl`, `web/shaders/modules/colormap.wgsl`, `src/colormap_core.nim`, `tests/test_colormap_core.nim` (and its import in `tests/test_all.nim`) and `docs/help/41-rd-field.md`.
   - **Shaders.** Remove the field reads in `web/shaders/src/render.wgsl:188-194`, `web/shaders/src/fade.wgsl:84-96` and `web/shaders/src/tonemap.wgsl:74-86`, and the field bindings from the render, fade and tonemap layouts. Glow keeps its camera at binding 4.
   - **Struct members become pads** in `src/gpu_types.nim`: `RenderParams.fieldOpacity` and `colormapIndex`, `FadeParams.fieldDriftScale`, and `TonemapParams.colormapIndex` and `fieldOpacity`.
@@ -184,7 +184,7 @@ Conventions every task below uses:
   - **Comment.** Drop the field-composite remark at `src/main.nim:48-49`.
 
   Verify 5.1 passes, "The Bundled Shaders Declare Their Registered Bindings" and `tests/test_gpu_types.nim` pass, `just test-ui` passes, and `just happen` fails while any importer of `colormap_core` remains.
-- [ ] 5.3 Update the docs for the removal:
+- [x] 5.3 Update the docs for the removal:
   - `docs/help/52-bloom.md:18,21,24`: the Field Opacity mentions go, and the bloom-off dimming is now true (N9.4).
   - `docs/slider-interactions.md`: edges 53–58 and the Field Opacity and Colormap nodes go.
   - `docs/one-world.md`, `docs/enforcement.md` (the `colormap_core` oracle row, and `field-composite` in the `bloom_core` row), `tests/README.md` (the `test_colormap_core` rows and oracle lists) and `web/shaders/README.md` lose their field-composite and colormap lines.

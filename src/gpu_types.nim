@@ -216,10 +216,7 @@ const
   # at 0 and glow.wgsl's max is inert. The field stays until someone shrinks
   # RenderParams deliberately.
   #
-  # Three pads: the field no longer reaches the vertex stage (the reaction-
-  # diffusion field acts on particles only as force), so the two slots that
-  # carried its opacity and colormap index join the one that rounded the
-  # struct to 64 bytes.
+  # Three pads hold the struct at 64 bytes.
   RenderParamsLayout* = GpuStruct(
     name: "RenderParams",
     fields: @[
@@ -537,10 +534,7 @@ const
   # and the three colour-grade knobs (saturation, contrast, signed
   # temperature). Written every frame from CONFIG.
   #
-  # Three pads: the reaction-diffusion field no longer reaches this pass (it
-  # acts on particles only as force), so the two slots that carried its
-  # colormap index and opacity join the one that rounded the struct to 32
-  # bytes.
+  # Three pads hold the struct at 32 bytes.
   TonemapParamsLayout* = GpuStruct(
     name: "TonemapParams",
     fields: @[

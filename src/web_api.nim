@@ -1354,7 +1354,7 @@ when defined(js):
     result["getForceModel"] = toJs(proc(): int = CONFIG.forceModel)
     result["setForceModel"] = toJs(proc(model: int) = setForceModelImpl(model))
 
-    # Palette / colormap (color math stays in Nim)
+    # Palette (color math stays in Nim)
     result["paletteSchemes"] = toJs(proc(): JsObject = paletteSchemeArray)
     result["getPaletteScheme"] = toJs(proc(): cstring =
       cstring(schemeId(paletteEditorState.scheme)))
