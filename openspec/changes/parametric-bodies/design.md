@@ -742,6 +742,15 @@ toward the surface carries one band, and the hold is strongest one band out and 
   bounded per particle and per region (D16), but concentration inside a body is not bounded here.
   The interface D16 states is what a density-rising pressure term reads. Task 9.2 re-observes
   Hold 10 under Wild Bodies after group 10 lands.
+- **Held-world heat under stacked bodies.** → `core-force-interface`'s pressure design (C6) measured
+  a small world running at mean speed 23.2–25.2 without the pressure term and 29.7–31.3 with it
+  (`K = 1728`), against the soft-cap threshold of 25 (`web/shaders/src/integrate.wgsl:90-100`,
+  shipped `maxVelocity` 50). The app-scale world (128 000, 32 stacked bodies) ran at mean speed 16–17
+  with or without the term.
+- **A body's own motion is not in the substep travel count.** → `core-force-interface`'s substep
+  count (design N4) reads only particle Max Velocity. A body moves by `velocity · dtSeconds` per
+  substep (`web/shaders/src/body-integrate.wgsl:96-100`), unbounded by that count, so a fast body can
+  sweep its band across particles between substeps. How far a body moves per substep is unmeasured.
 - **A weak hold lets fast particles go.** → By design (D4, capture has a speed). The escape speed
   exceeds the particle speed ceiling for any hold above about 0.35 at the default band (100.4 at
   0.35, `scratchpad/parametric-bodies/falloff_probe.nim`, section 1).

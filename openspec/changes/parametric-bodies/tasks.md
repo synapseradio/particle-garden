@@ -383,7 +383,7 @@ in one diff (`docs/engineering-principles.md`, article 5).
 - [x] 9.1 Confirm the Browser MCP tools are present and connected. If they are not, ask the user to
       start Chrome and connect Browser MCP, and start nothing until they confirm (CLAUDE.md, Build
       and test). Touches no file
-- [ ] 9.2 **Waits on group 10 and on `coupling-balance`'s density term** (the user's choice, 13-09-26: measure with held-crowd density bounded, since the falloff alone still lets a body gather its reach). The 13-09-26 16:16 run stopped at observation 3, when Hold 10
+- [ ] 9.2 **Waits on group 10 and on `core-force-interface` 12.1's pressure term** (the user's choice, 13-09-26: measure with held-crowd density bounded, since the falloff alone still lets a body gather its reach). The 13-09-26 16:16 run stopped at observation 3, when Hold 10
       collapsed the population through enclosure's world reach. Re-run the whole procedure after 10.9
       is green, and add one observation: at Hold 10 under Wild Bodies 1/s, particles farther than
       twice the band from every body are not drawn in. **Agent procedure.** `just happen`, run `./main --serve` as a persistent background shell, poll
@@ -395,7 +395,7 @@ in one diff (`docs/engineering-principles.md`, article 5).
       in the console from either new bind group fails this task — that pair is unenforced across the
       two sides (`docs/enforcement.md`, Two-sided agreements). Record the run in
       `scratchpad/parametric-bodies/in-app__<DD-MM-YY-HHmm>.md`. Kill the port 8089 listener
-- [ ] 9.3 **Waits on group 10 and `coupling-balance`**, because its cost reading is taken during 9.2. Give the Bodies node its own profiler slot (`PROFILER_SLOT_BODIES`, mirroring
+- [ ] 9.3 **Waits on group 10 and `core-force-interface` 12.1**, because its cost reading is taken during 9.2. Give the Bodies node its own profiler slot (`PROFILER_SLOT_BODIES`, mirroring
       `gpu_profiler.passBodies`; design D8) and surface it as `bodies=` in the `[gpu-profile]` console
       record and as `gpuBodiesMs` on the stats push. Then read the bodies pass's cost from that
       figure during 9.2 at the full particle budget and
