@@ -1274,33 +1274,22 @@ when defined(js):
   # collide with, no write path to be overwritten through, and "cannot be
   # deleted" holds without any code enforcing it.
 
-  proc regimeStarter(label: string; feed, kill, minDeposit: float): string =
-    ## A named point in the one world's parameter space, at one published
-    ## Gray-Scott regime. Forces and chemistry both act, so the pattern records
-    ## where colonies live rather than sitting behind them.
-    ##
-    ## The deposit floor comes from the regime: at RD_DEFAULT_DEPOSIT the
-    ## high-feed regimes do not ignite at all, so one shared value would load a
-    ## blank field for two of the six.
-    var starter = defaultPreset()
-    starter.name = label
-    starter.settings.rdFeed = feed
-    starter.settings.rdKill = kill
-    starter.settings.rdDeposit = max(RD_DEFAULT_DEPOSIT, minDeposit)
-    starter.settings.rdFieldForce = RD_DEFAULT_FIELD_FORCE
-    toJsonString(starter)
-
   let builtinPresetArray = block:
     let jsArray = newJsArray()
     # Built FROM the regime table, not beside it: one set of coordinates, so a
     # starter and its slider notch cannot name the same point differently. The
     # feed and kill notches read the same table, so a starter lands on a tick.
+    #
+    # builtinRegimePreset reads regimeRow at RD_PATTERN_SCALE_DEFAULT, the
+    # scale a starter ships at — not the raw RD_REGIMES row: Coral and Worms
+    # drift at that scale (RD_REGIME_SCALE_ROWS), and the raw row would open
+    # a different regime than the one it is named for.
     for regime in RD_REGIMES:
       let entry = newJsObject()
       entry["id"] = toJs(cstring("regime-" & regime.id))
       entry["label"] = toJs(cstring(regime.label))
-      entry["json"] = toJs(cstring(regimeStarter(
-        regime.label, regime.feed, regime.kill, regime.minDeposit)))
+      entry["json"] = toJs(cstring(toJsonString(builtinRegimePreset(
+        regime.id, regime.label, RD_PATTERN_SCALE_DEFAULT))))
       jsArray.push(entry)
     jsArray
 

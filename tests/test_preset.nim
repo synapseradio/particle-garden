@@ -152,6 +152,34 @@ suite "Clamp Bounds Are The Live Slider Ranges":
     check loaded.preset.settings.glowFalloff == GLOW_FALLOFF_MIN
     check loaded.preset.settings.glowWarmth == GLOW_WARMTH_MAX
 
+suite "Builtin Regime Starters Read The Live-Scale Row":
+  test "each starter's feed and kill equal regimeRow at the starter's own scale":
+    ## A starter names a regime by id, so it must settle as that regime at
+    ## the scale it ships with — RD_REGIMES alone is the scale-1 row, and
+    ## Coral's scale-1 coordinates settle nearer Worms at RD_PATTERN_SCALE_DEFAULT
+    ## (scratchpad/core-force-interface/g3__21-09-26-2010.md).
+    for regime in RD_REGIMES:
+      let starter = builtinRegimePreset(regime.id, regime.label,
+        RD_PATTERN_SCALE_DEFAULT)
+      let row = regimeRow(regime.id, RD_PATTERN_SCALE_DEFAULT)
+      checkpoint("regime " & regime.id)
+      check starter.settings.rdFeed == row.feed
+      check starter.settings.rdKill == row.kill
+
+  test "a starter's deposit floor is the row's, raised over the shipped default":
+    for regime in RD_REGIMES:
+      let starter = builtinRegimePreset(regime.id, regime.label,
+        RD_PATTERN_SCALE_DEFAULT)
+      let row = regimeRow(regime.id, RD_PATTERN_SCALE_DEFAULT)
+      checkpoint("regime " & regime.id)
+      check starter.settings.rdDeposit == max(defaultSettings().rdDeposit,
+        row.minDeposit)
+
+  test "a starter carries the scale it was built at":
+    for regime in RD_REGIMES:
+      let starter = builtinRegimePreset(regime.id, regime.label, 0.5)
+      check starter.settings.rdPatternScale == 0.5
+
 suite "Preset Round-Trip Contract":
   test "default preset survives serialize then parse unchanged":
     let original = defaultPreset()

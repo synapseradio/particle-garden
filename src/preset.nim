@@ -344,6 +344,20 @@ func defaultPreset*(): Preset =
     palette: DEFAULT_PALETTE
   )
 
+func builtinRegimePreset*(id, label: string; scale: float): Preset =
+  ## A starter preset at one published Gray-Scott regime, at `scale`:
+  ## regimeRow's row for `id` at `scale`, not the raw RD_REGIMES row — a
+  ## regime whose scale-1 coordinates drift (Coral, Worms) needs the row
+  ## that restores it at the scale the starter ships with, or it opens
+  ## rendering the wrong pattern.
+  let row = regimeRow(id, scale)
+  result = defaultPreset()
+  result.name = label
+  result.settings.rdFeed = row.feed
+  result.settings.rdKill = row.kill
+  result.settings.rdDeposit = max(result.settings.rdDeposit, row.minDeposit)
+  result.settings.rdPatternScale = scale
+
 # ==============================================================================
 # SECTION 5: RESULT TYPE
 # ==============================================================================
