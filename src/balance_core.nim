@@ -625,6 +625,23 @@ proc applyBodies(world: var OracleWorld; dtSeconds: float) =
     world.bodies[slot] = bodyRigidStep(world.bodies[slot], reaction.forceX,
       reaction.forceY, reaction.torque, dtSeconds, worldW, worldH)
 
+when defined(calibratePerStepCap):
+  func perStepCapVelocity(velocity: tuple[x, y: float32];
+      deltaFixed: tuple[x, y: int32];
+      invFixedPointScale, frameFactor, friction, maxVelocity: float32):
+      tuple[x, y: float32] =
+    ## integrateVelocity with the soft cap acting on the speed per step, as
+    ## integrate.wgsl did before the cap moved to per reference frame.
+    let newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
+      invFixedPointScale, frameFactor)) * friction
+    let newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
+      invFixedPointScale, frameFactor)) * friction
+    let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
+    if speed <= 0.0'f32:
+      return (x: newVelX, y: newVelY)
+    let scale = postStepSpeed(speed, 1.0'f32, maxVelocity) / speed
+    (x: newVelX * scale, y: newVelY * scale)
+
 proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
   ## integrate.wgsl: both densities smoothed, the delta decoded once against
   ## the substep's frame factor, friction, the speed cap, then the position.
@@ -650,10 +667,18 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
       invFixed, subFrameFactor, p.fluid.coarseShift)
     # integrateVelocity decodes one word, so the two are rejoined above and a
     # zero word passed, which adds exactly nothing.
-    let stepped = integrateVelocity(
-      (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY),
-      (x: 0'i32, y: 0'i32), invFixed, subFrameFactor, p.friction,
-      p.maxVelocity)
+    let joined = (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY)
+    # Two diagnostic variants, never the shipped integrate: the per-step cap
+    # of before the per-reference-frame one, and friction as retention^ff.
+    let retention = when defined(calibrateFrictionPerFrame):
+        pow(p.friction, subFrameFactor)
+      else: p.friction
+    let stepped = when defined(calibratePerStepCap):
+        perStepCapVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
+          subFrameFactor, retention, p.maxVelocity)
+      else:
+        integrateVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
+          subFrameFactor, retention, p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
     world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)

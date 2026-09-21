@@ -1635,6 +1635,32 @@ when defined(calibrateBalance):
         echo ""
         echo "- ff_stable ", stable, " (", warm, " is the first warmer)"
 
+    test "the cause probe prints frame factors 2 and 4 against frame factor 1":
+      let variant =
+        when defined(calibratePerStepCap): "per-step cap"
+        elif defined(calibrateFrictionPerFrame):
+          "friction as retention^ff (diagnostic only)"
+        else: "shipped oracle"
+      printConditions("G1.5 cause probe, " & variant & ": one " &
+        "self-attracting species, K 540, shipped friction, no substeps")
+      let params = oracleParams(defaultSettings().friction,
+        WORLD_PRESSURE_STIFFNESS, 0.0)
+      var runs: seq[WindowRun]
+      for frameFactor in [1.0, 2.0, 4.0]:
+        runs.add windowRuns(params, 1, fixedFactors(frameFactor), Inf)
+      let got = motions(readings(runs))
+      let reference = got[0 ..< GATE_SEEDS.len]
+      echo "- frame factor 1 motion per reference frame: ", shownAll(reference)
+      echo ""
+      echo "| frame factor | per-seed ratio over ff 1 | mean | warmer |"
+      echo "|---|---|---|---|"
+      for index, frameFactor in [2, 4]:
+        let start = (index + 1) * GATE_SEEDS.len
+        let warmth = ratios(got[start ..< start + GATE_SEEDS.len], reference)
+        echo "| ", frameFactor, " | ", shownAll(warmth), " | ",
+          shown(meanOf(warmth)), " | ",
+          (if meanOf(warmth) > 1.0: "yes" else: "no"), " |"
+
     test "the jittered arms print their motion through the substep rule":
       printConditions("G1.5 jittered arms: one self-attracting species, " &
         "K 540, shipped friction, substeps by the rule at ff_stable " &
