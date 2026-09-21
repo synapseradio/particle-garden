@@ -6,7 +6,7 @@ are `path:line` from the repository root.
 
 ## 1. Nodes
 
-### Sliders (53, from `src/ui/api/param_descriptor.nim:405-819`)
+### Sliders (52, from `src/ui/api/param_descriptor.nim:405-814`)
 
 | Group | id (label) | Writes | Dims when |
 |---|---|---|---|
@@ -44,7 +44,6 @@ are `path:line` from the repository root.
 | rd | `rdDeposit` (Secretion Rate) | particle deposit into the field | — |
 | rd | `rdFieldForce` (Scent-following) | field-gradient impulse scale | — |
 | rd | `climateSpeed` (Drift) | Weather tour rate | — |
-| rd-field | `fieldOpacity` (Field Opacity) | backdrop scale | fieldUnlit |
 | bodies | `bodiesStrength` (Bodies) | body force multiplier | — |
 | bodies | `bodyRadius`, `bodyBand`, `bodyProximity`, `bodyEnclosure`, `bodyLifetime` | the next body's shape and life | — (none) |
 | bodies | `bodyIgnitionRate` (Wild Bodies) | autonomous ignition rate | — |
@@ -55,7 +54,7 @@ are `path:line` from the repository root.
 
 Nine dormancy predicates live at `src/ui/api/dormancy.nim:28-62`. Each reads
 one value against zero, except `fieldSubcritical`, which reads alive cells
-and `F < 4(F+k)²`, and `fieldUnlit`, which reads alive cells only.
+and `F < 4(F+k)²`.
 
 ### Non-slider controls
 
@@ -66,12 +65,11 @@ and `F < 4(F+k)²`, and `fieldUnlit`, which reads alive cells only.
 | Regime buttons | rkFire | rdFeed, rdKill; raise-only rdDeposit floor | `src/web_api.nim:620-638` |
 | New Rules (randomize) | action | matrix, spread ±0.33 scaled by wildness | `src/web_api.nim:316-324`, `src/ui/state/matrix_state.nim:108-118` |
 | Force Model | toggle | forces.wgsl model branch; which shape group shows | `web/shaders/src/forces.wgsl:233-280` |
-| Field Colormap | selector | colormapIndex: particle tint, backdrop, coverage | `src/web_api.nim:384-387` |
 | Bloom, Trails, Drift toggles | toggles | bloomOff dormancy; Trails lifts length 0→25; cameraDriftOff | `src/ui/state/render_state.nim:60-70` |
 | Palette scheme | selector | species colours; Open Color ignores both sliders | `src/palette.nim:141-164` |
 | Audio | rkModulate | onset/loudness→forceStrength, bass→fluidStrength, high→glowIntensity (depth 0) | `src/ui/input/shipped_mapping.nim:172-181` |
 | MIDI | rkWrite | CC7→forceStrength, CC1→fluidStrength, CC74→rdFieldForce, CC71→rdDeposit; PC→regimes; pads; tours | `src/ui/input/shipped_mapping.nim:147-168` |
-| Presets | restore | every slider and colormapIndex (snapshot at `src/web_api.nim:1094`, restore at `1246`) | `src/web_api.nim:1246` |
+| Presets | restore | every slider | `src/web_api.nim` (`snapshotPreset`, `applyPresetImpl`) |
 | Wheel / keys / drag | camera | zoom at cursor, pan; mouse reach scales `/zoom` | `src/app.nim:205-211` |
 
 Rank arbitration: rkWrite takes over softly; rkTour overwrites a drag on
@@ -168,13 +166,7 @@ the next frame; rkModulate moves only the effective copy through
 | 50 | climateSpeed — rdFeed, rdKill | write | rkTour | `src/climate_core.nim:89-92,107-117` |
 | 51 | rdDeposit — secretion | mul, gate | product per species; depositOff; the deposit node gated on deposit | `web/shaders/src/field-deposit.wgsl:83-85`, `src/sim_registry.nim:424-460` |
 | 52 | rdFieldForce — tropism | mul, gate | product per species; tropismOff | `web/shaders/src/field-force.wgsl:66-84`, `src/ui/api/dormancy.nim:48-49` |
-| 53 | rdFeed/rdKill (alive cells) — fieldOpacity | gate | fieldUnlit | `src/ui/api/dormancy.nim:54-55` |
-| 54 | RD field — particle colour | visual | tint at `FIELD_LIGHT_STRENGTH`, ignores fieldOpacity | `web/shaders/src/render.wgsl:176-194` |
-| 55 | RD field — trailLength | visual | trails drift along the inhibitor gradient, only when trails are on | `web/shaders/src/fade.wgsl:88-94`, `src/webgpu_render.nim:1821` |
-| 56 | fieldOpacity — bloomIntensity path | visual | `light = trail + bloom·bloomIntensity + fieldLight` | `web/shaders/src/tonemap.wgsl:74-89` |
-| 57 | fieldOpacity — exposure, saturation, contrast, temperature | visual | bloom-off backdrop graded by `tonemapGrade` | `web/shaders/src/field-composite.wgsl:60-68`, `src/webgpu_render.nim:1973-1982` |
-| 58 | Field Colormap — fieldOpacity, particle tint | shape | one colormapIndex feeds both | `src/web_api.nim:384-387`, `web/shaders/src/render.wgsl:190-193` |
-| 59 | RD — fluid, LR, bodies, crowding | absent | no term reads the field besides field force and render | `src/sim_registry.nim:424-470` |
+| 59 | RD — fluid, LR, bodies, crowding | absent | no term reads the field besides field force | `src/sim_registry.nim:424-470` |
 | 60 | bodiesStrength — six body sliders | absent | no dormancy predicate on the group | `src/ui/api/param_descriptor.nim:733-790` |
 | 61 | bodyRadius, bodyBand, bodyProximity, bodyEnclosure, bodyLifetime — living bodies | absent | disposition frozen at ignition | `src/webgpu_compute.nim:213-218` |
 | 62 | bodyIgnitionRate — bodyLifetime | mul | standing count `min(rate·lifetime, 32)` | `src/ui/api/response_probe.nim:558-562` |
@@ -241,11 +233,10 @@ Edge numbers from section 3.
 | longRangeStrength | 17, 28, 36, 44, 45, 47 |
 | longRangeReach | 45, 46 |
 | longRangeGridIndex | 5, 45, 46 |
-| rdFeed, rdKill | 14, 48, 49, 50, 53 |
+| rdFeed, rdKill | 14, 48, 49, 50 |
 | rdDeposit | 3, 15, 49, 51, 82 |
 | rdFieldForce | 16, 52, 82 |
 | climateSpeed | 50, 84 |
-| fieldOpacity | 53, 56, 57, 58 |
 | bodiesStrength | 18, 60, 63 |
 | bodyRadius | 61, 65 |
 | bodyBand | 10, 61, 65 |
@@ -394,8 +385,6 @@ U = no statement either way.
 | rdFieldForce default 7.5, max 37.5 | D (30/4; ×5) | `src/field_core.nim:157`, `src/config_ranges.nim:291-304` |
 | pattern scale 9.30 cells, sqrt law, dies below 0.16 | M | `src/field_core.nim:232-245` |
 | tropism max | M (collapse at 4.0) | `src/config_ranges.nim:420-475` |
-| FIELD_LIGHT_STRENGTH 0.55, FIELD_DRIFT_SCALE 0.02 | B | `src/colormap_core.nim:61-84` |
-| fieldOpacity default 0 | U | `src/colormap_core.nim:43-57` |
 | bodyBand floor 25 | U (a stated literal; nothing derives it) | `src/config_ranges.nim:502-507` |
 | bodiesStrength ceiling 1, BODY_FORCE_CEILING 10 | U | `src/body_core.nim:151-160` |
 | glowRadiusScale × particleSize pin 12 | D | `src/ui/state/render_state.nim:72-86` |
@@ -458,8 +447,6 @@ Present but arguably unwanted:
 
 - The stiffness ceiling moves with Interaction Radius and Time Scale
   (edges 13, 25).
-- The field tints particles and bends trails with no slider (edges 54, 55);
-  both constants are blind picks.
 - Tours overwrite a drag on the next frame (edge 84).
 
 ### "A lot of calibration is needed"
@@ -474,7 +461,6 @@ LR softening and tropism carry measurements.
 | Claim | Code | Citation |
 |---|---|---|
 | `docs/help/10-simulation.md:9-11`: particleCount "rebuilds the population" | commit resizes; existing particles stay | `src/app.nim:130-158` |
-| `docs/help/52-bloom.md:7-9` and `src/ui/api/param_descriptor.nim:504-506`: the five sliders act only with bloom on | the bloom-off backdrop runs `tonemapGrade`; live while Field Opacity > 0 | `web/shaders/src/field-composite.wgsl:60-68`, `web/shaders/modules/tonemap_grade.wgsl:6-8` |
 | `docs/help/51-glow.md:10-11`: speed brightens | speed also grows the halo | `web/shaders/src/glow.wgsl:96-103` |
 | `docs/help/53-palette.md`: sliders adjust every scheme | Open Color ignores both | `src/palette.nim:141-164` |
 | `docs/help/50-render.md:9`: size is the radius drawn | drawn size is `(size+1)·sizeMod` | `web/shaders/src/render.wgsl:55-59,102-104` |
@@ -485,8 +471,6 @@ LR softening and tropism carry measurements.
 [openspec/changes/core-force-interface/proposal.md](../openspec/changes/core-force-interface/proposal.md)
 removes or rewires these edges:
 
-- Removes the RD visuals and the Field Opacity and Colormap nodes: 53, 54,
-  55, 56, 57, 58.
 - Rewires the strengths onto one 0-1 calibrated contract, including Force
   Strength and Scent-following: 11-18, and section 7's unit mismatch.
 - Moves incompressibility to world pressure; crowding becomes texture: 27, 30.

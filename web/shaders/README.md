@@ -99,7 +99,7 @@ The walkthrough below covers the species force pass in depth. The full frame is 
 
 **Physics**: `forces` (world-intrinsic — beyond the species force it accumulates colony density and carries mouse and blast input), `forces-sph` (coupling-owned by the fluid strength), and `integrate` (world-intrinsic, always last). The field adds `field-deposit` and `field-force` (coupling-owned by deposit and field-force strengths) plus `field-resolve` and the `rd-step` substeps (world-intrinsic).
 
-**Rendering**: `render`, `glow`, `fade`, `composite`, `field-composite`, `blur`, `tonemap`.
+**Rendering**: `render`, `glow`, `fade`, `composite`, `blur`, `tonemap`.
 
 `src/shader_manifest.nim` is the authority on the compute shaders the world can dispatch — all are registered at init — and `src/sim_registry.nim` decides which are encoded each frame; consult those rather than this list if they ever disagree. Note that render shaders take a different route to the GPU — `webgpu_render.nim` `staticRead`s them into `app.js`, so they are not served over HTTP and are absent from `main.nim`'s `StaticFiles`.
 

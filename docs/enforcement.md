@@ -94,8 +94,7 @@ derives the table from the headers and compares.
 | `grid_core.nim` | `bin-count` / `prefix-sum-*` / `bin-scatter.wgsl` |
 | `sph_core.nim` | `forces-sph.wgsl` (kernels, Tait pressure, XSPH) |
 | `field_core.nim` | `rd-step.wgsl`, `field-seed.wgsl`, `field-deposit.wgsl`, and the frame-scaled force `field-force.wgsl` reads |
-| `bloom_core.nim` | `blur.wgsl` (kernel weights substituted from here) and `tonemap_grade.wgsl` (ACES and grade steps, run by `tonemap.wgsl` and `field-composite.wgsl`) |
-| `colormap_core.nim` | `colormap.wgsl`, and `fade.wgsl`'s field drift scale |
+| `bloom_core.nim` | `blur.wgsl` (kernel weights substituted from here) and `tonemap_grade.wgsl` (ACES and grade steps, run by `tonemap.wgsl`) |
 | `camera_core.nim` | `camera_transform.wgsl`, mirrored by `render`, `glow` and `fade` |
 | `glow_core.nim` | `glow.wgsl` (halo radius, falloff, warmth, alpha integral) |
 | `trail_core.nim` | `fade.wgsl` (per-frame decay), `render.wgsl`'s motion-blur taper, plus the trail-length mapping the renderer writes |
