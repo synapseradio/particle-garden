@@ -1017,9 +1017,14 @@ Bindings as they stand:
 - Tonemap drops binding 4.
 - `ExpectedShaderBindings` loses those entries.
 
-**Kept:** `webgpu_init`'s `activeFieldView` and `fieldSampledViewA/B` (`src/webgpu_init.nim:286-292`),
-which the compute side's scent binds (`src/webgpu_compute.nim:520-521`). `webgpu_render.nim` stops
-naming them.
+**Kept:** `webgpu_init`'s `fieldSampledViewA/B` (`src/webgpu_init.nim:270-271`), which the compute
+side's scent binds (`src/webgpu_compute.nim:523-524`).
+
+**Also removed, alongside `webgpu_render.nim`'s uses:** `webgpu_init`'s `activeFieldView`,
+`fieldSampler`, `fieldGeneration` accessors and their backing `fieldLinearSampler`,
+`fieldGenerationCounter` vars — `grep -rn "fieldGeneration\|activeFieldView\|fieldSampler\b"
+src/*.nim` finds no reference left once `webgpu_render.nim`'s field-composite/render/tonemap
+paths are gone.
 
 Docs updates:
 - `docs/help/52-bloom.md` already says the grade is dormant with bloom off, and this makes it true.
