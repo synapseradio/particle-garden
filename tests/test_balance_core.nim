@@ -1111,6 +1111,14 @@ when defined(calibrateBalance):
     CALIBRATION_ONSET_RATIO =
       if ONSET_RATIO_OVERRIDE.len == 0: CROWD_ONSET_RATIO
       else: parseFloat(ONSET_RATIO_OVERRIDE)
+      ## x_on for every arm the term acts in, so the stacked hold can run at
+      ## the onset G1.1 records before config_ranges holds it.
+    FF_STABLE_OVERRIDE {.strdefine: "calibrateFfStable".} = ""
+    JITTER_FF_STABLE =
+      if FF_STABLE_OVERRIDE.len == 0: FF_STABLE
+      else: parseFloat(FF_STABLE_OVERRIDE)
+      ## The ff_stable the jittered reporting arms substep at, so they can run
+      ## at the bisection's value before config_ranges holds it.
 
   func scaled(frames: int): int = max(frames div FRAME_DIVISOR, 1)
 
@@ -1216,9 +1224,12 @@ when defined(calibrateBalance):
           $frameFactor
 
   func attractingMatrix(speciesCount: int): seq[float32] =
-    ## Every species attracting every species at the matrix maximum.
-    for _ in 0 ..< speciesCount * speciesCount:
-      result.add MATRIX_MAX_VALUE.float32
+    ## Each species attracting itself at the matrix maximum and indifferent to
+    ## the rest. With every entry at the maximum and crowding at 0, species
+    ## labels change no force and any count steps the one-species world.
+    for row in 0 ..< speciesCount:
+      for column in 0 ..< speciesCount:
+        result.add (if row == column: MATRIX_MAX_VALUE.float32 else: 0.0'f32)
 
   func stackedBodies(): seq[Body] =
     ## MAX_BODIES shells on one centre with their normals aligned, each gain at
@@ -1298,14 +1309,20 @@ when defined(calibrateBalance):
       result.add WindowRun(params: params, speciesCount: speciesCount,
         seed: seed, frameFactors: factors, substeps: substeps)
 
-  var windowMemo: Table[string, seq[WindowReading]]
-    ## A gate and a reporting arm that read the same worlds step them once.
+  var windowMemo: Table[string, WindowReading]
+    ## A gate and a reporting arm that read the same world step it once.
 
   proc readings(runs: seq[WindowRun]): seq[WindowReading] =
-    let key = $runs
-    if key notin windowMemo:
-      windowMemo[key] = inParallel(runs, runWindow)
-    windowMemo[key]
+    ## Every run not yet stepped in this process, stepped at once.
+    var missing: seq[WindowRun]
+    for run in runs:
+      if $run notin windowMemo and run notin missing:
+        missing.add run
+    let stepped = inParallel(missing, runWindow)
+    for i, run in missing:
+      windowMemo[$run] = stepped[i]
+    for run in runs:
+      result.add windowMemo[$run]
 
   func fixedFactors(frameFactor: float): Schedule =
     result = func (seed: int): seq[float] =
@@ -1489,3 +1506,208 @@ when defined(calibrateBalance):
           verdicts.add arm[0] & ": a mean ratio of " & $meanOf(warmth) &
             " runs warmer than frame factor 1"
       checkNoVerdicts(verdicts)
+
+  # --- The reporting arms ------------------------------------------------------
+  # Each prints markdown for the scratchpad record its task names and asserts
+  # nothing.
+
+  func shown(value: float): string = formatFloat(value, ffDecimal, 4)
+
+  func shownAll(values: seq[float]): string =
+    for i, value in values:
+      if i > 0:
+        result.add ", "
+      result.add shown(value)
+
+  proc printConditions(arm: string) =
+    echo ""
+    echo "## ", arm
+    echo ""
+    when defined(calibrateSmoke):
+      echo "SMOKE RUN: these numbers show the arm runs and are no measurement."
+    echo "- particles ", CALIBRATION_PARTICLES, ", radius ", CALIBRATION_RADIUS,
+      ", polynomial model, seeds ", $GATE_SEEDS
+    echo "- frames: ", STEP_COUNT, " steps, window ", $WINDOW_STEPS,
+      "; settle ", SETTLE_FRAMES, ", hold ", HOLD_FRAMES, ", release ",
+      RELAXATION_FRAMES
+    echo "- x_on ", CALIBRATION_ONSET_RATIO, ", K ", WORLD_PRESSURE_STIFFNESS,
+      ", q_max ", WORLD_PRESSURE_IMPULSE_MAX, ", shipped friction ",
+      defaultSettings().friction, " (retention applied once per step)"
+
+  suite "Gate G1.1 Readings":
+
+    test "the onset arm prints the p99.9 crowd ratio, the contact floor and the band's bottom":
+      printConditions("G1.1 onset: no coupling but the species force, " &
+        "shipped friction, frame factor 1, all species attracting at the " &
+        "matrix maximum")
+      let cfg = calibrationConfig()
+      let mean = meanCrowdDensity(cfg)
+      let floorDensity = contactFloorDensity(cfg)
+      let params = oracleParams(defaultSettings().friction, 0.0, 0.0)
+      var runs: seq[WindowRun]
+      for species in [1, 4]:
+        runs.add windowRuns(params, species, fixedFactors(1.0), Inf)
+      let got = readings(runs)
+      echo "- uniform crowd density rho-bar ", shown(mean)
+      echo "- contact floor at the preset repulsionEnd ", cfg.repulsionEnd,
+        ": rho ", shown(floorDensity), ", x ", shown(floorDensity / mean)
+      echo ""
+      echo "| species | seed | p99.9 x at each window step | end of window |"
+      echo "|---|---|---|---|"
+      var ends: seq[float]
+      for i, run in runs:
+        var ratiosAlong: seq[float]
+        for density in got[i].crowdP999:
+          ratiosAlong.add density / mean
+        ends.add ratiosAlong[^1]
+        echo "| ", run.speciesCount, " | ", run.seed, " | ",
+          shownAll(ratiosAlong), " | ", shown(ratiosAlong[^1]), " |"
+      echo ""
+      echo "- band of end-of-window p99.9 x: ", shown(min(ends)), " to ",
+        shown(max(ends))
+      echo "- one species mean ", shown(meanOf(ends[0 ..< GATE_SEEDS.len])),
+        ", four species mean ", shown(meanOf(ends[GATE_SEEDS.len .. ^1]))
+      echo "- bottom of the band, smallest run: ", shown(min(ends))
+      echo "- bottom of the band, mean less the largest distance: ",
+        shown(meanOf(ends) - largestDistance(ends))
+      echo "- unmeasured: other particle counts, radii, species counts and " &
+        "the exponential model"
+
+  suite "Gate G1.2 Readings":
+
+    test "the stiffness arm prints L at K 540 and 1728 and the bound B_L":
+      printConditions("G1.2 stiffness: one self-attracting species, " &
+        "FRICTION_MIN, no viscosity, frame factor 1")
+      let stiffnesses = [0.0, WORLD_PRESSURE_STIFFNESS, 1728.0]
+      var runs: seq[WindowRun]
+      for stiffness in stiffnesses:
+        runs.add windowRuns(oracleParams(FRICTION_MIN, stiffness, 0.0), 1,
+          fixedFactors(1.0), Inf)
+      discard readings(runs)
+      let chosen = settleStatistics(WORLD_PRESSURE_STIFFNESS)
+      let stiffer = settleStatistics(1728.0)
+      let without = motions(readings(runs[0 ..< GATE_SEEDS.len]))
+      echo "| seed | speed without the term | L at K 540 | L at K 1728 |"
+      echo "|---|---|---|---|"
+      for i, seed in GATE_SEEDS:
+        echo "| ", seed, " | ", shown(without[i]), " | ", shown(chosen[i]),
+          " | ", shown(stiffer[i]), " |"
+      echo ""
+      let bound = derivedBound(chosen)
+      echo "- mean L at K 540 ", shown(meanOf(chosen)), ", largest distance ",
+        shown(largestDistance(chosen)), ", B_L ", shown(bound)
+      echo "- mean L at K 1728 ", shown(meanOf(stiffer)), ": ",
+        (if meanOf(stiffer) > bound: "exceeds B_L" else: "DOES NOT exceed B_L")
+
+  suite "Gate G1.5 Readings":
+
+    test "the frame-factor arm bisects ff_stable without substeps":
+      printConditions("G1.5 ff_stable: one self-attracting species, K 540, " &
+        "shipped friction, per-reference-frame cap, no substeps; a frame " &
+        "factor is warmer when its mean motion ratio over frame factor 1 " &
+        "is above 1")
+      let params = oracleParams(defaultSettings().friction,
+        WORLD_PRESSURE_STIFFNESS, 0.0)
+      let referenceRuns = windowRuns(params, 1, fixedFactors(1.0), Inf)
+      discard readings(referenceRuns &
+        windowRuns(params, 1, fixedFactors(30.0), Inf))
+      let reference = motions(readings(referenceRuns))
+      echo "- frame factor 1 motion per reference frame: ", shownAll(reference)
+      echo ""
+      echo "| frame factor | per-seed ratio over ff 1 | mean | warmer |"
+      echo "|---|---|---|---|"
+      proc warmer(frameFactor: int): bool =
+        let warmth = ratios(motions(readings(windowRuns(params, 1,
+          fixedFactors(frameFactor.float), Inf))), reference)
+        result = meanOf(warmth) > 1.0
+        echo "| ", frameFactor, " | ", shownAll(warmth), " | ",
+          shown(meanOf(warmth)), " | ", (if result: "yes" else: "no"), " |"
+      var stable = 1
+      var warm = 30
+      if not warmer(warm):
+        echo ""
+        echo "- no frame factor up to 30 runs warmer: ff_stable >= 30"
+      else:
+        while warm - stable > 1:
+          let middle = (stable + warm) div 2
+          if warmer(middle): warm = middle
+          else: stable = middle
+        echo ""
+        echo "- ff_stable ", stable, " (", warm, " is the first warmer)"
+
+    test "the jittered arms print their motion through the substep rule":
+      printConditions("G1.5 jittered arms: one self-attracting species, " &
+        "K 540, shipped friction, substeps by the rule at ff_stable " &
+        $JITTER_FF_STABLE)
+      let params = oracleParams(defaultSettings().friction,
+        WORLD_PRESSURE_STIFFNESS, 0.0)
+      let referenceRuns = windowRuns(params, 1, fixedFactors(1.0), Inf)
+      let arms = [("uniform 8-16",
+          windowRuns(params, 1, uniformFactors, JITTER_FF_STABLE)),
+        ("alternating 10/13",
+          windowRuns(params, 1, alternatingFactors, JITTER_FF_STABLE))]
+      discard readings(referenceRuns & arms[0][1] & arms[1][1])
+      let reference = motions(readings(referenceRuns))
+      echo "| arm | seed | substepped steps | toggles | ratio over ff 1 |"
+      echo "|---|---|---|---|---|"
+      for arm in arms:
+        let warmth = ratios(motions(readings(arm[1])), reference)
+        for i, run in arm[1]:
+          var substepped, toggles = 0
+          for step in 0 ..< run.substeps.len:
+            if run.substeps[step] > 1: substepped += 1
+            if step > 0 and run.substeps[step] != run.substeps[step - 1]:
+              toggles += 1
+          echo "| ", arm[0], " | ", run.seed, " | ", substepped, " | ",
+            toggles, " | ", shown(warmth[i]), " |"
+        echo "| ", arm[0], " | mean | | | ", shown(meanOf(warmth)), " (",
+          (if meanOf(warmth) > 1.0: "WARMER than ff 1" else: "not warmer"),
+          ") |"
+
+  suite "Gate G1.3 Readings":
+
+    test "the stacked-hold arm prints its peaks, release ratios and far-crowd margin":
+      printConditions("G1.3 stacked hold: one self-attracting species, " &
+        $MAX_BODIES & " aligned bodies at their ceilings, stiffness-zero " &
+        "control bounded to the held frames")
+      let trials = compressionTrials()
+      echo "| seed | held peak at last held frame | control peak | " &
+        "smallest control less held, at held frame | held frames above " &
+        "control | after / fresh | far held / far free |"
+      echo "|---|---|---|---|---|---|---|"
+      var release, far, heldEnd, controlEnd: seq[float]
+      var reachedAtEnd = false
+      for trial in trials:
+        var gap = Inf
+        var gapFrame = 0
+        var above = 0
+        # Both worlds read their first held frame's density off the same
+        # settled positions, and the next few part by one lagged step only.
+        for frame in 1 ..< trial.heldPeaks.len:
+          let frameGap = trial.controlPeaks[frame] - trial.heldPeaks[frame]
+          if frameGap < 0.0:
+            above += 1
+          if frameGap < gap:
+            gap = frameGap
+            gapFrame = frame + 1
+        if trial.heldPeaks[^1] >= trial.controlPeaks[^1]:
+          reachedAtEnd = true
+        release.add trial.afterRelease / trial.fresh
+        far.add trial.farHeld / trial.farFree
+        heldEnd.add trial.heldPeaks[^1]
+        controlEnd.add trial.controlPeaks[^1]
+        echo "| ", trial.seed, " | ", shown(trial.heldPeaks[^1]), " | ",
+          shown(trial.controlPeaks[^1]), " | ",
+          formatFloat(gap, ffScientific, 3), " at ", gapFrame, " | ", above,
+          " | ", shown(trial.afterRelease), " / ", shown(trial.fresh), " = ",
+          shown(release[^1]), " | ", shown(trial.farHeld), " / ",
+          shown(trial.farFree), " = ", shown(far[^1]), " |"
+      echo ""
+      echo "- mean held peak ", shown(meanOf(heldEnd)), " against control ",
+        shown(meanOf(controlEnd))
+      echo "- a seed's held peak at or above the control's at the last held " &
+        "frame: ", (if reachedAtEnd: "YES, which returns the design" else: "no")
+      echo "- mean after-release ratio ", shown(meanOf(release))
+      echo "- far-crowd ratio mean ", shown(meanOf(far)), ", bound mean + " &
+        "largest distance ", shown(derivedBound(far)), ", margin ",
+        shown(derivedBound(far) - 1.0)
