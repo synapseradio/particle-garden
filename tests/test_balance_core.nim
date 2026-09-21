@@ -2,7 +2,8 @@
 ##
 ## Every expectation comes from the design's own formulas, derived here
 ## independently of balance_core's arithmetic: the edge neighbour count from
-## the onset number density, the cell area from the world and grid extents,
+## the onset number density, the long-range unit U(R) from the reference
+## colony's radius,
 ## the world units per field cell from the world width over FIELD_W. Each unit
 ## function is held two ways: no configuration a sweep of its writer's oracle
 ## reaches exceeds it, and the oracle evaluated at the function's own
@@ -256,33 +257,31 @@ suite "Every Writer Answers In The Pair Unit":
 
   test "the long-range unit bounds every swept distance past the colony and one radius past its edge attains it":
     var verdicts: Verdicts
-    for grid in LR_GRID_SIZES:
-      for radius in [INTERACTION_RADIUS_MIN.float, 50.0,
-          INTERACTION_RADIUS_MAX.float]:
-        for particleCount in [16_000, MAX_PARTICLES]:
-          for strength in [0.5, 1.0]:
-            var cfg = referenceConfig()
-            cfg.longRangeGrid = grid
-            cfg.interactionRadius = radius
-            cfg.particleCount = particleCount
-            cfg.longRangeStrength = strength
-            let unit = unitImpulse(ufLongRange, cfg)
-            let cellArea = (cfg.worldWidth / grid.w.float) *
-              (cfg.worldHeight / grid.h.float)
-            let nearest = colonyRadius(cfg) + radius
-            var worst = 0.0
-            for distanceStep in 0 .. 40:
-              let distance = nearest + 50.0 * distanceStep.float
-              for entry in [-MATRIX_MAX_VALUE, 0.5 * MATRIX_MAX_VALUE,
-                  MATRIX_MAX_VALUE]:
-                for swept in [0.25 * strength, strength]:
-                  worst = max(worst, lrDiscPull(swept, entry, cellArea,
-                    particleCount.float, distance) / FRAME_DT_REFERENCE)
-            let attained = lrDiscPull(strength, cfg.attraction, cellArea,
-              particleCount.float, nearest) / FRAME_DT_REFERENCE
-            verdicts.judge("long range grid " & $grid & " R " & $radius &
-              " N " & $particleCount & " strength " & $strength, unit, worst,
-              attained, TOLERANCE_F64)
+    for radius in [INTERACTION_RADIUS_MIN.float, 50.0,
+        INTERACTION_RADIUS_MAX.float]:
+      for particleCount in [16_000, MAX_PARTICLES]:
+        for strength in [0.5, 1.0]:
+          var cfg = referenceConfig()
+          cfg.interactionRadius = radius
+          cfg.particleCount = particleCount
+          cfg.longRangeStrength = strength
+          let unit = unitImpulse(ufLongRange, cfg)
+          let a = colonyRadius(cfg)
+          let pairUnit = FRAME_DT_REFERENCE * radius * radius * (a + radius) /
+            (a * a)
+          let nearest = a + radius
+          var worst = 0.0
+          for distanceStep in 0 .. 40:
+            let distance = nearest + 50.0 * distanceStep.float
+            for entry in [-MATRIX_MAX_VALUE, 0.5 * MATRIX_MAX_VALUE,
+                MATRIX_MAX_VALUE]:
+              for swept in [0.25 * strength, strength]:
+                worst = max(worst, lrDiscPull(swept, entry, pairUnit,
+                  particleCount.float, distance) / FRAME_DT_REFERENCE)
+          let attained = lrDiscPull(strength, cfg.attraction, pairUnit,
+            particleCount.float, nearest) / FRAME_DT_REFERENCE
+          verdicts.judge("long range R " & $radius & " N " & $particleCount &
+            " strength " & $strength, unit, worst, attained, TOLERANCE_F64)
     checkNoVerdicts(verdicts)
 
   test "the bodies unit bounds every swept body stack and a full stack holding at its band attains it":

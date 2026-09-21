@@ -29,6 +29,7 @@
 
 import std/math
 import memory_layout
+from physics_core import FRAME_DT_REFERENCE
 
 type
   LrComplex* = object
@@ -144,20 +145,30 @@ func lrCellArea*(gridW, gridH: int; worldW, worldH: float): float =
   ## World area one mesh cell covers.
   (worldW / float(gridW)) * (worldH / float(gridH))
 
+func lrPairUnit*(radius, onsetRatio, worldW, worldH: float): float =
+  ## U(R) = u0 R^2 (a + R) / a^2, the long-range pull's unit, where `a` is the
+  ## radius of every particle gathered in one disc at the onset density.
+  ## Under it the reference colony's pull one radius past its edge grows as
+  ## R^2, as the pair force's edge impulse does, so one full effect holds at
+  ## every radius.
+  let a = sqrt(worldW * worldH / (PI * onsetRatio))
+  FRAME_DT_REFERENCE * radius * radius * (a + radius) / (a * a)
+
 func lrForceScale*(strength, radius, onsetRatio: float; gridW, gridH: int;
                    worldW, worldH: float): float =
-  ## The value written to LR_FORCE_SCALE.
-  strength
+  ## The value written to LR_FORCE_SCALE: the strength in the pair unit, over
+  ## the cell area lrKernel's 1/(W*H) leaves in the potential, so the impulse
+  ## is the same on every mesh size.
+  strength * lrPairUnit(radius, onsetRatio, worldW, worldH) /
+    lrCellArea(gridW, gridH, worldW, worldH)
 
-func lrDiscPull*(strength, entry, cellArea, mass, distance: float): float =
+func lrDiscPull*(strength, entry, unit, mass, distance: float): float =
   ## The pull the mesh hands a particle `distance` from the centre of a uniform
-  ## disc of `mass` particles, outside the disc: `strength * entry * cellArea *
-  ## mass / (2 pi distance)`. The field is the 2D Green's function of the
-  ## disc's charge; the cellArea is there because lrKernel folds in 1/(W*H)
-  ## against a density counted per cell. Unscreened and unsoftened: the
-  ## limit of lr-force.wgsl's read at a reach far past `distance` and a
-  ## distance far past the softening.
-  strength * entry * cellArea * mass / (2.0 * PI * distance)
+  ## disc of `mass` particles, outside the disc: `strength * entry * unit *
+  ## mass / (2 pi distance)`, with `unit` from lrPairUnit. Unscreened and
+  ## unsoftened: the limit of lr-force.wgsl's read at a reach far past
+  ## `distance` and a distance far past the softening.
+  strength * entry * unit * mass / (2.0 * PI * distance)
 
 func lrFoldBin*(index, extent: int): int =
   ## A bin index folded into [-extent/2, extent/2), which is the signed

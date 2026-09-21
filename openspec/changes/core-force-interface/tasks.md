@@ -194,13 +194,13 @@ Conventions every task below uses:
 
 ## 6. The long-range pull in the pair unit
 
-- [ ] 6.1 **Red.** Add three suites to `tests/test_long_range_core.nim`, each with its tolerance and measured source beside it:
+- [x] 6.1 **Red.** Add three suites to `tests/test_long_range_core.nim`, each with its tolerance and measured source beside it:
   - "The Pull Does Not Depend On Mesh Size": every size in `LR_GRID_SIZES`, sampled 240 and 600 from the clump's centre along +x and +y, clump placed by seeds 42/7/1001, within the gate bounds 0.271% and 0.126% (design C2)
   - "The Pull Is The Pair Unit Spread By The Green's Function": reach `LONG_RANGE_REACH_MAX`, sampled 240 from the centre along +x and +y on every size, same seeds, radii 10, 50 and 150, within the gate bound 4.31% (design C1)
   - "One Long-Range Full Effect Holds At Every Radius": `F_LR`'s derivation in `src/balance_core.nim` returns one value at radii 10, 50 and 150
 
   Verify all three fail on today's code: the 4.006–4.010 mesh ratio, the `cellArea` factor, and a full effect moving with the radius.
-- [ ] 6.2 Add a `long_range_core` force-scale function to `src/long_range_core.nim`: `U(R) = u0 · R² · (a + R) / a²` with `a = √(A_world / (π · x_on))`, reading `X_ON` from 4.7. `src/webgpu_compute.nim:1125-1126` writes it to `LR_FORCE_SCALE`. The long-range arm of `unitImpulse` and the `F_LR` reference-colony derivation go in `src/balance_core.nim`. Verify 6.1 passes and "The Solve Is Linear In The Source Densities" stays green. Until 7.6's conversion lands, a saved non-zero long-range world loads unconverted. No shipped preset carries one (`src/preset.nim:276`).
+- [x] 6.2 Add a `long_range_core` force-scale function to `src/long_range_core.nim`: `U(R) = u0 · R² · (a + R) / a²` with `a = √(A_world / (π · x_on))`, reading `X_ON` from 4.7. `src/webgpu_compute.nim:1125-1126` writes it to `LR_FORCE_SCALE`. The long-range arm of `unitImpulse` and the `F_LR` reference-colony derivation go in `src/balance_core.nim`. Verify 6.1 passes and "The Solve Is Linear In The Source Densities" stays green. Until 7.6's conversion lands, a saved non-zero long-range world loads unconverted. No shipped preset carries one (`src/preset.nim:276`).
 - [ ] 6.3 Update the long-range help. The `longRangeStrength` line in `docs/help/35-long-range.md` says that at a fixed strength a larger interaction radius strengthens the pull about as its square, and `docs/slider-interactions.md` edge 46 is rewired to mesh-independent. Verify `tests/test_help_content.nim` passes.
 
 ## 7. Gate G2, the calibrated strengths and schema version 5

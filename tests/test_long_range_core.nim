@@ -922,8 +922,7 @@ suite "One Long-Range Full Effect Holds At Every Radius":
         particleCount: MAX_PARTICLES, interactionRadius: radius,
         worldWidth: TEST_WORLD_W, worldHeight: TEST_WORLD_H,
         onsetRatio: CROWD_ONSET_RATIO, attraction: MATRIX_MAX_VALUE,
-        pairGain: FORCE_STRENGTH_MAX, repulsionEnd: 0.5, attractionPeak: 0.75,
-        longRangeGrid: LR_GRID_SIZES[^1]))
+        pairGain: FORCE_STRENGTH_MAX, repulsionEnd: 0.5, attractionPeak: 0.75))
     require gains[0] > 0.0
     for i in 1 ..< gains.len:
       let spread = abs(gains[i] / gains[0] - 1.0)

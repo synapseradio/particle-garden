@@ -186,11 +186,11 @@ func unitImpulse*(id: UnitFnId; cfg: UnitConfig): float =
       worldUnitsPerCell(FIELD_W.float, cfg.worldWidth)
     abs(speciesTropismForce(gradient, forceScale, cfg.tropism)) / u0
   of ufLongRange:
-    # lr-force.wgsl at today's scale: one interaction radius past the edge
-    # of the reference colony.
-    let cellArea = lrCellArea(cfg.longRangeGrid.w, cfg.longRangeGrid.h,
+    # lr-force.wgsl in the pair unit: one interaction radius past the edge of
+    # the reference colony.
+    let unit = lrPairUnit(cfg.interactionRadius, cfg.onsetRatio,
       cfg.worldWidth, cfg.worldHeight)
-    lrDiscPull(cfg.longRangeStrength, cfg.attraction, cellArea,
+    lrDiscPull(cfg.longRangeStrength, cfg.attraction, unit,
       cfg.particleCount.float,
       referenceColonyRadius(cfg) + cfg.interactionRadius) / u0
   of ufBodies:

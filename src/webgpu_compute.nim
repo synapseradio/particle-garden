@@ -1151,7 +1151,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   lrParamsUint[LR_GRID_W] = uint32(lrSize.w)
   lrParamsUint[LR_GRID_H] = uint32(lrSize.h)
   lrParamsUint[LR_SPECIES_COUNT] = uint32(lrSpecies)
-  lrParamsData[LR_FORCE_SCALE] = float32(config.CONFIG.longRangeStrength)
+  lrParamsData[LR_FORCE_SCALE] = float32(lrForceScale(
+    config.CONFIG.longRangeStrength, float(config.CONFIG.interactionRadius),
+    CROWD_ONSET_RATIO, lrSize.w, lrSize.h, width, height))
   # 1/lambda^2 from the reach the user set. The reach's range floor is strictly
   # positive so this inverse always exists.
   lrParamsData[LR_INV_REACH_SQ] =
