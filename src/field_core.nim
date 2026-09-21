@@ -259,7 +259,7 @@ func patternDiameterWorld*(diffusionA, fieldExtent, worldExtent: float): float =
 
 func rdDiffusionRates*(scale: float): tuple[activator, inhibitor: float] =
   ## The activator and inhibitor diffusion rates at a pattern scale.
-  (activator: RD_DIFFUSION_A, inhibitor: RD_DIFFUSION_B)
+  (activator: RD_DIFFUSION_A * scale, inhibitor: RD_DIFFUSION_B * scale)
 
 static:
   # Field cells must be square in world units. field-deposit.wgsl maps the whole
@@ -358,13 +358,14 @@ const
     ## on the state would clip those; a ceiling on what particles add does not.
 
 func resolveCellDeposit*(inhibitor, deposit: float,
-    scale = RD_DEPOSIT_FRAME_SCALE): float =
+    scale = RD_DEPOSIT_FRAME_SCALE, cap = RD_DEPOSIT_CELL_MAX): float =
   ## One cell's inhibitor after this frame's particle deposits land on it.
   ## Mirrors field-resolve.wgsl in the same order: cap the incoming deposit,
   ## scale it per field step, fold it onto the inhibitor, then floor the fold
   ## at 0.0. The cap is on what arrives, never on what the reaction produces,
-  ## so the dynamics keep every excursion they make. The scale parameter
-  ## exists for the invariance test; every shipped caller takes the default.
+  ## so the dynamics keep every excursion they make. The scale and cap
+  ## parameters exist for the invariance test and the cap's stability margin;
+  ## every shipped caller takes the defaults.
   ##
   ## The cap bounds excess only from above (min() against a negative deposit
   ## is a no-op), so full-erosion secretion has no matching floor without this
@@ -372,7 +373,7 @@ func resolveCellDeposit*(inhibitor, deposit: float,
   ## the reaction term (activator * inhibitor^2) does not distinguish sign —
   ## a negative inhibitor erodes activator the same way a positive one would
   ## spend it.
-  max(0.0, inhibitor + scale * min(deposit, RD_DEPOSIT_CELL_MAX))
+  max(0.0, inhibitor + scale * min(deposit, cap))
 
 func depositSplatWeight*(distance, radius: float): float =
   ## Unnormalized weight one cell receives from a particle `distance` cells

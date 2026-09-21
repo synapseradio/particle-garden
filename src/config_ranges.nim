@@ -451,32 +451,30 @@ const
     ## docs/research/chemotaxis-stability.md). The bound is asymmetric by
     ## design, not by oversight.
     ##
-    ## MEASURED COLLAPSE POINT: tropism 4.0 (8x this bound), at deposit 0.8
-    ## (10x RD_DEPOSIT_MAX) and fieldForceScale 150. There the field diverges
-    ## to infinity and every particle ends in a single field cell. At the same
-    ## deposit and field force, this bound stays finite (maxB 0.886), so the
-    ## collapse point is bracketed in (1x, 8x] of 0.5 under those conditions.
-    ## tests/test_field_core.nim's "Chemotactic Collapse Bound" suite holds the
-    ## measurement and the bracket.
+    ## MEASURED COLLAPSE BRACKET at pattern scale 1, fieldForceScale 37.5,
+    ## harness at 1.875 world units per cell: no tropism up to 1024x this bound
+    ## diverges the field at 5x RD_DEPOSIT_MAX, and 2x this bound diverges it
+    ## at 7.5x, so the deposit bracket is (5x, 7.5x]. tests/test_field_core.nim's
+    ## "Chemotactic Collapse Bound" suite holds the measurement and the bracket.
     ##
     ## THE COLLAPSE IS CHEMOTACTIC, not the deposit flooding on its own. The
-    ## control settles it: the same 0.8 deposit laid down by a FROZEN
-    ## population stays finite and saturates at maxB 0.856. Only the
+    ## control settles it: the same 7.5x deposit laid down by a FROZEN
+    ## population stays finite and saturates at maxB 0.876. Only the
     ## up-gradient motion, concentrating that deposit into one place, diverges
     ## the field. Concentration is the variable, not amplitude.
     ##
     ## WHAT BOUNDS THE REACHABLE RANGE IS RD_DEPOSIT_MAX, NOT THIS CONSTANT.
     ## Inside the deposit range the slider offers, no tropism collapses the
-    ## field at all — 1024x this bound stays finite and bounded (maxB 0.803,
-    ## peak cell 0.102 of the population). Collapse lives in the PRODUCT of
+    ## field at all — 1024x this bound stays finite and bounded (maxB 0.696,
+    ## peak cell 0.023 of the population). Collapse lives in the PRODUCT of
     ## tropism and deposit, and the deposit ceiling is already far enough below
     ## it that tropism has a thousandfold margin. This bound is the second line
     ## of defence, and it is worth keeping precisely because the two multiply:
     ## anything that later raises RD_DEPOSIT_MAX spends this margin too.
     ##
     ## Gray-Scott's (feed+kill)*B sink is what saturates the field against
-    ## deposit AMPLITUDE — 1x and 10x the ceiling land within 0.1 of each other
-    ## when the deposit is uniform. It does not saturate it against
+    ## deposit AMPLITUDE — a uniform deposit at 7.5x and at 30x the ceiling
+    ## peaks at 0.876 and 1.008. It does not saturate it against
     ## CONCENTRATION: raising the rate per cell lets the autocatalytic A*B^2
     ## term outrun the sink. Do not reason from "Gray-Scott bounds its own
     ## inhibitor" to "no collapse is possible"; the measurement above is what

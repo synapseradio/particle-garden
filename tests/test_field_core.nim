@@ -224,23 +224,25 @@ func blobSeed(nonce: uint32): tuple[a, b: HarnessField] =
       result.b[y][x] = cell.inhibitor
 
 func substep(sourceA, sourceB: HarnessField, targetA, targetB: var HarnessField,
-    feed, kill: float) =
+    feed, kill, patternScale: float) =
   ## One Gray-Scott substep over the whole grid, reading one field pair and
   ## writing the other.
+  let rates = rdDiffusionRates(patternScale)
   for y in 0 ..< HARNESS_GRID:
     for x in 0 ..< HARNESS_GRID:
       let (a, b) = grayScottStep(
         activator = sourceA[y][x], inhibitor = sourceB[y][x],
         laplacianA = harnessStencil(sourceA, x, y),
         laplacianB = harnessStencil(sourceB, x, y),
-        diffusionA = RD_DIFFUSION_A, diffusionB = RD_DIFFUSION_B,
+        diffusionA = rates.activator, diffusionB = rates.inhibitor,
         feed = feed, kill = kill, deltaT = RD_DELTA_T)
       targetA[y][x] = a
       targetB[y][x] = b
 
 func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
     mask: HarnessField, deposit, feed, kill: float,
-    substeps = RD_STEPS_PER_FRAME, depositScale = RD_DEPOSIT_FRAME_SCALE) =
+    substeps = RD_STEPS_PER_FRAME, depositScale = RD_DEPOSIT_FRAME_SCALE,
+    patternScale = 1.0) =
   ## One shipped frame in the order webgpu_compute encodes it: fieldResolve
   ## folds every particle's deposit into the inhibitor channel once — scaled
   ## by RD_DEPOSIT_FRAME_SCALE, mirroring field-resolve.wgsl — then
@@ -259,18 +261,18 @@ func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
       fieldB[y][x] = fieldB[y][x] + depositScale * mask[y][x] * deposit
   for index in 0 ..< substeps:
     if index mod 2 == 0:
-      substep(fieldA, fieldB, scratchA, scratchB, feed, kill)
+      substep(fieldA, fieldB, scratchA, scratchB, feed, kill, patternScale)
     else:
-      substep(scratchA, scratchB, fieldA, fieldB, feed, kill)
+      substep(scratchA, scratchB, fieldA, fieldB, feed, kill, patternScale)
   fieldA = scratchA
   fieldB = scratchB
 
 func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
     feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL,
     mask = depositMask(), substeps = RD_STEPS_PER_FRAME,
-    depositScale = RD_DEPOSIT_FRAME_SCALE): FieldStats =
+    depositScale = RD_DEPOSIT_FRAME_SCALE, patternScale = 1.0): FieldStats =
   ## Run `frames` shipped frames from a seed and summarize the inhibitor
-  ## channel. The two trailing parameters pass through to advanceFrame for
+  ## channel. `substeps` and `depositScale` pass through to advanceFrame for
   ## the fold-invariance test; every other caller takes the shipped defaults.
   var fieldA = seedA
   var fieldB = seedB
@@ -278,7 +280,7 @@ func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
 
   for _ in 0 ..< frames:
     advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill,
-      substeps, depositScale)
+      substeps, depositScale, patternScale)
 
   const CELLS = HARNESS_GRID * HARNESS_GRID
   var total = 0.0
@@ -304,7 +306,7 @@ func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
 
 func framesToIgnite(mask: HarnessField, deposit: float,
     budget = IGNITION_FRAME_BUDGET,
-    feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL): int =
+    feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL, patternScale = 1.0): int =
   ## Frame on which the field first crosses ALIVE_THRESHOLD anywhere, starting
   ## from the trivial fixed point, or -1 if it never does within `budget`.
   ##
@@ -316,7 +318,8 @@ func framesToIgnite(mask: HarnessField, deposit: float,
   var fieldB = seed.b
   var scratchA, scratchB: HarnessField
   for frame in 0 ..< budget:
-    advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill)
+    advanceFrame(fieldA, fieldB, scratchA, scratchB, mask, deposit, feed, kill,
+      patternScale = patternScale)
     for y in 0 ..< HARNESS_GRID:
       for x in 0 ..< HARNESS_GRID:
         if fieldB[y][x] > ALIVE_THRESHOLD: return frame + 1
@@ -333,13 +336,11 @@ func framesToIgnite(mask: HarnessField, deposit: float,
 # frame order. The particle half mirrors field-force.wgsl's gradient sample and
 # integrate.wgsl's friction, soft velocity cap, and toroidal wrap.
 #
-# UNITS. field-force.wgsl computes an impulse in WORLD pixels from a gradient
-# per FIELD CELL, so how many pixels a cell spans decides how far a given
-# fieldForceScale actually moves a particle. The harness therefore runs in
-# pixels with the same pixels-per-cell the shipped field has at a reference
-# window width: 1920 px across FIELD_W cells is 3.75 px per cell, so a 64-cell
-# harness world is 240 px wide. Everything below is that geometry, and the
-# collapse point measured here is a statement about it.
+# UNITS. field-force.wgsl computes an impulse in world units from a gradient
+# per field cell, so the world units a cell spans decide how far a given
+# fieldForceScale moves a particle. The harness runs at the shipped span,
+# WORLD_W / FIELD_W = 1.875 units per cell, so its 64-cell world is 120 units
+# wide, and the collapse bracket measured here is a statement about that span.
 
 const
   CHEMOTAXIS_PARTICLES = 256
@@ -350,14 +351,9 @@ const
     ## 12 under uniform coverage) and for aggregation to develop and settle
     ## after it. Held down deliberately: the field half of a frame is the
     ## suite's most expensive operation, and these runs are its heaviest user.
-  CHEMOTAXIS_REFERENCE_WORLD_WIDTH = 1920.0
-    ## Reference window width the harness geometry is derived from. Only the
-    ## ratio to FIELD_W matters: it sets how many pixels one field cell spans,
-    ## and therefore how far one unit of fieldForceScale carries a particle
-    ## across the pattern.
   CHEMOTAXIS_WORLD_PX =
-    HARNESS_GRID.float * CHEMOTAXIS_REFERENCE_WORLD_WIDTH / FIELD_W.float
-    ## Harness world width in pixels: 240, giving the shipped 3.75 px per cell.
+    HARNESS_GRID.float * worldUnitsPerCell(FIELD_W.float, CONFIG_WORLD_W)
+    ## Harness world width in world units.
   CHEMOTAXIS_FRICTION = 0.95
     ## The multiplier integrate.wgsl applies, at simulation_state's default
     ## friction of 0.05 (app.nim passes 1 - friction).
@@ -491,7 +487,8 @@ func chemotaxisPeakOccupancy(particles: seq[ChemotaxisParticle]):
 
 proc runChemotaxis(tropism: float, deposit = RD_DEPOSIT_MAX,
     fieldForceScale = RD_DEFAULT_FIELD_FORCE,
-    secretion = SECRETION_MAX, frames = CHEMOTAXIS_FRAMES): ChemotaxisRun =
+    secretion = SECRETION_MAX, frames = CHEMOTAXIS_FRAMES,
+    patternScale = 1.0): ChemotaxisRun =
   ## One full run from the trivial fixed point with a scattered population.
   ## Reports the WORST aggregation seen at any point in the run, not the final
   ## frame's: a collapse that forms and then scatters is still a collapse, and
@@ -505,7 +502,7 @@ proc runChemotaxis(tropism: float, deposit = RD_DEPOSIT_MAX,
   for _ in 0 ..< frames:
     advanceFrame(fieldA, fieldB, scratchA, scratchB,
       chemotaxisMask(particles, secretion), deposit,
-      RD_DEFAULT_FEED, RD_DEFAULT_KILL)
+      RD_DEFAULT_FEED, RD_DEFAULT_KILL, patternScale = patternScale)
     chemotaxisAdvanceParticles(particles, fieldB, fieldForceScale, tropism)
     let occupancy = chemotaxisPeakOccupancy(particles)
     if occupancy.tile > result.peakTile: result.peakTile = occupancy.tile
@@ -1016,13 +1013,16 @@ suite "Chemotactic Collapse Bound":
   let downRun = runChemotaxis(TROPISM_MIN, fieldForceScale = RD_FIELD_FORCE_MAX)
   let reachableExtremeRun = runChemotaxis(
     TROPISM_MAX * 1024.0, fieldForceScale = RD_FIELD_FORCE_MAX)
-  const COLLAPSE_DEPOSIT_SAFE_MULTIPLE = 10.0
+  const COLLAPSE_DEPOSIT_SAFE_MULTIPLE = 5.0
     ## Largest deposit, in multiples of RD_DEPOSIT_MAX, at which no tropism
     ## sampled diverges the field. The lower half of the bracket.
-  const COLLAPSE_DEPOSIT_MULTIPLE = 15.0
+  const COLLAPSE_DEPOSIT_MULTIPLE = 7.5
     ## Smallest deposit sampled at which some tropism DOES diverge it, and low
     ## enough that the deposit alone still cannot — a frozen population stays
     ## finite here and through 30x, and only diverges by 40x. The upper half.
+  const COLLAPSE_TROPISM_MULTIPLE = 2.0
+    ## The tropism, in multiples of TROPISM_MAX, that diverges the field at
+    ## COLLAPSE_DEPOSIT_MULTIPLE.
     ## Measured at the reference step count: if RD_STEPS_PER_FRAME moves, the
     ## demonstration needs field-time parity — nominal multiple scaled by the
     ## inverse of RD_DEPOSIT_FRAME_SCALE and demo frames scaled to the same
@@ -1044,7 +1044,8 @@ suite "Chemotactic Collapse Bound":
     TROPISM_MAX * 8.0, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
     fieldForceScale = RD_FIELD_FORCE_MAX)
   let collapsedRun = runChemotaxis(
-    TROPISM_MAX, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
+    TROPISM_MAX * COLLAPSE_TROPISM_MULTIPLE,
+    deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
     fieldForceScale = RD_FIELD_FORCE_MAX)
 
   test "the harness maps world units to cells as the shipped field does":
@@ -1059,8 +1060,8 @@ suite "Chemotactic Collapse Bound":
     # field may run away — at the default field force and at the strongest the
     # slider offers.
     # Observed over 120 frames (peak tile / peak cell / maxB):
-    #   fieldForceScale 30:  0.102 / 0.051 / 0.786
-    #   fieldForceScale 150: 0.211 / 0.039 / 0.793
+    #   fieldForceScale 7.5:  0.082 / 0.047 / 0.796
+    #   fieldForceScale 37.5: 0.184 / 0.051 / 0.812
     for run in [boundRunDefault, boundRunMaxForce]:
       check run.finite
       check run.maxB < 1.5
@@ -1071,19 +1072,18 @@ suite "Chemotactic Collapse Bound":
     # actually brackets. THE DEPOSIT CEILING IS WHAT PROTECTS THE WORLD, not the
     # tropism bound — the suite's own conclusion, now the thing asserted.
     #
-    # MEASURED, fieldForceScale at its maximum, tropism 0 to 128x the bound
+    # MEASURED, fieldForceScale at its maximum, tropism 0 to 1024x the bound
     # (DIVERGED marks the tropism multiples that ran away):
     #   deposit  5x ceiling: finite everywhere
-    #   deposit 10x ceiling: finite everywhere
-    #   deposit 15x ceiling: DIVERGED at 1x and 2x
-    #   deposit 20x ceiling: DIVERGED at 1x, 2x and 4x
-    #   deposit 30x ceiling: DIVERGED at 1x, 2x, 4x and 8x
-    # So the deposit bracket is (10x, 15x] of a ceiling the slider already caps,
-    # and the reachable range sits an order of magnitude below it.
+    #   deposit 7.5x ceiling: DIVERGED at 2x
+    #   deposit 10x ceiling: DIVERGED at 1x and 4x
+    #   deposit 15x ceiling: DIVERGED at 2x, 4x, 8x, 128x and 1024x
+    #   deposit 30x ceiling: DIVERGED at every tropism but 0 and 32x
+    # So the deposit bracket is (5x, 7.5x] of a ceiling the slider already caps.
     #
-    # Collapse lives in a middle band of tropism, which is why no bound on
-    # tropism alone would help: at zero there is no aggregation to run away, and
-    # at 16x and above particles overshoot the well and scatter instead of
+    # Collapse lives mostly in a middle band of tropism, which is why no bound
+    # on tropism alone would help: at zero there is no aggregation to run away,
+    # and from 16x to 64x particles overshoot the well and scatter instead of
     # pooling. Only moderate chemotaxis dwells long enough to concentrate a
     # deposit, and the band widens downward from the top as the deposit rises.
     # A tropism bound cannot sit below a band whose floor it is already inside.
@@ -1093,7 +1093,7 @@ suite "Chemotactic Collapse Bound":
     check not collapsedRun.finite
 
   test "the collapse belongs to the chemotaxis, not to the deposit alone":
-    # The control that makes the previous test mean anything: fifteen times the
+    # The control that makes the previous test mean anything: 7.5 times the
     # deposit ceiling is far outside the slider range, so a divergence there
     # could plausibly be the deposit flooding the field on its own — which
     # would say nothing about tropism. It is not: with the SAME deposit and no
@@ -1101,8 +1101,9 @@ suite "Chemotactic Collapse Bound":
     # does. Only the up-gradient motion, concentrating that deposit into one
     # place, diverges it.
     #
-    # OBSERVED, frozen population, fieldForceScale at maximum: maxB 0.908 at 15x
-    # the deposit ceiling, still finite at 30x (maxB 1.008), divergent by 40x.
+    # OBSERVED, frozen population, fieldForceScale at maximum: maxB 0.876 at
+    # 7.5x the deposit ceiling, still finite at 30x (maxB 1.008), divergent by
+    # 40x.
     # COLLAPSE_DEPOSIT_MULTIPLE carries the reasoning behind the gap.
     check frozenAtHighDeposit.finite
     check frozenAtHighDeposit.maxB < 1.5
@@ -1126,8 +1127,8 @@ suite "Chemotactic Collapse Bound":
     # The mechanism, stated as a checkable relation rather than as prose: the
     # inhibitor's linear (feed+kill)*B sink grows with B while the deposit rate
     # per cell does not, so raising the deposit uniformly only moves the
-    # saturation point a little: 1x and 10x the ceiling land within 0.1 of each
-    # other. Concentrating the same deposit is a different matter — that raises
+    # saturation point a little: 7.5x and 30x the ceiling peak at 0.876 and
+    # 1.008. Concentrating the same deposit is a different matter — that raises
     # the rate PER CELL, and past a threshold the autocatalytic A*B^2 term
     # outruns the sink and the peak runs away.
     #
@@ -1135,14 +1136,14 @@ suite "Chemotactic Collapse Bound":
     # its own inhibitor, so no collapse is possible". Gray-Scott bounds it
     # against amplitude, not against concentration.
     # OBSERVED (frozen, uniform deposits): 1x -> maxB 0.015 (never ignites),
-    # 15x -> maxB 0.908, 30x -> 1.008. Fifteen times the deposit ceiling under
-    # 128x the tropism bound, which concentrates rather than spreads it,
+    # 7.5x -> maxB 0.876, 30x -> 1.008. 7.5 times the deposit ceiling under
+    # twice the tropism bound, which concentrates rather than spreads it,
     # diverges from that same band.
     check frozenAtHighDeposit.maxB < 1.5
     check chemotaxisAtHighDeposit.maxB < 1.5
     # A uniform deposit and the same deposit under bounded chemotaxis land in
     # the same saturated band; only unbounded concentration escapes it.
-    # OBSERVED: 0.908 frozen against 0.966 under chemotaxis at 8x the bound.
+    # OBSERVED: 0.876 frozen against 0.906 under chemotaxis at 8x the bound.
     check abs(frozenAtHighDeposit.maxB - chemotaxisAtHighDeposit.maxB) < 0.3
 
   test "the down-gradient sign does not aggregate beyond the scattering floor":
@@ -1184,7 +1185,7 @@ suite "Chemotactic Collapse Bound":
     # coherence instead.
     # The shipped default tropism is negative, so the field ignites from
     # COLONIES, never from the chemistry alone.
-    # OBSERVED: frozen maxB 0.015, down-gradient 0.013, up-gradient 0.793.
+    # OBSERVED: frozen maxB 0.015, down-gradient 0.014, up-gradient 0.812.
     check frozenRun.maxB < 0.05
     check downRun.maxB < 0.05
     check boundRunMaxForce.maxB > 0.5
