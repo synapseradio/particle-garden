@@ -733,6 +733,33 @@ suite "Only Integrate Reads The Frame Factor":
     check arraysSeen.len == WRITER_PARAMS.len
 
 
+suite "The Crowd Buffer's Clear Covers All Three Words":
+  # webgpu_init sizes the crowd buffer at stride 3 (crowd, stiffnessFine,
+  # stiffnessCoarse; crowding-redesign design §4). A clear sized like the
+  # single-word delta buffers would leave the two stiffness words holding the
+  # previous frame's slope with no validation error. Read from source, since
+  # webgpu_compute opens on std/jsffi and no native test can import it.
+
+  test "sbCrowdDensityDelta's byte length is not grouped with the single-word deltas":
+    let lines = readFile("src/webgpu_compute.nim").splitLines
+    var inByteLengthFor = false
+    var statement = ""
+    for line in lines:
+      if line.strip.startsWith("proc byteLengthFor"):
+        inByteLengthFor = true
+        continue
+      if inByteLengthFor and line.strip.startsWith("proc "):
+        break
+      if inByteLengthFor and "sbCrowdDensityDelta" in line and "of " in line:
+        statement = line
+        break
+    checkpoint("sbCrowdDensityDelta's byteLengthFor arm: " & statement)
+    check statement.len > 0
+    check "sbDensityDelta" notin statement
+    check "sbSphDensityDelta" notin statement
+    check "3" in statement
+
+
 suite "Bounds Read Only Declared Parameters":
   # coupling-contract, "No coupling's range reads another coupling's
   # ceiling": for each registered ceiling, the CeilingInputs fields it is
