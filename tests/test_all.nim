@@ -20,7 +20,6 @@ import test_field_core
 import test_body_core
 import test_long_range_core
 import test_bloom_core
-import test_colormap_core
 import test_glow_core
 import test_trail_core
 import test_param_descriptor
@@ -69,7 +68,6 @@ static:
   discard test_body_core.BODY_CORE_TESTS_LOADED
   discard test_long_range_core.LONG_RANGE_CORE_TESTS_LOADED
   discard test_bloom_core.BLOOM_CORE_TESTS_LOADED
-  discard test_colormap_core.COLORMAP_CORE_TESTS_LOADED
   discard test_glow_core.GLOW_CORE_TESTS_LOADED
   discard test_trail_core.TRAIL_CORE_TESTS_LOADED
   discard test_param_descriptor.PARAM_DESCRIPTOR_TESTS_LOADED

@@ -22,7 +22,6 @@ import memory_layout
 import sph_core
 import field_core
 import bloom_core
-import colormap_core
 import body_core
 import long_range_core
 from physics_core import FRAME_DT_REFERENCE, VELOCITY_FIXED_POINT_SCALE,
@@ -559,14 +558,6 @@ const
   CONTRAST_MAX* = 2.0
   TEMPERATURE_MIN* = -1.0
   TEMPERATURE_MAX* = 1.0
-  # Reaction-diffusion field visualization. colormapIndex is an integer
-  # ramp selector (a button group, not a slider, but preset.nim clamps it);
-  # fieldOpacity is a slider. Both ranges come from colormap_core, the field
-  # colormap authority.
-  COLORMAP_INDEX_MIN* = 0
-  COLORMAP_INDEX_MAX* = COLORMAP_COUNT - 1
-  FIELD_OPACITY_RANGE_MIN* = FIELD_OPACITY_MIN
-  FIELD_OPACITY_RANGE_MAX* = FIELD_OPACITY_MAX
 
 # THE PATTERN-SCALE BAND. Gate G3 measured every scale-dependent field constant
 # at these steps (scratchpad/core-force-interface/g3__21-09-26-2010.md).
@@ -934,14 +925,6 @@ static:
     BLOOM_DEFAULT_CONTRAST <= CONTRAST_MAX
   doAssert BLOOM_DEFAULT_TEMPERATURE >= TEMPERATURE_MIN and
     BLOOM_DEFAULT_TEMPERATURE <= TEMPERATURE_MAX
-  # Field-visualization ranges are non-empty and colormap_core's defaults sit
-  # inside them — the same default-in-range guard as the bloom/RD pairs.
-  doAssert COLORMAP_INDEX_MIN < COLORMAP_INDEX_MAX
-  doAssert FIELD_OPACITY_RANGE_MIN < FIELD_OPACITY_RANGE_MAX
-  doAssert COLORMAP_DEFAULT_INDEX >= COLORMAP_INDEX_MIN and
-    COLORMAP_DEFAULT_INDEX <= COLORMAP_INDEX_MAX
-  doAssert FIELD_OPACITY_DEFAULT >= FIELD_OPACITY_RANGE_MIN and
-    FIELD_OPACITY_DEFAULT <= FIELD_OPACITY_RANGE_MAX
   # The two velocity words each hold a full crowd at the range maxima.
   doAssert FLUID_STRENGTH_MAX <= 1.0,
     "the coarse word is budgeted at the fluid's gain ceiling of 1"
