@@ -63,22 +63,46 @@ Conventions every task below uses:
 
 ## 3. The integrator owns the substep count
 
-- [x] 3.1 **Red.** Write suite "Substeps Follow The Tightest Coupling" in `tests/test_sim_registry.nim` over a stub `substepPlan` that returns count 1. It holds design N4's worked values:
+- [ ] 3.1 **Reopened** (crowding-redesign design §10): `n_ff = ⌈ff / ff_stable⌉` is disproved and removed
+  from `substepPlan`'s count — the bisection at 128 000 particles found `ff_stable = 1`, not the
+  provisional 12 this task's worked values assumed
+  (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44`), and pressure stability is now
+  the step limit's job (C4b), which asks for no substep count. **Red.** Write suite "Substeps Follow
+  The Tightest Coupling" in `tests/test_sim_registry.nim` over a stub `substepPlan` that returns count
+  1. It holds design N4's worked values, `n = max(n_T, n_c)` (no `n_ff` term):
   - shipped settings (band 120, Max Velocity 50, ff 1, fluid off) give `n = 1`
   - stiffness 40 at `h` 50 and ff 1 gives 3
   - ff 10 with a live body gives `n_T = 5`, so the frame runs 3 at `effMaxVelocity` 36
-  - ff 30 gives 3
+  - ff 30 with no travel or fluid ask gives `n = 1` (not 3: the step limit, T1–T7, holds it stable)
   - the band floor 25 at ff 1 and Max Velocity 50 gives 2
   - Bodies above 0 with no live body declares no length
   - a fluid request past `SUBSTEPS_MAX` runs 3 at `effStiffness` with the stored value unchanged
 
-  Verify it fails on values against the stub.
+  T9 "Substeps Follow The Tightest Coupling" (amended, `tests/test_sim_registry.nim:795,861-870`): ff 30
+  with no travel or fluid ask gives 1 substep, not `⌈30/12⌉ = 3`. Verify it fails on values against the
+  stub.
 - [x] 3.2 **Red.** Four more failing tests:
   - Extend "Post-Step Speed Mirror" in `tests/test_physics.nim`: the cap is per reference frame (today's curve applied to `speed / ff_sub`, rescaled by `ff_sub`), per-step travel is at most `maxVelocity · ff_sub`, and the result is bit-identical at `ff_sub = 1`. It fails today because the per-step cap clips travel at `maxVelocity`.
   - Rewrite "An Enclosing Body Cannot Be Tunnelled" (`tests/test_body_core.nim:951`) to step at `substepPlan`'s count with the per-step travel model. It fails against the stub, because at band 25, Max Velocity 50 and ff 1 one step carries a particle 50.
   - Add suite "The Fluid Declares The Substeps Its Stiffness Needs" to `tests/test_sph_core.nim`: at every corner of the input box the declared count is the smallest whose ceiling holds the stiffness, and the harness comes to rest there.
   - In `tests/test_param_descriptor.nim`, "Descriptor Table Covers The Full Tunable Inventory" drops `sphSubsteps` from the id set, and "A Derived Bound Cites A Registered Ceiling" uses a box with no substep axis. Both fail while the descriptor and `CeilingInputs.sphSubsteps` exist.
-- [x] 3.3 Implement `func substepPlan*(ff: float; live: LiveValues): SubstepPlan` in `src/sim_registry.nim` (N1, N4). `SubstepNeedId` and the `substepNeed` field already sit on every declaration, landed by 1.7 in `f483b5d` (`src/sim_registry.nim:529-534,551`), so 3.3 reads them rather than adding them. In `src/config_ranges.nim`, `SUBSTEPS_MAX = 3` replaces `SPH_MAX_SUBSTEPS` (`src/sph_core.nim:34`), with the per-extra-substep cost at 128k beside it: 1.56 ms from the 30 s run and 7.95 ms from the 150 s run, a lower bound (`docs/perf-report.md:83-84`). `FF_STABLE = 12` goes in marked provisional until 4.5. `src/webgpu_compute.nim:984-988` becomes the plan, writing `frameFactor = ff / count`, the effective Max Velocity into the integrate params and the effective stiffness into the SPH params, with `bodyLive` from `liveSlots` (`src/body_core.nim:494`). The per-reference-frame cap goes in `web/shaders/src/integrate.wgsl` and its oracle in `src/physics_core.nim`. `BODY_BAND_MIN = 25.0` becomes a stated literal in `src/config_ranges.nim`, and `BODY_BAND_FLOOR`, `BODY_LARGEST_SUBSTEP_DT`, `BODY_LARGEST_FRAME_FACTOR` and the tests pinning them leave `src/body_core.nim` and `tests/test_body_core.nim`. Verify 3.1 and the first three parts of 3.2 pass.
+- [ ] 3.3 **Reopened** (crowding-redesign design §10): `FF_STABLE` leaves `src/config_ranges.nim:187`
+  and every reader in `src/sim_registry.nim` (`:34,730,738`), rather than staying provisional at 12; the
+  frame-factor count `n_ff` leaves `substepPlan`. Implement `func substepPlan*(ff: float; live:
+  LiveValues): SubstepPlan` in `src/sim_registry.nim` (N1, N4) as `n = min(max(n_T, n_c),
+  SUBSTEPS_MAX)`. `SubstepNeedId` and the `substepNeed` field already sit on every declaration, landed
+  by 1.7 in `f483b5d` (`src/sim_registry.nim:529-534,551`), so 3.3 reads them rather than adding them.
+  In `src/config_ranges.nim`, `SUBSTEPS_MAX = 3` replaces `SPH_MAX_SUBSTEPS` (`src/sph_core.nim:34`),
+  re-derived from the fluid's ceiling alone rather than from `⌈30/ff_stable⌉` and it, with the
+  per-extra-substep cost at 128k beside it: 1.56 ms from the 30 s run and 7.95 ms from the 150 s run, a
+  lower bound (`docs/perf-report.md:83-84`). `src/webgpu_compute.nim:984-988` becomes the plan, writing
+  `frameFactor = ff / count`, the effective Max Velocity into the integrate params and the effective
+  stiffness into the SPH params, with `bodyLive` from `liveSlots` (`src/body_core.nim:494`). The
+  per-reference-frame cap goes in `web/shaders/src/integrate.wgsl` and its oracle in
+  `src/physics_core.nim`. `BODY_BAND_MIN = 25.0` becomes a stated literal in `src/config_ranges.nim`,
+  and `BODY_BAND_FLOOR`, `BODY_LARGEST_SUBSTEP_DT`, `BODY_LARGEST_FRAME_FACTOR` and the tests pinning
+  them leave `src/body_core.nim` and `tests/test_body_core.nim`. Verify 3.1 and the first three parts of
+  3.2 pass.
 - [x] 3.4 Remove the Substeps slider:
   - the descriptor (`src/ui/api/param_descriptor.nim:598-599`)
   - `CeilingInputs.sphSubsteps` (`:141`), where `ceilingInputs` fills it (`:239`), where `evaluateCeiling` reads it (`:252`), the `ceilingInputBox` axis (`:278,283`) and `minimumCeiling`'s corner (`:300`); the reason text (`:263-269`) and the Stiffness hint name the interaction radius, fluid radius and time scale. The ceiling is then evaluated at `SUBSTEPS_MAX` throughout, which is the count the plan serves (`src/sim_registry.nim:763`), so `minimumCeiling` rises — that rise is what 3.2's three red tests in `tests/test_param_descriptor.nim` expect.
@@ -103,7 +127,12 @@ Conventions every task below uses:
   - "The Species Term Is Untouched Below The Onset", at pair gain × strength 0.7, 1, 2.5 and 5 (new Force Strength 0.14, 0.2, 0.5 and 1, C10 test 4) and frame factor 1
 
   Verify each goes red. The first two fail on values against the stub. "Pressure Past The Onset" also turns red under each of a per-component saturation, a `fMul` factor and a Tait law (mutations). The third turns red when the term is folded into `forceMultiplier * invDistance` (mutation).
-- [x] 4.2 Write the pressure oracle in `src/physics_core.nim` (C4). In `src/balance_core.nim` add:
+- [ ] 4.2 **Reopened** (crowding-redesign design §10, §7): the saturation order in
+  `worldPressureMagnitude` (`src/physics_core.nim:463-472`) changes — the sum saturates before the
+  proximity weight, so a new `worldPressureSum` carries the saturation and `worldPressureMagnitude`
+  multiplies its result by `(1 − r/R)` — and `pairStiffness` (the pair's radial slope) and `stepLimit`
+  (C4b) land in the oracle. Write the pressure oracle in `src/physics_core.nim` (C4). In
+  `src/balance_core.nim` add:
   - the uniform crowd density `N·π·R²/(3A)` — already there as `meanCrowdDensity` (`src/balance_core.nim:78`), so this bullet is read rather than written
   - the contact floor from the pair-law shape, reading `CROWD_PACKING_CONSTANT` moved as it stands from `src/physics_core.nim:157-162`
   - the onset `max(x_on·ρ̄, ρ_floor)`
@@ -122,18 +151,78 @@ Conventions every task below uses:
 
   In `justfile`, delete `calibrate-balance-128k` and restate the comment above `calibrate-balance` for three seeds at 128 000. Rewrite `scratchpad/core-force-interface/seeds.md` to the three seeds. Verify `nim c {{native_flags}} -d:calibrateBalance tests/test_balance_core.nim` compiles, `just test`'s output names none of the calibration suites, and `grep -rn 'calibrateBalance128k\|HELD_OUT_SEEDS\|CALIBRATION_SEEDS\|boundMargin\|RELAXATION_BOUND_16K' tests justfile` is empty.
 - [x] 4.4 **Gate G1.1, the onset; it gates 4.7.** Add one reporting arm under `calibrateBalance` that asserts nothing. On the gate seeds at 128 000 particles and radius 50, polynomial model, one and four species, no coupling but the species force, it prints the p99.9 of `x` at the end of the window, the floor at the preset `repulsionEnd`, and the band's lower edge. Record them in `scratchpad/core-force-interface/g1-onset__<DD-MM-YY-HHmm>.md`, stating that other counts, radii, species counts and the exponential model are unmeasured. `x_on = 6.3` is the user's placement and is not derived from this run: the record states which settles it lies between (below every one-species settle, above every four-species diagonal-only settle).
-- [ ] 4.5 **Gates G1.2 and G1.5, stiffness and `ff_stable`; they gate 4.7.** On the gate seeds at 128 000 particles, radius 50, one self-attracting species, `FRICTION_MIN` and no viscosity:
-  - measure `L` at `K = 540` and record `B_L`; record that `K = 1728`'s `L` exceeds it
-  - at 540 and shipped friction, re-bisect `ff_stable` with 3.3's per-reference-frame cap (design Risks), then run the jittered arms through the substep rule at that `ff_stable`
+- [ ] 4.4b **Red, then green: the lumped stiffness step limit (crowding-redesign design §7, §8).** In
+  writing order:
+  - **Red, unit grain (`tests/test_physics.nim`), against a stub `stepLimit` returning 1 and a stub
+    slope returning 0, so each fails on values, not on a missing symbol:** T1 "The Step Limit Leaves A
+    Calm Particle Untouched", T2 "A Stiff Particle's Step Stays Inside The Bound", T3 "A Pair's
+    Stiffness Is Its Radial Slope", T4 "The Stiffness Words Decode To The Summed Slope", T6 "The Step
+    Limit Scales Every Writer Alike", T8 (amend "A Full Crowd Decodes To Its Impulse",
+    `tests/test_physics.nim:653`, with a `D > 0` arm), T10 (amend "Pressure Past The Onset",
+    `tests/test_physics.nim:814`, for the new saturation order).
+  - **Red, oracle grain (`tests/test_balance_core.nim`), against the same stub, needing only the
+    oracle:** T5 "A Limited Step Cannot Overshoot" (property, not calibration: the unlimited control
+    exceeds spectral radius 1 at ff 30), T7 "A Balance Holds At Every Frame Factor" (integration, not
+    calibration).
+  - **Green.** `src/physics_core.nim`: `worldPressureSum` (the saturated sum before the proximity
+    weight), `stepLimit`, the pair's radial slope, and `ParticleStiffness`/`decodeStiffness`.
+    `src/balance_core.nim`: `sweepPairs` accumulates the stiffness words (both particles, since the
+    slope is symmetric); `integrateParticles` decodes them and applies `stepLimit`; the pressure add
+    splits across both words (fixing the defect at `src/balance_core.nim:473-480`, which today adds to
+    the fine word only, against `web/shaders/src/forces.wgsl:348-363`'s split); the stale comment at
+    `src/balance_core.nim:231-232` ("the pair block here carries the world pressure, which forces.wgsl
+    does not yet carry") is corrected. `src/config_ranges.nim`: `STIFFNESS_FIXED_POINT_SCALE`,
+    `STIFFNESS_COARSE_SHIFT` with its two static assertions (§3.2), `PRESSURE_STEP_BOUND = 2` with its
+    condition. `FF_STABLE` and `n_ff` are deleted (proven dead by 3.1/3.3's reopening), not merely
+    unused.
 
-  A jittered arm warmer than frame factor 1 returns the trigger's hysteresis to the design, and 4.7 waits. Record in `scratchpad/core-force-interface/g1-stiffness__<DD-MM-YY-HHmm>.md`.
-- [x] 4.6 **Gate G1.3, the stacked hold; it gates 4.7.** At the recorded `x_on`, `K` and `q_max`, run the 128 000-particle stacked hold on the gate seeds, with its stiffness-zero control bounded to 100 held frames. Record the after-release neighbour ratios, and the margin the spec's far-world scenario names: the far crowd's mean speed under the hold over the same seed's no-body run. A held peak that reaches the control's returns the design, and 4.7 waits.
-- [ ] 4.7 Record `X_ON` (6.3, the user's placement, with the settles G1.1 records on either side of it), `K = 540`, `B_L` and `FF_STABLE` (replacing 3.3's provisional value) in `src/config_ranges.nim`, each with one or two lines of conditions. Beside `FF_STABLE`, record that friction acts per step, the condition it was measured under. Replace the provisional `FAR_SPEED_MARGIN` and `SETTLE_BOUND` (`B_L`) in `tests/test_balance_core.nim` with the measured values, each reading the owner in `src/config_ranges.nim` where one holds it. Verify `just happen` green.
-- [ ] 4.8 **Red, then wire the pressure** (design N3 step 5, C3):
+  Verify each red test fails for its stated reason, then green.
+- [ ] 4.5 **Rewritten** (crowding-redesign design §10): the `ff_stable` bisection is gone —
+  `scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44` already disproves it at 128 000
+  (bisects to 1, not the provisional 12), and the step limit replaces the mechanism it measured.
+  **Gate G1.2, stiffness under the limit, and Gate G1 (crowding-redesign design §3.5); they gate 4.7.**
+  On the gate seeds at 128 000 particles, radius 50, one self-attracting species, `FRICTION_MIN` and no
+  viscosity, under the lumped stiffness step limit (4.4b):
+  - measure `L` at `K = 540` and 1728, record `B_L`; return the 540-vs-1728 table to the user (Q1) —
+    the limit may cap what the higher stiffness could do to `L`, so 1728 may no longer exceed `B_L`
+  - run §3.5's four arms (A sustained shipped friction, B sustained `FRICTION_MIN` against the
+    stiffness-zero world, C cap contact, D unsteady/held-frame schedules) at 16 000 and 128 000
+    particles, radius 50, plus 16 000 at radius 150, in place of the `ff_stable` bisection and the
+    jittered arms through substeps
+
+  An arm warmer than frame factor 1, or more cap contact than the stiffness-zero control, returns the
+  bound `θ` or the limit itself to the design, and 4.7 waits. Record in
+  `scratchpad/core-force-interface/g1-limit__<DD-MM-YY-HHmm>.md`, with per-seed readings, means and
+  bounds by the gate convention.
+- [ ] 4.6 **Reopened** (crowding-redesign design §10): reruns under the lumped stiffness step limit
+  (4.4b) rather than the explicit push. **Gate G1.3, the stacked hold; it gates 4.7.** At the recorded
+  `x_on`, `K` and `q_max`, run the 128 000-particle stacked hold on the gate seeds, with its
+  stiffness-zero control bounded to 100 held frames, under the step limit. Record the after-release
+  neighbour ratios, and the margin the spec's far-world scenario names: the far crowd's mean speed under
+  the hold over the same seed's no-body run. `FAR_SPEED_MARGIN` is re-derived from this run. A held peak
+  that reaches the control's returns the design, and 4.7 waits.
+- [ ] 4.7 **Rewritten** (crowding-redesign design §10): `FF_STABLE` is deleted (proven dead, 3.1/3.3),
+  not recorded. Record `X_ON` (6.3, the user's placement, with the settles G1.1 records on either side
+  of it), `K` (540 pending Q1's 540-vs-1728 table), `B_L`, `PRESSURE_STEP_BOUND` (`θ = 2`, with the
+  symplectic-bound condition from 4.4b) and `FAR_SPEED_MARGIN` in `src/config_ranges.nim`, each with one
+  or two lines of conditions. Replace the provisional `FAR_SPEED_MARGIN` and `SETTLE_BOUND` (`B_L`) in
+  `tests/test_balance_core.nim` with the measured values, each reading the owner in
+  `src/config_ranges.nim` where one holds it. Verify `just happen` green.
+- [ ] 4.8 **Red, then wire the pressure** (design N3 step 5, C3). **Reopened, green part extended**
+  (crowding-redesign design §10): the GPU side now also needs the stiffness words in
+  `web/shaders/src/forces.wgsl` (both particles get the same slope, per pair, per §7's sketch), the
+  crowd buffer widened from stride 1 to stride 3 (`src/webgpu_init.nim:172,386`, bind sites
+  `src/webgpu_compute.nim:453,494`), the step limit in `web/shaders/src/integrate.wgsl`, and
+  `PRESSURE_STEP_BOUND`/`STIFFNESS_COARSE_SHIFT`/`STIFFNESS_FIXED_POINT_SCALE` reaching the shaders by
+  placeholder in `src/shader_config.nim:241-242,389-390`. **This slice is left for a later delegate**;
+  the oracle side (4.4b) is what this task's red/green below cover.
   - **Red.** Add a uniform-producer check to `tests/test_sim_registry.nim`: the onset the frame writes is `max(x_on · ρ̄, ρ_floor)`, composed from `src/balance_core.nim`'s two density functions. It fails first. The producer sits on `src/sim_registry.nim`, not in `src/webgpu_compute.nim`, which opens on `std/jsffi` and so no native test can import.
   - **Green.** `src/webgpu_compute.nim` composes the onset once per frame from the live count, radius, world area and pair-law shape, and writes it into the sim params as one uniform (`src/gpu_types.nim`), the shape `physics_core.pairImpulse` reads an onset in, so `x_on` never crosses the bridge. `K`, `q_max` and the word constants reach `web/shaders/src/forces.wgsl` by placeholders in `src/shader_config.nim`, and any module those placeholders draw on joins `PlaceholderSources` in `tools/wgsl_bundle.nim`. The term is hoisted beside `attenuationOnThis`, formed apart from the species expression, and split across the two words.
   - The red and green landed in `ed2f265`: `pressureOnset` at `src/sim_registry.nim:793`, written at `src/webgpu_compute.nim:1055`. What remains runs after 4.7: verify the check passes and `just calibrate-balance` is green at the recorded constants.
-- [ ] 4.9 **Gate G1.4, the pressure's in-app cost; the group cannot close before it.** Run the in-app procedure at `MAX_PARTICLES` and the shipped radius. Read `physics=` and `coupled=` on:
+- [ ] 4.9 **Reopened** (crowding-redesign design §10): re-read with the stiffness atomics counted (S4),
+  and the "frame factor 30, 3 substeps" reading (design N4) becomes 1 substep unless travel or fluid
+  asks for more (4.4b, 3.1/3.3). **Gate G1.4, the pressure's in-app cost; the group cannot close before
+  it.** Run the in-app procedure at `MAX_PARTICLES` and the shipped radius. Read `physics=` and `coupled=` on:
   - a settled world with the coarse word bound and unbound
   - the term at `K = 0` (a local build) and at 540
   - a uniform world at two radii
@@ -148,6 +237,9 @@ Conventions every task below uses:
   - The crowding line becomes "Crowding shapes clump texture, and the pressure is what bounds collapse".
   - `docs/one-world.md`: the pressure is part of the pair law, fixed and local.
   - `docs/slider-interactions.md`: edges 27 and 30 are rewired.
+  - **Q4 accepted** (the user's decision, crowding-redesign design §11: "`s` scales the whole decoded
+    delta" is accepted): add a help line saying that at high Time Scale, dense crowds answer the mouse,
+    blast and bodies more slowly per reference frame, reaching the same balance.
 
   Verify `tests/test_help_content.nim` passes.
 - [x] 4.12 Amend the other changes' artifacts that waited on `coupling-balance`'s pressure:
@@ -216,7 +308,8 @@ Conventions every task below uses:
   - `sphSubsteps`, `colormapIndex` and `fieldOpacity` are dropped without error
 
   Add the check `V1_FIELD_FORCE_SCALE == 1 / FIELD_PATTERN_SHRINK` that `src/preset.nim:641-644` claims exists (N9.11). Verify the suite fails at `CURRENT_SCHEMA_VERSION` 4. The `V1` check passes on first run, because the relation holds today.
-- [ ] 7.4 **Gate G2, each coupling's full effect; it gates 7.5 and 7.6.** Run the in-app procedure with the pressure acting, at the shipped 32 000 particles (11.9) and radius 50 over a settled world. For each of fluid, scent, long range and deposit, set that coupling alone to the old-scale slider value that `src/balance_core.nim` reports for new strength 1 at the provisional `F_c`. Species is read at old 5 and bodies at 1. Record the slider-step error.
+- [ ] 7.4 **Runs after the limit lands** (crowding-redesign design §10): "the pressure acting" means the
+  limited pressure (4.4b), integrate's decoded delta scaled by `s`. **Gate G2, each coupling's full effect; it gates 7.5 and 7.6.** Run the in-app procedure with the pressure acting, at the shipped 32 000 particles (11.9) and radius 50 over a settled world. For each of fluid, scent, long range and deposit, set that coupling alone to the old-scale slider value that `src/balance_core.nim` reports for new strength 1 at the provisional `F_c`. Species is read at old 5 and bodies at 1. Record the slider-step error.
   - The observation that settles each: the motion shows the effect named beside `F_c`. At strength 1, no field or mesh coupling pushes a clump's edge harder than the species force holds it (N2).
   - Record each reading, and whether it confirms or replaces the provisional `F_c`, in `scratchpad/core-force-interface/g2__<DD-MM-YY-HHmm>.md`.
   - A replaced `F_c` is recomputed through `src/balance_core.nim` before 7.5.
@@ -235,7 +328,8 @@ Conventions every task below uses:
   - The branch records the `x_on` and the `F_c`/`g_c` set version 5 converts against, each held equal to its live constant by a static assertion.
 
   Verify 7.3 passes.
-- [ ] 7.7 **Red, then green.** Write suite "Couplings Are Compared On One Scale" in `tests/test_response_probe.nim` (C10 test 9). Each strength probe's impulse, in `u0` at the reference configuration, must match a one-frame stepped measurement of its coupling in `src/balance_core.nim`'s binned world. The suite reports each coupling's `x*` and asserts no bound on it. Then make `src/ui/api/response_probe.nim` report every strength probe in `u0`, `longRange.impulseShare` included. Verify red then green.
+- [ ] 7.7 **Runs after the limit lands** (crowding-redesign design §10): the one-frame stepped
+  measurements pass through integrate's step limit (4.4b) like every other writer. **Red, then green.** Write suite "Couplings Are Compared On One Scale" in `tests/test_response_probe.nim` (C10 test 9). Each strength probe's impulse, in `u0` at the reference configuration, must match a one-frame stepped measurement of its coupling in `src/balance_core.nim`'s binned world. The suite reports each coupling's `x*` and asserts no bound on it. Then make `src/ui/api/response_probe.nim` report every strength probe in `u0`, `longRange.impulseShare` included. Verify red then green.
 - [ ] 7.8 Update the help and docs for the 0–1 scale:
   - `docs/help/12-species.md`, `docs/help/30-fluid.md`, `docs/help/35-long-range.md`, `docs/help/35-bodies.md`, `docs/help/40-rd.md` and `docs/help/42-chemistry.md`: each strength line says what 1 means under the contract, and every Interacts line naming a rescaled strength is updated.
   - `docs/slider-interactions.md`: edges 11–18 and section 7's unit mismatch are rewired.
@@ -290,13 +384,14 @@ Conventions every task below uses:
 ## 10. The fluid's three one-term arms
 
 - [x] 10.1 **Red.** Extend `src/balance_core.nim`'s binned oracle world with a mirror of `sph_core`'s pair loop (`web/shaders/src/forces-sph.wgsl:240-280`). Add suite "The Fluid Mirror Steps As The Oracle Does" to `tests/test_balance_core.nim`, holding one mirrored step equal to `src/sph_core.nim`'s oracle within its tolerance. Add suite "Each Effect Is Read Alone", holding that each arm's two sides differ in exactly one term (sph-scale). Verify both fail against a stub mirror that drops the blend.
-- [ ] 10.2 **Measurement for the arms; it gates 10.3.** Add recipe `calibrate-fluid` to `justfile`, outside `just check`. The conditions: the gate seeds at 128 000 particles, radius 50, Force Strength 0.2, the pressure acting, crowding 0, fluid 1, 900 steps, window 749–899. Run the three arms (N8), each reading σ and E against fluid 0:
+- [ ] 10.2 **Runs after the limit lands** (crowding-redesign design §10), as already stopped: "the
+  pressure acting" is the limited pressure (4.4b). **Measurement for the arms; it gates 10.3.** Add recipe `calibrate-fluid` to `justfile`, outside `just check`. The conditions: the gate seeds at 128 000 particles, radius 50, Force Strength 0.2, the pressure acting, crowding 0, fluid 1, 900 steps, window 749–899. Run the three arms (N8), each reading σ and E against fluid 0:
   - blend at `SPH_XSPH_EPSILON` against 0, at Viscosity 0
   - the pressure gain at `SPH_FORCE_SCALE` against 0
   - radius fraction 1 against 0.75, 0.5, 0.25 and 0.1
 
   Record in `scratchpad/core-force-interface/fluid-arms__<DD-MM-YY-HHmm>.md`, including whether fraction 0.1 still computes a fluid. If no step of an arm passes, its numbers go back to the user with the proposal's "delete the fluid" case. The task does not choose.
-- [ ] 10.3 Set the fluid defaults from the arms, each with its arm, conditions and reading beside it:
+- [ ] 10.3 **Runs after the limit lands** (crowding-redesign design §10), as already stopped. Set the fluid defaults from the arms, each with its arm, conditions and reading beside it:
   - `SPH_XSPH_EPSILON` in `src/sph_core.nim`, 0 if σ is lower with the blend
   - the reading beside `SPH_FORCE_SCALE`, and the `sphStiffness` default stepped down by halves from 8 to the largest value whose σ is not lower than fluid-without-pressure's
   - the `sphRadiusFraction` default, the largest step whose σ is not lower than fraction 1's
@@ -320,7 +415,7 @@ Conventions every task below uses:
   Verify `tests/test_help_content.nim` passes.
 - [ ] 11.3 Update `docs/slider-interactions.md` to the finished graph:
   - Replace the "Planned rewiring" section (`:489-504`) with the edges as built.
-  - Check that the edge table, per-slider adjacency, diagram, cost layer (every coupling slot and `coupled=`) and calibration inventory (each `F_c`, `x_on`, `K`, `B_L`, `ff_stable`, the band floor and the fluid arms) match the code.
+  - Check that the edge table, per-slider adjacency, diagram, cost layer (every coupling slot and `coupled=`) and calibration inventory (each `F_c`, `x_on`, `K`, `B_L`, `θ` (`PRESSURE_STEP_BOUND`, in place of `ff_stable`), the band floor and the fluid arms) match the code.
   - Check that every `Interacts with:` line in `docs/help/*.md` names no removed control (Substeps, Field Opacity, Field Colormap) and no rewired edge in its old form.
 
   Verify `tests/test_help_content.nim` passes, and that `grep -n 'Substeps\|Field Opacity\|Colormap' docs/help/*.md` is empty.
@@ -334,8 +429,8 @@ Conventions every task below uses:
     - "No Render Shader Reads The Field" (test-held, reading names only)
   - **Rewritten rows.** The tunnelling guarantee (`:56`) now names the stated floor and `substepPlan`. The coupling-floor row (`:51`) also holds the ceilings.
   - **Recipe tier.** The tier of `just calibrate-balance` and `just calibrate-fluid`: suites run at change time on the three gate seeds at 128 000 particles and not by `just check`, with the rerun conditions (`K`, the pressure law, the onset, `k`/`q_max`, the crowd density's dependence on particle count). That the recipes rerun is itself unenforced. The scent and body coupled costs are unmeasured.
-  - **Reference oracles.** Add `balance_core`, the pressure oracle and the two-word integrate decode in `physics_core`, and the `field_core` row without the frame-scaled force.
-  - **Unenforced, with their raisers.** Each shader carries its oracle's convention; the `U(R)` factor in `lr-force.wgsl`; the range-constant lint; the size-conversion grep gate; GPU bit identity under relaxed math (C4); the hold with long range, scent and the mouse at 1 (C6).
+  - **Reference oracles.** Add `balance_core`, the pressure oracle, the step-limit oracle (`stepLimit`, `decodeStiffness`, C4b) and the two-word integrate decode in `physics_core`, and the `field_core` row without the frame-scaled force. Add the stiffness words (build-asserted, C8/§3.2) and G1 (recipe tier, `crowding-redesign design §3.5`).
+  - **Unenforced, with their raisers.** Each shader carries its oracle's convention; the `U(R)` factor in `lr-force.wgsl`; the range-constant lint; the size-conversion grep gate; GPU bit identity under relaxed math (C4); the hold with long range, scent and the mouse at 1 (C6). The recipe tier's rerun conditions (`world-pressure`) add `θ` and the step limit itself.
 
   Update `docs/one-world.md` to the couplings model: the contract, world pressure, the integrator's substeps and the field as force only. Update `tests/README.md`'s rows and oracle lists for `test_balance_core`. Verify by reading each spec's "Enforced by" against the entries.
 - [x] 11.5 Rewrite the fresh-state test at `openspec/changes/audio-interface/tasks.md:196-198`. As written, it holds one state across both rooms, so it cannot catch a room level that survives reinitialisation. The rewrite learns a quiet room, re-initialises the state, then feeds a louder room and asserts it reads exactly zero with silent reported. Verify `openspec validate audio-interface --strict` passes.
@@ -346,7 +441,7 @@ Conventions every task below uses:
 ## 12. The final in-app pass and the check
 
 - [ ] 12.1 **In-app, once.** Run the in-app procedure and record each part in `scratchpad/core-force-interface/in-app-final__<DD-MM-YY-HHmm>.md`:
-  - **Hold.** At 128 000 particles and 12 species: Long Range at its maximum for 10 s; bodies at Hold 10 for 10 s, then removed; friction 0 over a settled self-attracting world. Read whether far colonies keep their motion while the bodies hold, the held `physics=` (recorded, not gated: held crowds may exceed the allotment by the user's decision, C6), whether the population spreads back within 15 s, whether dense crowds shimmer or collapse at friction 0, and whether the simmer shows at shipped friction. `parametric-bodies` 9.2 and 9.3 take their measurements after this part.
+  - **Hold.** At 128 000 particles and 12 species: Long Range at its maximum for 10 s; bodies at Hold 10 for 10 s, then removed; friction 0 over a settled self-attracting world; **and, per Q4 (crowding-redesign design §11, accepted): Time Scale 5 with frames held past the 0.05 s cap, reading whether the crowd stays calm and how it answers the mouse at that time scale (dense crowds should reach the same balance, more slowly per reference frame).** Read whether far colonies keep their motion while the bodies hold, the held `physics=` (recorded, not gated: held crowds may exceed the allotment by the user's decision, C6), whether the population spreads back within 15 s, whether dense crowds shimmer or collapse at friction 0, and whether the simmer shows at shipped friction. `parametric-bodies` 9.2 and 9.3 take their measurements after this part.
   - **Field.** Field ignited, scent 0, bloom on then off: the space between particles is background and every particle draws its species colour; at scent 1 the pattern shows only as motion; bloom off dims the grade controls in the same tick, with no stats push between (gardenapi-boundary). A coloured layer under the particles, particles lit off their species colour, or trails bending where no particle moves fails the part.
   - **Strengths.** At the shipped count, each of the six couplings alone at 1: the effect named beside its `F_c` (the coupling-contract agent check). Long Range 1 at Force Strength 0 over 128 000: the busiest clump stays finite.
   - **Long-range cost, gate G4.** At 128 000, Long Range 1 in the four Long Range × Force Strength corners, one run each: `coupled=` against 4.9's allotment, into `docs/perf-report.md` with each row cited from its declaration in `src/sim_registry.nim`. A corner past the allotment goes back to the user with the numbers.

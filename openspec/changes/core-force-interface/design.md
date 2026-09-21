@@ -62,8 +62,8 @@ shader's expressions and never the GPU (`scratchpad/coupling-balance/`: `design-
 | `u0` | `FRAME_DT_REFERENCE` = 1/120 velocity per reference frame, one touching neighbour's repulsion at pair gain 1 | definition |
 | `x_on` | 6.3 | the user's placement; G1.1 records the settles it separates at 128 000 and radius 50 |
 | `K` | 540, no viscosity | the user's choice among measured arms; G1.2 confirms it on 16 seeds |
-| `B_L` | ≈ 1.177 | provisional, batch M; G1.2 re-derives it |
-| `ff_stable` | 12 | 8 seeds at 16 000; G1.5 re-bisects it on 16 |
+| `B_L` | ≈ 1.177 | provisional, batch M; G1.2 re-derives it under the step limit |
+| `θ` (`PRESSURE_STEP_BOUND`) | 2 | the step limit's bound (C4b); replaces `ff_stable`, whose provisional 16 000-particle value of 12 disproved at 128 000 under the per-reference-frame cap: the bisection there reads 1 (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44`, `runs/g1-ffstable-bisection__21-09-26-2024.log`) |
 | `k`, `q_max` | 12; 11 310 coarse units = 706.9 velocity per reference frame per pair | derived by arithmetic |
 | `ρ̄` | `N·π·R²/(3A)`: 5.1 at 16 000 and R 50, 40.4 at 128 000 and R 50, 364 at 128 000 and R 150 | exact for a uniform world |
 | Lattice floor | 3.80 at `repulsionEnd` 0.5 | lattice sum |
@@ -78,7 +78,8 @@ The measurement gates, labelled here and used throughout:
   - G1.2: the stiffness trade `K` and `B_L`
   - G1.3: the stacked hold
   - G1.4: the pressure's in-app cost and the settled headroom
-  - G1.5: `ff_stable`
+  - G1.5: the frame-factor stability gate, now the crowding-redesign design's §3.5 arms under the
+    lumped stiffness step limit (C4b), in place of the disproved `ff_stable` bisection
 - **G2**: each coupling's full effect, measured in-app (`proposal.md:129`).
 - **G3**: the chemistry-scale band (`proposal.md:130`).
 - **G4**: the long-range cost with pressure on (`proposal.md:131`).
@@ -265,19 +266,27 @@ and the stiffness are derived and fixed").
 
 ```
 φ(ρ)   = (max(ρ − ρ_on, 0) / ρ_on)²
-m      = min(K · (φ_this + φ_other) · (1 − r/R) / 120, q_max)   per reference frame, no dt
+c      = min(K · (φ_this + φ_other) / 120, q_max)                 the saturated sum, before the weight
+m      = c · (1 − r/R)                                            per reference frame, no dt
+slope  = c / R                                                    the pair's radial stiffness, added to both particles' stiffness words
 qx, qy = trunc(−m · (separation/r) · 2^16)                       one integer per component
 this  += (qx, qy);  other −= (qx, qy)                            split across fine and coarse (C8)
 ```
 
 `φ_this` is hoisted beside `attenuationOnThis`. The magnitude saturates before the direction is
-applied. The species term keeps its grouping, `forceMagnitudeOnThis *= params.forceMultiplier *
-invDistance` (`forces.wgsl:282`), and the pressure is formed and accumulated apart from it, so below
-the onset the species term's integers are today's at every Force Strength.
+applied, and the sum saturates before the proximity weight, so the pair's radial slope stays bounded
+by `q_max/R` at every distance (crowding-redesign design, §3.1). The species term keeps its grouping,
+`forceMagnitudeOnThis *= params.forceMultiplier * invDistance` (`forces.wgsl:282`), and the pressure is
+formed and accumulated apart from it, so below the onset the species term's integers are today's at
+every Force Strength.
 
-**Proven** on the oracle: momentum is conserved exactly, because one integer pair goes to both
-particles. The critic measured the first draft's regrouping changing 35 207 of 100 000 products at
-strength 0.7; this form does not regroup. GPU bit identity is **unenforced**. Dawn's Metal backend compiles
+**Proven** on the oracle: the pressure integers a pair exchanges are exactly opposite, because one
+integer pair goes to both particles. **Narrowed:** this holds for the words, not for the integrated
+velocity. Integrate's step limit (crowding-redesign design, §3.4) scales a particle's whole decoded
+delta by its own `s`, and two particles in one pair may carry different `D` and so different `s`, so
+the integrated change is not exactly opposite where neighbouring `s` differ. The critic measured the
+first draft's regrouping changing 35 207 of 100 000 products at strength 0.7; this form does not
+regroup. GPU bit identity is **unenforced**. Dawn's Metal backend compiles
 with relaxed math unless strict math is set
 (https://raw.githubusercontent.com/google/dawn/main/src/dawn/native/metal/ShaderModuleMTL.mm,
 lines 464-468 and 564). Strict math is set only through the `ShaderModuleCompilationOptions` chained
@@ -297,9 +306,36 @@ Metal unless the browser chains that struct itself.
 | Pair viscosity 0.5 | Rejected by the user in favour of `K = 540` without it (C13). At 128 000: L 0.864–0.890 and simmer 0.107–0.125 (batch M) |
 | Implicit density projection | Rejected on performance, the top priority |
 | **Pair term on the smoothed crowd density, split across the two words** | **Chosen** |
+| Explicit push, no step limit (`ff_stable`, `n_ff`) | Rejected: at 128 000 the step is unstable from frame factor 2 (3.09×) up to 30 (7.97×), and jittered arms read 5.42× and 5.47× (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:38-63`) |
+| Lumped stiffness step limit at integrate | **Chosen** for stability: `s = min(1, θ/(2·ff·D))` scales the whole decoded delta at integrate; stable at every frame factor by construction, no new pass, no recorded stability limit (crowding-redesign design, §3.4, §6) |
+| Pair-symmetric limit inside the loop, from last step's `D` | Rejected: `D` lags a whole step, and at ff 30 a particle can travel past its own neighbour set before the bound it rests on is re-read; it also spends the "only integrate reads the frame factor" invariant, since `forces.wgsl` would need `ff` as a uniform (crowding-redesign design, §5) |
+| Position-based Jacobi correction, applied after integrate | Rejected: a new law, re-deriving `x_on`, `K`, `B_L` and C6's capacity from scratch; the crowd loses inertia per step, and restoring it re-enters the explicit limit it was meant to replace (crowding-redesign design, §5) |
 
 **What changed.** "Force strength" reads as Force Strength on the new 0–1 scale. The term is named in
-`world-pressure`.
+`world-pressure`. The stability of the step at every frame factor is C4b, below.
+
+### C4b. The lumped stiffness step limit removes the explicit scheme's stability bound
+
+The explicit scheme (`v' = r·(v + ff·Δ)`, `x' = x + v'`) is stable only while `ff·λ < 2(1+r)/r`, where
+a particle's `λ` is bounded by twice its summed pair slope `D = Σ_j slope_ij`. Integrate decodes `D`
+from two stiffness words (fine at `STIFFNESS_FIXED_POINT_SCALE = 2^16`, coarse at
+`STIFFNESS_COARSE_SHIFT`, split and decoded as the velocity words are) and forms
+`s = min(1, θ/(2·ff·D))`, then multiplies the particle's whole decoded delta — every writer, not the
+pressure alone — by `s`. `s = 1` exactly where `2·ff·D ≤ θ`, so a below-onset particle's step is
+bit-identical to today's at every frame factor. `θ = PRESSURE_STEP_BOUND = 2`, half the symplectic
+bound of 4 at retention 1, leaving a factor of 2 for the density lag (C4, `ρ` carries a 0.7-retained
+smoothing) and for the slopes `D` omits (transverse pair terms, which only loosen the bound). The
+argument, and the code sites, are the crowding-redesign design's §3.1–§3.4; the tests are its §8, T1–T7.
+
+**What it keeps.** A static balance — total force zero — is unchanged at every frame factor, since `s`
+scales every writer alike: the ratio between the pressure and the compressors on one particle holds, so
+a held crowd reaches the same depth at time scale 5 as at 0.5, only more slowly per reference frame.
+
+**What it gives up.** Two particles with different `s` receive unequal halves of one pair's pressure
+(C4's narrowed "Proven" paragraph). At time scale 2–5, dense crowds answer the mouse, blast and bodies
+more slowly per reference frame — the same balance, reached more slowly. The user accepted this
+(crowding-redesign design, the user's decisions); task 4.10's help line and 12.1's in-app reading state
+it.
 
 ### C5 (was D5). The stiffness is fixed, and the square law rises with the crowd's own density
 
@@ -327,15 +363,22 @@ Measured L (**proven** on CPU):
 - 16 000, 8 seeds: square `K = 54` 0.963 (sd 0.0068); Tait `K = 54` 1.221 (sd 0.0257).
 - 16 000, 3 seeds: square 173 → 0.984, 540 → 1.036, 1728 → 1.117, 5400 → 1.249; Tait 5.4 → 1.012,
   17 → 1.078 (batch H).
-- 128 000, 3 seeds:
+- 128 000, 3 seeds, **superseded by the step limit (below):**
   - `K = 540` → 1.163–1.175
   - `K = 1728` with viscosity → 1.220–1.261 (batch M)
   - `K = 1728` without viscosity → 1.360–1.393 (lower bound 1.347)
   - Tait `K = 54` → 1.525–1.605 (batch R)
 
+**Re-measured under the step limit.** These 128 000-particle figures, and `B_L` below, were measured
+against the explicit scheme, which is unstable at 128 000 from frame factor 2
+(`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44`). The crowding-redesign design's
+lumped stiffness step limit (C4b) replaces that scheme; task 4.5 reruns `L` at `K = 540` and 1728 under
+the limit, and the 540-vs-1728 trade is re-decided from that rerun (Q1, crowding-redesign design §11).
+`K = 540` stands as the user's placement pending that rerun.
+
 **`B_L`.** `B_L` is the mean of `L` over the three gate seeds at 128 000 particles plus the largest
-single seed's distance from that mean. On C13's seeds 540 read 1.163–1.175, so provisionally
-**`B_L ≈ 1.177`**. G1.2 replaces it.
+single seed's distance from that mean. On C13's seeds, against the explicit scheme, 540 read
+1.163–1.175, so provisionally **`B_L ≈ 1.177`**. G1.2, rerun under the step limit, replaces it.
 
 **The margin, stated once.** Every gate runs the three gate seeds 42, 7 and 1001 at 128 000
 particles. A gate passes when the three-seed mean is at most its bound. A bound derived from a run is
@@ -355,11 +398,16 @@ At 16 000 particles, onset `x = 7`, 3 seeds (batches H, J, L):
 | square 540, viscosity 0.5 | 0.956–0.970 | 1.075–1.106 |
 | square 1728, viscosity 0.5 | 1.048–1.089 | 0.972–0.995 |
 
-The linear stability of a lagged, smoothed pressure is 0.018 per frame at smoothing 0.7 and
-retention 0.95, 0.65 at retention 0.5, and 0 at retention 1 (a linear model, not measured against the
-app).
+Stability at every frame factor no longer rests on a linear model of the lagged, smoothed pressure
+alone: C4b's bound, `ff · λ_max ≤ θ < 4`, holds by construction for every frame factor, radius and
+count, and the density lag and the slopes `D` omits are the margin `θ = 2` leaves under the symplectic
+bound of 4. A static balance — total force zero on a particle — is unchanged by the limit, since `s`
+scales every writer on that particle alike; a held crowd reaches the same depth at every frame factor,
+only more slowly per reference frame at high ones (C4b).
 
-**What changed.** Nothing. `K` and `B_L` live in `src/config_ranges.nim` (`world-pressure`).
+**What changed.** `K` stands at the user's placement, pending the 540-vs-1728 rerun under the limit
+(task 4.5, Q1). `K`, `B_L` and the step-limit bound `θ` live in `src/config_ranges.nim`
+(`world-pressure`).
 
 ### C6 (was D6). What the fixed pressure holds, and the column it cannot
 
@@ -369,7 +417,11 @@ contact push that answers a column is `p = 8F√(3M)/(3ρ^1.5)`. That is 15.8 pe
 world, where `K = 1728` supplied about 23 and held, and 138 at 128 000 with 32 stacked bodies at crowd
 density 250.
 
-At app scale (128 000, radius 50, 12 species, seed 42, 32 aligned bodies at the ceilings):
+At app scale (128 000, radius 50, 12 species, seed 42, 32 aligned bodies at the ceilings), the table
+below was measured at frame factor 1, against the explicit scheme. Under the step limit (C4b) a held
+crowd reaches the same balance at every frame factor — the ratio between the pressure and the
+compressors on a particle is unchanged by `s` — only more slowly per reference frame at high ones, so
+these held-peak and far-speed readings stand as frame-factor-1 readings:
 
 | Pressure | Held peak (p99) | Largest delta per particle per reference frame | Far mean speed | After removal |
 |---|---|---|---|---|
@@ -468,6 +520,11 @@ once per particle. `forces.wgsl` reaches 8 storage bindings, the WebGPU default 
   left after long range admits a gradient up to 124. `k = 12` holds.
 - SPH takes `⌈341.7 · 2^16/2^k⌉ = 5 467` coarse units. `q_max = ⌊(2^31 − 1)/MAX_PARTICLES⌋ − 5 467 =
   11 310`, which is 706.9 velocity per reference frame per pair. The margin is 27 647, or 0.0013%.
+- **The stiffness words' full crowd** (C4b): the fine word's is `MAX_PARTICLES · (2^STIFFNESS_COARSE_SHIFT − 1) ≈ 5.24 × 10⁸`; the coarse word's is
+  `MAX_PARTICLES · (q_max/INTERACTION_RADIUS_MIN) · 2^16/2^STIFFNESS_COARSE_SHIFT ≈ 1.45 × 10⁸`. Both sit below
+  `2^31 − 1`. The crowd buffer moves from stride 1 to stride 3 — crowd density, stiffness fine, stiffness
+  coarse — and `forces.wgsl` stays at 8 storage bindings, its default limit (K7): the two stiffness words
+  reuse the crowd buffer's binding rather than adding one.
 
 **What changed.**
 - The pair row reads `g_pair` in place of `FORCE_STRENGTH_MAX`. The value is the same 5.
@@ -491,8 +548,10 @@ once per particle. `forces.wgsl` reaches 8 storage bindings, the WebGPU default 
 | **Part of the pair law, world-intrinsic, no slider** | **Chosen** |
 
 The onset is a zero of a continuous function, so it is not a mode, and `test_no_modes` gains nothing.
-Crowding stays a texture control, and `calibrate-shipped-defaults` calibrates it by `c_soften` alone
-(C12).
+The step limit (C4b) is likewise a continuous function of `D` and the frame factor, `s = min(1,
+θ/(2·ff·D))`, with no branch a mode could hide in: it reaches 1 exactly, not approximately, whenever
+`2·ff·D ≤ θ`. Crowding stays a texture control, and `calibrate-shipped-defaults` calibrates it by
+`c_soften` alone (C12).
 
 **What changed.** The density-ceiling block (`src/physics_core.nim:108-224`) and suite "The Density
 Ceiling" are deleted, and `CROWD_PACKING_CONSTANT` moves to `balance_core`'s floor. The comments at
@@ -511,6 +570,7 @@ to:
 - the onset
 - `k` or `q_max`
 - how `ρ̄`, the floor or the smoothing depend on particle count
+- `θ` (`PRESSURE_STEP_BOUND`) or the step limit itself (C4b)
 
 Today-convention encode and decode oracles are written first (N3, step 1), so red steps fail on
 values and not on compilation.
@@ -540,27 +600,55 @@ Tests, with coupling-balance's numbering kept and the new suite names from the s
 7. "A Settling World Still Settles":
    - Friction 0 at 128 000, ff 1, against `B_L`. Falsifiers: 1.220–1.261, 1.360–1.393 and
      1.525–1.605.
-   - Frame-factor arms at 128 000 and shipped friction: ff 1, 2, 10 and 30, uniform 8–16, and
-     alternating 10/13, through the substep rule (C15/N4). Falsifier (measured at 16 000): ff 30
-     without substeps reads 1.33× with lower bound 0.022 on 8 seeds. Uniform 8–16 without substeps
-     reads 1.18× with lower bound 0.0035.
+   - Frame-factor arms at 128 000 and shipped friction: sustained ff 0.42, 2, 4.2, 10 and 30, uniform
+     8–16, alternating 10/13, and held frames (ff 0.42 with single ff-30 steps), run through the step
+     limit (C4b) rather than the substep rule — C15's `ff_stable`/`n_ff` path is disproved at 128 000
+     (below) and replaced by §3.5's arms A–D. Falsifier at 128 000, against the explicit scheme with no
+     limit: ff 2 reads 3.09× and ff 4 reads 8.32×
+     (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:109`).
 8. **Widened:** `test_preset`, the version-5 suite `coupling-contract` names. Every coupling strength
    at each grid size and two radii (N7).
 9. `test_response_probe` "Couplings Are Compared On One Scale". It reports `x*` and asserts nothing
    about it.
 10. The two word assertions in `src/config_ranges.nim` (C8). On today's code the single-word
     assertion fails, because SPH is 1 335× the span.
-11. `test_physics` "A Full Crowd Decodes To Its Impulse", for every writer, at ff 1, 2 and 30.
+11. `test_physics` "A Full Crowd Decodes To Its Impulse", for every writer, at ff 1, 2 and 30. **Gains
+    a `D > 0` arm** (C4b): the decoded delta at nonzero stiffness is `s · ff · impulse` for the
+    hand-computed `s`.
 12. **Renamed:** `test_balance_core` "Every Writer Answers In The Pair Unit", over every unit
     function.
+
+**T1–T7, the step limit (C4b).** Each fails for one reason, stub-first (a stub `stepLimit` returning 1
+and a stub slope returning 0, so T1–T4, T6, T8 and T10 read red on values, not on a missing symbol):
+- T1 "The Step Limit Leaves A Calm Particle Untouched": zero stiffness gives integrate output
+  bit-identical to today's at every frame factor.
+- T2 "A Stiff Particle's Step Stays Inside The Bound": for random `(ff, D)`, `2·ff·s·D ≤ θ` and `s = 1`
+  exactly where `2·ff·D ≤ θ`.
+- T3 "A Pair's Stiffness Is Its Radial Slope": the slope equals the central finite difference of the
+  impulse in `r`; zero at and below the onset; `≤ q_max/R`.
+- T4 "The Stiffness Words Decode To The Summed Slope": a full crowd of `MAX_PARTICLES` pairs at
+  `q_max/INTERACTION_RADIUS_MIN` encodes and decodes within `n · 2^-17` of the f64 sum; the two static
+  assertions (C8) hold.
+- T5 "A Limited Step Cannot Overshoot" (property, on the oracle, not calibration): 20 random crowds'
+  linear one-step map, built from the oracle's pressure Hessian and `D`, has spectral radius ≤ 1 + 1e-6
+  at every frame factor the app produces and both frictions; the same map with `s ≡ 1` exceeds 1 at ff
+  30.
+- T6 "The Step Limit Scales Every Writer Alike": with species, pressure and body words set on one
+  particle, the decoded delta is `s · ff · (sum)` for the hand-computed `s`.
+- T7 "A Balance Holds At Every Frame Factor" (integration, not calibration): a held crowd settles to the
+  same peak density at ff 30 as at ff 0.25, within the seed spread.
 
 The new suites the specs add are listed under N1–N9 where each lands.
 
 ### C11 (was D11). Force Strength 0 still resists compression above the onset
 
-The pressure is not scaled by Force Strength. With the pair law off, a gated world with no pressure
-held at 618–658 and stayed at 602 after the body went. The same world with pressure relaxed to 105
-(g0). The cost: a player cannot turn incompressibility off.
+The pressure is not scaled by Force Strength, and the step limit `s` (C4b) reads no Force Strength
+either: it is a function of `ff` and a particle's summed stiffness `D` alone. With the pair law off, a
+gated world with no pressure held at 618–658 and stayed at 602 after the body went. The same world with
+pressure relaxed to 105 (g0). The cost: a player cannot turn incompressibility off. On a limited
+particle (`s < 1`) the species impulse scales by the same `s` the pressure's does, since `s` multiplies
+the whole decoded delta (C4b): Force Strength 0 removes the species term from that delta, but does not
+change what `s` is.
 
 Reopen it on any of:
 - a player need for dense crowds that pass through each other
@@ -593,21 +681,32 @@ Second round (16 000, 32 bodies held 300 frames, 900 after, 3 seeds):
 - Mixed, 4 species: merged clumps stay merged at every `K` (1.37–1.71).
 
 Trade at 128 000 (onset `x = 6.3`, `ρ̄` 40.4, `ρ_on` 254.4, seeds 42, 7 and 1001; one-sided `t` =
-2.920):
+2.920), **measured under the explicit push, before the step limit (C4b):**
 
-| Arm | L | Friction-0 neighbours (none: 193–199) | After / fresh | Settled speed (none: 0.000–0.003) | Fresh neighbours (none: 186.4–186.6) | Held peak / neighbours | `ff_stable` |
-|---|---|---|---|---|---|---|---|
-| 540, ν 0.5 | 0.864–0.890 (ub 0.902) | 61.8–64.7 | 0.901–0.972 (ub 0.998) | 0.107–0.125 | 167.6–169.8 | 567–573 / 309–313 | ≥ 30 |
-| 1728, ν 0.5 | 1.220–1.261 (lb 1.208) | 60.2–62.6 | 0.987–1.024 (ub 1.047) | 0.950–1.120 | 141.9–149.5 | 472–478 / 272–275 | 5 |
-| **540, no ν** | 1.163–1.175 (lb 1.159) | 62.7–67.1 | 0.971–0.976 (ub 0.978) | 0.028–0.115 | 170.6–173.2 | 618–630 / 323–353 | 12 (8 seeds) |
+| Arm | L | Friction-0 neighbours (none: 193–199) | After / fresh | Settled speed (none: 0.000–0.003) | Fresh neighbours (none: 186.4–186.6) | Held peak / neighbours |
+|---|---|---|---|---|---|---|
+| 540, ν 0.5 | 0.864–0.890 (ub 0.902) | 61.8–64.7 | 0.901–0.972 (ub 0.998) | 0.107–0.125 | 167.6–169.8 | 567–573 / 309–313 |
+| 1728, ν 0.5 | 1.220–1.261 (lb 1.208) | 60.2–62.6 | 0.987–1.024 (ub 1.047) | 0.950–1.120 | 141.9–149.5 | 472–478 / 272–275 |
+| **540, no ν** | 1.163–1.175 (lb 1.159) | 62.7–67.1 | 0.971–0.976 (ub 0.978) | 0.028–0.115 | 170.6–173.2 | 618–630 / 323–353 |
+
+The `ff_stable` column this table carried is deleted: it recorded each arm's bisected largest stable
+frame factor under the explicit push, a stability mechanism the step limit replaces (C4b). At 540, no
+ν, `ff_stable` read 12 on 8 seeds; the 128 000-particle bisection under the per-reference-frame cap
+found the true value is 1, not 12
+(`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44`, task 4.5's now-superseded run).
 
 **The user's choice: `K = 540` without viscosity.** It accepts friction-0 settles about 17% warmer,
-the simmer, and the densest held peak, and it relaxes fully at 128 000. **What changed:** nothing.
+the simmer, and the densest held peak, and it relaxes fully at 128 000. **This stands pending Q1**
+(crowding-redesign design §11): under the step limit, `K = 1728` may no longer exceed `B_L`, since the
+limit caps what extra stiffness can do to the step, and task 4.5 reruns `L`, relaxation and the held
+peak at 540 and 1728 under the limit and returns the table to the user. **What changed:** nothing yet;
+the rerun may.
 
 ### C14 (was D14). Friction 0 and shipped friction: what the chosen term costs
 
 The pressure is not scaled by friction and carries no viscosity (the user's decisions). At friction
-0, 128 000, `K = 540`:
+0, 128 000, `K = 540`, **measured under the explicit push and re-measured by G1.2 under the step limit
+(C4b, task 4.5):**
 - motion is about 17% above no term (L 1.163–1.175)
 - neighbours are about a third of today's (62.7–67.1 against 193.4–198.9)
 
@@ -621,16 +720,29 @@ Reopen it on any of:
 
 **What changed:** nothing.
 
-### C15 (was D15). Frames past a measured frame factor substep
+### C15 (was D15). Frames at any frame factor take one step
 
-**The choice (the user's).** Past `ff_stable` the whole frame description runs more substeps, each
-advancing `ff/n`, and the time-scale range is not narrowed. A step advances `ff` reference frames, and
-friction and position act once per step. So motion per reference frame (late speed over `ff`) is the
-reading that compares one world across frame rates. At `K = 540` and ff 10 it moves 0.090–0.099 per
-reference frame against 0.100–0.135 shipped.
+**The choice (the user's), superseded.** This section originally chose substepping past a measured
+`ff_stable`. That path is disproved at 128 000 particles: the bisection under the per-reference-frame
+cap found `ff_stable = 1`, not the provisional 12 this section recorded, meaning two substeps already
+run warm (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44`). The user chose the
+lumped stiffness step limit (C4b) over substepping to a bisected `ff_stable` and over a recorded
+stability limit of any kind (crowding-redesign design, the user's decisions). **Frames at any frame
+factor now take one step:** the step limit scales the decoded delta so the step is stable by
+construction (C4b), and no substep count exists for pressure stability. `ff_stable` and `n_ff` are
+deleted from `src/config_ranges.nim` and `src/sim_registry.nim`. The criterion that replaces
+`ff_stable` is crowding-redesign design §3.5: four arms (sustained, `FRICTION_MIN` sustained, cap
+contact, and unsteady/held-frame schedules) hold that a world settles no warmer per reference frame at
+any frame factor the app produces than at frame factor 1, on 16 000 and 128 000 particles. Substeps
+still exist for the travel bound and the fluid's own stiffness law (N4); a step advances `ff` reference
+frames, and friction and position act once per step, so motion per reference frame (late speed over
+`ff`) remains the reading that compares one world across frame rates.
 
-`ff_stable`, measured at 16 000, radius 50, one species, onset 6.3 (`ρ_on` 31.8), smoothing 0.7,
-retention 0.95, 900 steps, window 749–899, 8 seeds, `t` = 1.895:
+**History, under the explicit push (superseded by C4b).** At `K = 540` and ff 10 the explicit scheme
+moved 0.090–0.099 per reference frame against 0.100–0.135 shipped.
+
+`ff_stable`, history under the explicit push: measured at 16 000, radius 50, one species, onset 6.3
+(`ρ_on` 31.8), smoothing 0.7, retention 0.95, 900 steps, window 749–899, 8 seeds, `t` = 1.895:
 
 | ff | Per reference frame | Over ff 1 | Lower bound of difference |
 |---|---|---|---|
@@ -646,7 +758,7 @@ retention 0.95, 900 steps, window 749–899, 8 seeds, `t` = 1.895:
 `ff_stable = 12`. Frame factors 2, 4 and 7 read 0.18–0.36× (3 seeds). Through 3 substeps of 10, ff 30
 reads 0.91×.
 
-Jittered frame factor (batch T, time scale 5, 8 seeds):
+Jittered frame factor, history under the explicit push (batch T, time scale 5, 8 seeds):
 
 | Arm | Per reference frame | Over ff 1 | Lower bound | Substepped / toggles |
 |---|---|---|---|---|
@@ -663,16 +775,23 @@ Rejected:
 - Substep only the pair pass and integrate, which needs a second substep path.
 - Hold the pressure per step (`K/ff`), which is weaker per simulated frame: 0.015–0.017 at ff 10.
 - The viscosity's exact decay, which overshot at 0.50–0.59.
+- **Substeps to the bisected `ff_stable`** (the user's decision). At 128 000 the bisection reads
+  `ff_stable = 1` under the per-reference-frame cap, so this path would substep from frame factor 2, and
+  three substeps cannot hold above frame factor 3
+  (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44-45`).
+- **A recorded stability limit of any kind** (the user's decision). The lumped stiffness step limit
+  (C4b) is stable by construction at every frame factor, so no constant records where it stops holding.
 
 **What changed.**
-- `n` is now the largest of three counts (N4), and `⌈ff/ff_stable⌉` is one of them.
-- The cap moves from `SPH_MAX_SUBSTEPS` to `SUBSTEPS_MAX = 3` in `src/config_ranges.nim`. Beside it
+- `n`, the substep count, is still the largest of three counts (N4), but the frame-factor count
+  `⌈ff/ff_stable⌉` is gone: pressure stability no longer needs a substep count, so only the travel bound
+  and the fluid's declared need can ask for more than one substep.
+- The cap moves from `SPH_MAX_SUBSTEPS` to `SUBSTEPS_MAX = 3` in `src/config_ranges.nim`, re-derived
+  from the fluid's former `SPH_MAX_SUBSTEPS` alone rather than from `⌈30/ff_stable⌉` and it. Beside it
   goes the per-extra-substep cost at 128k: 1.56 ms from the 30 s run and 7.95 ms from the 150 s run.
   The 150 s figure is a lower bound, and no in-app run has read it.
-- At the 0.05 s cap:
-  - time scale above 2 up to 4 runs 2 substeps, adding 1.56 or 7.95 ms plus the term's cost
-  - time scale above 4 runs 3, adding 3.12 or 15.9 ms plus the term's cost
-  - on a 60 Hz display at any time scale, `ff ≤ 10`, so nothing is added by this count
+- At the 0.05 s cap, only travel or a fluid ask can add substeps: with neither acting, a held frame at
+  time scale 5 (frame factor 30) now runs one step, scaled by the limit.
 - The substep path no longer engages only with the fluid, so G1.4 can read the cost without adding
   SPH's passes.
 
@@ -803,9 +922,12 @@ Rejected:
 ### N3. One time site: integrate. Five writers, converted in one step
 
 **The site.** `IntegrationParams`' pad word at offset 20 (`INTEG_PAD1`) becomes `frameFactor`, the
-substep's `ff_sub = ff/n`. Integrate decodes both words and multiplies the delta by `frameFactor` once.
+substep's `ff_sub = ff/n`. Integrate decodes both velocity words and the two stiffness words (C4b),
+forms the particle's step limit `s`, and multiplies the decoded delta by `frameFactor · s` once.
 `SIM_DT` becomes a pad. `forces` and `forcesSph` read no time: their per-reference-frame factor is the
-constant `FRAME_DT_REFERENCE`, substituted by the bundler.
+constant `FRAME_DT_REFERENCE`, substituted by the bundler. The writer-time ban (no writer reads `ff`)
+and its suite, "Only Integrate Reads The Frame Factor", stand unchanged: `s` is computed and applied at
+integrate, the one time site, alongside `frameFactor`.
 
 The deposit and the chemistry keep the field clock. The deposit is stated per field step through
 `depositFrameScale`, and ignition was measured per field step. Moving the deposit alone onto `ff` would
@@ -869,8 +991,9 @@ bit-identical at `ff_sub = 1`. Without this change a per-step cap cannot bound a
 the spec's terms (inconsistency 4). Friction stays per step, the condition C15 was measured under (see
 Risks).
 
-**The three counts.** `n = min(max(n_ff, n_T, n_c), SUBSTEPS_MAX)`, where:
-- `n_ff = ⌈ff / ff_stable⌉`.
+**The three counts, now two.** `n = min(max(n_T, n_c), SUBSTEPS_MAX)`. `n_ff = ⌈ff / ff_stable⌉` is
+gone: pressure stability is the step limit's job now (C4b), not the substep count's, so no count reads
+`ff_stable`.
 - `n_T = ⌈maxVelocity · ff / T⌉`. Only if some coupling declares a length.
 - `n_c` is each acting coupling's declared need. Only the fluid declares one:
   `⌈sphStiffness · ff / (0.3 · h)⌉`, with `h = interactionRadius · sphRadiusFraction`. This is the
@@ -885,8 +1008,9 @@ Risks).
 Bodies with no live body declare nothing, because there is no surface to tunnel through
 (inconsistency 7).
 
-**`SUBSTEPS_MAX = 3`.** That is `⌈30 / ff_stable⌉` and today's `SPH_MAX_SUBSTEPS`, where the stiffness
-law was used. The per-extra-substep cost sits beside it (C15). The fluid's scenario at
+**`SUBSTEPS_MAX = 3`.** Re-derived from today's `SPH_MAX_SUBSTEPS` alone, where the stiffness law was
+used: `⌈30 / ff_stable⌉` no longer enters it, since pressure stability holds by construction at every
+frame factor (C4b) and asks for no substep count. The per-extra-substep cost sits beside it (C15). The fluid's scenario at
 `coupling-contract:204-207` ("declared count 4 → 4 substeps") needs `SUBSTEPS_MAX ≥ 4`. Under this
 decision that scenario is the clamp scenario (inconsistency 15).
 
@@ -905,7 +1029,8 @@ The ceiling function loses its substep input:
 - Stiffness 40 at h 50 and ff 1 gives `n_c = 3`.
 - ff 10 at time scale 5 on 60 Hz, with a body alive, gives `n_T = 5`, so the frame runs 3 at
   `effMaxVelocity` 36.
-- ff 30 gives `n_ff = 3`.
+- ff 30 with no travel or fluid ask gives `n = 1`; the step limit (C4b), not a substep count, holds it
+  stable.
 
 **The band floor.** `BODY_BAND_MIN = 25.0` is a stated literal and no longer derived. It is the value
 every saved band was clamped against, so no preset moves. It is strictly positive, and the travel
@@ -1096,7 +1221,9 @@ Rejected:
 
 **Harness.** The new recipe `just calibrate-fluid`, outside `just check`, extends `balance_core`'s
 binned oracle world with a mirror of `sph_core`'s pair loop (`forces-sph.wgsl:240-280`). This answers
-the unsourced mark at `sph-scale:136`. Conditions:
+the unsourced mark at `sph-scale:136`. The arms run after the step limit lands (C4b): "the pressure
+acting" below means the limited pressure, integrate's decoded delta scaled by `s`, not the explicit
+push. Conditions, otherwise unchanged:
 - 128 000 particles, radius 50, the species force at its shipped default (0.2 on the new scale)
 - the pressure acting, crowding 0, fluid 1
 - 900 steps, late window 749–899
@@ -1212,7 +1339,9 @@ Carried from coupling-balance:
 - [Mixed clumps a hold merged stay merged] → Accepted (C3).
 - [The simmer at shipped friction] → Accepted, and observed in-app.
 - [Frames at the 0.05 s cap run up to 3 substeps, which lengthens a slow frame and may keep it capped]
-  → Unmeasured. G1.4 reads `physics=` and the frame time at the cap, and whether the frame recovers.
+  → Now applies only when travel or the fluid asks for more than one substep (C4b, N4): pressure
+  stability no longer asks. Unmeasured. G1.4 reads `physics=` and the frame time at the cap, and
+  whether the frame recovers.
 - [`docs/perf-report.md:129-131` multiplies the render passes by the substep count] → Outside this
   change. Only compute passes repeat.
 - [A writer left on the old convention writes up to 30× too hard] → Tests 4b and 11, and N3's single
@@ -1235,12 +1364,14 @@ New:
 - [`F_edge` may not lie below today's fluid or scent impulse] → The "fraction" assertion stops the
   task and returns the numbers to the user (N2).
 - [Friction stays per step, a second time convention inside integrate: at `ff` 10 a particle loses
-  `1 − retention` per step, so less per reference frame] → This is the condition `ff_stable` was
-  measured under (C15). Moving friction to `retention^ff` would re-open G1.5. Recorded beside
-  `ff_stable`.
+  `1 − retention` per step, so less per reference frame] → This is a condition §3.5's arms hold fixed
+  (crowding-redesign design §3.5, arm A). A cause probe found moving friction to `retention^ff`
+  over-damps rather than restoring time consistency, and is a diagnostic only, not a fix
+  (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:90`); it is the user's call to
+  reopen.
 - [The per-reference-frame cap lets a particle move up to `maxVelocity · ff` per step where today it
-  moves `maxVelocity`] → The travel count bounds it where a body needs it. G1.5's re-bisection runs
-  with the new cap, and `ff_stable` is recorded from that run.
+  moves `maxVelocity`] → The travel count bounds it where a body needs it. §3.5's arms run at the
+  frame factors the app produces, under the step limit, in place of a `ff_stable` re-bisection.
 - [A body's own motion is not in the travel count. Bodies move by `velocity · dtSeconds` per substep
   (`web/shaders/src/body-integrate.wgsl:96-100`), and N4's `n_T` reads only particle Max Velocity, so a
   fast body can sweep its band across particles] → How far a body moves per substep is unmeasured. The travel count bounds particle travel only. This is a finding for
@@ -1255,6 +1386,17 @@ New:
   Intended (the user's decision). The saved opacity is dropped.
 - [A single commit converts five writers] → The oracles gate it. The in-app check at ff 1 is the
   visual confirmation.
+- [Exact momentum after integrate is narrowed to the pressure integers a pair exchanges, not the
+  integrated velocity, since the step limit scales two particles' shares of one pair unequally when
+  their stiffness differs] → C4, C4b. The words stay exactly opposite; the world never conserved
+  momentum in the species term either, since that matrix is asymmetric.
+- [At time scale 2–5, dense crowds answer the mouse, blast and bodies more slowly per reference frame,
+  reaching the same balance] → Accepted (the user's decision). A help line (4.10) and an in-app reading
+  (12.1) state it.
+- [The stiffness words cost 1–2 atomics per above-onset pair, and a crowd buffer at stride 3 rather
+  than 1] → G1.4 (task 4.9) reads the added GPU cost against the allotment.
+- [Overestimated `D` from stiffness-word quantization over-damps crowd-edge particles at ff 30 by at
+  most `n_pairs · 2^-17` in `D`] → Bounded by construction (C4b); unmeasured in play.
 
 ## Migration Plan
 
@@ -1263,9 +1405,10 @@ New:
    - `profiler_slots` and the new nodes and slots
    - the declaration table
 2. The time switch (N3). Then the coarse word and the split, with the assertions.
-3. The substep plan, the per-reference-frame cap, and the removal of the Substeps slider (N4). At this
-   point G1.5 re-bisects `ff_stable`.
-4. The world pressure (C3–C5) and gates 5–7. G1.1–G1.4 run here.
+3. The substep plan, the per-reference-frame cap, and the removal of the Substeps slider (N4).
+4. The world pressure (C3–C5), the stiffness words and the lumped step limit (C4b), and gates 5–7.
+   G1.1–G1.4 run here; G1.2 measures `L` at `K = 540` and 1728 under the limit, and G1.5 is replaced by
+   §3.5's four arms rather than a `ff_stable` re-bisection.
 5. **G2** in-app, then the gains, the 0–1 ranges, the constants restated for the scale, and schema
    version 5 (N2, N7), in one group.
 6. Pattern Scale and G3 (N5). G4 reads in the final in-app pass.

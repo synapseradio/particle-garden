@@ -101,7 +101,8 @@ term at a time before any fluid default that answers to it ships:
   against fractions stepped down to `SPH_RADIUS_FRACTION_MIN`.
 
 Each arm SHALL run over a world whose species force sits at its shipped default, with the fluid at
-strength 1, the world pressure acting (`world-pressure`) and crowding strength at 0. So the result is
+strength 1, the world pressure acting (`world-pressure`, the pressure as limited by the particle's own
+step limit, not the explicit push — the arms wait on that limit landing) and crowding strength at 0. So the result is
 a property of the fluid atop the world's own resistance to compression. Each arm SHALL report two
 readings against the same world with the fluid at 0: how much species structure survives, and how
 even the crowd density becomes. Structure survival SHALL be `σ = (S_arm − 1/n_s) / (S_0 − 1/n_s)`, where `S` is

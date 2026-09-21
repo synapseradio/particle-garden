@@ -9,11 +9,14 @@ a compressed crowd, and its relaxation once the compressor goes.
 ### Requirement: A crowd denser than the onset pushes itself apart
 
 Inside the neighbour sweep, every pair SHALL receive an equal and opposite repulsive impulse along its
-separation, per reference frame. Its magnitude SHALL be the stiffness `K`, times the sum of both
-particles' pressures, times the pair's proximity weight `1 − r/R`, over 120. That magnitude SHALL
-saturate at the per-pair maximum `q_max`. The saturated magnitude times the unit separation SHALL be
-quantized once to one signed integer per component, added to one particle and subtracted from the
-other. The term SHALL carry no viscosity.
+separation, per reference frame. Its magnitude SHALL be `min(K · (φ_this + φ_other) / 120, q_max) ·
+(1 − r/R)`: the stiffness `K` times the sum of both particles' pressures, saturated at the per-pair
+maximum `q_max`, times the pair's proximity weight `1 − r/R`. The pair SHALL also add its radial
+stiffness, the saturated sum divided by the interaction radius, to both particles' stiffness words. The
+saturated magnitude times the unit separation SHALL be quantized once to one signed integer per
+component, added to one particle and subtracted from the other. Integrate SHALL scale each particle's
+whole decoded delta by its own step limit `s`, a function of the frame factor and its summed stiffness
+(`coupling-contract`). The term SHALL carry no viscosity.
 
 A particle's pressure SHALL be `(max(ρ − ρ_on, 0) / ρ_on)²`, where `ρ` is its smoothed crowd density.
 The onset `ρ_on` SHALL be the larger of two densities:
@@ -25,7 +28,7 @@ and SHALL add no pass. It SHALL NOT be scaled by Force Strength, the attraction 
 attenuation, the friction, or any coupling's strength. It SHALL have no slider. The species term's own
 expression and grouping SHALL be unchanged.
 
-Enforced by: `tests/test_physics.nim` suite "Pressure Past The Onset", over the pressure oracle in
+Enforced by: `tests/test_physics.nim` suite "Pressure Past The Onset" (T10), over the pressure oracle in
 `src/physics_core.nim`, which holds (test-held):
 - the float magnitude is zero at and below the onset, strictly increasing above it up to `q_max`, and
   constant past it
@@ -34,6 +37,14 @@ Enforced by: `tests/test_physics.nim` suite "Pressure Past The Onset", over the 
 - the two particles' integers are exactly opposite
 - the term is unchanged by Force Strength, the matrix entry, crowding, friction and the pair's
   relative velocity
+- the sum saturates before the proximity weight, so the magnitude is `min(K(φ+φ)/120, q_max) · (1 −
+  r/R)` even where `r` sits near `R`
+
+The step limit `s` is enforced by `tests/test_physics.nim` and `tests/test_balance_core.nim` suites T1
+"The Step Limit Leaves A Calm Particle Untouched", T2 "A Stiff Particle's Step Stays Inside The Bound",
+T3 "A Pair's Stiffness Is Its Radial Slope", T4 "The Stiffness Words Decode To The Summed Slope", T5 "A
+Limited Step Cannot Overshoot" and T6 "The Step Limit Scales Every Writer Alike"
+(`coupling-contract`).
 
 Suite "The Species Term Is Untouched Below The Onset" runs at Force Strengths 0.2, 0.5 and 1 at frame
 factor 1. There, a settled world below the onset writes a bit-identical velocity delta with and
@@ -41,11 +52,12 @@ without the term (test-held on the native oracle). That `forces.wgsl` carries th
 is **unenforced**, the standing condition of `physics_core`'s mirror. GPU bit identity is
 **unenforced**, because the shader compiler may regroup under relaxed math.
 
-#### Scenario: A world below the onset keeps its species term exactly at frame factor 1
+#### Scenario: A world below the onset keeps its species term exactly at every frame factor
 
-- **WHEN** both particles of a pair sit at or below the onset, at any Force Strength, at frame factor 1
+- **WHEN** both particles of a pair sit at or below the onset, at any Force Strength, at any frame
+  factor
 - **THEN** the pair's velocity delta on the native oracle is bit-for-bit the delta the species term
-  alone produces
+  alone produces, because a particle with zero summed stiffness has step limit `s = 1` exactly (T1)
 
 #### Scenario: A saturated pair keeps its direction
 
@@ -63,6 +75,13 @@ is **unenforced**, the standing condition of `physics_core`'s mirror. GPU bit id
 
 - **WHEN** the pressure integers of every pair in a sweep are summed per component
 - **THEN** each sum is exactly zero
+
+#### Scenario: A limited particle's writers scale alike
+
+- **WHEN** a particle's summed stiffness gives it step limit `s < 1`, and its decoded delta carries
+  species, pressure and body contributions
+- **THEN** the decoded delta is `s` times the frame-factor-scaled sum of every contribution, not the
+  pressure alone (T6)
 
 #### Scenario: The onset follows the world's size and keeps a contact floor
 
@@ -86,14 +105,19 @@ derivation beside it under the measured-bound rule. Neither SHALL change with an
   attracting pair at `MATRIX_MAX_VALUE`. A pure function in `src/balance_core.nim` SHALL compute it from
   the live pair-law shape.
 - `K` SHALL be 540, the stiffness the user chose from the 128 000-particle trade, confirmed on the
-  gate seeds. Beside it SHALL stand the friction-0 bound `B_L`. `L` is the late-window mean speed at
-  `FRICTION_MIN` with the term, over the same seed's without it. `B_L` is the mean of `L` over the gate
-  seeds at 128 000 particles, plus the largest single seed's distance from that mean. A
-  self-attracting world at friction 0 MAY settle warmer than without the term, up to `B_L`, an
-  accepted cost.
+  gate seeds under the step limit (`s`, below). Beside it SHALL stand the friction-0 bound `B_L`. `L`
+  is the late-window mean speed at `FRICTION_MIN` with the term, over the same seed's without it. `B_L`
+  is the mean of `L` over the gate seeds at 128 000 particles, plus the largest single seed's distance
+  from that mean, re-derived under the limit. A self-attracting world at friction 0 MAY settle warmer
+  than without the term, up to `B_L`, an accepted cost.
+- The step limit's bound `θ` (`PRESSURE_STEP_BOUND`) SHALL be 2: half the symplectic bound of 4 at
+  retention 1, leaving a factor of 2 for the density lag and the slopes the summed stiffness `D`
+  omits.
 - Pure functions in `src/balance_core.nim` SHALL compute the uniform crowd density and the floor each
   frame, and the frame SHALL write their maximum as one uniform. `x_on` does not cross to the shader:
-  `max(x_on · ρ̄, ρ_floor)` is the shape the pair law reads an onset in, and one value carries it.
+  `max(x_on · ρ̄, ρ_floor)` is the shape the pair law reads an onset in, and one value carries it. The
+  `x_on` record stands as measured, because G1.1 runs with the pressure off (stiffness 0), so the step
+  limit does not enter that measurement.
 
 Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles", under the `just
 calibrate-balance` recipe. On the gate seeds at 128 000 particles, it holds the mean `L` at most `B_L`
@@ -104,6 +128,7 @@ a change to any of:
 - the onset
 - the fine/coarse word split
 - how the crowd-density computation depends on particle count
+- `θ` or the step limit itself
 
 It does not run with every `just check`. That the recipe reruns on such a change is **unenforced**,
 the standing condition of the recipe's tier. That the frame writes the
@@ -122,6 +147,47 @@ assignment to the onset slot for a call to that producer.
 
 - **WHEN** `K` is raised to 1728
 - **THEN** the gate seeds' mean `L` passes `B_L` and the suite fails
+
+  Outcome pending Q1 (crowding-redesign design §11): under the step limit, `K = 1728` may no longer
+  exceed the re-derived `B_L`, because the limit caps what extra stiffness can do to the step. Task 4.5
+  reruns the trade and returns the table to the user; this scenario's falsifier is then the explicit
+  (unlimited) arm at frame factor 2, which reads 3.09× at 128 000
+  (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:109`).
+
+### Requirement: The pressure cannot overshoot at any frame factor
+
+For every frame-factor schedule the app produces — sustained, jittered, and held frames past the 0.05 s
+cap — a pressure world at 16 000 and 128 000 particles, at `FRICTION_MIN` and shipped friction, SHALL
+settle no warmer per reference frame than at frame factor 1, with no more cap contact than a
+stiffness-zero control. The step limit (`coupling-contract`) SHALL hold this by construction: `ff ·
+λ_max ≤ θ < 4` for every frame factor, radius and particle count, where `λ_max` is a particle's own
+pair-Hessian bound. No substep count and no recorded stability limit SHALL be needed for it.
+
+Enforced by: `tests/test_balance_core.nim` suite "Every Frame Factor Settles No Warmer" (G1), under the
+`just calibrate-balance` recipe, on 16 000 and 128 000 particles, radius 50 and 150. Four arms hold: A,
+sustained schedules at shipped friction; B, sustained schedules at `FRICTION_MIN`, against the
+stiffness-zero world's own frame-factor dependence; C, cap contact, no more than the stiffness-zero
+world's; D, unsteady schedules (uniform and alternating jitter, and held frames with single ff-30
+steps). `tests/test_balance_core.nim` suite "A Limited Step Cannot Overshoot" (T5) holds the linear
+one-step map's spectral radius at most 1 at every frame factor the app produces, on the oracle, apart
+from the recipe.
+
+#### Scenario: A sustained frame factor of 30 settles no warmer than frame factor 1
+
+- **WHEN** a self-attracting world at 128 000 particles runs at a fixed frame factor of 30 for 900
+  steps
+- **THEN** its late-window motion per reference frame is at most that of the same world at frame
+  factor 1
+
+#### Scenario: A jittered frame factor settles no warmer than frame factor 1
+
+- **WHEN** the frame factor is drawn per step from 8 to 16, or alternates 10 and 13
+- **THEN** the world's late-window motion per reference frame is at most that of frame factor 1
+
+#### Scenario: A held frame past the 0.05 s cap settles no warmer than the shipped schedule
+
+- **WHEN** a world runs frame factor 0.42 with single frame-factor-30 steps at frames 300, 500 and 700
+- **THEN** its late-window motion per reference frame is at most that of the fixed 0.42 schedule
 
 ### Requirement: A compressed crowd stays local and below its collapse
 

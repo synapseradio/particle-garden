@@ -124,14 +124,19 @@ carries the oracle's expression is **unenforced**, the standing condition of `ph
 ### Requirement: Every velocity impulse accumulates per reference frame in words that fit a full crowd
 
 Every shader that writes the velocity delta SHALL accumulate its impulse per reference frame, not
-multiplied by the substep, and integrate SHALL multiply the decoded delta by the frame factor once. No
-writer SHALL apply its own time factor, on the CPU or in its shader. The delta SHALL be held in two
-signed 32-bit words per particle: a fine word at 2^16 and a coarse word counting `2^k` fine quanta. A
-writer whose full crowd does not fit the fine word SHALL split each integer `q` into `q >> k` for the
-coarse word and `q & (2^k − 1)` for the fine word, which sum back to `q` exactly. `k` SHALL be the
-largest value at which every writer's full-crowd contribution to the fine word fits. `q_max` SHALL be
-the largest per-pair pressure the coarse word admits after SPH's. No user range SHALL be narrowed to
-satisfy either word.
+multiplied by the substep, and integrate SHALL multiply the decoded delta by the frame factor and the
+particle's step limit once. No writer SHALL apply its own time factor, on the CPU or in its shader. The
+delta SHALL be held in two signed 32-bit words per particle: a fine word at 2^16 and a coarse word
+counting `2^k` fine quanta. A writer whose full crowd does not fit the fine word SHALL split each
+integer `q` into `q >> k` for the coarse word and `q & (2^k − 1)` for the fine word, which sum back to
+`q` exactly. `k` SHALL be the largest value at which every writer's full-crowd contribution to the fine
+word fits. `q_max` SHALL be the largest per-pair pressure the coarse word admits after SPH's. No user
+range SHALL be narrowed to satisfy either word.
+
+The particle's step limit `s = min(1, θ/(2 · ff · D))` SHALL be a pure function of the frame factor and
+the particle's summed pair stiffness `D`, decoded from a second pair of fine and coarse words the same
+way (`world-pressure`). `s` SHALL be 1 exactly wherever `2 · ff · D ≤ θ`, so a particle with zero
+stiffness receives a step bit-identical to one with no limit at all.
 
 Enforced by: static assertions at the bottom of `src/config_ranges.nim`. They sum every writer's
 per-particle maximum per reference frame into each word, and each term names its constants
@@ -143,9 +148,16 @@ convention is **unenforced**, the standing condition of the mirror.
 
 #### Scenario: A full crowd on the largest substep keeps its impulse
 
-- **WHEN** a full crowd at any writer's maxima acts on one particle on the largest substep
+- **WHEN** a full crowd at any writer's maxima acts on a zero-stiffness particle on the largest substep
 - **THEN** the decoded velocity delta equals the float impulse within one quantum times the frame
   factor, with its sign
+
+#### Scenario: A limited particle's full crowd keeps its impulse times its step limit
+
+- **WHEN** a full crowd at any writer's maxima acts on a particle whose summed stiffness gives it step
+  limit `s < 1`, on the largest substep
+- **THEN** the decoded velocity delta equals the float impulse times `s`, within one quantum times the
+  frame factor, with its sign
 
 #### Scenario: A writer applies its own frame factor
 
@@ -161,45 +173,42 @@ convention is **unenforced**, the standing condition of the mirror.
 
 ### Requirement: The integrator owns the substep count
 
-Each frame SHALL run `n` substeps, each advancing the frame's time over `n`, where `n` is the largest
-of three counts:
-- `⌈ff / ff_stable⌉`
+Each frame SHALL run `n` substeps, each advancing the frame's time over `n`, where `n` is the larger
+of two counts:
 - the count that keeps a particle at the live Max Velocity from travelling farther than the travel
   bound `T` in one substep
 - the count each active coupling declares at the live values
 
-A coupling is active while its strength is nonzero; bodies are active while a body is alive. `T`
-SHALL be the smallest length that any active coupling declares it resolves. When
+Pressure stability asks for no count: the step limit (above) holds the step stable at every frame
+factor by construction, so `⌈ff / ff_stable⌉` and `ff_stable` itself are gone, and their disproved
+value of 12 (bisected to 1 at 128 000 particles under the per-reference-frame cap,
+`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:44`) no longer appears anywhere in this
+contract. A coupling is active while its strength is nonzero; bodies are active while a body is alive.
+`T` SHALL be the smallest length that any active coupling declares it resolves. When
 `n` would pass `SUBSTEPS_MAX`, the effect-time clamp SHALL lower the requesting coupling's effective
 value, or the effective Max Velocity where the travel count requests it, never a stored value, and the
 frame SHALL run `SUBSTEPS_MAX`. `SUBSTEPS_MAX` SHALL live in `src/config_ranges.nim`, replacing
 `SPH_MAX_SUBSTEPS`, with the per-substep cost it was measured at beside it. The substep count SHALL have no
-slider. `src/config_ranges.nim` SHALL hold `ff_stable` with its conditions beside it. `ff_stable` is
-the largest frame factor, held fixed through a run, at which a dense self-attracting world at the
-recorded `K` and shipped friction settles no warmer per reference frame than at frame factor 1. It is
-measured on the gate seeds at 128 000 particles (`world-pressure`). The time-scale range SHALL NOT
-be narrowed to avoid substeps.
+slider. The time-scale range SHALL NOT be narrowed to avoid substeps.
 
-Enforced by: `tests/test_balance_core.nim` suite "A Settling World Still Settles". On the gate
-seeds at 128 000 particles it runs frame factors 2, 10 and 30, a frame factor drawn per frame from 8
-to 16, and one alternating 10 and 13, through the substep rule. It holds each arm's three-seed mean no
-warmer per reference frame than frame factor 1 at shipped friction (held by the `just
-calibrate-balance` recipe, not by every `just check`). `tests/test_sim_registry.nim` suite "Substeps
-Follow The Tightest Coupling" holds the count's function over the declarations, including the cap and
-the effect-time clamp (test-held). That `src/webgpu_compute.nim` runs the count the function returns
-is **unenforced** beyond the oracle, the standing condition of the executor. The GPU cost per substep
-is **agent-checkable** in-app.
+Enforced by: `tests/test_balance_core.nim` suite "Every Frame Factor Settles No Warmer" (`world-pressure`)
+holds that pressure stability needs no substep count, on the gate seeds at 128 000 particles, across
+sustained, jittered and held-frame schedules (held by the `just calibrate-balance` recipe, not by every
+`just check`). `tests/test_sim_registry.nim` suite "Substeps Follow The Tightest Coupling" holds the
+count's function over the declarations, including the cap and the effect-time clamp (test-held). That
+`src/webgpu_compute.nim` runs the count the function returns is **unenforced** beyond the oracle, the
+standing condition of the executor. The GPU cost per substep is **agent-checkable** in-app.
 
-#### Scenario: A long frame substeps
+#### Scenario: A long frame runs one step
 
-- **WHEN** a frame held at the 0.05 s cap at time scale 5 carries frame factor 30, `ff_stable` is 12,
-  and no other count exceeds 3
-- **THEN** the frame runs 3 substeps of 10 reference frames each
+- **WHEN** a frame held at the 0.05 s cap at time scale 5 carries frame factor 30, and no travel or
+  fluid count exceeds 1
+- **THEN** the frame runs 1 step, and the step limit (above) holds it stable
 
 #### Scenario: A 60 Hz frame with a calm world does not substep
 
-- **WHEN** a frame on a 60 Hz display carries frame factor at most 10, `ff_stable` is 12, and no
-  coupling or travel count exceeds 1
+- **WHEN** a frame on a 60 Hz display carries frame factor at most 10, and no coupling or travel count
+  exceeds 1
 - **THEN** the frame runs 1 step
 
 #### Scenario: A stiff fluid substeps without a substep slider

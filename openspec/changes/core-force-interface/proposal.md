@@ -125,7 +125,7 @@ This change supersedes `coupling-balance`. Its unit, pressure term, velocity wor
 
 Each gate orders ahead of the constants it sets:
 
-1. **coupling-balance's five gates,** carried over, each native gate run on three gate seeds at 128 000 particles: the onset, the stiffness trade, the stacked hold, the pressure's in-app cost, and `ff_stable`.
+1. **coupling-balance's five gates,** carried over, each native gate run on three gate seeds at 128 000 particles: the onset, the stiffness trade, the stacked hold, the pressure's in-app cost, and the frame-factor stability gate.
 2. **Each coupling's calibrated full effect in `u0`,** measured in-app, before its gain is set. Until then a strength range carries a provisional note, as `LONG_RANGE_STRENGTH_MAX` does now (`src/config_ranges.nim:68-75`).
 3. **The chemistry-scale band.** At each scale step: the regimes' distance to their own attractor, deposit ignition, the splat radius, and the collapse bracket. This runs in the existing `tests/test_field_core.nim` harness. The floor is the smallest scale at which every regime still settles nearer its own attractor than any other.
 4. **The long-range cost with pressure on.** Coupled time (the `physics=` figure plus every coupling's slot) at 128 000 particles and Long Range 1 in the four Long Range × Force Strength corners, one run each, read in-app. Scent and bodies are declared and unmeasured. The frame must stay under the pair pass's allotment (coupling-balance gate 4).

@@ -5,8 +5,9 @@
 Every attractive force contribution SHALL be scaled by `1 / (1 + strength * log(1 + density))`,
 where `density` is the receiving particle's smoothed, species-blind crowd density — a dedicated
 channel that counts every neighbour, accumulated beside the same-species colony density
-(`web/shaders/src/forces.wgsl`, the `crowdDensityDeltaFixed` atomics in the neighbour loop) and
-smoothed onto the particle exactly as the colony channel is (`web/shaders/src/integrate.wgsl:72-73`,
+(`web/shaders/src/forces.wgsl`, the crowd word of the three-word crowd buffer — crowd density,
+stiffness fine, stiffness coarse (`world-pressure`) — in the neighbour loop) and smoothed onto the
+particle exactly as the colony channel is (`web/shaders/src/integrate.wgsl:72-73`,
 `p.crowdDensity`) — and `strength` is the crowding strength parameter. The colony channel stays
 same-species and feeds the renderer; the two signals are not interchangeable.
 
