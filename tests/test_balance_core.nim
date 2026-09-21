@@ -1090,6 +1090,191 @@ when defined(calibrateFluid):
       reportArm(fluidArms()[ftRadiusFraction])
 
 # ==============================================================================
+# T5: THE STEP LIMIT BOUNDS THE LINEARIZED MAP (crowding-redesign design §8)
+# ==============================================================================
+# An oracle independent of stepLimit's own formula: a finite-difference
+# Jacobian of the float pressure force, checked against the analytic sum
+# sweepPairs accumulates. "Fixed phi" (design §8): every particle in a trial
+# crowd shares one density, so the pressure between any pair depends only on
+# their positions, not on a simulated smoothed density.
+
+const
+  T5_FRAME_FACTORS = [0.42'f64, 1.0'f64, 2.0'f64, 4.2'f64, 10.0'f64, 30.0'f64]
+  T5_RETENTIONS = [1.0'f64, 0.95'f64]
+  T5_RADII = [10.0'f64, 50.0'f64, 150.0'f64]
+  T5_TRIALS = 20
+  T5_PARTICLES = 200
+  T5_EPS = 1.0e-3'f64
+
+type Jacobian2 = object
+  xx, xy, yx, yy: float64
+
+func pressureForceOn(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
+    stiffness, impulseMax: float64): tuple[x, y: float64] =
+  ## The float pressure force physics_core.worldPressureMagnitude gives
+  ## particle `i` from every neighbour within `radius`, at the same distance
+  ## floor sweepPairs reads (PRODUCTION_TUNING.minDistanceSq).
+  let half = worldSize * 0.5
+  let floorSq = PRODUCTION_TUNING.minDistanceSq
+  for j in 0 ..< xs.len:
+    if j == i: continue
+    let dx = wrapDelta((xs[j] - xs[i]).float32, worldSize.float32,
+      half.float32).float64
+    let dy = wrapDelta((ys[j] - ys[i]).float32, worldSize.float32,
+      half.float32).float64
+    let distSq = dx * dx + dy * dy
+    if distSq <= 0.0 or distSq >= radius * radius: continue
+    let dist = sqrt(max(distSq, floorSq))
+    let invDist = 1.0 / dist
+    let normalizedDist = dist / radius
+    let magnitude = worldPressureMagnitude(phi.float32, phi.float32,
+      normalizedDist.float32, stiffness.float32, impulseMax.float32).float64
+    result.x += -magnitude * dx * invDist
+    result.y += -magnitude * dy * invDist
+
+func pressureJacobian(xs, ys: seq[float64]; i: int; worldSize, radius, phi,
+    stiffness, impulseMax: float64): Jacobian2 =
+  ## The negative gradient of pressureForceOn with particle `i`'s own
+  ## position, central-differenced: the local restoring "spring constant" a
+  ## linearization around this crowd sees.
+  var plusXxs = xs
+  plusXxs[i] += T5_EPS
+  var minusXxs = xs
+  minusXxs[i] -= T5_EPS
+  var plusYys = ys
+  plusYys[i] += T5_EPS
+  var minusYys = ys
+  minusYys[i] -= T5_EPS
+  let fPlusX = pressureForceOn(plusXxs, ys, i, worldSize, radius, phi,
+    stiffness, impulseMax)
+  let fMinusX = pressureForceOn(minusXxs, ys, i, worldSize, radius, phi,
+    stiffness, impulseMax)
+  let fPlusY = pressureForceOn(xs, plusYys, i, worldSize, radius, phi,
+    stiffness, impulseMax)
+  let fMinusY = pressureForceOn(xs, minusYys, i, worldSize, radius, phi,
+    stiffness, impulseMax)
+  let inv2Eps = 1.0 / (2.0 * T5_EPS)
+  Jacobian2(
+    xx: -(fPlusX.x - fMinusX.x) * inv2Eps,
+    xy: -(fPlusY.x - fMinusY.x) * inv2Eps,
+    yx: -(fPlusX.y - fMinusX.y) * inv2Eps,
+    yy: -(fPlusY.y - fMinusY.y) * inv2Eps)
+
+func pressureStiffnessSum(xs, ys: seq[float64]; i: int; worldSize, radius,
+    phi, stiffness, impulseMax: float64): float64 =
+  ## D_i: the sum sweepPairs accumulates for particle `i`.
+  let half = worldSize * 0.5
+  let invRadius = 1.0 / radius
+  for j in 0 ..< xs.len:
+    if j == i: continue
+    let dx = wrapDelta((xs[j] - xs[i]).float32, worldSize.float32,
+      half.float32).float64
+    let dy = wrapDelta((ys[j] - ys[i]).float32, worldSize.float32,
+      half.float32).float64
+    let distSq = dx * dx + dy * dy
+    if distSq <= 0.0 or distSq >= radius * radius: continue
+    result += pairStiffnessSlope(phi.float32, phi.float32, stiffness.float32,
+      impulseMax.float32, invRadius.float32).float64
+
+func stepMatrix(j: Jacobian2; retention, frameFactor, s: float64):
+    array[4, array[4, float64]] =
+  ## The symplectic map v' = r(v - ff*s*J*x), x' = x + v' (crowding-redesign
+  ## design §3.4), state ordered [vx, vy, xx, xy].
+  let b = frameFactor * s
+  result[0] = [retention, 0.0, -retention * b * j.xx, -retention * b * j.xy]
+  result[1] = [0.0, retention, -retention * b * j.yx, -retention * b * j.yy]
+  result[2] = [retention, 0.0, 1.0 - retention * b * j.xx,
+    -retention * b * j.xy]
+  result[3] = [0.0, retention, -retention * b * j.yx,
+    1.0 - retention * b * j.yy]
+
+func spectralRadius4(m: array[4, array[4, float64]]): float64 =
+  ## The dominant |eigenvalue|, by power iteration on the norm growth rate: a
+  ## complex-conjugate dominant pair's invariant real subspace is a scaled
+  ## rotation, so the per-step norm ratio converges to the modulus there too.
+  var v = [1.0, 0.3, -0.2, 0.5]
+  for _ in 0 ..< 80:
+    var next: array[4, float64]
+    for r in 0 ..< 4:
+      for c in 0 ..< 4:
+        next[r] += m[r][c] * v[c]
+    var norm = 0.0
+    for x in next: norm += x * x
+    norm = sqrt(norm)
+    if norm <= 0.0:
+      return 0.0
+    for r in 0 ..< 4:
+      v[r] = next[r] / norm
+  var lastApplied: array[4, float64]
+  for r in 0 ..< 4:
+    for c in 0 ..< 4:
+      lastApplied[r] += m[r][c] * v[c]
+  var norm = 0.0
+  for x in lastApplied: norm += x * x
+  sqrt(norm)
+
+type T5Crowd = object
+  xs, ys: seq[float64]
+  worldSize, radius, phi: float64
+
+func t5Crowd(seed: int): T5Crowd =
+  ## 200 particles placed uniformly at random, at a radius from {10, 50,
+  ## 150} and a crowd ratio x from [7, 16] (crowding-redesign design §8). The
+  ## world spans the area whose mean crowd density (N pi R^2 / 3A, the same
+  ## expression meanCrowdDensity uses) equals x at onset 1, so a uniformly
+  ## placed particle's expected neighbour-weighted density matches phi.
+  var rng = initRand(seed)
+  let radius = T5_RADII[rng.rand(0 .. 2)]
+  let x = rng.rand(7.0 .. 16.0)
+  let worldSize = radius * sqrt(T5_PARTICLES.float64 * PI / (3.0 * x))
+  var xs = newSeq[float64](T5_PARTICLES)
+  var ys = newSeq[float64](T5_PARTICLES)
+  for i in 0 ..< T5_PARTICLES:
+    xs[i] = rng.rand(0.0 .. worldSize)
+    ys[i] = rng.rand(0.0 .. worldSize)
+  T5Crowd(xs: xs, ys: ys, worldSize: worldSize, radius: radius,
+    phi: (x - 1.0) * (x - 1.0))
+
+suite "A Limited Step Cannot Overshoot":
+
+  test "the limited map's spectral radius never passes 1 (T5)":
+    var verdicts: Verdicts
+    for trial in 0 ..< T5_TRIALS:
+      let crowd = t5Crowd(trial)
+      for i in 0 ..< crowd.xs.len:
+        let j = pressureJacobian(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+          WORLD_PRESSURE_IMPULSE_MAX)
+        let d = pressureStiffnessSum(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+          WORLD_PRESSURE_IMPULSE_MAX)
+        for frameFactor in T5_FRAME_FACTORS:
+          let s = stepLimit(frameFactor.float32, d.float32,
+            PRESSURE_STEP_BOUND.float32).float64
+          for retention in T5_RETENTIONS:
+            let radius = spectralRadius4(stepMatrix(j, retention, frameFactor,
+              s))
+            if radius > 1.0 + 1.0e-6:
+              verdicts.add "trial " & $trial & " particle " & $i & " ff " &
+                $frameFactor & " retention " & $retention &
+                ": spectral radius " & $radius & " passes 1"
+    checkNoVerdicts(verdicts)
+
+  test "the unlimited control exceeds spectral radius 1 at frame factor 30 (T5)":
+    var exceeded = false
+    block search:
+      for trial in 0 ..< T5_TRIALS:
+        let crowd = t5Crowd(trial)
+        for i in 0 ..< crowd.xs.len:
+          let j = pressureJacobian(crowd.xs, crowd.ys, i, crowd.worldSize,
+            crowd.radius, crowd.phi, WORLD_PRESSURE_STIFFNESS,
+            WORLD_PRESSURE_IMPULSE_MAX)
+          if spectralRadius4(stepMatrix(j, 1.0, 30.0, 1.0)) > 1.0:
+            exceeded = true
+            break search
+    check exceeded
+
+# ==============================================================================
 # THE CALIBRATION ARMS
 # ==============================================================================
 # Each arm steps the oracle world at 128 000 particles for hundreds of frames on
