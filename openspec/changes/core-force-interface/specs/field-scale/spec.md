@@ -77,14 +77,17 @@ band before it ships. The measurement runs in the `tests/test_field_core.nim` ha
 steps 1, 0.5, 0.25 and the floor, the steps the diameter sweep measured (`src/field_core.nim:235-239`). At each scale step it measures:
 - the regimes' distance to their own attractor. Each named regime, at that step's coordinates and
   deposit floor, SHALL settle nearer its own unforced attractor than any other regime's, under the
-  statistic of suite "The Regime Deposit Floor Preserves The Regime". The statistic SHALL still
-  separate the regimes from each other at that step.
-- deposit ignition. Worms and Coral SHALL ignite at their deposit floor within the ignition budget,
-  and SHALL NOT ignite below it. The floor is the smallest deposit that ignites, per
-  `RD_REGIME_HIGH_FEED_DEPOSIT`'s rule (`src/config_ranges.nim:305-319`).
-- the splat radius. `RD_DEPOSIT_SPLAT_RADIUS` SHALL ignite at the default deposit, and a single-cell
-  deposit SHALL NOT ignite at any deposit up to `RD_DEPOSIT_MAX`
-  (`src/field_core.nim:289-313`).
+  statistic of suite "The Regime Deposit Floor Preserves The Regime". A regime's own attractor is
+  the unforced pattern at its scale-1 coordinates at that step, so a per-step row moves the path to
+  the attractor and never the attractor itself. The statistic SHALL still separate the regimes from
+  each other at that step.
+- deposit ignition. Worms and Coral SHALL stay dark at the default deposit and SHALL ignite at
+  their deposit floor, `RD_REGIME_HIGH_FEED_DEPOSIT`, within the ignition budget.
+- the splat radius. `RD_DEPOSIT_SPLAT_RADIUS` SHALL ignite at the default deposit at every step.
+  At scale 1 a single-cell deposit SHALL NOT ignite at any deposit up to `RD_DEPOSIT_MAX`
+  (`src/field_core.nim:289-313`). Below scale 1 that is no criterion: a smaller diffusion strips
+  an isolated peak more slowly, and a radius-1 deposit first ignites at 0.0625 at scale 0.5 and
+  0.0325 at 0.25. `RD_DEPOSIT_MAX` stays one constant.
 - the per-cell deposit cap. A block of cells taking `RD_DEPOSIT_CELL_MAX` every frame for 400 frames,
   across the feed and kill samples, SHALL stay finite. The cap SHALL be at most half the largest
   measured stable cap at that step (`src/field_core.nim:327-354`).
@@ -93,16 +96,16 @@ steps 1, 0.5, 0.25 and the floor, the steps the diameter sweep measured (`src/fi
 - the collapse bracket (`species-chemistry`, "Up-gradient feedback stays bounded").
 
 The floor SHALL be the smallest scale at which every regime still settles nearer its own attractor
-than any other. Where a regime's coordinates or deposit floor drift across the band, `RD_REGIMES`
-SHALL hold one row per scale step for that regime. A regime selection SHALL apply the row for the
-step nearest the live scale. The splat radius and the cell cap SHALL each stay one constant
+than any other. Where a regime's scale-1 row drifts at a step, `RD_REGIME_SCALE_ROWS` SHALL hold a
+row for that regime at that step whose coordinates restore it. A regime selection SHALL apply the
+row for the step nearest the live scale, falling back to `RD_REGIMES`. The splat radius and the cell cap SHALL each stay one constant
 where one value passes at every step. A constant that passes at no single value SHALL follow the
 scale as a per-frame value.
 
 Enforced by: `tests/test_field_core.nim` suites "The Regime Deposit Floor Preserves The Regime",
 "Ignition From Coherent Deposits", "A Cell's Per-Frame Deposit Is Bounded" and "Chemotactic Collapse
 Bound", each run at every scale step (test-held). The static assertions over `RD_REGIMES`
-(`src/config_ranges.nim:677-683`) range over every row, so each row's coordinates and deposit floor
+(`src/config_ranges.nim`) range over every row of `RD_REGIME_SCALE_ROWS` too, so each row's coordinates and deposit floor
 stay inside the slider ranges (build-asserted).
 
 #### Scenario: A regime that distorts at a scale raises the floor

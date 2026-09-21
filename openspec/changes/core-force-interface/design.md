@@ -922,21 +922,29 @@ Rejected:
   `webgpu_compute` writes them where it writes the rates today (`:1053-1054`).
 
 **The floor.**
-- `RD_PATTERN_SCALE_MIN` is recorded, provisionally 0.25. That is the smallest measured step whose
-  diameter clears 4 cells: 4.47 at 0.25 (`src/field_core.nim:232-239`).
+- `RD_PATTERN_SCALE_MIN` is 0.25, G3's floor (`scratchpad/core-force-interface/g3__21-09-26-2010.md`).
+  Coral has no restoring row at 0.22 or 0.2 anywhere in the feed and kill ranges, so 0.22 is the
+  first failing step below it. The measured diameter clears 4 cells down to 0.2 (4.02) and not at
+  0.19 (3.96).
 - The closed-form floor `(4.0/9.30)² ≈ 0.185` is not used. The measured diameter falls below the √D
   law near the cliff (4.47 against 4.65 predicted at 0.25, and 3.71 at 0.16). Interpolating linearly
   between the measured 0.16 and 0.25 points puts 4.0 cells at `0.16 + 0.09 · (4.0 − 3.71)/(4.47 − 3.71)
   ≈ 0.194`. That figure is arithmetic on `src/field_core.nim:232-239`, not a measurement.
 - G3 measures the band steps `[1, 0.5, 0.25]` plus candidate floors below 0.25, down to the first
   step that fails. It records the floor as the smallest step that passes every criterion in
-  `field-scale` ("The pattern-scale band is measured before its constants are set").
+  `field-scale` ("The pattern-scale band is measured before its constants are set"). The
+  single-cell and scattered negative controls are criteria at scale 1 only: below it a smaller
+  diffusion lets a narrow deposit ignite inside the deposit range (0.0625 at 0.5, 0.0325 at 0.25),
+  and `RD_DEPOSIT_MAX` stays one constant. Worms and Coral stay dark at the default deposit and
+  ignite at 0.04.
 - Static assertions: `patternDiameterCells(RD_DIFFUSION_A · floor) ≥ 4.0`, and the ceiling is 1.
 
 **Regime rows.** `RD_REGIMES` keeps one row per regime, the scale-1 row. A sibling table,
 `RD_REGIME_SCALE_ROWS` (id, scale, feed, kill, minDeposit), holds rows only for the steps where G3
-finds a regime drifting. `regimeRow(id, scale)` returns the row at the nearest step, falling back to
-`RD_REGIMES`.
+finds a regime drifting: Coral at 0.5 and 0.25, Worms at 0.25. A row restores its regime when its
+shipped path settles nearer the regime's own unforced attractor, taken at the scale-1 coordinates and
+that step, than any other regime's. `regimeRow(id, scale)` returns the row at the nearest step,
+falling back to `RD_REGIMES`.
 - `applyRegimeImpl` (`src/web_api.nim:620-640`) and the catalog it serves (`:596-603`) read
   `regimeRow` at the live scale.
 - `rdClimateTour` (`src/climate_core.nim:107-112`) takes a scale.
@@ -948,7 +956,9 @@ finds a regime drifting. `regimeRow(id, scale)` returns the row at the nearest s
 The CPU writes it each frame. G3 records the stepped strength-1 impulse at each band step beside the
 gain. "Every Writer Answers In The Pair Unit" sweeps the scent oracle over the steps. If the
 closed-form `√s` misses the stepped impulse at some step by more than the oracle's tolerance, the gain
-follows the recorded per-step table, interpolated in `s`.
+follows the recorded per-step table, interpolated in `s`. G3 measured it at 1, 0.983 and 0.927 of
+the scale-1 impulse at 1, 0.5 and 0.25 (128x128 torus, settled peak gradient), so √s stays the
+closed form and 8.4 writes the table, `RD_SCENT_STEPPED_IMPULSE`.
 
 **Presets.** An absent `rdPatternScale` decodes to 1.
 

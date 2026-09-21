@@ -256,8 +256,8 @@ Conventions every task below uses:
 
   Record, per step:
   - each regime's distance to its own attractor
-  - Worms/Coral ignition at their floor, and none below it
-  - that the splat ignites at the default deposit and a single cell never does
+  - Worms/Coral dark at the default deposit and ignition at their floor
+  - that the splat ignites at the default deposit, and at scale 1 that a single cell never does
   - the cell cap at most half the largest measured stable cap
   - the scent's strength-1 stepped impulse
   - the collapse bracket
@@ -267,7 +267,8 @@ Conventions every task below uses:
   - `RD_PATTERN_SCALE_MIN` at G3's floor, with `RD_PATTERN_SCALE_DEFAULT = RD_PATTERN_SCALE_MIN` tied by assertion
   - ceiling 1
   - the static assertions: `RD_DIFFUSION_A · ceiling · RD_DELTA_T ≤ 1`, `patternDiameterCells(RD_DIFFUSION_A · floor) ≥ RD_MIN_RESOLVED_DIAMETER_CELLS`, and default in range
-  - `RD_REGIME_SCALE_ROWS` for each step where G3 finds a regime drifting, with `regimeRow(id, scale)`; the regime assertions at `:677-686` extend over it
+  - `RD_REGIME_SCALE_ROWS` for each step where G3 finds a regime drifting, with `regimeRow(id, scale)`; the regime assertions in `src/config_ranges.nim` extend over it
+  - the per-step stepped scent impulse, `RD_SCENT_STEPPED_IMPULSE`, beside the band constants for 8.4
   - the splat radius and cell cap as one constant where one value passes, and per-frame values otherwise
   - the per-step collapse bracket beside `TROPISM_MAX` (species-chemistry)
 
