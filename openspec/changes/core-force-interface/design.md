@@ -60,7 +60,7 @@ shader's expressions and never the GPU (`scratchpad/coupling-balance/`: `design-
 | Quantity | Value | Status |
 |---|---|---|
 | `u0` | `FRAME_DT_REFERENCE` = 1/120 velocity per reference frame, one touching neighbour's repulsion at pair gain 1 | definition |
-| `x_on` | ≈ 6.3, the bottom of the self-attracting band | measured on 3 seeds; the gate-1 run records it (G1.1) |
+| `x_on` | 6.3 | the user's placement; G1.1 records the settles it separates at 128 000 and radius 50 |
 | `K` | 540, no viscosity | the user's choice among measured arms; G1.2 confirms it on 16 seeds |
 | `B_L` | ≈ 1.177 | provisional, batch M; G1.2 re-derives it |
 | `ff_stable` | 12 | 8 seeds at 16 000; G1.5 re-bisects it on 16 |
@@ -74,7 +74,7 @@ shader's expressions and never the GPU (`scratchpad/coupling-balance/`: `design-
 
 The measurement gates, labelled here and used throughout:
 - **G1.1–G1.5**, coupling-balance's five gates, carried unchanged (`proposal.md:128`):
-  - G1.1: the onset `x_on`
+  - G1.1: the settles the placed onset `x_on` separates
   - G1.2: the stiffness trade `K` and `B_L`
   - G1.3: the stacked hold
   - G1.4: the pressure's in-app cost and the settled headroom
@@ -221,16 +221,23 @@ Evidence (**proven** on CPU):
 
   At the preset `repulsionEnd` of 0.5 the floor is 3.80. That sits above every mixed peak at 16 000
   and radius 10 (3.2) and below every self-attracting peak there (5.4).
-- The exponential model's floor is unprobed (`openspec/changes/archive/2026-09-18-coupling-balance/design.md:216-219`). G1.1 measures it.
+- The exponential model's floor is unprobed (`openspec/changes/archive/2026-09-18-coupling-balance/design.md:216-219`). G1.1 runs the polynomial model only, so it stays unprobed.
 
 Where the floor and the ratio do not separate the two kinds of world:
 - Mixed peaks past the floor reach 9.1 (128 000 at radius 10), 8.0 (16 000 at 20) and 7.9 (1 000 at 50).
 - Self-attracting settles read 6.3–7.9 at 1 000 and radius 150, and 8.9–13 at 1 000 and radius 50.
 
-**Placement: `x_on ≈ 6.3`, the bottom of the self-attracting band (the user's decision).** It trims
-the densest particles of dense mixed settles by about 20%. At 128 000 and radius 10 with `x_on = 6`
-the densest crowd fell from 14.7 to 11.8, while p99, weighted neighbours and mean speed stayed
-unchanged to the printed digit (batch I-a). Mixed clumps that a hold merged stay merged after release.
+**Placement: `x_on = 6.3` (the user's decision).** It trims the densest particles of dense mixed
+settles by about 20%. At 128 000 and radius 10 with `x_on = 6` the densest crowd fell from 14.7 to
+11.8, while p99, weighted neighbours and mean speed stayed unchanged to the printed digit (batch I-a).
+Mixed clumps that a hold merged stay merged after release.
+
+G1.1 does not derive `x_on`; it records what 6.3 separates (`scratchpad/core-force-interface/g1-onset__21-09-26-2024.md`).
+At 128 000 particles and radius 50, on the gate seeds, the end-of-window p99.9 `x` reads 10.56–11.46
+for one self-attracting species and 2.88–3.34 for four species that each attract only themselves.
+So 6.3 spares the mixed-like worlds and engages in the self-attracting ones. The band's margin rule
+(mean less the largest run's distance) gives 2.657 over the bimodal six runs, below every run, and is
+recorded as measured, not adopted.
 
 | Option | Verdict |
 |---|---|
@@ -1168,8 +1175,9 @@ Its named amendments move with this change:
 ## Risks / Trade-offs
 
 Carried from coupling-balance:
-- [The onset rests on 3 seeds; the exponential floor is unprobed] → G1.1 measures 16 seeds, both
-  models, down to radius 10 and 100 particles.
+- [The onset is placed, not derived; the exponential floor is unprobed] → G1.1 records the settles
+  6.3 separates on the gate seeds at 128 000 and radius 50, polynomial model only. Other counts,
+  radii, species counts and the exponential model stay unmeasured.
 - [Every probe is a CPU model; GPU bit identity is unenforced] → In-app comparison of the settled look.
 - [A fixed stiffness cannot hold the stacked column near the onset] → Accepted (C6). Gate 5 holds it
   against the control.

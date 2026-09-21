@@ -75,13 +75,13 @@ is **unenforced**, the standing condition of `physics_core`'s mirror. GPU bit id
 
 `src/config_ranges.nim` SHALL hold the onset ratio `x_on` and the stiffness `K`, each with its
 derivation beside it under the measured-bound rule. Neither SHALL change with any live value.
-- `x_on` SHALL sit at the bottom of the band of settled crowd densities that self-attracting worlds
-  reach with no coupling but the species force acting, in units of the uniform crowd density. The band
-  SHALL be measured past the floor on the native binned oracle, on the gate seeds 42, 7 and 1001, at `MAX_PARTICLES`
-  and radius 50 with one and four species under the polynomial force model. The record beside `x_on`
-  SHALL name those conditions and state that other particle counts, radii, species counts and the
-  exponential model are unmeasured. The densest particles of dense mixed-matrix settles MAY lie above
-  it and be trimmed.
+- `x_on` SHALL be 6.3, the user's placement, in units of the uniform crowd density. The record beside
+  it SHALL name the settles it separates, measured with no coupling but the species force on the
+  native binned oracle, on the gate seeds 42, 7 and 1001, at `MAX_PARTICLES` and radius 50 under the
+  polynomial force model: it lies below every one-species self-attracting settle and above every
+  four-species settle whose species each attract only themselves. The record SHALL state that other
+  particle counts, radii, species counts and the exponential model are unmeasured. The densest
+  particles of dense mixed-matrix settles MAY lie above it and be trimmed.
 - The floor SHALL be the crowd density of a hexagonal lattice at the pair law's rest spacing for an
   attracting pair at `MATRIX_MAX_VALUE`. A pure function in `src/balance_core.nim` SHALL compute it from
   the live pair-law shape.
