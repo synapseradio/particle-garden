@@ -257,6 +257,10 @@ func patternDiameterWorld*(diffusionA, fieldExtent, worldExtent: float): float =
   ## geometry can be compared against another one.
   patternDiameterCells(diffusionA) * worldUnitsPerCell(fieldExtent, worldExtent)
 
+func rdDiffusionRates*(scale: float): tuple[activator, inhibitor: float] =
+  ## The activator and inhibitor diffusion rates at a pattern scale.
+  (activator: RD_DIFFUSION_A, inhibitor: RD_DIFFUSION_B)
+
 static:
   # Field cells must be square in world units. field-deposit.wgsl maps the whole
   # world rect onto FIELD_W x FIELD_H, so any mismatch between the two aspects

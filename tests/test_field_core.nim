@@ -18,6 +18,20 @@ const FIELD_CORE_TESTS_LOADED* = true
 
 const EPSILON = 1e-9
 
+const PATTERN_SCALE_STEPS = [1.0, 0.5, 0.25]
+  ## The pattern-scale band steps every scale-dependent field measurement runs at.
+
+func configWorldExtent(source, name: string): float =
+  ## A world dimension src/config.nim declares, parsed from its source:
+  ## config.nim carries FFI pragmas, so a native test cannot import it.
+  result = -1.0
+  for line in source.splitLines():
+    if line.startsWith("let " & name & "*"):
+      return parseFloat(line.rsplit('=', 1)[1].strip())
+
+const CONFIG_WORLD_W = configWorldExtent(staticRead("../src/config.nim"),
+  "WORLD_W")
+
 # The shipped-frame harness
 #
 # evolve() mirrors one reaction-diffusion frame in the order webgpu_compute
@@ -1033,6 +1047,12 @@ suite "Chemotactic Collapse Bound":
     TROPISM_MAX, deposit = RD_DEPOSIT_MAX * COLLAPSE_DEPOSIT_MULTIPLE,
     fieldForceScale = RD_FIELD_FORCE_MAX)
 
+  test "the harness maps world units to cells as the shipped field does":
+    # A particle 10.5 shipped cell widths along the world sits in cell 10.
+    let shippedCell = worldUnitsPerCell(FIELD_W.float, CONFIG_WORLD_W)
+    check CONFIG_WORLD_W > 0.0
+    check chemotaxisCell(10.5 * shippedCell) == 10
+
   test "positive tropism at its bound does not produce unbounded aggregation over N steps":
     # Contract: the first half of the warrant for TROPISM_MAX. At the
     # positive bound with the maximum deposit, neither the population nor the
@@ -1482,6 +1502,14 @@ suite "The Field Draws A Small Pattern On Square Cells":
     # 0.09 coverage falls from 0.22 to 0.03 and by 0.04 every surviving
     # component is a single cell.
     check patternDiameterCells(RD_DIFFUSION_A) >= RD_MIN_RESOLVED_DIAMETER_CELLS
+
+  test "the diffusion rates scale the pattern at every band step":
+    for scale in PATTERN_SCALE_STEPS:
+      let rates = rdDiffusionRates(scale)
+      checkpoint("pattern scale " & $scale)
+      check rates.inhibitor / rates.activator == 0.5
+      check patternDiameterCells(rates.activator) ==
+        patternDiameterCells(RD_DIFFUSION_A * scale)
 
   test "the inhibitor diffuses at half the activator's rate":
     # The ratio is what makes the system form Turing patterns rather than
