@@ -321,13 +321,38 @@ func exponentialForce*(normalizedDist, attraction, alpha, beta,
 
 func polynomialRestoringSlope*(normalizedDist, attraction, repulsionEnd,
     attractionPeak, attenuation, forceMultiplier, invRadius: float32): float32 =
-  ## STUBBED for the red step: no restoring slope yet.
-  0.0'f32
+  ## The positive part of polynomialForce's radial derivative, over one
+  ## reference frame: forceMultiplier * FRAME_DT_REFERENCE * invRadius *
+  ## max(0, dF/d(normalizedDist)).
+  let slope =
+    if normalizedDist < repulsionEnd:
+      let t = normalizedDist / repulsionEnd
+      (6.0'f32 * t - 6.0'f32 * t * t) / repulsionEnd
+    else:
+      let zoneWidth = 1.0'f32 - repulsionEnd
+      let peakPos = (attractionPeak - repulsionEnd) / zoneWidth
+      let t = (normalizedDist - repulsionEnd) / zoneWidth
+      let leftDist = t / peakPos
+      let rightDist = (1.0'f32 - t) / (1.0'f32 - peakPos)
+      let left = min(leftDist, 1.0'f32)
+      let right = min(rightDist, 1.0'f32)
+      let leftSlope = if leftDist < 1.0'f32: 1.0'f32 / peakPos else: 0.0'f32
+      let rightSlope =
+        if rightDist < 1.0'f32: -1.0'f32 / (1.0'f32 - peakPos) else: 0.0'f32
+      let crowding = (if attraction > 0.0'f32: attenuation else: 1.0'f32)
+      let bumpSlope = 2.0'f32 * left * leftSlope * right * right +
+        2.0'f32 * right * rightSlope * left * left
+      attraction * 4.0'f32 * crowding * bumpSlope / zoneWidth
+  max(0.0'f32, forceMultiplier * FRAME_DT_REFERENCE.float32 * invRadius * slope)
 
 func exponentialRestoringSlope*(normalizedDist, attraction, alpha, beta,
     attenuation, forceMultiplier, invRadius: float32): float32 =
-  ## STUBBED for the red step: no restoring slope yet.
-  0.0'f32
+  ## The positive part of exponentialForce's radial derivative, over one
+  ## reference frame.
+  let crowding = (if attraction > 0.0'f32: attenuation else: 1.0'f32)
+  let slope = alpha * exp(-alpha * normalizedDist) -
+    attraction * 2.0'f32 * crowding * beta * exp(-beta * normalizedDist)
+  max(0.0'f32, forceMultiplier * FRAME_DT_REFERENCE.float32 * invRadius * slope)
 
 func mouseForce*(offsetX, offsetY, mouseRange, buttonSign: float32):
     tuple[x, y: float32] =
@@ -430,46 +455,55 @@ type
     ## much of one reference frame's force gain lands (`forceGain`).
     ff, rho, h: float32
 
+func stopped(): StepClock =
+  StepClock(ff: 0.0'f32, rho: 1.0'f32, h: 0.0'f32)
+
+func frictionless(ff: float32): StepClock =
+  StepClock(ff: ff, rho: 1.0'f32, h: ff)
+
+func damped(ff, retention: float32): StepClock =
+  let rho = pow(retention, ff)
+  StepClock(ff: ff, rho: rho,
+    h: retention * (1.0'f32 - rho) / (1.0'f32 - retention))
+
 func stepClock*(ff, retention: float32): StepClock =
-  ## STUBBED for the red step: always the retention-composed map, never the
-  ## stopped or frictionless closed forms.
-  StepClock(ff: ff, rho: pow(retention, ff), h: ff)
+  ## D1's clock: rho = r^ff over the whole substep, h its force gain, with
+  ## h = ff at retention 1 and h = ff at ff 0 alike, so a stopped or
+  ## frictionless clock never divides by a vanishing (1 - retention).
+  assert retention >= 0.5'f32 and retention <= 1.0'f32,
+    "stepClock retention " & $retention & " outside [0.5, 1]"
+  if ff == 0.0'f32:
+    stopped()
+  elif retention >= 1.0'f32:
+    frictionless(ff)
+  else:
+    damped(ff, retention)
 
-func travel*(clock: StepClock): float32 =
-  ## STUBBED for the red step: the clock reports one reference frame's worth
-  ## of travel regardless of `ff`, so a position update through this
-  ## accessor omits the frame factor.
-  1.0'f32
-
+func travel*(clock: StepClock): float32 = clock.ff
 func retention*(clock: StepClock): float32 = clock.rho
 func forceGain*(clock: StepClock): float32 = clock.h
 
 func densityCarry*(clock: StepClock; factor: float32): float32 =
-  ## STUBBED for the red step: the carried fraction stays the per-step
-  ## factor, un-raised by `ff`.
-  factor
+  ## The fraction of a smoothed density carried across the whole substep:
+  ## `factor` raised to the substep's own frame factor, so N substeps
+  ## summing to ff compose to the same carry as one substep of ff.
+  pow(factor, clock.ff)
 
 func integrateVelocityFromDelta*(velocity, delta: tuple[x, y: float32];
     clock: StepClock; stepLimit, maxVelocity: float32): tuple[x, y: float32] =
-  ## integrate.wgsl, given `delta` already decoded for one reference frame.
-  ## STUBBED for the red step: `stepLimit` scales only the delta term and
-  ## the cap divides by `clock.travel` before rescaling, reproducing the
-  ## step's landed per-frameFactor formula rather than D1's per-reference
-  ## map.
-  var newVelX = clock.retention * (velocity.x + stepLimit * clock.forceGain * delta.x)
-  var newVelY = clock.retention * (velocity.y + stepLimit * clock.forceGain * delta.y)
+  ## integrate.wgsl, given `delta` already decoded for one reference frame:
+  ## u' = stepLimit * (rho*v + h*delta), capped on the speed itself, since
+  ## the cap bounds travel per reference frame regardless of how many of
+  ## them the substep spans.
+  let newVelX = stepLimit * (clock.retention * velocity.x +
+    clock.forceGain * delta.x)
+  let newVelY = stepLimit * (clock.retention * velocity.y +
+    clock.forceGain * delta.y)
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
-  let perFrame = if clock.travel > 0.0'f32: clock.travel else: 1.0'f32
-  let frameSpeed = speed / perFrame
-  let softCapThreshold = maxVelocity * 0.5'f32
-  if frameSpeed > softCapThreshold and frameSpeed > 0.0'f32:
-    let excess = frameSpeed - softCapThreshold
-    let cappedSpeed =
-      min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity) * perFrame
-    let scale = cappedSpeed / speed
-    newVelX *= scale
-    newVelY *= scale
-  (x: newVelX, y: newVelY)
+  if speed <= 0.0'f32:
+    return (x: newVelX, y: newVelY)
+  let scale = postStepSpeed(speed, 1.0'f32, maxVelocity) / speed
+  (x: newVelX * scale, y: newVelY * scale)
 
 func integrateVelocity*(velocity: tuple[x, y: float32];
     deltaFixed: tuple[x, y: int32]; invFixedPointScale: float32;
