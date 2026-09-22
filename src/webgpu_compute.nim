@@ -18,6 +18,7 @@ from std/jsffi import JsObject, toJs, to, `[]`, `[]=`
 import std/asyncjs
 import std/options
 import std/strutils
+from std/math import pow
 import bindings/js_interop
 import bindings/webgpu
 import bindings/typed_arrays
@@ -1063,7 +1064,11 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Layout matches IntegrationParams indices in gpu_types.nim
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
-  integrationParamsData[INTEG_FRICTION] = friction
+  # Friction acts per reference frame, not per substep: raised here once per
+  # substep group rather than in the shader, since every particle in the
+  # group shares one frame factor (crowding-redesign design, Addendum 4).
+  integrationParamsData[INTEG_FRICTION] =
+    pow(float32(friction), float32(substepFrameFactor))
   # The plan's Max Velocity, which is the stored one until the substep count
   # clamps and the travel bound has to be held by the speed instead.
   integrationParamsData[INTEG_MAX_VELOCITY] =

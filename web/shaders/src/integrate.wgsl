@@ -25,7 +25,8 @@
 struct IntegrationParams {
   worldWidth: f32,       // World width (offset 0)
   worldHeight: f32,      // World height (offset 4)
-  friction: f32,         // Friction coefficient (offset 8)
+  friction: f32,         // Retention raised to this substep's frame factor
+                         // (friction^ff), computed on the CPU (offset 8)
   maxVelocity: f32,      // Maximum velocity (offset 12)
   particleCount: u32,    // Active particle count (offset 16)
   frameFactor: f32,      // The substep as a multiple of the reference frame (offset 20)
@@ -104,8 +105,12 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   p.sphDensity =
     f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
-  var newVelX = (p.vel.x + deltaVx * stepLimit) * params.friction;
-  var newVelY = (p.vel.y + deltaVy * stepLimit) * params.friction;
+  // stepLimit scales the whole carried-plus-arriving velocity, not the
+  // arriving delta alone: a particle already coasting at speed keeps
+  // coasting through a limited step otherwise (crowding-redesign design,
+  // Addendum 3, form F).
+  var newVelX = (p.vel.x + deltaVx) * stepLimit * params.friction;
+  var newVelY = (p.vel.y + deltaVy) * stepLimit * params.friction;
 
   // Logarithmic velocity capping reduces jank in high-activity areas.
   //
