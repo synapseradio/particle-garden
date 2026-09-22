@@ -24,7 +24,7 @@ The state that makes this fail is `nimble.paths`, absent from every fresh checko
 `.gitignore:54` keeps it out of the repository. `config.nims:3` passes `--noNimblePath`
 unconditionally and `config.nims:4-5` restores the search path only by including that file, so
 without it `import webui` (`src/main.nim:17`) resolves against nothing and `build-native`
-(`justfile:37-38`) fails with `cannot open file: webui`. `release` (`justfile:83-84`) compiles the
+(`justfile:37-38`) fails with `cannot open file: webui`. `release` (`justfile:98-99`) compiles the
 same module and fails the same way.
 
 The other artifacts a fresh checkout lacks do not need this guarantee inside `just happen`, which
@@ -92,7 +92,7 @@ naming `web/shaders` is the violation.
 
 ### Requirement: The bootstrap SHALL run the repository's own `deps` recipe
 
-Whatever supplies `nimble.paths` SHALL invoke `just deps` (`justfile:67-69`) and MUST NOT restate
+Whatever supplies `nimble.paths` SHALL invoke `just deps` (`justfile:82-84`) and MUST NOT restate
 the dependency commands it runs. `deps` is the one home for the fact that bootstrapping this
 repository means `nimble install -d -y` followed by `nimble setup`. A hook, config file, or recipe
 that spells those out separately is a second home for that fact, and the two drift when the lock
