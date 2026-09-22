@@ -30,7 +30,7 @@ particles while the machine is shared.
   - Kill reached: the fluid's pressure slope joins `D` in task 2.3 before group 3 starts.
 - [ ] 1.5 **S13, the field on world time** (design.md, Spikes). Record in `spike-s13/result.md`.
   - Kill reached: the deposit fold moves to per field step in task 4.2, with its own red test first.
-- [ ] 1.6 `just happen` and `just check` green on the rebased branch before any tree change.
+- [x] 1.6 `just happen` and `just check` green on the rebased branch before any tree change.
 
 ## 2. Oracle and integrate (Sonnet, own worktree)
 
