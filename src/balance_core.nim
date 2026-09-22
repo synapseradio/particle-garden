@@ -279,6 +279,9 @@ type
     pressureImpulseMax*: float32
     pressureStepBound*: float32
       ## theta: integrate.wgsl's PRESSURE_STEP_BOUND.
+    longStepBound*: float32
+      ## B∞: integrate.wgsl's LONG_STEP_BOUND, the step limit's bound as
+      ## rho -> 0.
     stiffnessFixedPointScale*: float32
     stiffnessCoarseShift*: int
     friction*: float32
@@ -725,7 +728,8 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     let stiffness = decodeStiffness(
       (fine: world.stiffnessFixed[i], coarse: world.stiffnessCoarseFixed[i]),
       invStiffnessFixed, p.stiffnessCoarseShift)
-    let limit = stepLimit(subFrameFactor, stiffness, p.pressureStepBound)
+    let limit = stepLimit(clock, stiffness, p.pressureStepBound,
+      p.longStepBound)
     let decodedX = decodeVelocityWords(
       (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
       invFixed, 1.0'f32, p.fluid.coarseShift)
