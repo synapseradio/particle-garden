@@ -413,8 +413,8 @@ every pair's smoothing coefficient is multiplied by g; pressure and the carried 
 - **The sacrifice.** The clamp buys a fluid that settles at every ff. It gives up smoothing past a substep
   of ff 1, everywhere, including sparse spots whose own `ν_i` would allow more.
   - At the shipped `sphStiffness` 8 and radius 50 (`src/preset.nim:233`, `:260`), with no live body
-    (`travelBound`, `src/sim_registry.nim:715-723`), a frame between ff 1 and 1.875 runs one substep. At
-    60 Hz that spans Time Scale 0.5 to 0.94, where `g` falls to 0.54 at `ν_max ≥ 1/2`.
+    (`travelBound`, `src/sim_registry.nim:715-723`), a frame between ff 1 and 1.875 runs one substep. On
+    the 143 Hz display that spans Time Scale 1.19 to 2.23, where `g` falls to 0.54 at `ν_max ≥ 1/2`.
   - Estimated at `κ` 1.5 and `ν` 0.4, a substep of ff 2 at `g` 0.51 keeps 0.27 of a relative velocity.
     Unclamped it keeps 0.22 with a sign flip, and two ff-1 steps keep 0.12.
   - Undoing it costs the plan field, one uniform and one multiply per pair.
