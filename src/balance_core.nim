@@ -474,6 +474,7 @@ proc sweepPairs(world: var OracleWorld) =
           let attractionOnOther =
             world.matrix[otherSpecies * world.speciesCount + thisSpecies]
           var magnitudeOnThis, magnitudeOnOther: float32
+          var slopeOnThis, slopeOnOther: float32
           case p.forceModel
           of ofmPolynomial:
             magnitudeOnThis = polynomialForce(normalizedDist, attractionOnThis,
@@ -481,11 +482,23 @@ proc sweepPairs(world: var OracleWorld) =
             magnitudeOnOther = polynomialForce(normalizedDist,
               attractionOnOther, p.repulsionEnd, p.attractionPeak,
               attenuationOnOther)
+            slopeOnThis = polynomialRestoringSlope(normalizedDist,
+              attractionOnThis, p.repulsionEnd, p.attractionPeak,
+              attenuationOnThis, p.forceMultiplier, invRadius)
+            slopeOnOther = polynomialRestoringSlope(normalizedDist,
+              attractionOnOther, p.repulsionEnd, p.attractionPeak,
+              attenuationOnOther, p.forceMultiplier, invRadius)
           of ofmExponential:
             magnitudeOnThis = exponentialForce(normalizedDist, attractionOnThis,
               p.expAlpha, p.expBeta, attenuationOnThis)
             magnitudeOnOther = exponentialForce(normalizedDist,
               attractionOnOther, p.expAlpha, p.expBeta, attenuationOnOther)
+            slopeOnThis = exponentialRestoringSlope(normalizedDist,
+              attractionOnThis, p.expAlpha, p.expBeta, attenuationOnThis,
+              p.forceMultiplier, invRadius)
+            slopeOnOther = exponentialRestoringSlope(normalizedDist,
+              attractionOnOther, p.expAlpha, p.expBeta, attenuationOnOther,
+              p.forceMultiplier, invRadius)
           let impulse = pairImpulse(pairParams, separationX, separationY,
             invDistance, normalizedDist, magnitudeOnThis, magnitudeOnOther,
             crowdThis, crowdOther)
@@ -515,9 +528,16 @@ proc sweepPairs(world: var OracleWorld) =
             crowdPressure(crowdThis, p.pressureOnset),
             crowdPressure(crowdOther, p.pressureOnset), p.pressureStiffness,
             p.pressureImpulseMax, invRadius)
+          # Each particle counts its own receiving slope: the species matrix
+          # is asymmetric, so `this` and `other` add slopeOnThis and
+          # slopeOnOther, not the same value twice.
+          stiffnessAccum += slopeOnThis
+          var otherStiffness = slopeOnOther
           if pressureSlope > 0.0'f32:
             stiffnessAccum += pressureSlope
-            world.addStiffness(other, pressureSlope)
+            otherStiffness += pressureSlope
+          if otherStiffness > 0.0'f32:
+            world.addStiffness(other, otherStiffness)
           let proximityWeight = 1.0'f32 - normalizedDist
           crowdAccum += proximityWeight
           world.crowdFixed[other] = wrapAdd(world.crowdFixed[other],
@@ -680,12 +700,14 @@ when defined(calibratePerStepCap):
     (x: newVelX * scale, y: newVelY * scale)
 
 proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
-  ## integrate.wgsl: both densities smoothed, the delta decoded once against
-  ## the substep's frame factor, friction, the speed cap, then the position.
+  ## integrate.wgsl: both densities smoothed per reference frame, the delta
+  ## decoded once against one reference frame, the D1 clock, the speed cap,
+  ## then the position moved by the clock's own travel.
   let p = world.params
+  let clock = stepClock(subFrameFactor, p.friction)
   let invFixed = 1.0'f32 / p.fixedPointScale
   let invCrowd = 1.0'f32 / p.crowdDensityScale
-  let carried = p.densitySmoothFactor
+  let carried = densityCarry(clock, p.densitySmoothFactor)
   let arriving = 1.0'f32 - carried
   let fluidActs = p.fluid.strength != 0.0
   let invSph =
@@ -706,30 +728,28 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     let limit = stepLimit(subFrameFactor, stiffness, p.pressureStepBound)
     let decodedX = decodeVelocityWords(
       (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
-      invFixed, subFrameFactor, p.fluid.coarseShift)
+      invFixed, 1.0'f32, p.fluid.coarseShift)
     let decodedY = decodeVelocityWords(
       (fine: world.deltaFixed[i * 2 + 1], coarse: world.coarseFixed[i * 2 + 1]),
-      invFixed, subFrameFactor, p.fluid.coarseShift)
-    # Form F: the step limit scales the carried velocity along with this
-    # step's delta, v' = r^ff * s * (v + ff*delta), not the delta alone.
-    # integrateVelocity decodes one word, so the two are rejoined and
-    # pre-scaled here, and a zero word passed, which adds exactly nothing.
-    let joined = (x: (world.velX[i] + decodedX) * limit,
-      y: (world.velY[i] + decodedY) * limit)
+      invFixed, 1.0'f32, p.fluid.coarseShift)
+    let velocity = (x: world.velX[i], y: world.velY[i])
+    let delta = (x: decodedX, y: decodedY)
     # calibratePerStepCap is a diagnostic variant, never the shipped
     # integrate: the per-step cap of before the per-reference-frame one.
     let stepped = when defined(calibratePerStepCap):
+        let joined = (x: (velocity.x + decodedX) * limit,
+          y: (velocity.y + decodedY) * limit)
         perStepCapVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
           subFrameFactor, pow(p.friction, subFrameFactor), p.maxVelocity)
       else:
-        # The limit already scaled `joined` above; the zero word here leaves
-        # this second application acting on nothing.
-        integrateVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
-          stepClock(subFrameFactor, p.friction), 1.0'f32, p.maxVelocity)
+        integrateVelocityFromDelta(velocity, delta, clock, limit,
+          p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
-    world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)
-    world.posY[i] = wrapPosition(world.posY[i] + stepped.y, p.worldHeight)
+    world.posX[i] = wrapPosition(world.posX[i] + travel(clock) * stepped.x,
+      p.worldWidth)
+    world.posY[i] = wrapPosition(world.posY[i] + travel(clock) * stepped.y,
+      p.worldHeight)
 
 proc stepFrame*(world: var OracleWorld; frameFactor: float; substeps: int) =
   ## One frame, taken in `substeps` equal substeps. Each advances
