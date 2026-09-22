@@ -10,11 +10,11 @@ particles while the machine is shared.
 
 ## 1. Preconditions and measurement gates
 
-- [ ] 1.1 **Precondition.** `cfi-crowding` (`4c24c4d`…`3eee226`: friction per reference frame, the 0.12
-  default, the step limit on the whole velocity) and `cfi-crowding-gpu` (`886bb7a`, `c09b105`: the same on
-  the GPU) are merged to `dev`, and `tm-units` is rebased onto that `dev`. Verify that
-  `git merge-base --is-ancestor 3eee226 HEAD` and `git merge-base --is-ancestor c09b105 HEAD` both exit 0.
-  No other task starts before this one.
+- [x] 1.1 **Precondition.** `cfi-crowding` (friction per reference frame, the 0.12 default, the step limit
+  on the whole velocity) and `cfi-crowding-gpu` (the same on the GPU) are merged to `dev`, and this change
+  sits on that `dev`. The rebases rewrote the branch SHAs: on `dev` they are `4fc1543`…`6f92d12` and
+  `03247ec`…`e7118bc`. Verify that `git merge-base --is-ancestor 6f92d12 HEAD` and
+  `git merge-base --is-ancestor e7118bc HEAD` both exit 0. No other task starts before this one.
 - [ ] 1.2 **S15, the shipped map across frame factors** (design.md, Spikes). Build the D1 map with `h`,
   D4's `B` with the species slope, and D5's loop term. Build them in the spike harness
   `~/.scratchpad/particle-garden/cfi-crowding/spike-s7/`, copied into
