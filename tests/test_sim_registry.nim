@@ -797,10 +797,10 @@ suite "Substeps Follow The Tightest Coupling":
   # travel count n_T = ceil(maxVelocity * ff / T), only where some coupling
   # declares a travel length T; and n_c, a coupling's own declared need
   # (only the fluid declares one, from its stiffness). The frame factor sets
-  # no count of its own: integrate's step limit (crowding-redesign design
-  # §3.4) holds every frame factor stable on its own. Each test below works
-  # this arithmetic against its own live values; the cap (3) is not yet a
-  # named constant, so the literal stands in for it.
+  # no count of its own: integrate's step limit holds every frame factor
+  # stable on its own. Each test below works this arithmetic against its own
+  # live values; the cap (3) is not yet a named constant, so the literal
+  # stands in for it.
 
   test "shipped settings give one substep at frame factor one":
     # Band 120, Max Velocity 50, ff 1, fluid off. Bodies are on
@@ -859,9 +859,8 @@ suite "Substeps Follow The Tightest Coupling":
 
   test "frame factor 30 alone needs one substep":
     # The frame factor no longer sets a count on its own: integrate's step
-    # limit (crowding-redesign design §3.4) holds every frame factor stable.
-    # With fluid off and no live body, no travel or coupling count asks for
-    # more than one substep.
+    # limit holds every frame factor stable. With fluid off and no live
+    # body, no travel or coupling count asks for more than one substep.
     let live = LiveValues(
       fluid: 0.0,
       bodies: BODIES_DEFAULT_STRENGTH,

@@ -1098,7 +1098,7 @@ suite "Pressure Past The Onset":
 # integrate scales a particle's whole decoded delta by s = min(1, theta / (2 *
 # ff * D)), D being its summed pair stiffness, so the step is stable at every
 # frame factor by construction. A particle with zero stiffness gets s = 1
-# exactly. Mirrors crowding-redesign design section 3.
+# exactly.
 
 func todayIntegrateVelocity(velocity: tuple[x, y: float32];
     deltaFixed: tuple[x, y: int32];

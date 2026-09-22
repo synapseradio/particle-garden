@@ -1091,16 +1091,15 @@ when defined(calibrateFluid):
 
 # ==============================================================================
 # T5a-T5d: THE STEP LIMIT BOUNDS EACH MODE BY ITS SIGN
-# (crowding-redesign design §8, addendum of 21-09-2026 23:50)
 # ==============================================================================
 # An oracle independent of stepLimit's own formula: a finite-difference
 # Jacobian of the float pressure force, checked against the analytic sum
-# sweepPairs accumulates. Fixed phi = ((x - x_on)/x_on)^2 (addendum, Decision
-# 2(b)): every particle in a trial crowd shares one density at the pressure
-# law's own onset ratio, so the pressure between any pair depends only on
-# their positions, not on a simulated smoothed density.
+# sweepPairs accumulates. Fixed phi = ((x - x_on)/x_on)^2: every particle in
+# a trial crowd shares one density at the pressure law's own onset ratio, so
+# the pressure between any pair depends only on their positions, not on a
+# simulated smoothed density.
 #
-# The addendum's proof splits a mode by the sign of its stiffness: a
+# The proof splits a mode by the sign of its stiffness: a
 # restoring mode (lambda >= 0) is bounded by the particle's radial slope D
 # (T5a); a sliding mode (lambda < 0) is the transverse pair term's own
 # physical growth, which D does not bound, so the limit's claim there is only
@@ -1264,12 +1263,11 @@ type T5Crowd = object
 
 func t5Crowd(seed, particles: int): T5Crowd =
   ## `particles` placed uniformly at random, at a radius from {10, 50, 150}
-  ## and a crowd ratio x from [7, 16] (crowding-redesign design §8). The
-  ## world spans the area whose mean crowd density (N pi R^2 / 3A, the same
-  ## expression meanCrowdDensity uses) equals x at onset 1, so a uniformly
-  ## placed particle's expected neighbour-weighted density matches phi. phi
-  ## is the pressure law's own ratio to the onset (addendum, Decision 2(b)),
-  ## not the onset-at-1 approximation the unaddended T5 used.
+  ## and a crowd ratio x from [7, 16]. The world spans the area whose mean
+  ## crowd density (N pi R^2 / 3A, the same expression meanCrowdDensity
+  ## uses) equals x at onset 1, so a uniformly placed particle's expected
+  ## neighbour-weighted density matches phi. phi is the pressure law's own
+  ## ratio to the onset, not an onset-at-1 approximation.
   var rng = initRand(seed)
   let radius = T5_RADII[rng.rand(0 .. 2)]
   let x = rng.rand(7.0 .. 16.0)
@@ -1542,7 +1540,7 @@ suite "A Limited Step Reaches Integrate":
       1.0e-3'f32 * abs(unlimited.velX[0])
 
 # ==============================================================================
-# T7: A BALANCE HOLDS AT EVERY FRAME FACTOR (crowding-redesign design §8, "buys")
+# T7: A BALANCE HOLDS AT EVERY FRAME FACTOR
 # ==============================================================================
 # Integration, not calibration: a small enough world to run in `just test`,
 # on the design's own reference world (radius 50, one self-attracting species
@@ -1746,8 +1744,8 @@ when defined(calibrateBalance):
   static:
     # The arms below step every schedule at one substep: with no fluid
     # acting and no live body, substepPlan asks for no more (integrate's step
-    # limit, crowding-redesign design §3.4, holds every frame factor stable
-    # without a substep count of its own).
+    # limit holds every frame factor stable without a substep count of its
+    # own).
     for frameFactor in 1 .. 30:
       doAssert substepPlan(frameFactor.float, liveValues(false)).count == 1,
         "a species-only world asks for more than one substep at frame " &
@@ -1812,7 +1810,7 @@ when defined(calibrateBalance):
         ## The p99.9 smoothed crowd density at each of WINDOW_STEPS.
       capContact: int
         ## Particle-steps at a WINDOW_STEPS frame whose per-reference-frame
-        ## speed passes integrate.wgsl's soft-cap threshold (arm C, §3.5).
+        ## speed passes integrate.wgsl's soft-cap threshold (arm C, below).
 
     Schedule = proc (seed: int): seq[float] {.noSideEffect, gcsafe.}
 
@@ -1897,7 +1895,7 @@ when defined(calibrateBalance):
       result.add nextJitter(state, 8, 16)
 
   func heldFrames(seed: int): seq[float] =
-    ## ff 0.42 with single ff-30 steps at 300, 500 and 700 (§3.5 arm D).
+    ## ff 0.42 with single ff-30 steps at 300, 500 and 700 (arm D, below).
     for step in 0 ..< STEP_COUNT:
       result.add (if step in [300, 500, 700]: 30.0 else: 0.42)
 
@@ -2049,12 +2047,12 @@ when defined(calibrateBalance):
       check meanOf(settles) <= SETTLE_BOUND
 
   const ARM_AB_FRAME_FACTORS = [0.42, 2.0, 4.2, 10.0, 30.0]
-    ## §3.5's sustained schedules, arms A and B.
+    ## The sustained schedules arms A and B below run.
 
   suite "Every Frame Factor Settles No Warmer":
-    ## Gate G1, §3.5 arms A-D: the criterion holds only when every arm below
-    ## passes, at 128 000 (and, per the coverage note, 16 000 at radius 150,
-    ## run separately).
+    ## Gate G1: the criterion holds only when every arm below passes, at
+    ## 128 000 (and, per the coverage note, 16 000 at radius 150, run
+    ## separately).
 
     test "arm A: every sustained frame factor settles no warmer at shipped friction":
       let reference = frameFactorOneMotion()
