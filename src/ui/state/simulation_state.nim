@@ -132,7 +132,7 @@ func initSimulationState*(): SimulationState =
     # Crowding starts off, so the shipped world is the force law every other
     # default was chosen against.
     crowdingStrength: 0.0,
-    friction: 0.05,
+    friction: 0.12,
     ruleWildness: 0.3,  # Tight bell curve: +/-0.99 is ~3.3 sigma out
     timeScale: 0.5,
     maxVelocity: 50.0,

@@ -236,7 +236,7 @@ func defaultSettings*(): PresetSettings =
     # shipped world runs the force law without the crowding term, so a preset
     # that never mentions one restores none.
     crowdingStrength: 0.0,
-    friction: 0.05,
+    friction: 0.12,
     ruleWildness: 0.3,
     timeScale: 0.5,
     particleSize: 3,

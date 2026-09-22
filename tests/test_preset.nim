@@ -180,6 +180,13 @@ suite "Builtin Regime Starters Read The Live-Scale Row":
       let starter = builtinRegimePreset(regime.id, regime.label, 0.5)
       check starter.settings.rdPatternScale == 0.5
 
+suite "Shipped Friction Default":
+  test "the shipped friction default is 0.12, per reference frame":
+    ## At 143 Hz and ff 0.42, 0.12 per reference frame loses ~12% of speed —
+    ## the per-step 0.05 default it replaces lost ~11.5% at the same rate.
+    check initSimulationState().friction == 0.12
+    check defaultSettings().friction == 0.12
+
 suite "Preset Round-Trip Contract":
   test "default preset survives serialize then parse unchanged":
     let original = defaultPreset()

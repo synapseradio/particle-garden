@@ -197,7 +197,7 @@ func frictionProbe(value: float; ctx: ProbeContext): float =
 func maxVelocityProbe(value: float; ctx: ProbeContext): float =
   ## maxVelocity: the post-step speed of a mover far above every cap, so the
   ## observable follows the cap itself. DECLARED LIFT: damping held at
-  ## identity, because the shipped friction default (0.05) sets the cap's
+  ## identity, because the shipped friction default (0.12) sets the cap's
   ## INPUT to a crawl and the first sweep measured that crawl as a dead top
   ## half — the observable here is the cap alone.
   postStepSpeed(RefCapProbeSpeed.float32, 1.0'f32, value.float32).float
