@@ -13,6 +13,7 @@
 #
 # ==============================================================================
 
+import std/complex
 import std/math
 
 const
@@ -591,14 +592,71 @@ const
     ## kappa: caps theta_c at 5 from ff 19 at retention 0.88. Lifting it moved
     ## K 540 ff 30 motion under 1% (q2_k540_ff30_thetatrue.log).
 
+func loopSpectralRadius(kc, alpha, rho: float64): float64 =
+  ## D5's three-state density-lag map on (x, v, psi), direct stiffness 0:
+  ## `psi' = alpha*psi + (1-alpha)*x; v' = rho*(v - kc*psi); x' = x + v'`.
+  ## The largest root modulus of its characteristic cubic, via Durand-Kerner
+  ## seeded at (0.4+0.9i)^k for k in 0..2.
+  let m = [
+    [1.0, rho, -rho * kc],
+    [0.0, rho, -rho * kc],
+    [1.0 - alpha, 0.0, alpha]]
+  let tr = m[0][0] + m[1][1] + m[2][2]
+  let c1 = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) +
+    (m[0][0] * m[2][2] - m[0][2] * m[2][0]) +
+    (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+  let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  let c2 = -tr
+  let c0 = -det
+  let seed = complex64(0.4, 0.9)
+  var z = [complex64(1.0, 0.0), seed, seed * seed]
+  for _ in 0 ..< 500:
+    var nz: array[3, Complex64]
+    for i in 0 ..< 3:
+      let f = z[i] * z[i] * z[i] + c2 * z[i] * z[i] + c1 * z[i] + c0
+      var denom = complex64(1.0, 0.0)
+      for j in 0 ..< 3:
+        if j != i:
+          denom = denom * (z[i] - z[j])
+      nz[i] = z[i] - f / denom
+    z = nz
+  result = 0.0
+  for zi in z:
+    result = max(result, abs(zi))
+
 func loopGainBound*(rho, alpha: float32): float32 =
-  ## D5's theta_c, row 10's stub: a fixed reading pending the bisection.
-  0.009'f32
+  ## D5's theta_c: half the largest loop gain kappa at which the density-lag
+  ## map's spectral radius holds at or under 1, bisected over kappa in
+  ## [0, LOOP_GAIN_SEARCH_CEILING].
+  let r = rho.float64
+  let a = alpha.float64
+  let ceiling = LOOP_GAIN_SEARCH_CEILING.float64
+  if loopSpectralRadius(ceiling, a, r) <= 1.0 + 1e-9:
+    return (ceiling / 2.0).float32
+  var lo = 0.0
+  var hi = ceiling
+  for _ in 0 ..< 60:
+    let mid = (lo + hi) / 2.0
+    if loopSpectralRadius(mid, a, r) <= 1.0 + 1e-9:
+      lo = mid
+    else:
+      hi = mid
+  (lo / 2.0).float32
 
 func loopLimit*(clock: StepClock; densityFactor, c, loopLimitFloor: float32):
     float32 =
-  ## D5's s_C, row 11's stub: no limit yet.
-  1.0'f32
+  ## D5's s_C: 1 unless the loop's reach per substep, `ff*h*C/rho`, would
+  ## carry the density-lag loop past its stable gain theta_c, where it falls
+  ## to theta_c/reach or the floor, whichever holds more.
+  let alpha = densityCarry(clock, densityFactor)
+  let thetaC = loopGainBound(clock.retention, alpha)
+  let reach = clock.ff * clock.forceGain * c / clock.retention
+  if reach <= thetaC:
+    1.0'f32
+  else:
+    max(thetaC / reach, loopLimitFloor * min(1.0'f32, 1.0'f32 / clock.ff))
 
 func encodeStiffness*(slope, fixedPointScale: float32): int32 =
   int32(round(slope * fixedPointScale))
