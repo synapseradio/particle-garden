@@ -452,19 +452,22 @@ type
   StepClock* = object
     ## The reference-frame clock: how far a substep travels (`ff`), how much
     ## of the carried velocity survives the substep (`retention`), and how
-    ## much of one reference frame's force gain lands (`forceGain`).
-    ff, rho, h: float32
+    ## much of one reference frame's force gain lands (`forceGain`). `r`
+    ## carries the substep's own retention input, unexposed by an accessor,
+    ## for the long-step bound's `1 - rho/r` term (D4), which `rho` and `ff`
+    ## alone cannot reconstruct.
+    ff, rho, h, r: float32
 
-func stopped(): StepClock =
-  StepClock(ff: 0.0'f32, rho: 1.0'f32, h: 0.0'f32)
+func stopped(retention: float32): StepClock =
+  StepClock(ff: 0.0'f32, rho: 1.0'f32, h: 0.0'f32, r: retention)
 
 func frictionless(ff: float32): StepClock =
-  StepClock(ff: ff, rho: 1.0'f32, h: ff)
+  StepClock(ff: ff, rho: 1.0'f32, h: ff, r: 1.0'f32)
 
 func damped(ff, retention: float32): StepClock =
   let rho = pow(retention, ff)
   StepClock(ff: ff, rho: rho,
-    h: retention * (1.0'f32 - rho) / (1.0'f32 - retention))
+    h: retention * (1.0'f32 - rho) / (1.0'f32 - retention), r: retention)
 
 func stepClock*(ff, retention: float32): StepClock =
   ## D1's clock: rho = r^ff over the whole substep, h its force gain, with
@@ -473,7 +476,7 @@ func stepClock*(ff, retention: float32): StepClock =
   assert retention >= 0.5'f32 and retention <= 1.0'f32,
     "stepClock retention " & $retention & " outside [0.5, 1]"
   if ff == 0.0'f32:
-    stopped()
+    stopped(retention)
   elif retention >= 1.0'f32:
     frictionless(ff)
   else:
@@ -560,6 +563,12 @@ func stepLimit*(frameFactor, stiffness, bound: float32): float32 =
   ## step would carry `frameFactor * 2 * stiffness` past `bound`.
   let reach = 2.0'f32 * frameFactor * stiffness
   if reach > bound: bound / reach else: 1.0'f32
+
+func stepLimit*(clock: StepClock; stiffness, bound, longStepBound: float32):
+    float32 =
+  ## D4's s_D, over the clock's own substep. A stub pending the D4 red
+  ## tests: `stiffness`, `bound` and `longStepBound` are unread.
+  1.0'f32
 
 func encodeStiffness*(slope, fixedPointScale: float32): int32 =
   int32(round(slope * fixedPointScale))

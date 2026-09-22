@@ -703,13 +703,21 @@ const
     ## saturates at.
 
   PRESSURE_STEP_BOUND* = 2.0
-    ## theta: the bound integrate's step limit holds `2 * ff * D` to for a
-    ## particle's summed pair stiffness `D`. The symplectic map `v' = r(v -
-    ## ff*s*lambda*x), x' = x + v'` is stable while `ff*lambda < 2(1+r)/r`,
-    ## which is 4 at retention 1; half of that leaves a factor of 2 of margin
-    ## whose assignment is open. What warms the world at high frame factors is
-    ## the delayed, smoothed crowd-density loop, not a one-step lag, and its
-    ## stable gain is much smaller than D's own.
+    ## theta: `B`'s value at rho 1, which the step limit holds `2 * ff * h *
+    ## D` to at every retention. ff 1 meets it as `theta * r`, the landed
+    ## limit. The symplectic map `v' = r(v - ff*s*lambda*x), x' = x + v'` is
+    ## stable while `ff*lambda < 2(1+r)/r`, which is 4 at retention 1; half of
+    ## that leaves a factor of 2 of margin whose assignment is open. What
+    ## warms the world at high frame factors is the delayed, smoothed
+    ## crowd-density loop, not a one-step lag, and its stable gain is much
+    ## smaller than D's own.
+  LONG_STEP_BOUND* = 1.2
+    ## B∞: `B`'s value as rho -> 0. At 0.12 it read K 540 ff 30 at 2.48x where
+    ## S15's 0.936 read 3.12x, and 1.5 and 1.8 read no lower with more
+    ## reversals (spike-s17/prediction.md, section B).
+  LOOP_LIMIT_FLOOR* = 0.1
+    ## lambda: the density-loop limit's floor. 0 violations of 5 643 on
+    ## retention 0.5-1, ff 0.2-30, C 1e-5-1e2 (lagmodel8).
   STIFFNESS_FIXED_POINT_SCALE* = 65536.0
     ## The stiffness word's quanta per unit of radial slope, 2^16 (the same
     ## scale as the velocity words; a distinct constant because the two

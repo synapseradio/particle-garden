@@ -1495,6 +1495,56 @@ suite "A Species Pair's Restoring Slope Is Its Radial Derivative":
               ", numeric " & $expoExpected
     checkNoVerdicts(verdicts)
 
+suite "The Step Limit At Frame Factor 1 Is The Landed Bound":
+  test "s_D at ff 1 equals min(1, theta / (2D)) at every retention (row 8)":
+    let theta = PRESSURE_STEP_BOUND.float32
+    let longStepBound = LONG_STEP_BOUND.float32
+    var verdicts: seq[string]
+    for retention in [0.5'f32, 0.7'f32, 0.88'f32, 0.95'f32, 1.0'f32]:
+      let clock = stepClock(1.0'f32, retention)
+      for d in [1e-4'f32, 0.5'f32, 1.0'f32, 3.0'f32, 100.0'f32]:
+        let s = stepLimit(clock, d, theta, longStepBound)
+        let expected = min(1.0'f32, theta / (2.0'f32 * d))
+        if abs(s - expected) > 1e-4'f32 * max(expected, 1e-6'f32):
+          verdicts.add "retention " & $retention & " D " & $d & ": s_D " &
+            $s & ", expected " & $expected
+    checkNoVerdicts(verdicts)
+
+suite "The Resized Limit Keeps Every Contact Mode Decaying":
+  test "s_D roots of the contact characteristic stay within the unit circle, strictly under friction (row 9)":
+    # mu^2 - (1 + s*rho - s*ff*h*2D)*mu + s*rho = 0, D4's contact mode for a
+    # pair's relative stiffness k = 2D.
+    let theta = PRESSURE_STEP_BOUND.float32
+    let longStepBound = LONG_STEP_BOUND.float32
+    var verdicts: seq[string]
+    let ffs = [0.05'f32, 0.2'f32, 1.0'f32, 4.2'f32, 10.0'f32, 30.0'f32]
+    let ds = [1e-4'f32, 1e-2'f32, 1.0'f32, 10.0'f32, 100.0'f32]
+    let rs = [0.5'f32, 0.7'f32, 0.88'f32, 0.95'f32, 1.0'f32]
+    for ff in ffs:
+      for r in rs:
+        let clock = stepClock(ff, r)
+        for d in ds:
+          let s = stepLimit(clock, d, theta, longStepBound)
+          let rho = clock.retention.float64
+          let sumCoef = 1.0 + s.float64 * rho -
+            s.float64 * ff.float64 * clock.forceGain.float64 * 2.0 * d.float64
+          let product = s.float64 * rho
+          let disc = sumCoef * sumCoef - 4.0 * product
+          var maxModulus: float64
+          if disc >= 0.0:
+            let sq = sqrt(disc)
+            maxModulus = max(abs((sumCoef + sq) / 2.0),
+              abs((sumCoef - sq) / 2.0))
+          else:
+            maxModulus = sqrt(product)
+          if maxModulus > 1.0 + 1e-6:
+            verdicts.add "ff " & $ff & " r " & $r & " D " & $d &
+              ": modulus " & $maxModulus & " leaves the unit circle"
+          if r < 1.0'f32 and maxModulus >= 1.0 - 1e-9:
+            verdicts.add "ff " & $ff & " r " & $r & " D " & $d &
+              ": modulus " & $maxModulus & " does not decay strictly"
+    checkNoVerdicts(verdicts)
+
 suite "T5g A Limited Step Scales The Carried Velocity":
   test "u' equals 0.25 times rho times u when Delta is 0 and s is 0.25":
     let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
