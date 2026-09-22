@@ -714,19 +714,17 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     # already scaled by the step limit, and a zero word passed, which adds
     # exactly nothing.
     let joined = (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY)
-    # Two diagnostic variants, never the shipped integrate: the per-step cap
-    # of before the per-reference-frame one, and friction as retention^ff.
-    let retention = when defined(calibrateFrictionPerFrame):
-        pow(p.friction, subFrameFactor)
-      else: p.friction
+    # calibratePerStepCap is a diagnostic variant, never the shipped
+    # integrate: the per-step cap of before the per-reference-frame one.
     let stepped = when defined(calibratePerStepCap):
         perStepCapVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
-          subFrameFactor, retention, p.maxVelocity)
+          subFrameFactor, pow(p.friction, subFrameFactor), p.maxVelocity)
       else:
         # The limit already scaled `joined` above; the zero word here leaves
-        # this second application acting on nothing.
+        # this second application acting on nothing. integrateVelocity
+        # raises p.friction to subFrameFactor itself.
         integrateVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
-          subFrameFactor, 1.0'f32, retention, p.maxVelocity)
+          subFrameFactor, 1.0'f32, p.friction, p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
     world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)

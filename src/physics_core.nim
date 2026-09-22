@@ -408,13 +408,16 @@ func integrateVelocity*(velocity: tuple[x, y: float32];
   ## integrate.wgsl: the decoded delta scaled by the particle's step limit,
   ## which holds `frameFactor * 2 * stiffness` under a fixed bound so the
   ## explicit scheme's one-step map stays stable at every frame factor,
-  ## friction applied, then the soft cap postStepSpeed states for the speed.
-  ## `stepLimit` is 1 for a particle with zero summed stiffness, so this is
-  ## bit-identical to multiplying by `frameFactor` alone in that case.
+  ## `friction` raised to `frameFactor` so retention is per reference frame
+  ## rather than per step, then the soft cap postStepSpeed states for the
+  ## speed. `stepLimit` is 1 for a particle with zero summed stiffness, so
+  ## this is bit-identical to multiplying by `frameFactor` alone in that
+  ## case.
+  let retention = pow(friction, frameFactor)
   var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
-    invFixedPointScale, frameFactor) * stepLimit) * friction
+    invFixedPointScale, frameFactor) * stepLimit) * retention
   var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
-    invFixedPointScale, frameFactor) * stepLimit) * friction
+    invFixedPointScale, frameFactor) * stepLimit) * retention
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
   # The cap bounds travel per reference frame, so a substep spanning
   # frameFactor of them may carry a particle maxVelocity * frameFactor. The

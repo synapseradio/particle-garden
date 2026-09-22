@@ -527,6 +527,24 @@ suite "Post-Step Speed Mirror":
     let expected = postStepSpeed(40.0'f32 / ffSub, friction, maxVelocity) * ffSub
     check abs(hypot(stepped.x, stepped.y) - expected) < 1e-5'f32
 
+suite "Friction Acts Per Reference Frame":
+
+  test "ten steps at ff 1 and one step at ff 10 lose the same fraction of speed":
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let friction = 0.9'f32
+    # Far past the soft-cap threshold, so the cap curve never acts.
+    let maxVelocity = 1.0e6'f32
+    let zeroWord = (x: 0'i32, y: 0'i32)
+    var tenSteps = (x: 10.0'f32, y: 0.0'f32)
+    for _ in 0 ..< 10:
+      tenSteps = integrateVelocity(tenSteps, zeroWord, invScale, 1.0'f32,
+        1.0'f32, friction, maxVelocity)
+    let oneStep = integrateVelocity((x: 10.0'f32, y: 0.0'f32), zeroWord,
+      invScale, 10.0'f32, 1.0'f32, friction, maxVelocity)
+    checkpoint "ten steps at ff 1: " & $tenSteps.x & ", one step at ff 10: " &
+      $oneStep.x
+    check abs(tenSteps.x - oneStep.x) < 1e-4'f32
+
 suite "Frame Reference":
   # frameFactor turns a substep's dt into a multiple of the frame the shipped
   # constants were measured at; integrate.wgsl multiplies the decoded
@@ -1088,11 +1106,13 @@ func todayIntegrateVelocity(velocity: tuple[x, y: float32];
     tuple[x, y: float32] =
   ## A copy of integrateVelocity from before the step limit landed, kept
   ## test-local so T1 compares against unmodified behaviour rather than
-  ## against physics_core's own claim of it.
+  ## against physics_core's own claim of it. Friction is per reference frame,
+  ## matching integrateVelocity's own model, so T1 isolates the step limit.
+  let retention = pow(friction, frameFactor)
   var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
-    invFixedPointScale, frameFactor)) * friction
+    invFixedPointScale, frameFactor)) * retention
   var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
-    invFixedPointScale, frameFactor)) * friction
+    invFixedPointScale, frameFactor)) * retention
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
   let perFrame = if frameFactor > 0.0'f32: frameFactor else: 1.0'f32
   let frameSpeed = speed / perFrame
