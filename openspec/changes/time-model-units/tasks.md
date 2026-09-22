@@ -1,9 +1,10 @@
 # Tasks
 
-Groups 2 (oracle), 4 (field) and 5 (help) touch disjoint files and may run in parallel, each in its own
-worktree. Group 3 (GPU) runs after group 2, because it mirrors group 2's clock. Groups 3 and 4 both touch
-`src/webgpu_compute.nim` and `src/sim_registry.nim`, in the disjoint regions each task names. The second to
-merge rebases onto the first. Every spike and run record goes to
+Groups 2 (oracle), 4 (field), 5 (help) and 6 (trail fade) may run in parallel, each in its own worktree.
+Group 3 (GPU) runs after group 2, because it mirrors group 2's clock. Groups 3 and 4 both touch
+`src/webgpu_compute.nim` and `src/sim_registry.nim`, and groups 2 and 6 both touch
+`src/ui/api/response_probe.nim`, each in the disjoint regions its task names. The second to merge rebases
+onto the first. Every spike and run record goes to
 `~/.scratchpad/particle-garden/tm-units/`, never into the tree. No run in this change uses 128 000
 particles while the machine is shared.
 
@@ -168,23 +169,74 @@ Files: `docs/help/10-simulation.md`, `docs/help/40-rd.md`, `docs/help/50-render.
     of world time." The rest of the entry stands.
   - `40-rd.md:21-22`: "Time Scale (field steps per second of play)" in place of "Time Scale (field steps
     per frame)".
-  - `50-render.md:12-16`, `trailLength`: the Interacts line reads "particle speed (stretches the dots by
-    the distance each travels per 1/120 s of world time)".
   - `51-glow.md:12-15`, `velocityGlowScale`: "how much speed, measured per 1/120 s of world time,
     brightens a particle and grows its halo, so movers stand out from sitters and swell as they go."
   - `10-simulation.md:20-25`, `friction`: unchanged. It already states the per-1/120 s meaning.
+  - `trailLength` (`50-render.md:12-16`) belongs to group 6.
 - [ ] 5.2 Read each changed entry in-app through `?` (the help panel) on `./main --serve`. Each must read
-  as 5.1 states, with no stale "per frame" wording for these five controls.
+  as 5.1 states, with no stale "per frame" wording for these four controls and the field's note.
 - [ ] 5.3 `just happen` and `just check` green.
 
-## 6. Integration
+## 6. Trail fade (Sonnet, own worktree; parallel with groups 2, 4 and 5)
 
-- [ ] 6.1 Merge groups 2–5 onto `tm-units`. The integrator runs `just happen` and `just check` once, green.
-- [ ] 6.2 **In-app, once** (the in-app procedure in `CLAUDE.md`), at 16 000 particles on the 143 Hz
+Files:
+- `src/trail_core.nim` and `tests/test_trail_core.nim`
+- `src/webgpu_render.nim`, `render`'s signature (`:1415`) and the fade write at `:1483-1488` only
+- `src/app.nim`, the `render` call at `:281` only
+- `src/ui/api/response_probe.nim`, `trailPersistenceProbe` (`:622-627`) only
+- `docs/help/50-render.md:12-16` and `tests/README.md` (`:76`, `:125`)
+
+It reads `physics_core.frameFactor` (`src/physics_core.nim:37-43`), which group 2 leaves as it is.
+
+- [ ] 6.1 **Red, in `tests/test_trail_core.nim`**, design.md's tests 22–24, against a stub
+  `frameFadeFor(trailLength, frameFactor)` that returns `fadeAmountFor(trailLength)`, today's per-frame
+  value. Run `nim c -r` with the `quality_flags` from the `justfile` on the suite. Verify test 22 fails on
+  sequences whose frame factors are not all 1, and test 24 at ff 0. Test 23 guards the branch order and
+  passes against this stub: verify it red once against the body `pow(fadeAmountFor(trailLength),
+  frameFactor)`, where it fails at ff 0.
+- [ ] 6.2 **Green.**
+  - `src/trail_core.nim`:
+    - Add `func frameFadeFor*(trailLength, frameFactor: float): float` per D8, with the length branch
+      ahead of the power.
+    - `TRAIL_FRAMES_PER_DIAMETER`'s doc reads "Reference frames a typical particle takes to cross one of its
+      own diameters", with the 60 fps and Time Scale 0.5 condition in one line. Its value stays 2.0.
+    - `fadeAmountFor`'s doc names its value per reference frame.
+    - Rename `persistenceFrames` to `persistenceReferenceFrames`, and word `persistenceFramesForFade`'s doc
+      per reference frame.
+  - `src/webgpu_render.nim`: `render*(particleCount: int, frameFactor: float)` writes
+    `frameFadeFor(config.CONFIG.trailLength, frameFactor)` into `FADE_AMOUNT`. The comment above it states
+    the frame factor is the whole frame's.
+  - `src/app.nim:281`: pass `frameFactor(dt)`, the frame's `dt` after the Time Scale, importing
+    `frameFactor` from `physics_core`.
+  - `src/ui/api/response_probe.nim`: `trailPersistenceProbe` calls `persistenceReferenceFrames`, and its doc
+    says "reference frames".
+  - `tests/test_trail_core.nim`: the header (`:7-11`), the suite "The Trail Slider Buys Frames" (`:76`),
+    and the tests "persistence in frames is linear in trail length" (`:86`) and "a trail decays to the
+    residual fraction over the frames it names" (`:100`) say "reference frames". Their assertions stay.
+    The per-frame decay the suite "The Trail Decays Geometrically" tests is `fade.wgsl`'s step, which
+    stays per rendered frame.
+  - `tests/README.md:76` ("the frames of persistence") and `:125` ("persistence in frames") say
+    "reference frames".
+
+  Verify 6.1's tests pass, and the rest of the trail suite passes unchanged.
+- [ ] 6.3 **Help**, `docs/help/50-render.md:12-16`, `trailLength`: "how long motion lingers, in particle
+  diameters of travel, the same on any display. Zero clears every frame; long trails turn fast worlds into
+  ribbons. The Trails button above turns the effect on and off." The Interacts line reads "particle speed
+  (stretches the dots by the distance each travels per 1/120 s of world time); Time Scale (a faster world
+  fades its trails sooner in seconds, over the same travel)", with the Trails button, field and Zoom
+  entries as they stand. Read the entry in-app through `?` on `./main --serve`.
+- [ ] 6.4 `just happen` and `just check` green.
+
+## 7. Integration
+
+- [ ] 7.1 Merge groups 2–6 onto `tm-units`. The integrator runs `just happen` and `just check` once, green.
+- [ ] 7.2 **In-app, once** (the in-app procedure in `CLAUDE.md`), at 16 000 particles on the 143 Hz
   display. Record in `~/.scratchpad/particle-garden/tm-units/in-app__<DD-MM-YY-HHmm>.md`:
   - a settled world at Time Scale 0.5 and at 5
   - frames held past 0.05 s at Time Scale 5, where the crowd stays calm and streaks keep their length
   - the field's pattern speed against wall time at Time Scale 0.5 (slower than the parent commit)
+  - with Trails on at length 25, trails at Time Scale 0.5 lasting longer in wall time than the parent
+    commit's, and shorter at Time Scale 5 than at 0.5
   - no `error|validation` line
 
 Note, outside the checkboxes: `core-force-interface` tasks that wait on this change, on

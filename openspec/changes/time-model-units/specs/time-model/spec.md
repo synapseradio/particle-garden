@@ -4,7 +4,7 @@
 
 How one step advances the world: which units the particle velocity carries, how a force, friction and
 density smoothing act over a step of any length, how the step stays stable, how the field keeps world time,
-and what a streak measures. The goal is that the same world played for the same world time reaches the
+what a streak measures, and how fast a trail fades. The goal is that the same world played for the same world time reaches the
 same state on any display, at any Time Scale, and through held frames.
 
 ## ADDED Requirements
@@ -132,3 +132,32 @@ lengthens with the held frame fails the check.
 
 - **WHEN** a frame is held past 0.05 s at Time Scale 5
 - **THEN** streak lengths stay those of the frames around it
+
+### Requirement: Trails fade per reference frame
+
+A trail of length `L > 0` particle diameters SHALL keep `TRAIL_RESIDUAL_FRACTION^(1 / (L ·
+TRAIL_FRAMES_PER_DIAMETER))` of itself per reference frame of world time. A rendered frame spanning frame
+factor `ff` SHALL keep that share raised to `ff`, with `ff` the whole frame's, not a substep's. A trail of
+length 0 SHALL clear on every frame, whatever its frame factor, 0 included.
+
+**agent-checkable** at the unit grain. Enforced by `tests/test_trail_core.nim`: "A Trail Keeps The Same
+Share Over The Same World Time At Every Frame Factor", "A Zero-Length Trail Clears At Every Frame Factor"
+and "A Frame That Advances No World Time Keeps The Trail Whole". The frame factor's path from the run loop
+to the fade uniform (`src/app.nim`, `src/webgpu_render.nim`) carries no native test, and the in-app
+procedure reads its effect.
+
+#### Scenario: Two displays
+
+- **WHEN** a trail of length 25 fades over 120 reference frames at Time Scale 0.5, once on a 60 Hz display
+  (120 frames at frame factor 1) and once on a 143 Hz display (frames at frame factor 60/143)
+- **THEN** both keep `0.05^(120/50)` of the trail, to f64 rounding
+
+#### Scenario: A held frame
+
+- **WHEN** one frame spans 30 reference frames with a trail of length 25
+- **THEN** the frame keeps `0.05^(30/50)` of the trail, the share 30 frames at frame factor 1 keep
+
+#### Scenario: A zero-length trail
+
+- **WHEN** the trail length is 0, at frame factor 0, 0.42, 1 or 30
+- **THEN** the frame keeps none of the trail

@@ -26,6 +26,8 @@ Two more couplings follow the display:
   60 Hz.
 - Streaks and glow read the per-step speed (`web/shaders/src/render.wgsl:91-97`,
   `web/shaders/src/glow.wgsl:89-90`).
+- The trail fades by a fixed share per rendered frame (`src/trail_core.nim:51-62`,
+  `src/webgpu_render.nim:1488`). At 143 Hz a trail lasts 0.42× the world time it lasts at 60 Hz.
 
 This change builds on the time model of `core-force-interface` as it stands on two unmerged branches:
 - `cfi-crowding` (`4c24c4d`…`3eee226`) holds friction per reference frame, the 0.12 default, and the
@@ -52,6 +54,10 @@ This change builds on the time model of `core-force-interface` as it stands on t
   - A frame past the ceiling drops the rest, the way the 0.05 s cap drops wall time.
 - **BREAKING (look):** streak length and velocity glow read travel per reference frame, the same on every
   display. At 143 Hz streaks lengthen 2.4×.
+- **BREAKING (look):** the trail fades per reference frame of world time. At 60 Hz and Time Scale 0.5
+  every trail reads as today. At 143 Hz trails last 2.4× longer in wall time than today, the 60 Hz length.
+  A trail now covers the same world travel at any Time Scale, so at Time Scale 5 it lasts a tenth of its
+  Time Scale 0.5 wall time.
 - Help lines for `timeScale`, `maxVelocity`, `trailLength`, `velocityGlowScale` and the field's Time
   Scale note state the per-reference-frame meaning.
 
@@ -61,7 +67,7 @@ This change builds on the time model of `core-force-interface` as it stands on t
 
 - `time-model`: how one step advances the world. It covers velocity and position units, the force and
   friction gains, density smoothing, the step limit's bound and the density-loop term, the field's clock,
-  and what a streak measures.
+  what a streak measures, and the trail fade.
 
 ### Modified Capabilities
 
@@ -77,10 +83,14 @@ This change builds on the time model of `core-force-interface` as it stands on t
   `src/webgpu_compute.nim`.
 - `web/shaders/src/integrate.wgsl` and `web/shaders/src/forces.wgsl`. `web/shaders/src/render.wgsl` and
   `glow.wgsl` keep their code: the velocity they read changes unit.
-- `src/field_core.nim` (the field clock) and `src/ui/api/response_probe.nim` (one doc comment).
+- `src/field_core.nim` (the field clock) and `src/ui/api/response_probe.nim` (two doc comments and
+  one call's rename).
+- `src/trail_core.nim` (`frameFadeFor`, the persistence rename, `TRAIL_FRAMES_PER_DIAMETER`'s doc),
+  `src/webgpu_render.nim` (`render` takes the frame factor) and `src/app.nim` (passes it).
+- `tests/README.md`, the trail rows' persistence unit.
 - `docs/help/10-simulation.md`, `40-rd.md`, `50-render.md`, `51-glow.md`.
 - Tests: `tests/test_physics.nim`, `test_balance_core.nim`, `test_field_core.nim`,
-  `test_sim_registry.nim`, `test_gpu_types.nim`.
+  `test_sim_registry.nim`, `test_gpu_types.nim`, `test_trail_core.nim`.
 - `core-force-interface` tasks that wait on this change: 4.5 (G1.2, the K 540 vs 1728 table and the G1
   arms at 128 000), 4.6 (the 128 000 stacked hold), 4.7 (the recorded constants), 4.9 (the in-app
   cost), and 12.1's Time Scale 5 hold.

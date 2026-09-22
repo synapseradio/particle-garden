@@ -29,6 +29,11 @@ branches. Anchors below name the branch they were read on.
   - `webgpu_compute` rebuilds the frame description when that count changes (`src/webgpu_compute.nim:272-280`).
   - The deposit fold scales by `depositFrameScale(steps)` (`src/field_core.nim:203-211`,
     `src/webgpu_compute.nim:1097-1098`), which holds the deposit rate per field step.
+  - The trail fade keeps `fadeAmountFor(trailLength)` of the previous frame on every rendered frame
+    (`src/trail_core.nim:51-62`, written at `src/webgpu_render.nim:1488`). `TRAIL_FRAMES_PER_DIAMETER`
+    (2.0, `src/trail_core.nim:33-36`) was set in frames at 60 fps.
+  - The run loop computes `dt = min(rawDt, 0.05) · timeScale` (`src/app.nim:241-243`) and calls
+    `webgpu_render.render(runtimeState.particleCount)` with no frame factor (`src/app.nim:281`).
 
 Measurements this design rests on are in `~/.scratchpad/particle-garden/cfi-crowding/spike-s7/`:
 `prediction.md` (each prediction written before its run), `s9_*.log`, `s10_*.log`, `s11*.log` and
@@ -38,8 +43,8 @@ directory.
 ## Goals / Non-Goals
 
 **Goals:**
-- A force, friction, density smoothing and the field each advance the same amount per reference frame of
-  world time, whatever the frame factor.
+- A force, friction, density smoothing, the field and the trail fade each advance the same amount per
+  reference frame of world time, whatever the frame factor.
 - The step at ff 1 is the step landed on `cfi-crowding`, up to f32 rounding. There is one exception: `D`
   now counts the species slope. Every ff-1 gate on file keeps its meaning.
 - The explicit step stays stable at every frame factor the app produces, 0.084 to 30. The lower end is
@@ -49,8 +54,6 @@ directory.
 **Non-Goals:**
 - **Retuning the 143 Hz look.** Every constant keeps its ff-1 meaning (the user's decision). Retuning by
   ear is later work.
-- **The trail fade.** It stays per rendered frame (`src/trail_core.nim:33-36`, `:51-62`). It is handed up
-  separately, so this change leaves it as it is.
 - **The explicit step's accuracy at large ff.** One step at ff 30 still spans 30 reference frames. This
   change bounds its stability, not its truncation error.
 - **The fluid's substep plan** (`src/sim_registry.nim:725-774` on `cfi-crowding`). It keeps its form, and
@@ -247,6 +250,48 @@ reference frame, so neither shader's formula changes. At 143 Hz, streaks lengthe
 (0.42× before); on a held frame at Time Scale 5 they no longer draw 30× long. This is the user's Q-B2
 answer.
 
+### D8. The trail fades per reference frame
+
+```text
+fadeRef   = fadeAmountFor(trailLength)     unchanged; now read per reference frame: the trail falls to
+                                           TRAIL_RESIDUAL_FRACTION over trailLength · TRAIL_FRAMES_PER_DIAMETER
+                                           reference frames
+frameFade = frameFadeFor(trailLength, ff)
+          = 0              if trailLength ≤ 0
+          = fadeRef^ff     otherwise        ff: the rendered frame's whole frame factor
+```
+
+- **The constant keeps its value.** `TRAIL_FRAMES_PER_DIAMETER` 2.0 is documented in frames at 60 fps
+  (`src/trail_core.nim:34-35`). At the shipped Time Scale 0.5 (`src/preset.nim:241`) a 60 Hz frame spans
+  one reference frame (`src/physics_core.nim:23-26`). Its doc becomes "reference frames", and every trail
+  at 60 Hz and Time Scale 0.5 fades as it does today.
+- **Frames compose exactly.** The frame fades multiply to `fadeRef^(Σ ff)`, so a trail keeps the same share
+  over the same world time however that time splits into frames. No approximation enters.
+- **Why the fade must follow D1.** Under D1 a particle travels the same distance per reference frame on
+  any display. A fade per rendered frame spends each frame's share in 0.42 reference frames at 143 Hz,
+  so a trail would cover 0.42× the travel, in diameters, that it covers at 60 Hz.
+- **The zero trail at ff 0.** `pow(0.0, 0.0)` is 1 in Nim's `std/math`, so `fadeAmountFor(0)^0` would keep
+  a zero-length trail whole. `frameFadeFor` branches on the length before the power. A frame with ff 0 and
+  a positive length keeps the trail whole (`fadeRef^0 = 1`), because the world did not move. ff 0 reaches
+  the renderer only when two frames carry the same timestamp: the loop returns before rendering while
+  stopped (`src/app.nim:236`), and `TIME_SCALE_MIN` is 0.1 (`src/config_ranges.nim:180`).
+- **A held frame** spans up to ff 30 (0.05 s · 5 · 120). At the Trails button's length 25
+  (`src/ui/state/render_state.nim:41`), `fadeRef` is 0.9418, and the held frame keeps 0.166 of the trail,
+  the share 30 reference frames keep.
+- **The frame factor is the whole frame's.** The fade pass runs once per rendered frame, after every
+  substep, so it takes `frameFactor(dt)` (`src/physics_core.nim:37-43`) of the frame's `dt`, never a
+  substep's. `render` gains a `frameFactor: float` parameter, and `src/app.nim:281` passes it.
+- **Persistence reads in reference frames.** `persistenceFrames` becomes `persistenceReferenceFrames` in
+  `src/trail_core.nim`, the trail suite and `trailPersistenceProbe` (`src/ui/api/response_probe.nim:622-627`).
+  Its value is unchanged. The probe key `render.trailPersistence` stays.
+- **Declined type: `TrailFade = Clears | Decays(fadeRef)`.** The zero case already branches once, in
+  `fadeAmountFor` (`src/trail_core.nim:59`), and `frameFadeFor` keeps its own branch ahead of the power, so
+  the sum type deletes no check beyond it. Test 23 holds the ff-0 case instead.
+- **Alternative: fade per wall second.** The trail length is in particle diameters of travel. A wall-time
+  fade would change the trail's world length with the Time Scale. The user chose the reference frame.
+- **Alternative: standing still.** Trails at 143 Hz would last 0.42× the world time they last at 60 Hz, as
+  they do today, and the time-model spec would hold for every consumer of world time except the trail.
+
 ### Rejected approaches (the design report, "Approaches, ordered by fit")
 
 | Approach | What it would have bought | Why not |
@@ -265,6 +310,7 @@ answer.
 | forces → integrate | `D` (two words) and `C` (two words) per particle, in the crowd buffer | Both are summed restoring slopes per reference frame, fixed point | forces with the pair laws, integrate with the limit |
 | Integrate → render and glow | `p.vel` through the particle buffer | Travel per reference frame | Render with the look, integrate with the physics |
 | Host → field | `FieldSteps` and the cached frame description | Σ steps = 7 × reference frames elapsed, within the carry, below the ceiling and above the floor | The field with the chemistry, the clock with the time model |
+| Run loop → fade pass | the frame's whole frame factor, app to `webgpu_render.render`; `frameFadeFor`'s value in `FADE_AMOUNT` | The product of the frame fades over any span is `fadeRef^(reference frames elapsed)` | The loop with the clock, the renderer with the look |
 
 IntegrationParams grows from 8 to 12 f32s. h, B, α, θ_c and the floor take the two pads and three new
 slots, and one more pad keeps 16-byte alignment. No new binding or pass is added.
@@ -297,9 +343,15 @@ under test.
 | 19 | "A Held Frame Drops The Field Steps Past The Ceiling" | `tests/test_field_core.nim` | unit | ff 30: 71 steps, carry ≤ 1 | the ceiling is missing |
 | 20 | "The Frame Description Follows The Clock's Count" | `tests/test_sim_registry.nim` | unit | for each odd count 1–71: chain alternates, starts and ends `rdStepToFront` | a cached description holds a stale count |
 | 21 | T7s "The Species-Only World Stays Settled At Every Frame Factor" | `tests/test_balance_core.nim`, `just calibrate-balance` | integration, 2 000 particles | matched world time (reference frames 7 500–9 000); ff 10 and 30 ≤ 3× the same run's ff 1 | the map or the limit leaves warmth |
+| 22 | "A Trail Keeps The Same Share Over The Same World Time At Every Frame Factor" | `tests/test_trail_core.nim` | property | `TRAIL_RESIDUAL_FRACTION^(Σ ff / (L · TRAIL_FRAMES_PER_DIAMETER))` against the product of `frameFadeFor(L, ff_i)`; L over the slider sweep above 0, ff sequences drawn from [0, 30], spans of 1, 120 and 600 reference frames | the frame fade ignores ff |
+| 23 | "A Zero-Length Trail Clears At Every Frame Factor" | `tests/test_trail_core.nim` | unit | 0 at L 0, ff ∈ {0, 0.084, 0.42, 1, 30} | the power runs before the zero branch |
+| 24 | "A Frame That Advances No World Time Keeps The Trail Whole" | `tests/test_trail_core.nim` | unit | 1 at ff 0, L ∈ {1, 25, 200} | a stopped frame fades |
 
-The help lines follow D7 and the proposal. `tests/test_help_content.nim` ("every descriptor is named by its
-group's file", `:53`) holds each id's presence, and no test holds the wording.
+The trail suite's existing tests keep their assertions. The names and docs that say "frames" for
+persistence say "reference frames", following the rename in D8.
+
+The help lines follow D7, D8 and the proposal. `tests/test_help_content.nim` ("every descriptor is named by
+its group's file", `:53`) holds each id's presence, and no test holds the wording.
 
 ### Spikes
 
@@ -383,6 +435,10 @@ build.
 - **[Field steps run ahead of world time below Time Scale 0.17 at 143 Hz]** → Accepted. Today's floor
   behaves the same, and the carry clamp keeps the field from stalling afterward.
 - **[θ_c's bisection runs on the CPU per substep]** → Unmeasured; S12 reads frame time.
+- **[Trails change length in wall time with the Time Scale and the display]** → At 143 Hz a trail lasts
+  2.4× longer in wall time than today, matching 60 Hz. At Time Scale 5 it lasts a tenth of its Time Scale
+  0.5 wall time, and at 0.1 five times as long, since it covers the same world travel. `render.wgsl`'s
+  elongation (`trailLength · TRAIL_ELONGATION_PER_DIAMETER`) is per diameter and does not move.
 
 ## Migration Plan
 
@@ -390,7 +446,7 @@ build.
   `c09b105`) merge to `dev`, and `tm-units` rebases onto that `dev`. Neither branch contains the other,
   and both fork from `ea5fff5`.
 - **Order.** The groups land as D2/D1/D3 (oracle), then D4/D5 (limit), then GPU, then the field, then
-  help. Each group ends green on `just happen` and `just check`.
+  help, then the trail fade (D8). Each group ends green on `just happen` and `just check`.
 - **Rollback.** Revert the group's commits. At ff 1 every gate on file holds either way, apart from D4's
   species slope, which S15 reads.
 
@@ -405,6 +461,7 @@ build.
 | D6 keeps the pattern | asserted | S13 |
 | The fluid holds under D1 | asserted | S16 |
 | No GPU cost | asserted | S12 |
+| D8 keeps a trail's share per world time on any display | specified | the exponent identity `Π fadeRef^ff_i = fadeRef^(Σ ff_i)`; test 22 unwritten; the wiring through `render` has no native test |
 
 Readiness is **asserted**, the lowest rung among these. S15, S14, S13, S16 and S12 advance it, in that
 order.
