@@ -1560,3 +1560,52 @@ suite "T5g A Limited Step Scales The Carried Velocity":
     let expectedY = s * rho * v.y
     check abs(stepped.x - expectedX) < 1e-4'f32 * abs(expectedX)
     check abs(stepped.y - expectedY) < 1e-4'f32 * abs(expectedY)
+
+suite "The Smoothing Gain Is Whole At Or Below A Substep Of Frame Factor 1":
+  test "g equals 1 for every retention and every viscosity ceiling at substep ff in (0, 1] (row 25)":
+    let theta = PRESSURE_STEP_BOUND.float32
+    let longStepBound = LONG_STEP_BOUND.float32
+    var verdicts: seq[string]
+    let ffs = [0.05'f32, 0.2'f32, 0.42'f32, 0.7'f32, 1.0'f32]
+    let rs = [0.5'f32, 0.7'f32, 0.88'f32, 0.95'f32, 1.0'f32]
+    let nuMaxes = [0.0'f32, 0.25'f32, 0.5'f32, 1.0'f32, 1.5'f32]
+    for ff in ffs:
+      for r in rs:
+        let clock = stepClock(ff, r)
+        for nuMax in nuMaxes:
+          let g = smoothingGain(clock, nuMax, theta, longStepBound)
+          if abs(g - 1.0'f32) > 1e-4'f32:
+            verdicts.add "ff " & $ff & " r " & $r & " nuMax " & $nuMax &
+              ": g " & $g & ", expected 1"
+    checkNoVerdicts(verdicts)
+
+suite "The Clamped Smoothing Keeps Every Velocity Mode Decaying":
+  test "g's bound holds at every viscosity ceiling and every frame factor (row 26)":
+    let theta = PRESSURE_STEP_BOUND.float32
+    let longStepBound = LONG_STEP_BOUND.float32
+    var verdicts: seq[string]
+    let ffs = [0.05'f32, 0.2'f32, 1.0'f32, 4.2'f32, 10.0'f32, 30.0'f32]
+    let rs = [0.5'f32, 0.7'f32, 0.88'f32, 0.95'f32]
+      # r < 1: frame factor 1 up is checked separately below at r 1 too.
+    for ff in ffs:
+      for r in rs:
+        let clock = stepClock(ff, r)
+        for nuMax in [0.1'f32, 0.3'f32, 0.5'f32]:
+          let g = smoothingGain(clock, nuMax, theta, longStepBound)
+          for kappa in [0.0'f32, 1.0'f32, 2.0'f32]:
+            for nu in [0.0'f32, nuMax * 0.5'f32, nuMax]:
+              let mode = clock.retention - kappa * clock.forceGain * g * nu
+              if mode <= -1.0'f32 or mode > 1.0'f32 + 1e-4'f32:
+                verdicts.add "ff " & $ff & " r " & $r & " nuMax " & $nuMax &
+                  " kappa " & $kappa & " nu " & $nu & ": mode " & $mode &
+                  " leaves (-1, 1]"
+    for ff in [1.0'f32, 4.2'f32, 10.0'f32, 30.0'f32]:
+      for r in rs:
+        let clock = stepClock(ff, r)
+        for nuMax in [0.51'f32, 1.0'f32, 1.5'f32]:
+          let g = smoothingGain(clock, nuMax, theta, longStepBound)
+          let hg = clock.forceGain * g
+          if hg > r + 1e-3'f32:
+            verdicts.add "ff " & $ff & " r " & $r & " nuMax " & $nuMax &
+              ": h*g " & $hg & " exceeds r " & $r
+    checkNoVerdicts(verdicts)

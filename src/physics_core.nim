@@ -564,15 +564,25 @@ func stepLimit*(frameFactor, stiffness, bound: float32): float32 =
   let reach = 2.0'f32 * frameFactor * stiffness
   if reach > bound: bound / reach else: 1.0'f32
 
+func longStepB(clock: StepClock; bound, longStepBound: float32): float32 =
+  ## D4's `B`: `bound * rho`, loosened toward `longStepBound` as the
+  ## substep's retention falls (`B = bound` frictionless, where `rho` is 1
+  ## and `rho / r` is 1).
+  bound * clock.rho + longStepBound * (1.0'f32 - clock.rho / clock.r)
+
 func stepLimit*(clock: StepClock; stiffness, bound, longStepBound: float32):
     float32 =
   ## D4's s_D, over the clock's own substep: 1 unless the substep would
-  ## carry `2 * ff * h * stiffness` past `B`, which loosens from
-  ## `bound * rho` toward `longStepBound` as the substep's retention falls
-  ## (`B = bound` frictionless, where `rho` is 1 and `rho / r` is 1).
-  let b = bound * clock.rho + longStepBound * (1.0'f32 - clock.rho / clock.r)
+  ## carry `2 * ff * h * stiffness` past `B`.
+  let b = longStepB(clock, bound, longStepBound)
   let reach = 2.0'f32 * clock.ff * clock.h * stiffness
   if reach > b: b / reach else: 1.0'f32
+
+func smoothingGain*(clock: StepClock; nuMax, bound, longStepBound: float32):
+    float32 =
+  ## D9's `g`, with neither clamp yet: reads above 1 below a substep of ff
+  ## 1, where the landed step must hold it at 1 exactly (row 25's red).
+  longStepB(clock, bound, longStepBound) / bound / clock.h
 
 func encodeStiffness*(slope, fixedPointScale: float32): int32 =
   int32(round(slope * fixedPointScale))
