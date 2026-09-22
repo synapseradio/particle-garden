@@ -105,10 +105,8 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   p.sphDensity =
     f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
-  // stepLimit scales the whole carried-plus-arriving velocity, not the
-  // arriving delta alone: a particle already coasting at speed keeps
-  // coasting through a limited step otherwise (crowding-redesign design,
-  // Addendum 3, form F).
+  // The step limit scales the carried velocity too, or a limited particle
+  // coasts through the crowd.
   var newVelX = (p.vel.x + deltaVx) * stepLimit * params.friction;
   var newVelY = (p.vel.y + deltaVy) * stepLimit * params.friction;
 

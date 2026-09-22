@@ -1064,9 +1064,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Layout matches IntegrationParams indices in gpu_types.nim
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
-  # Friction acts per reference frame, not per substep: raised here once per
-  # substep group rather than in the shader, since every particle in the
-  # group shares one frame factor (crowding-redesign design, Addendum 4).
+  # Friction is a loss per reference frame; every particle in a substep
+  # shares one frame factor, so raised here once rather than per particle
+  # in the shader.
   integrationParamsData[INTEG_FRICTION] =
     pow(float32(friction), float32(substepFrameFactor))
   # The plan's Max Velocity, which is the stored one until the substep count
