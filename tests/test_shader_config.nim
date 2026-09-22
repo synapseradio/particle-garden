@@ -241,8 +241,8 @@ suite "The World Pressure's Two Constants Reach WGSL":
 suite "The Step Limit's Constants Reach WGSL":
   # forces.wgsl encodes each pair's radial slope into the stiffness words at
   # this shift and scale; integrate.wgsl decodes them and holds the step to
-  # PRESSURE_STEP_BOUND (crowding-redesign design §3.2-3.4). All three come
-  # from config_ranges, where the calibration that settles them writes.
+  # PRESSURE_STEP_BOUND. All three come from config_ranges, where the
+  # calibration that settles them writes.
 
   test "the emitted stiffness coarse shift equals STIFFNESS_COARSE_SHIFT":
     check parseInt(getPlaceholderMap()["STIFFNESS_COARSE_SHIFT"]) ==

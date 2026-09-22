@@ -48,7 +48,7 @@
 // at the crowd scale rather than the velocity one — see fixed_point.wgsl for
 // why a neighbour count needs the coarser of the two. The two stiffness words
 // carry the particle's summed pair slope D that integrate.wgsl's step limit
-// reads (crowding-redesign design §3.2-3.4).
+// reads.
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
 // The coarse velocity word, which the world pressure below splits into.
@@ -370,9 +370,9 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
           (-pressureVyFixed) >> VELOCITY_COARSE_SHIFT);
 
         // The pair's contribution to each particle's summed stiffness D: the
-        // saturated sum's radial slope, the same for both sides (crowding-
-        // redesign design §3.2). Mirrored by physics_core.pairStiffnessSlope /
-        // balance_core.addStiffness. THIS's share accumulates in a register
+        // saturated sum's radial slope, the same for both sides. Mirrored by
+        // physics_core.pairStiffnessSlope / balance_core.addStiffness. THIS's
+        // share accumulates in a register
         // and splits once after the loop; OTHER's goes by atomic here, and
         // the coarse word only when the pair's slope reaches it — below the
         // onset no add happens at all.

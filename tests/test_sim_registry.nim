@@ -735,10 +735,10 @@ suite "Only Integrate Reads The Frame Factor":
 
 suite "The Crowd Buffer's Clear Covers All Three Words":
   # webgpu_init sizes the crowd buffer at stride 3 (crowd, stiffnessFine,
-  # stiffnessCoarse; crowding-redesign design §4). A clear sized like the
-  # single-word delta buffers would leave the two stiffness words holding the
-  # previous frame's slope with no validation error. Read from source, since
-  # webgpu_compute opens on std/jsffi and no native test can import it.
+  # stiffnessCoarse). A clear sized like the single-word delta buffers would
+  # leave the two stiffness words holding the previous frame's slope with no
+  # validation error. Read from source, since webgpu_compute opens on
+  # std/jsffi and no native test can import it.
 
   test "sbCrowdDensityDelta's byte length is not grouped with the single-word deltas":
     let lines = readFile("src/webgpu_compute.nim").splitLines
@@ -1051,9 +1051,8 @@ suite "The Pressure Onset Comes From The Density Functions":
 
 
 suite "Form F: Friction Is Per Reference Frame, Carried On The Whole Velocity":
-  # crowding-redesign design, Addendum 3 (form F) and Addendum 4: retention
-  # compounds per reference frame (`friction ^ ff`), computed once per
-  # substep group on the CPU rather than per particle on the GPU, and the
+  # Retention compounds per reference frame (`friction ^ ff`), computed once
+  # per substep group on the CPU rather than per particle on the GPU. The
   # step limit `s` scales the whole `(vel + delta)`, not the delta alone.
   # Read from source, since webgpu_compute and the WGSL sources open on
   # std/jsffi or are not native Nim and no native test can import them.
@@ -1087,7 +1086,7 @@ suite "Form F: Friction Is Per Reference Frame, Carried On The Whole Velocity":
     checkpoint("newVelX assignment: " & statement)
     check statement.len > 0
     check "deltaVx * stepLimit" notin statement
-      # That form leaves the carried velocity p.vel.x outside the limit
-      # (crowding-redesign, Addendum 3, S7 round 2: the residual the tree's
-      # limit left by scaling only the delta).
+      # That form leaves the carried velocity p.vel.x outside the limit, so
+      # a limited particle keeps coasting on its old velocity while only
+      # the incoming delta is capped.
     check "+ deltaVx) * stepLimit" in statement

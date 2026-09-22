@@ -392,7 +392,7 @@ proc getPlaceholderMap*(): Table[string, string] =
 
   # The stiffness words' shift and scale (forces.wgsl encodes, integrate.wgsl
   # decodes) and the step limit's bound (integrate.wgsl only), from
-  # config_ranges (crowding-redesign design §3.2-3.4).
+  # config_ranges.
   result["STIFFNESS_COARSE_SHIFT"] = $STIFFNESS_COARSE_SHIFT
   result["STIFFNESS_FIXED_POINT_SCALE"] = fmt"{STIFFNESS_FIXED_POINT_SCALE:.1f}"
   result["STIFFNESS_INV_FIXED_POINT_SCALE"] =

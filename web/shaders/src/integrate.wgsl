@@ -85,8 +85,8 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // This particle's summed pair stiffness D, decoded from the crowd buffer's
   // two stiffness words the way the velocity words are rejoined above. The
   // factor the whole decoded delta is scaled by below: 1 unless one step
-  // would carry frameFactor * 2 * D past PRESSURE_STEP_BOUND (crowding-
-  // redesign design §3.2-3.4). Mirrored by physics_core.stepLimit.
+  // would carry frameFactor * 2 * D past PRESSURE_STEP_BOUND. Mirrored by
+  // physics_core.stepLimit.
   let stiffness = (f32(crowdDensityDeltaFixed[particleIdx * 3u + 1u]) +
     f32(crowdDensityDeltaFixed[particleIdx * 3u + 2u]) * STIFFNESS_COARSE_UNIT) *
     STIFFNESS_INV_FIXED_POINT_SCALE;
