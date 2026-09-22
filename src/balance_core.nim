@@ -706,14 +706,16 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     let limit = stepLimit(subFrameFactor, stiffness, p.pressureStepBound)
     let decodedX = decodeVelocityWords(
       (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
-      invFixed, subFrameFactor, p.fluid.coarseShift) * limit
+      invFixed, subFrameFactor, p.fluid.coarseShift)
     let decodedY = decodeVelocityWords(
       (fine: world.deltaFixed[i * 2 + 1], coarse: world.coarseFixed[i * 2 + 1]),
-      invFixed, subFrameFactor, p.fluid.coarseShift) * limit
-    # integrateVelocity decodes one word, so the two are rejoined above,
-    # already scaled by the step limit, and a zero word passed, which adds
-    # exactly nothing.
-    let joined = (x: world.velX[i] + decodedX, y: world.velY[i] + decodedY)
+      invFixed, subFrameFactor, p.fluid.coarseShift)
+    # Form F: the step limit scales the carried velocity along with this
+    # step's delta, v' = r^ff * s * (v + ff*delta), not the delta alone.
+    # integrateVelocity decodes one word, so the two are rejoined and
+    # pre-scaled here, and a zero word passed, which adds exactly nothing.
+    let joined = (x: (world.velX[i] + decodedX) * limit,
+      y: (world.velY[i] + decodedY) * limit)
     # calibratePerStepCap is a diagnostic variant, never the shipped
     # integrate: the per-step cap of before the per-reference-frame one.
     let stepped = when defined(calibratePerStepCap):

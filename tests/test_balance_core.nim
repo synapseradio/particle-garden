@@ -1516,6 +1516,31 @@ suite "A Limited Step Reaches Integrate":
     check abs(limited.velY[0] - expectedS * unlimited.velY[0]) <
       1.0e-3'f32 * max(abs(unlimited.velY[0]), 1.0'f32)
 
+  test "a limited step scales the carried velocity too, not only this step's delta":
+    ## Form F: v' = r^ff * s * (v + ff*delta), so s scales the whole sum. A
+    ## carried velocity dwarfing the step's own delta isolates that claim: the
+    ## old delta-only scaling left an untouched v term of (1-s)*v behind.
+    var limited = limitReachWorld(PRESSURE_STEP_BOUND.float32)
+    var unlimited = limitReachWorld(LIMIT_REACH_UNLIMITED_BOUND)
+    # Frame 1: crowdDensity starts at 0, so D is 0 and s is 1 in both copies
+    # alike; this only warms crowdDensity for frame 2's sweepPairs to read.
+    stepFrame(limited, 1.0, 1)
+    stepFrame(unlimited, 1.0, 1)
+    let d = stiffnessSumFromWorld(limited, 0)
+    let expectedS = stepLimit(1.0'f32, d, PRESSURE_STEP_BOUND.float32)
+    check expectedS < 1.0'f32
+    const injected = 1000.0'f32
+    limited.velX[0] = injected
+    limited.velY[0] = 0.0'f32
+    unlimited.velX[0] = injected
+    unlimited.velY[0] = 0.0'f32
+    stepFrame(limited, 1.0, 1)
+    stepFrame(unlimited, 1.0, 1)
+    checkpoint "limited " & $limited.velX[0] & ", unlimited " & $unlimited.velX[0] &
+      ", expected " & $(expectedS * unlimited.velX[0])
+    check abs(limited.velX[0] - expectedS * unlimited.velX[0]) <
+      1.0e-3'f32 * abs(unlimited.velX[0])
+
 # ==============================================================================
 # T7: A BALANCE HOLDS AT EVERY FRAME FACTOR (crowding-redesign design §8, "buys")
 # ==============================================================================
