@@ -1048,3 +1048,46 @@ suite "The Pressure Onset Comes From The Density Functions":
       break
     checkpoint("assignment found for " & SLOT & ": " & statement)
     check "pressureOnset(" in statement
+
+
+suite "Form F: Friction Is Per Reference Frame, Carried On The Whole Velocity":
+  # crowding-redesign design, Addendum 3 (form F) and Addendum 4: retention
+  # compounds per reference frame (`friction ^ ff`), computed once per
+  # substep group on the CPU rather than per particle on the GPU, and the
+  # step limit `s` scales the whole `(vel + delta)`, not the delta alone.
+  # Read from source, since webgpu_compute and the WGSL sources open on
+  # std/jsffi or are not native Nim and no native test can import them.
+
+  test "the friction uniform is raised to the substep frame factor before it reaches the GPU":
+    const SLOT = "integrationParamsData[INTEG_FRICTION]"
+    let lines = readFile("src/webgpu_compute.nim").splitLines
+    var statement = ""
+    for number, line in lines:
+      if not line.strip.startsWith(SLOT): continue
+      let indent = line.len - line.strip(trailing = false).len
+      statement = line
+      var next = number + 1
+      while next < lines.len and lines[next].strip.len > 0 and
+          lines[next].len - lines[next].strip(trailing = false).len > indent:
+        statement.add " " & lines[next]
+        inc next
+      break
+    checkpoint("assignment found for " & SLOT & ": " & statement)
+    check statement.len > 0
+    check "pow(" in statement
+    check "substepFrameFactor" in statement
+
+  test "integrate.wgsl scales the carried velocity by the step limit, not only the delta":
+    let lines = readFile("web/shaders/src/integrate.wgsl").splitLines
+    var statement = ""
+    for line in lines:
+      if "newVelX" in line and "=" in line and "var" in line:
+        statement = line
+        break
+    checkpoint("newVelX assignment: " & statement)
+    check statement.len > 0
+    check "deltaVx * stepLimit" notin statement
+      # That form leaves the carried velocity p.vel.x outside the limit
+      # (crowding-redesign, Addendum 3, S7 round 2: the residual the tree's
+      # limit left by scaling only the delta).
+    check "+ deltaVx) * stepLimit" in statement
