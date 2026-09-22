@@ -1,3 +1,4 @@
+import std/complex
 import std/math
 import std/random
 import std/sequtils
@@ -1608,4 +1609,119 @@ suite "The Clamped Smoothing Keeps Every Velocity Mode Decaying":
           if hg > r + 1e-3'f32:
             verdicts.add "ff " & $ff & " r " & $r & " nuMax " & $nuMax &
               ": h*g " & $hg & " exceeds r " & $r
+    checkNoVerdicts(verdicts)
+
+proc loopSpectralRadiusInTest(kc, alpha, rho: float64): float64 =
+  ## D5's three-state density-lag map on (x, v, psi), built independently of
+  ## physics_core's own solver: `psi' = alpha*psi + (1-alpha)*x;
+  ## v' = rho*(v - kc*psi); x' = x + v'`, direct stiffness 0. The largest
+  ## root modulus of its characteristic cubic, via Durand-Kerner seeded at
+  ## (0.4+0.9i)^k for k in 0..2, matching spike-s6/lagmodel.py's method.
+  let m = [
+    [1.0, rho, -rho * kc],
+    [0.0, rho, -rho * kc],
+    [1.0 - alpha, 0.0, alpha]]
+  let tr = m[0][0] + m[1][1] + m[2][2]
+  let c1 = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) +
+    (m[0][0] * m[2][2] - m[0][2] * m[2][0]) +
+    (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+  let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  let c2 = -tr
+  let c0 = -det
+  let seed = complex64(0.4, 0.9)
+  var z = [complex64(1.0, 0.0), seed, seed * seed]
+  for _ in 0 ..< 500:
+    var nz: array[3, Complex64]
+    for i in 0 ..< 3:
+      let f = z[i] * z[i] * z[i] + c2 * z[i] * z[i] + c1 * z[i] + c0
+      var denom = complex64(1.0, 0.0)
+      for j in 0 ..< 3:
+        if j != i:
+          denom = denom * (z[i] - z[j])
+      nz[i] = z[i] - f / denom
+    z = nz
+  result = 0.0
+  for zi in z:
+    result = max(result, abs(zi))
+
+suite "T5h Theta C Follows Friction And Smoothing":
+  test "the map's spectral radius holds at 2*theta_c and breaks just past it (row 10)":
+    var verdicts: seq[string]
+    let rhos = [0.95'f64, 0.88'f64, 0.5'f64]
+    let alphas = [0.7'f64, pow(0.7'f64, 0.42'f64), pow(0.7'f64, 10.0'f64)]
+    for rho in rhos:
+      for alpha in alphas:
+        let thetaC = loopGainBound(rho.float32, alpha.float32).float64
+        let atBound = loopSpectralRadiusInTest(2.0 * thetaC, alpha, rho)
+        if atBound > 1.0 + 1e-6:
+          verdicts.add "rho " & $rho & " alpha " & $alpha & ": radius " &
+            $atBound & " at 2*theta_c exceeds 1"
+        let pastBound = loopSpectralRadiusInTest(2.0 * thetaC + 1e-4, alpha,
+          rho)
+        if pastBound <= 1.0 + 1e-9:
+          verdicts.add "rho " & $rho & " alpha " & $alpha & ": radius " &
+            $pastBound & " at 2*theta_c + 1e-4 does not exceed 1"
+    let rhoCeil = pow(0.88'f64, 30.0)
+    let alphaCeil = pow(0.7'f64, 30.0)
+    let thetaCeil = loopGainBound(rhoCeil.float32, alphaCeil.float32).float64
+    let expectedCeil = LOOP_GAIN_SEARCH_CEILING.float64 / 2.0
+    if abs(thetaCeil - expectedCeil) > 1e-4:
+      verdicts.add "ceiling: theta_c " & $thetaCeil & ", expected " &
+        $expectedCeil
+    let ceilRadius = loopSpectralRadiusInTest(2.0 * thetaCeil, alphaCeil,
+      rhoCeil)
+    if ceilRadius > 1.0 + 1e-6:
+      verdicts.add "ceiling: radius " & $ceilRadius & " at 2*theta_c exceeds 1"
+    checkNoVerdicts(verdicts)
+
+suite "T5e The Loop Limit Never Lets A Frame Factor Outgrow Frame Factor 1":
+  test "the limited loop grows no faster per reference frame than frame factor 1's (row 11)":
+    ## s_C and its radius come from design.md's D5 algebra directly, with
+    ## `loopGainBound` the only physics_core symbol under test, per the
+    ## oracle's "map built in the test". M8's own grid and criterion
+    ## (spike-s7/lagmodel8.py): 0 violations of 5 643 at floor 0.1 and 0.
+    let rs = [1.0'f32, 0.995'f32, 0.99'f32, 0.98'f32, 0.95'f32, 0.88'f32,
+      0.84'f32, 0.7'f32, 0.5'f32]
+    var cs: seq[float64]
+    for e in -40 .. 16:
+      cs.add pow(10.0, e.float64 / 8.0)
+    let ffs = [0.2'f64, 0.3'f64, 0.42'f64, 0.55'f64, 0.7'f64, 0.85'f64,
+      1.5'f64, 2.0'f64, 4.2'f64, 10.0'f64, 30.0'f64]
+    let loopLimitFloor = LOOP_LIMIT_FLOOR.float64
+    var verdicts: seq[string]
+    for r in rs:
+      let clock1 = stepClock(1.0'f32, r)
+      let alpha1 = densityCarry(clock1, 0.7'f32).float64
+      let theta1 = loopGainBound(clock1.retention, alpha1.float32).float64
+      var clocks: seq[tuple[ff: float64, rho, h, alpha, theta: float64]]
+      for ff in ffs:
+        let clock = stepClock(ff.float32, r)
+        let alpha = densityCarry(clock, 0.7'f32).float64
+        let theta = loopGainBound(clock.retention, alpha.float32).float64
+        clocks.add (ff: ff, rho: clock.retention.float64,
+          h: clock.forceGain.float64, alpha: alpha, theta: theta)
+      for c in cs:
+        let g1 = 1.0 * clock1.forceGain.float64 * c / clock1.retention.float64
+        let s1 =
+          if g1 <= theta1: 1.0
+          else: max(theta1 / g1, loopLimitFloor)
+        let radius1 = loopSpectralRadiusInTest(s1 * g1, alpha1,
+          clock1.retention.float64 * s1)
+        for entry in clocks:
+          let g = entry.ff * entry.h * c / entry.rho
+          let s =
+            if g <= entry.theta: 1.0
+            else: max(entry.theta / g, loopLimitFloor * min(1.0, 1.0 / entry.ff))
+          let radius = loopSpectralRadiusInTest(s * g, entry.alpha,
+            entry.rho * s)
+          let ex =
+            if radius1 <= 1.0 + 1e-9:
+              (if radius > 1.0 + 1e-9: ln(radius) else: 0.0)
+            else:
+              ln(radius) / entry.ff - ln(radius1)
+          if ex > 1e-7:
+            verdicts.add "r " & $r & " C " & $c & " ff " & $entry.ff &
+              ": excess " & $ex
     checkNoVerdicts(verdicts)

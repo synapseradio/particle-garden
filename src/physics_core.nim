@@ -586,6 +586,20 @@ func smoothingGain*(clock: StepClock; nuMax, bound, longStepBound: float32):
   min(1.0'f32,
     (b / bound) / (clock.h * min(1.0'f32, 2.0'f32 * nuMax)))
 
+const
+  LOOP_GAIN_SEARCH_CEILING* = 10.0'f32
+    ## kappa: caps theta_c at 5 from ff 19 at retention 0.88. Lifting it moved
+    ## K 540 ff 30 motion under 1% (q2_k540_ff30_thetatrue.log).
+
+func loopGainBound*(rho, alpha: float32): float32 =
+  ## D5's theta_c, row 10's stub: a fixed reading pending the bisection.
+  0.009'f32
+
+func loopLimit*(clock: StepClock; densityFactor, c, loopLimitFloor: float32):
+    float32 =
+  ## D5's s_C, row 11's stub: no limit yet.
+  1.0'f32
+
 func encodeStiffness*(slope, fixedPointScale: float32): int32 =
   int32(round(slope * fixedPointScale))
 
