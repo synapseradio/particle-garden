@@ -50,9 +50,9 @@ func angles(fromAngle, toAngle: float): seq[float] =
     result.add fromAngle + (toAngle - fromAngle) * step.float / ANGLE_STEPS.float
 
 func referenceConfig(): UnitConfig =
-  ## Design N2's reference configuration: 16 000 particles at radius 50, one
-  ## self-attracting species at MATRIX_MAX_VALUE, pattern scale 1, one live
-  ## body; every gain at 1.
+  ## The reference configuration every writer's unit is measured against:
+  ## 16 000 particles at radius 50, one self-attracting species at
+  ## MATRIX_MAX_VALUE, pattern scale 1, one live body; every gain at 1.
   UnitConfig(particleCount: 16_000, interactionRadius: 50.0,
     worldWidth: BODY_WORLD_W, worldHeight: BODY_WORLD_H,
     onsetRatio: ONSET_RATIO, crowdRatio: ONSET_RATIO,
@@ -464,7 +464,7 @@ suite "The Onset Follows The World And Keeps A Contact Floor":
 # ==============================================================================
 # The stepped world's fluid block is held against sph_core's pair term, summed
 # pair by pair over the torus, and each fluid arm's sides are held to differ in
-# the one term the arm reads (design N8).
+# the one term the arm reads.
 
 import std/random
 import ../src/preset
@@ -484,7 +484,7 @@ const
   FLUID_ARM_FORCE_STRENGTH = 0.2
     ## The shipped Force Strength on the 0-1 scale.
   FLUID_ARM_PAIR_GAIN = 5.0
-    ## g_pair (design N2): the new scale's 0.2 is today's force multiplier 1.
+    ## g_pair: the new scale's 0.2 is today's force multiplier 1.
 
 func shippedFluid(): OracleFluidParams =
   ## forces-sph.wgsl's inputs at the shipped fluid settings, at fluid 1.
@@ -661,7 +661,7 @@ proc mirrorStep(label: string; fluid: OracleFluidParams;
 
 type
   FluidTerm = enum
-    ## The three effects design N8 reads one at a time, each named for the
+    ## The three effects an arm reads one at a time, each named for the
     ## OracleFluidParams field it moves.
     ftBlend = "blend"
     ftPressureGain = "pressureGain"
@@ -674,8 +674,8 @@ type
     steps: seq[OracleFluidParams]
 
 func fluidArms(): array[FluidTerm, FluidArm] =
-  ## Design N8's arms. The stiffness is the stored one; the calibration hands
-  ## each side the effective stiffness substepPlan derives from it.
+  ## One arm per FluidTerm. The stiffness is the stored one; the calibration
+  ## hands each side the effective stiffness substepPlan derives from it.
   let shipped = shippedFluid()
   var blended = shipped
   blended.viscosity = SPH_VISCOSITY_MIN
@@ -1000,7 +1000,7 @@ when defined(calibrateFluid):
   func shown(value: float): string = formatFloat(value, ffDecimal, 4)
 
   func meanAndSpread(values: seq[float]): tuple[mean, spread: float] =
-    ## The mean and the largest single seed's distance from it (design C5).
+    ## The mean and the largest single seed's distance from it.
     for value in values:
       result.mean += value
     result.mean /= values.len.float
@@ -1545,11 +1545,11 @@ suite "A Limited Step Reaches Integrate":
 # Integration, not calibration: a small enough world to run in `just test`,
 # on the design's own reference world (radius 50, one self-attracting species
 # at MATRIX_MAX_VALUE) held down to 2 000 particles, one body live for the
-# whole run. What C4b keeps ("a static balance is unchanged by the limit")
-# means the body compresses the crowd against it to the same peak, whatever
-# the frame factor: the ratio of the two runs' final peak crowd density,
-# meaned over the three gate seeds, does not exceed 1 (specs/coupling-
-# contract/spec.md:183-187's convention, on peak density rather than motion).
+# whole run. A static balance is unchanged by the limit, so the body
+# compresses the crowd against it to the same peak, whatever the frame
+# factor: the ratio of the two runs' final peak crowd density, meaned over
+# the three gate seeds, does not exceed 1 (specs/coupling-contract/spec.md:
+# 183-187's convention, on peak density rather than motion).
 
 const
   T7_PARTICLES = 2_000
@@ -1645,7 +1645,7 @@ when defined(calibrateBalance):
       if ONSET_RATIO_OVERRIDE.len == 0: CROWD_ONSET_RATIO
       else: parseFloat(ONSET_RATIO_OVERRIDE)
       ## x_on for every arm the term acts in, so the stacked hold can run at
-      ## the onset G1.1 records before config_ranges holds it.
+      ## the onset a calibration measures before config_ranges holds it.
 
   func scaled(frames: int): int = max(frames div FRAME_DIVISOR, 1)
 
@@ -1663,8 +1663,8 @@ when defined(calibrateBalance):
     SETTLE_BOUND = WORLD_PRESSURE_SETTLE_BOUND
     FAR_SPEED_MARGIN = 0.0734
       ## How much faster the crowd beyond a body's reach may run while the
-      ## stacked bodies hold, as a fraction of the same seed's no-body run: G1.3's
-      ## mean ratio 0.9316 plus its largest seed distance 0.1419, less 1.
+      ## stacked bodies hold, as a fraction of the same seed's no-body run: the
+      ## measured mean ratio 0.9316 plus its largest seed distance 0.1419, less 1.
     STACK_CLEARANCE = 2.0 * BODY_DEFAULT_BAND
       ## Enclosure falls to exactly zero at twice the band
       ## (src/body_core.nim:376-380), so past this a stacked body hands a
@@ -1681,7 +1681,7 @@ when defined(calibrateBalance):
       result = max(result, abs(value - centre))
 
   func derivedBound(values: seq[float]): float =
-    ## design C5: a run's mean plus its largest single seed's distance from it.
+    ## A run's mean plus its largest single seed's distance from it.
     meanOf(values) + largestDistance(values)
 
   func calibrationConfig(): UnitConfig =
@@ -2154,7 +2154,7 @@ when defined(calibrateBalance):
       ", q_max ", WORLD_PRESSURE_IMPULSE_MAX, ", shipped friction ",
       defaultSettings().friction, " (retention applied once per step)"
 
-  suite "Gate G1.1 Readings":
+  suite "The Onset Arm's Calibration Readings":
 
     test "the onset arm prints the p99.9 crowd ratio, the contact floor and the band's bottom":
       printConditions("G1.1 onset: no coupling but the species force, " &
@@ -2193,7 +2193,7 @@ when defined(calibrateBalance):
       echo "- unmeasured: other particle counts, radii, species counts and " &
         "the exponential model"
 
-  suite "Gate G1.2 Readings":
+  suite "The Stiffness Arm's Calibration Readings":
 
     test "the stiffness arm prints L at K 540 and 1728 and the bound B_L":
       printConditions("G1.2 stiffness: one self-attracting species, " &
@@ -2219,7 +2219,7 @@ when defined(calibrateBalance):
       echo "- mean L at K 1728 ", shown(meanOf(stiffer)), ": ",
         (if meanOf(stiffer) > bound: "exceeds B_L" else: "DOES NOT exceed B_L")
 
-  suite "Gate G1.3 Readings":
+  suite "The Stacked-Hold Arm's Calibration Readings":
 
     test "the stacked-hold arm prints its peaks, release ratios and far-crowd margin":
       printConditions("G1.3 stacked hold: one self-attracting species, " &

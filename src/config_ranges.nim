@@ -681,20 +681,21 @@ const
   CROWD_ONSET_RATIO* = 6.3
     ## x_on: the crowd density the pressure starts at, in multiples of the
     ## world's uniform crowd density.
-    ## The user's placement. G1.1 (128 000 particles, radius 50, polynomial,
-    ## seeds 42/7/1001, species force only) put it below every one-species
-    ## settle (p99.9 x >= 10.56) and above every four-species self-only settle
-    ## (<= 3.34). Other counts, radii, species counts and the exponential model
-    ## are unmeasured.
+    ## The user's placement. Measured at 128 000 particles, radius 50,
+    ## polynomial model, seeds 42/7/1001, species force only: below every
+    ## one-species settle (p99.9 x >= 10.56) and above every four-species
+    ## self-only settle (<= 3.34). Other counts, radii, species counts and
+    ## the exponential model are unmeasured.
   WORLD_PRESSURE_STIFFNESS* = 540.0
-    ## K: the pair impulse's stiffness, fixed at every live value. The user's
-    ## choice, confirmed by G1.2 at 128 000 particles on seeds 42/7/1001:
+    ## K: the pair impulse's stiffness, fixed at every live value. The
+    ## user's choice, confirmed at 128 000 particles on seeds 42/7/1001:
     ## friction-0 L 1.1483-1.1613 at 540, and a mean 1.3431 at 1728 exceeding
     ## WORLD_PRESSURE_SETTLE_BOUND.
   WORLD_PRESSURE_SETTLE_BOUND* = 1.1613
     ## B_L: the bound on L, a self-attracting world's friction-0 late-window
-    ## speed with the term over the same seed's without it. G1.2's mean 1.1527
-    ## plus its largest seed distance 0.0085, at 128 000 and radius 50.
+    ## speed with the term over the same seed's without it. The measured
+    ## mean 1.1527 plus its largest seed distance 0.0085, at 128 000 and
+    ## radius 50.
   WORLD_PRESSURE_IMPULSE_MAX* = float(PRESSURE_COARSE_MAX *
     (1 shl VELOCITY_COARSE_SHIFT)) / VELOCITY_FIXED_POINT_SCALE
     ## q_max as a velocity per reference frame, 706.9: the coarse word's
