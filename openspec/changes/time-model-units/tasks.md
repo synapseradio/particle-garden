@@ -26,8 +26,10 @@ particles while the machine is shared.
   - The ratio converges as ff falls: record that the ff-1 reference is the stepper's. Return
     `core-force-interface` 4.5's "no warmer than ff 1" criterion below ff 1 to the user, with the numbers.
   - Kill reached: record the residual as open. Group 2 proceeds.
-- [ ] 1.4 **S16, the fluid under D1** (design.md, Spikes). Record in `spike-s16/result.md`.
+- [x] 1.4 **S16, the fluid under D1** (design.md, Spikes). Record in `spike-s16/result.md`.
   - Kill reached: the fluid's pressure slope joins `D` in task 2.3 before group 3 starts.
+  - Result: kill reached. ff 10 holds, while ff 12 reads p99 about 1690× ff 1's 3× bound, near the cap
+    through ff 30, with no NaN (`spike-s16/s16_boundary.log`). The fluid slope moves into task 2.3.
 - [ ] 1.5 **S13, the field on world time** (design.md, Spikes). Record in `spike-s13/result.md`.
   - Kill reached: the deposit fold moves to per field step in task 4.2, with its own red test first.
 - [x] 1.6 `just happen` and `just check` green on the rebased branch before any tree change.
