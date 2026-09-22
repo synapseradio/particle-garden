@@ -193,7 +193,9 @@ Files:
     - The deposit fold reads the frame's count (`:1097-1098`).
 
   Verify 4.1's tests pass, and that S13's recorded result (1.5) is consistent with the build.
-- [ ] 4.3 `just happen` and `just check` green.
+- [x] 4.3 `just happen` and `just check` green.
+  - Green on `dev` at `5f186a4` after the field merge: 1 314 native tests, 101 shell tests, shellcheck clean
+    (`~/.scratchpad/particle-garden/tm-units/check-after-field__22-09-2026.log`).
 
 ## 5. Help (Sonnet, own worktree; parallel with groups 2 and 4)
 
@@ -219,7 +221,9 @@ Files: `docs/help/10-simulation.md`, `docs/help/40-rd.md`, `docs/help/50-render.
   - `trailLength` (`50-render.md:12-16`) belongs to group 6.
 - [ ] 5.2 Read each changed entry in-app through `?` (the help panel) on `./main --serve`. Each must read
   as 5.1 states, with no stale "per frame" wording for these four controls and the field's note.
-- [ ] 5.3 `just happen` and `just check` green.
+- [x] 5.3 `just happen` and `just check` green.
+  - Green on `dev` at `5f186a4` after the field merge: 1 314 native tests, 101 shell tests, shellcheck clean
+    (`~/.scratchpad/particle-garden/tm-units/check-after-field__22-09-2026.log`).
 
 ## 6. Trail fade (Sonnet, own worktree; parallel with groups 2, 4 and 5)
 
@@ -269,11 +273,13 @@ It reads `physics_core.frameFactor` (`src/physics_core.nim:37-43`), which group 
   (stretches the dots by the distance each travels per 1/120 s of world time); Time Scale (a faster world
   fades its trails sooner in seconds, over the same travel)", with the Trails button, field and Zoom
   entries as they stand. Read the entry in-app through `?` on `./main --serve`.
-- [ ] 6.4 `just happen` and `just check` green.
+- [x] 6.4 `just happen` and `just check` green.
+  - Green on `dev` at `5f186a4` after the field merge: 1 314 native tests, 101 shell tests, shellcheck clean
+    (`~/.scratchpad/particle-garden/tm-units/check-after-field__22-09-2026.log`).
 
 ## 7. Integration
 
-- [ ] 7.1 Merge groups 2–6 onto `tm-units`. The integrator runs `just happen` and `just check` once, green.
+- [ ] 7.1 Merge groups 2–6 onto `dev`, each rebased onto the last. The integrator runs `just happen` and `just check` once, green.
 - [ ] 7.2 **In-app, once** (the in-app procedure in `CLAUDE.md`), at 16 000 particles on the 143 Hz
   display. Record in `~/.scratchpad/particle-garden/tm-units/in-app__<DD-MM-YY-HHmm>.md`:
   - a settled world at Time Scale 0.5 and at 5
