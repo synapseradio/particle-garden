@@ -319,6 +319,16 @@ func exponentialForce*(normalizedDist, attraction, alpha, beta,
   let crowding = (if attraction > 0.0'f32: attenuation else: 1.0'f32)
   -repulsion + attraction * attract * 2.0'f32 * crowding
 
+func polynomialRestoringSlope*(normalizedDist, attraction, repulsionEnd,
+    attractionPeak, attenuation, forceMultiplier, invRadius: float32): float32 =
+  ## STUBBED for the red step: no restoring slope yet.
+  0.0'f32
+
+func exponentialRestoringSlope*(normalizedDist, attraction, alpha, beta,
+    attenuation, forceMultiplier, invRadius: float32): float32 =
+  ## STUBBED for the red step: no restoring slope yet.
+  0.0'f32
+
 func mouseForce*(offsetX, offsetY, mouseRange, buttonSign: float32):
     tuple[x, y: float32] =
   ## forces.wgsl's held-pointer term. `offset` runs from the particle to the
@@ -401,42 +411,6 @@ func decodeVelocityWords*(words: VelocityWords;
   (float32(words.fine) + float32(words.coarse) * float32(1 shl coarseShift)) *
     invFixedPointScale * frameFactor
 
-func integrateVelocity*(velocity: tuple[x, y: float32];
-    deltaFixed: tuple[x, y: int32];
-    invFixedPointScale, frameFactor, stepLimit, friction, maxVelocity: float32):
-    tuple[x, y: float32] =
-  ## integrate.wgsl: the decoded delta scaled by the particle's step limit,
-  ## which holds `frameFactor * 2 * stiffness` under a fixed bound so the
-  ## explicit scheme's one-step map stays stable at every frame factor,
-  ## `friction` raised to `frameFactor` so retention is per reference frame
-  ## rather than per step, then the soft cap postStepSpeed states for the
-  ## speed. `stepLimit` is 1 for a particle with zero summed stiffness, so
-  ## this is bit-identical to multiplying by `frameFactor` alone in that
-  ## case.
-  let retention = pow(friction, frameFactor)
-  var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
-    invFixedPointScale, frameFactor) * stepLimit) * retention
-  var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
-    invFixedPointScale, frameFactor) * stepLimit) * retention
-  let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
-  # The cap bounds travel per reference frame, so a substep spanning
-  # frameFactor of them may carry a particle maxVelocity * frameFactor. The
-  # curve therefore acts on the speed per reference frame and the result is
-  # rescaled; at frameFactor 1 that is bit-identical to capping the speed
-  # itself. A stopped clock delivers frameFactor 0 and no travel, so the curve
-  # acts on the speed there rather than dividing by zero.
-  let perFrame = if frameFactor > 0.0'f32: frameFactor else: 1.0'f32
-  let frameSpeed = speed / perFrame
-  let softCapThreshold = maxVelocity * 0.5'f32
-  if frameSpeed > softCapThreshold and frameSpeed > 0.0'f32:
-    let excess = frameSpeed - softCapThreshold
-    let cappedSpeed =
-      min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity) * perFrame
-    let scale = cappedSpeed / speed
-    newVelX *= scale
-    newVelY *= scale
-  (x: newVelX, y: newVelY)
-
 func postStepSpeed*(speed, friction, maxVelocity: float32): float32 =
   ## integrate.wgsl. Friction multiplies the post-delta velocity (it is
   ## a retention factor, not a drag), then speeds above half maxVelocity are
@@ -448,6 +422,63 @@ func postStepSpeed*(speed, friction, maxVelocity: float32): float32 =
       maxVelocity)
   else:
     damped
+
+type
+  StepClock* = object
+    ## The reference-frame clock: how far a substep travels (`ff`), how much
+    ## of the carried velocity survives the substep (`retention`), and how
+    ## much of one reference frame's force gain lands (`forceGain`).
+    ff, rho, h: float32
+
+func stepClock*(ff, retention: float32): StepClock =
+  ## STUBBED for the red step: always the retention-composed map, never the
+  ## stopped or frictionless closed forms.
+  StepClock(ff: ff, rho: pow(retention, ff), h: ff)
+
+func travel*(clock: StepClock): float32 =
+  ## STUBBED for the red step: the clock reports one reference frame's worth
+  ## of travel regardless of `ff`, so a position update through this
+  ## accessor omits the frame factor.
+  1.0'f32
+
+func retention*(clock: StepClock): float32 = clock.rho
+func forceGain*(clock: StepClock): float32 = clock.h
+
+func densityCarry*(clock: StepClock; factor: float32): float32 =
+  ## STUBBED for the red step: the carried fraction stays the per-step
+  ## factor, un-raised by `ff`.
+  factor
+
+func integrateVelocityFromDelta*(velocity, delta: tuple[x, y: float32];
+    clock: StepClock; stepLimit, maxVelocity: float32): tuple[x, y: float32] =
+  ## integrate.wgsl, given `delta` already decoded for one reference frame.
+  ## STUBBED for the red step: `stepLimit` scales only the delta term and
+  ## the cap divides by `clock.travel` before rescaling, reproducing the
+  ## step's landed per-frameFactor formula rather than D1's per-reference
+  ## map.
+  var newVelX = clock.retention * (velocity.x + stepLimit * clock.forceGain * delta.x)
+  var newVelY = clock.retention * (velocity.y + stepLimit * clock.forceGain * delta.y)
+  let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
+  let perFrame = if clock.travel > 0.0'f32: clock.travel else: 1.0'f32
+  let frameSpeed = speed / perFrame
+  let softCapThreshold = maxVelocity * 0.5'f32
+  if frameSpeed > softCapThreshold and frameSpeed > 0.0'f32:
+    let excess = frameSpeed - softCapThreshold
+    let cappedSpeed =
+      min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity) * perFrame
+    let scale = cappedSpeed / speed
+    newVelX *= scale
+    newVelY *= scale
+  (x: newVelX, y: newVelY)
+
+func integrateVelocity*(velocity: tuple[x, y: float32];
+    deltaFixed: tuple[x, y: int32]; invFixedPointScale: float32;
+    clock: StepClock; stepLimit, maxVelocity: float32): tuple[x, y: float32] =
+  ## integrate.wgsl: the fixed-point delta decoded for one reference frame,
+  ## then folded through `clock` by `integrateVelocityFromDelta`.
+  let delta = (x: decodeVelocityDelta(deltaFixed.x, invFixedPointScale, 1.0'f32),
+    y: decodeVelocityDelta(deltaFixed.y, invFixedPointScale, 1.0'f32))
+  integrateVelocityFromDelta(velocity, delta, clock, stepLimit, maxVelocity)
 
 # ==============================================================================
 # THE WORLD PRESSURE
