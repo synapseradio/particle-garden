@@ -19,6 +19,8 @@ These controls set how much world there is and how fast it runs.
   row each); Mesh Size (cost grows with every species).
 - `friction` — how quickly motion drains away. Low values leave particles
   gliding; high values make every push die out close to where it started.
+  It is the share of speed lost per 1/120 s of world time, so the same
+  setting damps the same at any display rate and Time Scale.
   Interacts with: every push at once (species, fluid, long range, field,
   bodies); Force Weather (moves it).
 - `timeScale` — how much simulated time passes per frame. Raising it speeds
