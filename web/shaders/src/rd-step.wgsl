@@ -4,7 +4,7 @@
 //
 // WHY THIS EXISTS:
 // Advances the two-channel field one explicit-Euler Gray-Scott step. The frame runs
-// RD_STEPS_PER_FRAME of these per rendered frame, alternating orientation because a
+// the field clock's step count of these per rendered frame, alternating orientation because a
 // shader cannot read and write the same storage texture in one dispatch. The two
 // orientations are named for their DESTINATION: ToFront reads fieldB and writes
 // fieldA, ToTrail reads fieldA and writes fieldB. They are the SAME pipeline (this
@@ -14,7 +14,7 @@
 // The sequence starts ToFront, because field-resolve.wgsl has already performed the
 // frame's first swap (front -> trail), and must END ToFront, because fieldA is what
 // field-force.wgsl, the renderer, and the next frame's resolve all read. That is why
-// src/field_core.nim statically asserts RD_STEPS_PER_FRAME is odd.
+// src/field_core.nim's fieldSteps accepts only an odd count.
 //
 // Gray-Scott model: Pearson 1993, https://www.science.org/doi/10.1126/science.261.5118.189
 //
@@ -107,7 +107,7 @@ fn rdStep(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   // Reserved channels carried through, never overwritten with literals: a
   // multi-channel reaction needs them to survive every substep, and writing
-  // constants here would erase them RD_STEPS_PER_FRAME times per frame.
+  // constants here would erase them at every step.
   textureStore(dstField, vec2<i32>(cellX, cellY),
     vec4<f32>(nextA, nextB, centerFull.z, centerFull.w));
 }

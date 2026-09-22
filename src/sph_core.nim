@@ -100,9 +100,9 @@ func flooredTaitPressure*(density, restDensity, stiffness, gamma: float):
     float =
   ## The purely-repulsive Tait EOS the shader actually evaluates: density is
   ## floored at restDensity before taitPressure, so pressure is 0 at and below
-  ## rest and strictly positive above it. Mirrors forces-sph.wgsl, which
-  ## applies max(laggedDensity, restDensity) before sphTaitPressure for both
-  ## the particle and its neighbor. The floor is why restDensity must sit
+  ## rest and strictly positive above it. forces-sph.wgsl also clamps the
+  ## density at restDensity * SPH_MAX_DENSITY_RATIO, which this omits. The
+  ## floor is why restDensity must sit
   ## above the isolated particle's self-density (the density accumulator
   ## starts at the normalized self-weight 1.0): if rest equals isolation,
   ## every contact reads as compression and the fluid disperses as a gas.

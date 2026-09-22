@@ -3,9 +3,7 @@
 // =============================================================================
 // The single authority for the HDR-light -> display-color transform: exposure,
 // the Narkowicz ACES filmic tonemap, then the saturation / contrast /
-// temperature grade. Both consumers of TonemapParams run their light through
-// tonemapGrade — tonemap.wgsl (bloom on) and field-composite.wgsl (bloom off)
-// — so toggling bloom never shifts the field's tonality.
+// temperature grade, run by tonemap.wgsl.
 // =============================================================================
 
 //! import tonemap_params

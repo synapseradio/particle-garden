@@ -68,10 +68,9 @@ fn resolveField(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // share a cell, so an input that gathers a crowd into one place drives this
   // past the range explicit Euler integrates stably. The cap is on what
   // arrives, never on what the reaction produces. The frame scale holds the
-  // deposit rate per FIELD STEP invariant under RD_STEPS_PER_FRAME — the fold
-  // lands once per frame while the reaction runs 1 + RD_STEPS_PER_FRAME
-  // steps, so an unscaled fold would strengthen deposits whenever the substep
-  // count fell.
+  // deposit rate per FIELD STEP invariant under the frame's step count — the
+  // fold lands once per frame while the reaction runs 1 + that count steps,
+  // so an unscaled fold would strengthen deposits whenever the count fell.
   let depositB = RD_DEPOSIT_FRAME_SCALE * min(
     f32(atomicLoad(&fieldDeposit[cellIndex])) * INV_FIXED_POINT_SCALE,
     RD_DEPOSIT_CELL_MAX);

@@ -204,7 +204,8 @@ func lrKernel*(kx, ky, invReachSq, softening, invCells: float): float =
 func lrTransformGrid*(grid: seq[LrComplex]; gridW, gridH: int;
                       inverse: bool): seq[LrComplex] =
   ## One species' whole grid, row-major, transformed on both axes: the row pass
-  ## then the column pass, which is the order the frame dispatches them in.
+  ## then the column pass. The frame's inverse runs columns first; the two
+  ## axes' transforms commute, so the order changes only rounding.
   ## Unnormalized in both directions, like the line transform it is built from.
   doAssert grid.len == gridW * gridH, "a grid is gridW * gridH values"
   result = newSeq[LrComplex](gridW * gridH)

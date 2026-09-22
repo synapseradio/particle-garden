@@ -90,7 +90,8 @@ derives the table from the headers and compares.
 
 | Mirror | Shader it is written against |
 |---|---|
-| `physics_core.nim` | `forces.wgsl` (force curve, toroidal wrapping, density) and `integrate.wgsl` (friction, speed cap) |
+| `physics_core.nim` | `forces.wgsl` (force curve, toroidal wrapping, density) and `integrate.wgsl` (friction, speed cap, step limit, velocity decode) |
+| `balance_core.nim` | the stepped world the gates run on: each arm calls the mirror above it for `forces.wgsl`, `forces-sph.wgsl`, `body-force.wgsl` and `integrate.wgsl`, and assembles the pair sweep, the fluid sweep and the step |
 | `grid_core.nim` | `bin-count` / `prefix-sum-*` / `bin-scatter.wgsl` |
 | `sph_core.nim` | `forces-sph.wgsl` (kernels, Tait pressure, XSPH) |
 | `field_core.nim` | `rd-step.wgsl`, `field-seed.wgsl`, `field-deposit.wgsl`, and the frame-scaled force `field-force.wgsl` reads |
@@ -103,13 +104,24 @@ derives the table from the headers and compares.
 | `long_range_core.nim` | all five mesh passes: `lr-deposit.wgsl` (cloud-in-cell weights, toroidal wrap, the density fixed point), `lr-fft-rows.wgsl` and `lr-fft-cols.wgsl` (the transform, measured against a naive DFT in the suite), `lr-kernel.wgsl` (wavenumbers, the Yukawa kernel, the matrix mix), `lr-force.wgsl` (bilinear sampling and the one-cell central difference) |
 
 **Known drift in `sph_core` against `forces-sph.wgsl`.** The shader clamps the Tait density to
-`restDensity * SPH_MAX_DENSITY_RATIO`; `flooredTaitPressure` applies only the floor, and its
-docstring says the shader does the same. The shader fuses viscosity into the XSPH coefficient and
-divides by the larger density; `xsphVelocityCorrection` bounds a coefficient of its own. The
-pressure assembly has no oracle function and exists only inside `tests/test_sph_core.nim`. The
-cause is structural: `SPH_MAX_DENSITY_RATIO` lives in `src/shader_config.nim`, downstream of
-`sph_core`, so the oracle cannot import it. Raised by moving the constant home to `sph_core` and
-mirroring the clamp.
+`restDensity * SPH_MAX_DENSITY_RATIO`; `flooredTaitPressure` applies only the floor.
+`xsphVelocityCorrection` bounds a coefficient of its own, where the shader fuses viscosity into
+the smoothing coefficient and divides by the larger density. `sphPairVelocityDelta` mirrors the
+pair term, fused coefficient included, and takes densities already clamped;
+`balance_core.sweepFluid` clamps them at both ends through its own `maxDensityRatio`. The
+response probe (`src/ui/api/response_probe.nim:287-353`) reads the two drifting functions. The
+cause is structural: `SPH_MAX_DENSITY_RATIO` lives in `src/shader_config.nim` as a tuning value,
+downstream of `sph_core`, so the oracle cannot import it. Raised by passing the ratio into
+`flooredTaitPressure`, as `sweepFluid` does.
+
+**Shader math with no mirror.** Each of these runs on the GPU with no native function computing it,
+so no test can hold it: the body slot sum (`body-force.wgsl:81-154`, row above); the cell count and
+the scatter permutation (`bin-count.wgsl`, `bin-scatter.wgsl`); the SPH density accumulation and
+its encode (`forces-sph.wgsl`); the inhibitor's central-difference gradient
+(`modules/field_grid.wgsl`) and the alive-cell census (`field-resolve.wgsl`); the density-driven
+particle size and brightness (`render.wgsl`); the velocity whitening in `glow.wgsl`; the coverage
+alpha in `tonemap.wgsl`; and the overlay's pixel-to-world line thickness (`overlay.wgsl`). Raised
+per item by a mirror function and a test against it.
 
 ## Two-sided agreements
 
