@@ -25,7 +25,10 @@ These controls set how much world there is and how fast it runs.
   bodies); Force Weather (moves it).
 - `timeScale` — how much world time passes per second of play. Raising it
   speeds everything up at once, including the field's growth, and the same
-  setting runs the same on any display.
+  setting runs the same on any display. In a crowd dense enough to push
+  back, pushing Time Scale higher slows how quickly it answers the mouse,
+  a blast or a body — it still settles to the same balance, just more
+  gradually.
   Interacts with: every push's size per frame; Stiffness (lowers its safe
   ceiling); the field (more steps a second, more cost). Weather and Drift
   keep real time.

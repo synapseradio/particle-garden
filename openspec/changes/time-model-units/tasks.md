@@ -166,7 +166,10 @@ Files: `docs/help/10-simulation.md`, `docs/help/40-rd.md`, `docs/help/50-render.
   - `10-simulation.md:26-30`, `timeScale`: "how much world time passes per second of play. Raising it
     speeds everything up at once, including the field's growth, and the same setting runs the same on any
     display." The Interacts line reads "the field (more steps a second, more cost)" in place of "the
-    field (more steps, more cost)".
+    field (more steps, more cost)". The crowd-dense sentence ("In a crowd dense enough to push back,
+    pushing Time Scale higher slows how quickly it answers the mouse, a blast or a body — it still
+    settles to the same balance, just more gradually.") stays: it is `core-force-interface` 4.10's
+    required line, and the step limit still slows a dense crowd's answer at high frame factors.
   - `10-simulation.md:31-32`, `maxVelocity`: "a soft cap on how far any particle may travel per 1/120 s
     of world time." The rest of the entry stands.
   - `40-rd.md:21-22`: "Time Scale (field steps per second of play)" in place of "Time Scale (field steps
