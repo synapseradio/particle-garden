@@ -15,62 +15,93 @@ particles while the machine is shared.
   sits on that `dev`. The rebases rewrote the branch SHAs: on `dev` they are `4fc1543`…`6f92d12` and
   `03247ec`…`e7118bc`. Verify that `git merge-base --is-ancestor 6f92d12 HEAD` and
   `git merge-base --is-ancestor e7118bc HEAD` both exit 0. No other task starts before this one.
-- [ ] 1.2 **S15, the shipped map across frame factors** (design.md, Spikes). Build the D1 map with `h`,
+- [x] 1.2 **S15, the shipped map across frame factors** (design.md, Spikes). Build the D1 map with `h`,
   D4's `B` with the species slope, and D5's loop term. Build them in the spike harness
   `~/.scratchpad/particle-garden/cfi-crowding/spike-s7/`, copied into
   `~/.scratchpad/particle-garden/tm-units/spike-s15/`. Run the prediction as written, at 16 000
   particles. Record the readings against the prediction in `spike-s15/result.md`.
   - Kill reached: stop and return D4's `B` to the design. Group 2's green waits.
-- [ ] 1.3 **S14, the ff-0.42 residual** (design.md, Spikes). Run the prediction as written (dated 17:25,
+  - Result: kill reached. K 540 at ff 30 reads 3.12× ff 1's bound (K 0 2.17×); ff 10 holds in both
+    (`spike-s15/result.md`). `s_D` is the majority binder at ff 30 in both worlds (72.51% at K 540,
+    99.77% at K 0). D4's `B` returns to the design.
+  - Returned: D4's `B` gained the `B∞` term (1.7, S17). K 540 at ff 30 reads 2.48×. Group 2's green waits
+    on S18 (1.8).
+- [x] 1.3 **S14, the ff-0.42 residual** (design.md, Spikes). Run the prediction as written (dated 17:25,
   22-09-2026) on S15's harness, and record it in `spike-s14/result.md`.
   - The ratio converges as ff falls: record that the ff-1 reference is the stepper's. Return
     `core-force-interface` 4.5's "no warmer than ff 1" criterion below ff 1 to the user, with the numbers.
   - Kill reached: record the residual as open. Group 2 proceeds.
+  - Result: kill reached. 0.25/0.42 reads 2.13, and 0.42/1 grows 1.72 → 2.26 from reference frame 9 000
+    to 18 000 (`spike-s14/result.md`). The residual stands open.
+  - Followed up (S17 P): with positions summed in float64, ff 0.42 read 0.000062 against ff 1's
+    0.000077 (`spike-s17/contact/p_k0_posf64.log`). The residual is the f32 position sum, and design.md,
+    "What the design claims below ff 1", states what holds.
 - [x] 1.4 **S16, the fluid under D1** (design.md, Spikes). Record in `spike-s16/result.md`.
   - Kill reached: the fluid's pressure slope joins `D` in task 2.3 before group 3 starts.
   - Result: kill reached. ff 10 holds, while ff 12 reads p99 about 1690× ff 1's 3× bound, near the cap
     through ff 30, with no NaN (`spike-s16/s16_boundary.log`). The fluid slope moves into task 2.3.
+  - Superseded: the slope in `D` left ff 12–30 unsettled (`spike-s16/s16_slope.log`). S17 found the channel
+    in the smoothing term, and D9's clamp takes the slope's place in 2.3 and 3.2. The slope joins no limit.
 - [x] 1.5 **S13, the field on world time** (design.md, Spikes). Record in `spike-s13/result.md`.
   - Kill reached: the deposit fold moves to per field step in task 4.2, with its own red test first.
 - [x] 1.6 `just happen` and `just check` green on the rebased branch before any tree change.
+- [x] 1.7 **S17, the revision's spikes** (design.md, Spikes). Recorded in `spike-s17/prediction.md`, each
+  prediction ahead of its result.
+  - Result: `B∞` 1.2 clears 3× at ff 30 in K 0, K 540 and K 4320 (D4's table). The fluid's channel is the
+    smoothing term, and the plan's clamp settles ff 10–30 at both viscosities (D9).
+- [ ] 1.8 **S18, `B∞` at friction 0.02 and 0.5** (design.md, Spikes), on S17's harness, at 16 000
+  particles. Record in `spike-s18/result.md`.
+  - Kill reached: `B∞` becomes a function of `r`. Return D4 to the design, and group 2's green waits.
 
 ## 2. Oracle and integrate (Sonnet, own worktree)
 
 Files: `src/physics_core.nim`, `src/balance_core.nim`, `src/config_ranges.nim`,
 `src/ui/api/response_probe.nim`, `tests/test_physics.nim`, `tests/test_balance_core.nim`.
 
-- [ ] 2.1 **Red, unit grain, in `tests/test_physics.nim`**, in design.md's writing order, tests 1–12.
-  Write them against stubs that compile: `stepClock` returning the landed map's values (`ρ = r^ff`,
-  `h = ff`), `speciesRestoringSlope` returning 0, and `loopGainBound` returning 0.009. Each then fails on a
+- [ ] 2.1 **Red, unit grain, in `tests/test_physics.nim`**, in design.md's writing order, tests 1–12, 25 and
+  26. Write them against stubs that compile: `stepClock` returning the landed map's values (`ρ = r^ff`,
+  `h = ff`), `speciesRestoringSlope` returning 0, `loopGainBound` returning 0.009, and `smoothingGain`
+  returning 1. Test 25 passes against that stub, so verify it red once against the body `(B/θ)/h` with
+  no `min(1, …)`, which reads above 1 below ff 1. Each then fails on a
   value, not a missing symbol. The amended suite "Friction Acts Per Reference Frame"
   (`tests/test_physics.nim:530`) keeps its test "ten steps at ff 1 and one step at ff 10 lose the same
   fraction of speed". Run
   `nim c -r` with the `quality_flags` from the `justfile` on `tests/test_physics.nim`, and verify each new
   test fails for the reason its row names.
-- [ ] 2.2 **Red, oracle grain, in `tests/test_balance_core.nim`**: test 13 (T5f), test 14, and test 21
-  (T7s, integration, 2 000 particles, under the `calibrateBalance` define). Verify each fails for its
-  stated reason.
+- [ ] 2.2 **Red, oracle grain, in `tests/test_balance_core.nim`**: test 13 (T5f), test 14, test 21 (T7s,
+  integration, 2 000 particles, under the `calibrateBalance` define), and test 28 (the fluid, under the
+  same define). Verify each fails for its stated reason.
 - [ ] 2.3 **Green.**
   - `src/physics_core.nim`:
     - `StepClock` with its three cases and `stepClock(ff, retention)`. It rejects retention outside
       `[0.5, 1]` in the test build.
     - `integrateVelocity` takes the clock, forms `u' = s·(ρ·u + h·Δ)`, and caps `u` directly. The
       `perFrame` lines `:428-434` go.
-    - `stepLimit(clock, D, θ)` returns `min(1, B/(2·ff·h·D))` with `B = θ·r·(1 + ρ)/(1 + r)`.
+    - `stepLimit(clock, D, θ)` returns `min(1, B/(2·ff·h·D))` with `B = θ·ρ + LONG_STEP_BOUND·(1 − ρ/r)`,
+      and `B = θ` frictionless.
     - `speciesRestoringSlope`, analytic for `polynomialForce` and `exponentialForce` (`:287-321`),
       positive part only.
-    - `loopGainBound(ρ, α)` bisects the three-state map's spectral radius. `loopLimit` implements D5's
-      `s_C`.
+    - `loopGainBound(ρ, α)` bisects the three-state map's spectral radius over κ ∈
+      [0, `LOOP_GAIN_SEARCH_CEILING`]. `loopLimit` implements D5's `s_C`. Add
+      `LOOP_GAIN_SEARCH_CEILING* = 10.0` beside it, its condition in two lines: caps θ_c at 5 from ff 19 at
+      0.12; lifting it moved K 540 ff 30 motion under 1% (`q2_k540_ff30_thetatrue.log`).
+    - `smoothingGain(clock, nuMax)` returns D9's `g`.
   - `src/balance_core.nim`:
     - `sweepPairs` (`:422`) adds each particle's receiving species slope to its `D` words, and
       accumulates `C` in two more words.
     - `integrateParticles` (`:682`) steps through the clock, smooths with `densitySmoothFactor^ff`
       (`:688`), moves by `ff·u`, and applies `min(s_D, s_C)` to the whole velocity.
+    - `sweepFluid` (`:539`) multiplies each pair's `smoothCoefficient` (`:600`) by `smoothingGain` of the
+      substep's clock and `strength·(viscosity + SPH_XSPH_EPSILON)`. `sph_core.sphPressureSlope` enters
+      no limit.
   - `src/config_ranges.nim`:
     - Add `LOOP_LIMIT_FLOOR* = 0.1`, with its condition in two lines: 0 violations of 5 643 on retention
       0.5–1, ff 0.2–30, `C` 1e-5–1e2 (`lagmodel8`).
-    - `PRESSURE_STEP_BOUND`'s comment (`:681`) states that the bound keeps ff 1's share of the step's
-      linear bound at every ff.
+    - Add `LONG_STEP_BOUND* = 1.2` beside `PRESSURE_STEP_BOUND` (`:705`), its condition in two lines:
+      `B`'s value as ρ → 0; at 0.12 it read K 540 ff 30 at 2.48× where S15's 0.936 read 3.12×, and 1.5 and
+      1.8 read no lower with more reversals (`spike-s17/prediction.md`, section B).
+    - `PRESSURE_STEP_BOUND`'s comment (`:705`) states θ as `B`'s value at ρ 1, which ff 1 meets as `θ·r`,
+      the landed limit.
   - `src/ui/api/response_probe.nim`: `timeScaleProbe`'s doc (`:205-213`) drops "integrate.wgsl
     advances pos += vel with no dt". The position now carries the frame factor.
 
@@ -83,19 +114,27 @@ Files:
 - `web/shaders/src/integrate.wgsl` and `web/shaders/src/forces.wgsl`
 - `src/gpu_types.nim`, `src/shader_config.nim` and `src/webgpu_init.nim` (`:174`, `:390`)
 - `src/webgpu_compute.nim`, the integration-uniform block beside `:1064-1080` only
-- `src/sim_registry.nim`, a new `integrationUniforms` producer only
+- `src/sim_registry.nim`, a new `integrationUniforms` producer, and `LiveValues` and `substepPlan`
+  (`:667-774`)
+- `web/shaders/src/forces-sph.wgsl`, the smoothing coefficient at `:273` only
 - `tests/test_gpu_types.nim` and `tests/test_sim_registry.nim`
 
 - [ ] 3.1 **Red.**
   - `tests/test_gpu_types.nim`: test 16, "IntegrationParams Holds Twelve Floats With The Clock's Fields".
   - `tests/test_sim_registry.nim`: test 15, "The Integration Uniforms Come From One Clock", against a
-    stub producer that writes `h = ff`.
+    stub producer that writes `h = ff`, and test 27, "The Plan Hands The Fluid The Clock's Smoothing
+    Gain", against a plan whose `effSmoothGain` is 1.
   - Verify both fail on values.
 - [ ] 3.2 **Green.**
   - `src/gpu_types.nim`: IntegrationParams gains h, B, α, θ_c and the floor `λ·min(1, 1/ff)` in the two
     pads and three new slots. `INTEG_PARAMS_F32_COUNT` becomes 12.
   - `src/sim_registry.nim`: `integrationUniforms(ff, retention)` builds the block from `stepClock` and
     `loopGainBound`. `src/webgpu_compute.nim` writes it in place of `:1070-1079`.
+  - `src/sim_registry.nim`: `LiveValues` gains `friction` and `sphViscosity`, and `SubstepPlan` gains
+    `effSmoothGain`, `smoothingGain` of the substep's clock at `ff / count`.
+  - `src/gpu_types.nim`: SimParams gains `sphSmoothGain` at offset 692, inside the 704 allocated bytes;
+    the size assert (`:738`) reads 696. `src/webgpu_compute.nim` writes `effSmoothGain` beside `:1068`.
+  - `web/shaders/src/forces-sph.wgsl:273`: `velocitySmoothCoeff` is multiplied by `params.sphSmoothGain`.
   - `web/shaders/src/integrate.wgsl`:
     - Decode the delta without `frameFactor` (`:64`, `:67`), and smooth with `densityCarry`
       (`:72`, `:82-83`).
@@ -243,12 +282,17 @@ It reads `physics_core.frameFactor` (`src/physics_core.nim:37-43`), which group 
   - with Trails on at length 25, trails at Time Scale 0.5 lasting longer in wall time than the parent
     commit's, and shorter at Time Scale 5 than at 0.5
   - no `error|validation` line
+  - no flicker in streaks or glow of a settled crowd at Time Scale 5 (D4's reversal note)
+  - with the fluid on, its look at Time Scale 0.5 and 5 on 60 Hz and 143 Hz, where D9's clamp weakens the
+    smoothing
 
 Note, outside the checkboxes: `core-force-interface` tasks that wait on this change, on
 `cfi-crowding`'s `openspec/changes/core-force-interface/tasks.md`:
 - **4.5** (`:180`): G1.2 and the G1 arms at 128 000, and the `K` 540 vs 1728 table (Q1). They read motion
   and `L` under the step, which D1 and D4 change at every ff but 1. Its "no warmer than ff 1" criterion
-  below ff 1 also waits on S14 (1.3).
+  below ff 1 does not hold in f32: the f32 position sum adds 5e-5 to 7e-5 of travel per step, read as
+  that amount over ff (ff 0.42 0.000131 in f32, 0.000062 with a float64 sum, ff 1 0.000077). Design.md,
+  "What the design claims below ff 1", states what holds; the restated criterion is the coordinator's.
 - **4.6** (`:197`): the 128 000 stacked hold, under the same step.
 - **4.7** (`:204`): the recorded constants, read from 4.5 and 4.6.
 - **4.9** (`:222`): the in-app cost, G1.4. The crowd buffer stride grows to 5, and IntegrationParams to 12
@@ -257,5 +301,6 @@ Note, outside the checkboxes: `core-force-interface` tasks that wait on this cha
 
 Note, outside the checkboxes: the world-pressure requirement "The pressure cannot overshoot at any frame
 factor" (`core-force-interface/specs/world-pressure/spec.md:157-166` on `cfi-crowding`) states the landed
-bound `ff · λ_max ≤ θ`. Under D4 the bound is `ff · h · λ_max ≤ B`. The requirement is restated to D4
-wherever it stands when this change's specs are reconciled.
+bound `ff · λ_max ≤ θ`. Under D4 the bound is `ff · h · λ_max ≤ B`, with `B = θ·ρ + B∞·(1 − ρ/r)` and
+`B∞ = LONG_STEP_BOUND` 1.2, which is `θ·r` at ff 1. The requirement is restated to D4 wherever it stands
+when this change's specs are reconciled.
