@@ -580,9 +580,11 @@ func stepLimit*(clock: StepClock; stiffness, bound, longStepBound: float32):
 
 func smoothingGain*(clock: StepClock; nuMax, bound, longStepBound: float32):
     float32 =
-  ## D9's `g`, with neither clamp yet: reads above 1 below a substep of ff
-  ## 1, where the landed step must hold it at 1 exactly (row 25's red).
-  longStepB(clock, bound, longStepBound) / bound / clock.h
+  ## D9's `g`: whole at or below a substep of ff 1, clamped past it so the
+  ## smoothing's own reach per step never outgrows ff 1's.
+  let b = longStepB(clock, bound, longStepBound)
+  min(1.0'f32,
+    (b / bound) / (clock.h * min(1.0'f32, 2.0'f32 * nuMax)))
 
 func encodeStiffness*(slope, fixedPointScale: float32): int32 =
   int32(round(slope * fixedPointScale))
