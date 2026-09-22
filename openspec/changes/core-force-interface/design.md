@@ -1374,12 +1374,13 @@ New:
   schema-v5 group waits on G2, and version 5 records the `F_c` set.
 - [`F_edge` may not lie below today's fluid or scent impulse] → The "fraction" assertion stops the
   task and returns the numbers to the user (N2).
-- [Friction stays per step, a second time convention inside integrate: at `ff` 10 a particle loses
-  `1 − retention` per step, so less per reference frame] → This is a condition §3.5's arms hold fixed
-  (crowding-redesign design §3.5, arm A). A cause probe found moving friction to `retention^ff`
-  over-damps rather than restoring time consistency, and is a diagnostic only, not a fix
-  (`scratchpad/core-force-interface/g1-stiffness__21-09-26-2024.md:90`); it is the user's call to
-  reopen.
+- [Friction stayed per step, a second time convention inside integrate: at `ff` 10 a particle lost
+  `1 − retention` per step, so less per reference frame] → Decided: friction acts per reference frame.
+  Retention is now `retention^ff`, so two schedules covering the same world time lose the same
+  fraction of speed (crowding-redesign design report Addendum 4, Q6 answered). At `ff` 1 nothing
+  changes, so every ff-1 gate on file keeps its meaning. The shipped friction default moves from 0.05
+  to 0.12 in the same decision, so a reference frame at shipped settings loses about the fraction the
+  old per-step 0.05 lost at 143 Hz and ff 0.42.
 - [The per-reference-frame cap lets a particle move up to `maxVelocity · ff` per step where today it
   moves `maxVelocity`] → The travel count bounds it where a body needs it. §3.5's arms run at the
   frame factors the app produces, under the step limit, in place of a `ff_stable` re-bisection.

@@ -165,6 +165,12 @@ pair-Hessian bound, for every restoring mode; and it SHALL never raise a sliding
 reference frame above frame factor 1's. No substep count and no recorded stability limit SHALL be
 needed for it.
 
+**Open finding: friction 0 above frame factor 1 is held to no criterion.** At `FRICTION_MIN` (0), ff 30
+settles 6–7× its ff-1 bound (K 4320: 6.9×, K 540: 6.2×) in a hot tail — p50 0.00015, p99 0.20–0.24 —
+that the crowd floor does not feed. Cause unknown; the untested hypothesis is that particles free of
+every crowd run as the species-only gas measured at friction 0, ff 30 (crowding-redesign design report
+Addendum 3, S7 table and its note, lines 806–818).
+
 Enforced by: `tests/test_balance_core.nim` suite "Every Frame Factor Settles No Warmer" (G1), under the
 `just calibrate-balance` recipe, on 16 000 and 128 000 particles, radius 50 and 150. Four arms hold: A,
 sustained schedules at shipped friction; B, sustained schedules at `FRICTION_MIN`, against the
