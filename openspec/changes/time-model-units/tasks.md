@@ -49,9 +49,13 @@ particles while the machine is shared.
   prediction ahead of its result.
   - Result: `B∞` 1.2 clears 3× at ff 30 in K 0, K 540 and K 4320 (D4's table). The fluid's channel is the
     smoothing term, and the plan's clamp settles ff 10–30 at both viscosities (D9).
-- [ ] 1.8 **S18, `B∞` at friction 0.02 and 0.5** (design.md, Spikes), on S17's harness, at 16 000
+- [x] 1.8 **S18, `B∞` at friction 0.02 and 0.5** (design.md, Spikes), on S17's harness, at 16 000
   particles. Record in `spike-s18/result.md`.
   - Kill reached: `B∞` becomes a function of `r`. Return D4 to the design, and group 2's green waits.
+  - Result: kill not reached. K 540 at ff 30 reads 0.50× ff 1's bound at friction 0.02 and 0.70× at
+    friction 0.5; ff 10 reads 0.44× and 0.75×, both under the 1.2× line (`spike-s18/result.md`). At both
+    range ends motion falls as ff grows, the reverse of friction 0.12's rise. `B∞` 1.2 holds at every
+    measured friction; group 2's green proceeds.
 
 ## 2. Oracle and integrate (Sonnet, own worktree)
 
