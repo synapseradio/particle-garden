@@ -723,10 +723,9 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
           subFrameFactor, pow(p.friction, subFrameFactor), p.maxVelocity)
       else:
         # The limit already scaled `joined` above; the zero word here leaves
-        # this second application acting on nothing. integrateVelocity
-        # raises p.friction to subFrameFactor itself.
+        # this second application acting on nothing.
         integrateVelocity(joined, (x: 0'i32, y: 0'i32), invFixed,
-          subFrameFactor, 1.0'f32, p.friction, p.maxVelocity)
+          stepClock(subFrameFactor, p.friction), 1.0'f32, p.maxVelocity)
     world.velX[i] = stepped.x
     world.velY[i] = stepped.y
     world.posX[i] = wrapPosition(world.posX[i] + stepped.x, p.worldWidth)

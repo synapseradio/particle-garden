@@ -472,59 +472,23 @@ suite "Post-Step Speed Mirror":
     let word = (x: int32(2 * 65536), y: int32(1 * 65536))
     for maxVelocity in [6.0'f32, 100.0'f32]:
       let stepped = integrateVelocity((x: 3.0'f32, y: -4.0'f32), word,
-        invScale, 1.0'f32, 1.0'f32, 0.9'f32, maxVelocity)
+        invScale, stepClock(1.0'f32, 0.9'f32), 1.0'f32, maxVelocity)
       # The decoded word is (2, 1), so friction and the cap act on (5, -3).
       let expectedSpeed = postStepSpeed(sqrt(34.0'f32), 0.9'f32, maxVelocity)
       check abs(hypot(stepped.x, stepped.y) - expectedSpeed) < 1e-5
       check abs(stepped.x * -3.0'f32 - stepped.y * 5.0'f32) < 1e-5
 
-  test "the per-step cap applies today's curve to speed divided by ff_sub, then rescales by ff_sub when ff_sub exceeds one":
-    # Per-step travel is at most maxVelocity * ff_sub, not maxVelocity
-    # flat. At ff_sub 3, a raw pre-friction speed of 120 (word 40 times
-    # ff_sub, decoded with frameFactor = ff_sub) should cap as
-    # postStepSpeed(120 / 3, friction, maxVelocity) * 3 =
-    # postStepSpeed(40, 1, 60) * 3 = (30 + ln(11)) * 3, not the flat cap
-    # postStepSpeed(120, 1, 60) integrateVelocity applies today.
+  test "the cap acts on speed alone, not on speed divided by ff_sub, at ff_sub one":
+    # Bit-identical to postStepSpeed's own flat cap at ff_sub = 1: the D1
+    # clock's forceGain equals ff there, so this stays a guard rather than a
+    # red.
     let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
-    let ffSub = 3.0'f32
-    let maxVelocity = 60.0'f32
-    let friction = 1.0'f32
-    let word = (x: int32(40 * 65536), y: int32(0))
-    let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
-      invScale, ffSub, 1.0'f32, friction, maxVelocity)
-    let expected =
-      postStepSpeed(120.0'f32 / ffSub, friction, maxVelocity) * ffSub
-    check abs(hypot(stepped.x, stepped.y) - expected) < 1e-3'f32
-
-  test "per-step travel stays within maxVelocity times ff_sub when ff_sub is below one":
-    # The bound: per-step travel is at most maxVelocity * ff_sub. At ff_sub
-    # 0.5, maxVelocity 60, the bound is 30. A raw pre-friction speed of 100
-    # (word 200 times ff_sub) is what today's flat cap, postStepSpeed(100,
-    # 1, 60) = 30 + ln(71) ~= 34.26, lets through past that bound.
-    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
-    let ffSub = 0.5'f32
-    let maxVelocity = 60.0'f32
-    let friction = 1.0'f32
-    let word = (x: int32(200 * 65536), y: int32(0))
-    let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
-      invScale, ffSub, 1.0'f32, friction, maxVelocity)
-    check hypot(stepped.x, stepped.y) <= maxVelocity * ffSub
-
-  test "the per-step cap matches today's flat cap when ff_sub equals one":
-    # Bit-identical at ff_sub = 1, since dividing and rescaling by 1
-    # changes nothing.
-    #
-    # GUARD, not a red: dividing and multiplying by 1 leaves today's actual
-    # unchanged, so this cannot fail against today's flat cap. It pins the
-    # invariant the fix must preserve.
-    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
-    let ffSub = 1.0'f32
     let maxVelocity = 60.0'f32
     let friction = 0.9'f32
     let word = (x: int32(40 * 65536), y: int32(0))
     let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), word,
-      invScale, ffSub, 1.0'f32, friction, maxVelocity)
-    let expected = postStepSpeed(40.0'f32 / ffSub, friction, maxVelocity) * ffSub
+      invScale, stepClock(1.0'f32, friction), 1.0'f32, maxVelocity)
+    let expected = postStepSpeed(40.0'f32, friction, maxVelocity)
     check abs(hypot(stepped.x, stepped.y) - expected) < 1e-5'f32
 
 suite "Friction Acts Per Reference Frame":
@@ -537,10 +501,10 @@ suite "Friction Acts Per Reference Frame":
     let zeroWord = (x: 0'i32, y: 0'i32)
     var tenSteps = (x: 10.0'f32, y: 0.0'f32)
     for _ in 0 ..< 10:
-      tenSteps = integrateVelocity(tenSteps, zeroWord, invScale, 1.0'f32,
-        1.0'f32, friction, maxVelocity)
+      tenSteps = integrateVelocity(tenSteps, zeroWord, invScale,
+        stepClock(1.0'f32, friction), 1.0'f32, maxVelocity)
     let oneStep = integrateVelocity((x: 10.0'f32, y: 0.0'f32), zeroWord,
-      invScale, 10.0'f32, 1.0'f32, friction, maxVelocity)
+      invScale, stepClock(10.0'f32, friction), 1.0'f32, maxVelocity)
     checkpoint "ten steps at ff 1: " & $tenSteps.x & ", one step at ff 10: " &
       $oneStep.x
     check abs(tenSteps.x - oneStep.x) < 1e-4'f32
@@ -1100,28 +1064,25 @@ suite "Pressure Past The Onset":
 # frame factor by construction. A particle with zero stiffness gets s = 1
 # exactly.
 
-func todayIntegrateVelocity(velocity: tuple[x, y: float32];
+func referenceIntegrateVelocity(velocity: tuple[x, y: float32];
     deltaFixed: tuple[x, y: int32];
     invFixedPointScale, frameFactor, friction, maxVelocity: float32):
     tuple[x, y: float32] =
-  ## A copy of integrateVelocity from before the step limit landed, kept
-  ## test-local so T1 compares against unmodified behaviour rather than
-  ## against physics_core's own claim of it. Friction is per reference frame,
-  ## matching integrateVelocity's own model, so T1 isolates the step limit.
-  let retention = pow(friction, frameFactor)
-  var newVelX = (velocity.x + decodeVelocityDelta(deltaFixed.x,
-    invFixedPointScale, frameFactor)) * retention
-  var newVelY = (velocity.y + decodeVelocityDelta(deltaFixed.y,
-    invFixedPointScale, frameFactor)) * retention
+  ## The D1 damped-clock map, worked independently of physics_core so T1
+  ## compares against a second reading of the design rather than against
+  ## physics_core's own claim of it: rho = friction^ff, h = friction *
+  ## (1 - rho) / (1 - friction), u' = rho*v + h*delta, capped on speed alone.
+  let rho = pow(friction, frameFactor)
+  let h = if friction >= 1.0'f32: frameFactor
+    else: friction * (1.0'f32 - rho) / (1.0'f32 - friction)
+  var newVelX = rho * velocity.x + h * decodeVelocityDelta(deltaFixed.x,
+    invFixedPointScale, 1.0'f32)
+  var newVelY = rho * velocity.y + h * decodeVelocityDelta(deltaFixed.y,
+    invFixedPointScale, 1.0'f32)
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY)
-  let perFrame = if frameFactor > 0.0'f32: frameFactor else: 1.0'f32
-  let frameSpeed = speed / perFrame
-  let softCapThreshold = maxVelocity * 0.5'f32
-  if frameSpeed > softCapThreshold and frameSpeed > 0.0'f32:
-    let excess = frameSpeed - softCapThreshold
-    let cappedSpeed =
-      min(softCapThreshold + ln(1.0'f32 + excess), maxVelocity) * perFrame
-    let scale = cappedSpeed / speed
+  let capped = postStepSpeed(speed, 1.0'f32, maxVelocity)
+  if speed > 0.0'f32:
+    let scale = capped / speed
     newVelX *= scale
     newVelY *= scale
   (x: newVelX, y: newVelY)
@@ -1140,13 +1101,13 @@ suite "The Step Limit":
         y: int32(rng.rand(-2_000_000 .. 2_000_000)))
       for ff in STEP_LIMIT_FRAME_FACTORS:
         let s = stepLimit(ff, 0.0'f32, PRESSURE_STEP_BOUND.float32)
-        let limited = integrateVelocity(velocity, word, invScale, ff, s,
-          0.9'f32, 60.0'f32)
-        let today = todayIntegrateVelocity(velocity, word, invScale, ff,
-          0.9'f32, 60.0'f32)
-        if limited != today:
+        let limited = integrateVelocity(velocity, word, invScale,
+          stepClock(ff, 0.9'f32), s, 60.0'f32)
+        let reference = referenceIntegrateVelocity(velocity, word, invScale,
+          ff, 0.9'f32, 60.0'f32)
+        if limited != reference:
           verdicts.add "trial " & $trial & " ff " & $ff & ": limited " &
-            $limited & " against today's " & $today
+            $limited & " against the reference map's " & $reference
     checkNoVerdicts(verdicts)
 
   test "a limited step never carries 2 * ff * s * D past the bound (T2)":
@@ -1229,7 +1190,8 @@ suite "The Step Limit":
     let bodyFixed = encodeVelocityDelta(0.7'f32, scale)
     let combinedFixed = speciesFixed + pressureFixed + bodyFixed
     let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32),
-      (x: combinedFixed, y: 0'i32), invScale, ff, s, 1.0'f32, 1.0e6'f32)
+      (x: combinedFixed, y: 0'i32), invScale, stepClock(ff, 1.0'f32), s,
+      1.0e6'f32)
     let expectedX = expectedS * decodeVelocityDelta(combinedFixed, invScale, ff)
     check abs(stepped.x - expectedX) < 1e-3'f32
 
@@ -1372,3 +1334,179 @@ suite "The Species Term Is Untouched Below The Onset":
                     verdicts.add label & ": the delta is " & $decoded &
                       ", against today's " & $todayDecoded
     checkNoVerdicts(verdicts)
+
+# ==============================================================================
+# THE D1 CLOCK
+# ==============================================================================
+
+suite "A Damped Clock At Frame Factor 1 Is The Landed Step":
+  test "rho and h equal r, and u' matches r*s*(v+delta) at ff 1":
+    var verdicts: seq[string]
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+    for r in [0.5'f32, 0.7'f32, 0.88'f32, 0.95'f32, 0.999'f32]:
+      let clock = stepClock(1.0'f32, r)
+      if not approxEq(clock.retention, r, 1e-6'f32):
+        verdicts.add "r " & $r & ": rho is " & $clock.retention
+      if not approxEq(clock.forceGain, r, 1e-6'f32):
+        verdicts.add "r " & $r & ": h is " & $clock.forceGain
+      let v = (x: 3.0'f32, y: -2.0'f32)
+      let deltaVal = 1.5'f32
+      let word = (x: encodeVelocityDelta(deltaVal, fixedScale), y: 0'i32)
+      let s = 0.6'f32
+      let stepped = integrateVelocity(v, word, invScale, clock, s, 1.0e6'f32)
+      let expectedX = r * s * (v.x + deltaVal)
+      if not approxEq(stepped.x, expectedX, 1e-4'f32 * abs(expectedX)):
+        verdicts.add "r " & $r & ": u' is " & $stepped.x & ", expected " &
+          $expectedX
+    checkNoVerdicts(verdicts)
+
+suite "A Constant Force Moves A Frictionless Particle The Same Distance At Every Frame Factor":
+  test "total travel matches delta*T*(T+ff)/2 for the reference frames actually elapsed":
+    # T is the reference-frame time elapsed by `steps` substeps of size ff,
+    # not a fixed 60: 60/ff is not an integer at ff 0.42, so T is the
+    # product actually reached.
+    var verdicts: seq[string]
+    let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+    let invScale = 1.0'f32 / fixedScale
+    let deltaVal = 0.02'f32
+    let word = (x: encodeVelocityDelta(deltaVal, fixedScale), y: 0'i32)
+    for ff in [0.42'f32, 1.0'f32, 10.0'f32, 30.0'f32]:
+      let clock = stepClock(ff, 1.0'f32)
+      let steps = int(60.0'f32 / ff)
+      var v = (x: 0.0'f32, y: 0.0'f32)
+      var x = 0.0'f32
+      for _ in 0 ..< steps:
+        v = integrateVelocity(v, word, invScale, clock, 1.0'f32, 1.0e6'f32)
+        x += travel(clock) * v.x
+      let elapsed = steps.float32 * ff
+      let expected = deltaVal * elapsed * (elapsed + ff) / 2.0'f32
+      if not approxEq(x, expected, 1e-3'f32 * abs(expected)):
+        verdicts.add "ff " & $ff & ": travel is " & $x & ", expected " &
+          $expected
+    checkNoVerdicts(verdicts)
+
+suite "Terminal Speed Per Reference Frame Is r/(1-r) Times The Force At Every Frame Factor":
+  test "forceGain over one minus retention equals r/(1-r) at every ff":
+    var verdicts: seq[string]
+    var rng = initRand(5100)
+    for _ in 0 ..< 200:
+      let ff = rng.rand(0.05'f32 .. 30.0'f32)
+      let r = rng.rand(0.5'f32 .. 0.999'f32)
+      let clock = stepClock(ff, r)
+      let terminal = clock.forceGain / (1.0'f32 - clock.retention)
+      let expected = r / (1.0'f32 - r)
+      if not approxEq(terminal, expected, 1e-2'f32 * abs(expected)):
+        verdicts.add "ff " & $ff & " r " & $r & ": terminal ratio is " &
+          $terminal & ", expected " & $expected
+    checkNoVerdicts(verdicts)
+
+suite "A Held Frame Carries Speed Unchanged":
+  test "a frictionless, forceless velocity survives a step at ff 0.42 then a step at ff 3":
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let zeroWord = (x: 0'i32, y: 0'i32)
+    let maxVelocity = 60.0'f32
+    # Below the soft-cap threshold (30), so a correct, ff-independent cap
+    # never touches it; the old per-ff-divided cap did, at ff 0.42.
+    let v0 = (x: 20.0'f32, y: 0.0'f32)
+    let afterFirst = integrateVelocity(v0, zeroWord, invScale,
+      stepClock(0.42'f32, 1.0'f32), 1.0'f32, maxVelocity)
+    let afterSecond = integrateVelocity(afterFirst, zeroWord, invScale,
+      stepClock(3.0'f32, 1.0'f32), 1.0'f32, maxVelocity)
+    check abs(afterSecond.x - v0.x) < 1e-4'f32
+
+suite "The Cap Bounds Speed Per Reference Frame At Every Frame Factor":
+  test "the capped speed never exceeds maxVelocity, and travel never exceeds ff*maxVelocity":
+    var verdicts: seq[string]
+    let fixedScale = PRODUCTION_TUNING.fixedPointScale.float32
+    let invScale = 1.0'f32 / fixedScale
+    let maxVelocity = 60.0'f32
+    let hugeWord = (x: encodeVelocityDelta(10000.0'f32, fixedScale), y: 0'i32)
+    for ff in [0.0'f32, 0.42'f32, 1.0'f32, 30.0'f32]:
+      let clock = stepClock(ff, 0.9'f32)
+      let stepped = integrateVelocity((x: 0.0'f32, y: 0.0'f32), hugeWord,
+        invScale, clock, 1.0'f32, maxVelocity)
+      let speed = hypot(stepped.x, stepped.y)
+      if speed > maxVelocity + 1e-3'f32:
+        verdicts.add "ff " & $ff & ": |u'| is " & $speed &
+          ", past maxVelocity " & $maxVelocity
+      let travelled = abs(travel(clock) * stepped.x)
+      let bound = ff * maxVelocity
+      if travelled > bound + 1e-3'f32:
+        verdicts.add "ff " & $ff & ": travel is " & $travelled &
+          ", past ff*maxVelocity " & $bound
+    checkNoVerdicts(verdicts)
+
+suite "Density Smoothing Is Per Reference Frame":
+  test "two carries at ff 0.5 compose to one carry at ff 1":
+    let factor = 0.7'f32
+    let half = stepClock(0.5'f32, 1.0'f32)
+    let whole = stepClock(1.0'f32, 1.0'f32)
+    let twoHalves = densityCarry(half, factor) * densityCarry(half, factor)
+    let oneWhole = densityCarry(whole, factor)
+    check abs(twoHalves - oneWhole) < 1e-6'f32
+    check abs(oneWhole - factor) < 1e-6'f32
+
+suite "A Species Pair's Restoring Slope Is Its Radial Derivative":
+  test "the analytic slope matches the central difference off the attraction-peak kink":
+    var verdicts: seq[string]
+    let eps = 1e-4'f32
+    let forceMultiplier = 3.0'f32
+    let invRadius = 1.0'f32 / 50.0'f32
+    let repulsionEnd = 0.5'f32
+    let attractionPeak = 0.75'f32
+    let alpha = 4.0'f32
+    let beta = 2.0'f32
+    for attraction in [-0.6'f32, 0.6'f32]:
+      for attenuation in [1.0'f32, 0.5'f32]:
+        for i in 0 ..< 50:
+          let n = (i.float32 + 0.5'f32) / 50.0'f32
+          if abs(n - attractionPeak) < 4.0'f32 * eps:
+            continue
+          if n - 2.0'f32 * eps <= 0.0'f32 or n + 2.0'f32 * eps >= 1.0'f32:
+            continue
+          let polyPlus = polynomialForce(n + eps, attraction, repulsionEnd,
+            attractionPeak, attenuation)
+          let polyMinus = polynomialForce(n - eps, attraction, repulsionEnd,
+            attractionPeak, attenuation)
+          let polyNumeric = (polyPlus - polyMinus) / (2.0'f32 * eps)
+          let polyExpected = max(0.0'f32,
+            forceMultiplier * FRAME_DT_REFERENCE.float32 * invRadius * polyNumeric)
+          let polyAnalytic = polynomialRestoringSlope(n, attraction,
+            repulsionEnd, attractionPeak, attenuation, forceMultiplier, invRadius)
+          if not approxEq(polyAnalytic, polyExpected,
+              1e-2'f32 * max(abs(polyExpected), 1e-6'f32)):
+            verdicts.add "polynomial n " & $n & " attraction " & $attraction &
+              " attenuation " & $attenuation & ": analytic " & $polyAnalytic &
+              ", numeric " & $polyExpected
+          let expoPlus = exponentialForce(n + eps, attraction, alpha, beta,
+            attenuation)
+          let expoMinus = exponentialForce(n - eps, attraction, alpha, beta,
+            attenuation)
+          let expoNumeric = (expoPlus - expoMinus) / (2.0'f32 * eps)
+          let expoExpected = max(0.0'f32,
+            forceMultiplier * FRAME_DT_REFERENCE.float32 * invRadius * expoNumeric)
+          let expoAnalytic = exponentialRestoringSlope(n, attraction, alpha,
+            beta, attenuation, forceMultiplier, invRadius)
+          if not approxEq(expoAnalytic, expoExpected,
+              1e-2'f32 * max(abs(expoExpected), 1e-6'f32)):
+            verdicts.add "exponential n " & $n & " attraction " & $attraction &
+              " attenuation " & $attenuation & ": analytic " & $expoAnalytic &
+              ", numeric " & $expoExpected
+    checkNoVerdicts(verdicts)
+
+suite "T5g A Limited Step Scales The Carried Velocity":
+  test "u' equals 0.25 times rho times u when Delta is 0 and s is 0.25":
+    let invScale = 1.0'f32 / PRODUCTION_TUNING.fixedPointScale.float32
+    let zeroWord = (x: 0'i32, y: 0'i32)
+    let v = (x: 12.0'f32, y: -5.0'f32)
+    let r = 0.8'f32
+    let ff = 4.0'f32
+    let s = 0.25'f32
+    let stepped = integrateVelocity(v, zeroWord, invScale, stepClock(ff, r),
+      s, 1.0e6'f32)
+    let rho = pow(r, ff)
+    let expectedX = s * rho * v.x
+    let expectedY = s * rho * v.y
+    check abs(stepped.x - expectedX) < 1e-4'f32 * abs(expectedX)
+    check abs(stepped.y - expectedY) < 1e-4'f32 * abs(expectedY)
