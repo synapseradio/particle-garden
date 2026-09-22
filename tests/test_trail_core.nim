@@ -224,7 +224,7 @@ suite "The Trail Fades Per Reference Frame":
       total += v
     result[steps - 1] = span - total
 
-  test "a trail keeps the same share over the same world time at every frame factor (22)":
+  test "a trail keeps the same share over the same world time at every frame factor":
     # CONTRACT: frameFadeFor(L, ff) = fadeRef^ff, so any split of a span of
     # reference frames into rendered frames has to multiply back to
     # fadeRef^(sum of ff) — design.md D8, "frames compose exactly".
@@ -246,14 +246,14 @@ suite "The Trail Fades Per Reference Frame":
               $expected
     checkNoVerdicts(verdicts)
 
-  test "a zero-length trail clears at every frame factor (23)":
+  test "a zero-length trail clears at every frame factor":
     # CONTRACT: pow(0.0, 0.0) is 1 in Nim's std/math, so the zero-length
     # branch has to run ahead of the power or a stopped frame would keep a
     # cleared trail whole.
     for ff in [0.0, 0.084, 0.42, 1.0, 30.0]:
       check frameFadeFor(0.0, ff) == 0.0
 
-  test "a frame that advances no world time keeps the trail whole (24)":
+  test "a frame that advances no world time keeps the trail whole":
     # CONTRACT: ff 0 means the world did not move this frame, so nothing of
     # any trail may fade.
     for length in [1.0, 25.0, 200.0]:
