@@ -161,7 +161,7 @@ Files:
 Files: `docs/help/10-simulation.md`, `docs/help/40-rd.md`, `docs/help/50-render.md`,
 `docs/help/51-glow.md`. Anchors are on `cfi-crowding`, and `40-rd.md` on `dev`.
 
-- [ ] 5.1 Replace the lines below. `tests/test_help_content.nim` ("every descriptor is named by its group's
+- [x] 5.1 Replace the lines below. `tests/test_help_content.nim` ("every descriptor is named by its group's
   file", `:53`) holds each id's presence. No test holds the wording, which 5.2 checks.
   - `10-simulation.md:26-30`, `timeScale`: "how much world time passes per second of play. Raising it
     speeds everything up at once, including the field's growth, and the same setting runs the same on any

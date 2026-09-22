@@ -23,18 +23,17 @@ These controls set how much world there is and how fast it runs.
   setting damps the same at any display rate and Time Scale.
   Interacts with: every push at once (species, fluid, long range, field,
   bodies); Force Weather (moves it).
-- `timeScale` — how much simulated time passes per frame. Raising it speeds
-  everything up at once, including the field's growth. In a crowd dense
-  enough to push back, pushing Time Scale higher slows how quickly it
-  answers the mouse, a blast or a body — it still settles to the same
-  balance, just more gradually.
+- `timeScale` — how much world time passes per second of play. Raising it
+  speeds everything up at once, including the field's growth, and the same
+  setting runs the same on any display.
   Interacts with: every push's size per frame; Stiffness (lowers its safe
-  ceiling); the field (more steps, more cost). Weather and Drift keep
-  real time.
-- `maxVelocity` — a soft cap on how fast any particle may travel. Lower it
-  if fast movers streak past the structures you want to watch. On a long
-  frame with a live body, the world serves a lower cap than the one you set,
-  so nothing crosses a body's band without meeting it.
+  ceiling); the field (more steps a second, more cost). Weather and Drift
+  keep real time.
+- `maxVelocity` — a soft cap on how far any particle may travel per 1/120 s
+  of world time. Lower it if fast movers streak past the structures you
+  want to watch. On a long frame with a live body, the world serves a lower
+  cap than the one you set, so nothing crosses a body's band without
+  meeting it.
   Interacts with: every push at once (the cap applies to their sum);
   Velocity Sweep (glow measures speed against it); Band (a narrow band lowers
   the cap the world serves on a long frame).
