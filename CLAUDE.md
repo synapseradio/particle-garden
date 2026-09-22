@@ -34,10 +34,13 @@ beside a constant, one or two lines satisfy it.
 - A checkout that has never been built (a fresh clone, a `git worktree add`, or a `wt switch
   --create`) needs `just deps` before `just happen` can compile `src/main.nim`, which resolves
   `import webui` through `nimble.paths` — gitignored, absent until `nimble setup` writes it. A `wt`
-  worktree runs `just deps` for itself via the committed `.config/wt.toml` pre-start hook, which
-  `wt` reads from the checkout it is invoked in, so `wt switch --create` run from a checkout
-  without that file skips it silently; a clone or a plain `git worktree add` still needs it typed
-  by hand.
+  worktree runs `just deps`, then `just shaders`, for itself via the committed `.config/wt.toml`
+  pre-start hook, which `wt` reads from the checkout it is invoked in, so `wt switch --create` run
+  from a checkout without that file skips both silently; a clone or a plain `git worktree add`
+  still needs `just deps` typed by hand. `just happen` bundles the shaders itself as its first
+  step, but a bare `nim js` compile of `src/app.nim` — a type-check without the rest of `happen` —
+  needs `web/shaders/*.wgsl` already in place; a `wt` worktree carries it from creation, a clone or
+  a plain `git worktree add` needs `just shaders` typed by hand first.
 - Run the narrowest bats target that covers the change: `bats tests/shell/<file>.bats`, `bats -f '<name>' <file>`, or `bats --filter-tags unit tests/shell`. The whole shell suite runs once, at the end.
 - A narrow `nim c -r tests/<module>.nim` sets none of the quality flags `just test` compiles `tests/test_all.nim` under, so `--styleCheck:error`, `--styleCheck:usages` and the `--warningAsError` list (`UnusedImport`, `Effect`, `ProveInit` and the rest) go unchecked there. A module can be green narrowly and fail `just check` on an import a deletion left behind. To run a narrow module under the real bar, copy `quality_flags` from the `justfile` onto the command.
 - The shell suite needs `bats-support`, `bats-assert` and `bats-file` on the machine, or every assertion dies as `assert_output: command not found` and `just check` goes red on a clean tree. Install with `brew tap bats-core/bats-core`, then `brew trust --formula bats-core/bats-core/{bats-support,bats-assert,bats-file}` (homebrew refuses to load formulae from an untrusted tap, and the suite's own error message omits this step), then `brew install bats-support bats-assert bats-file`.

@@ -1,2 +1,2 @@
 [pre-start]
-bootstrap = "just deps; test -f nimble.paths || { echo 'bootstrap: nimble.paths was not produced' >&2; exit 1; }"
+bootstrap = "just deps; test -f nimble.paths || { echo 'bootstrap: nimble.paths was not produced' >&2; exit 1; }; just shaders; test -f web/shaders/render.wgsl || { echo 'bootstrap: web/shaders bundle was not produced' >&2; exit 1; }"
