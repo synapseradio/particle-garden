@@ -643,8 +643,9 @@ written before its run, with its result beneath it.
 - **[`B∞` is measured at friction 0.12 only]** → S18 reads 0.02 and 0.5 before task 2.3's green.
 - **[5–6.5% of moving particle-steps reverse at ff 10]** → Accepted as a measured note (D4). Task 7.2
   watches for flicker at Time Scale 5.
-- **[The smoothing clamp weakens the fluid's smoothing past a substep of ff 1]** → Accepted (D9's
-  sacrifice). Task 7.2 reads the fluid's look at Time Scale 5.
+- **[The smoothing clamp weakens the fluid's smoothing past a substep of ff 1]** → Accepted at every ff,
+  Time Scale 1.19–2.23 on 143 Hz included (D9's sacrifice, the user's choice on 22-09-2026). Task 7.2
+  reads the fluid's look at Time Scale 5.
 - **[The clamp's stability above `ν_max` 1/2 rests on the mode factor, not on a bound]** → S17 V'' read the
   range's ceiling settled at ff 12 and 30. Test 28 holds it at `SPH_VISCOSITY_MAX`.
 - **[θ_c's search ceiling caps it at 5 from ff 19 at 0.12]** → Accepted. The cap only tightens `s_C`, and

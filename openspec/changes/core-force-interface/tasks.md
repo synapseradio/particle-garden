@@ -189,8 +189,15 @@ Conventions every task below uses:
     stiffness-zero world, C cap contact, D unsteady/held-frame schedules) at 16 000 and 128 000
     particles, radius 50, plus 16 000 at radius 150, in place of the `ff_stable` bisection and the
     jittered arms through substeps
+  - first, give `src/balance_core.nim` a float64 position sum behind a calibration define, storing each
+    position rounded to f32, as the `posF64` flag in `~/.scratchpad/particle-garden/tm-units/spike-s17/contact/`
+    does. Below ff 1 the f32 sum adds about 5e-5 to 7e-5 of travel per step: ff 0.42 reads 0.000131 in f32
+    (`spike-s14/s14_window7500.log`) and 0.000062 in float64, under ff 1's 0.000077
+    (`spike-s17/contact/p_k0_posf64.log`)
 
-  An arm warmer than frame factor 1, or more cap contact than the stiffness-zero control, returns the
+  An arm warmer than frame factor 1 (for an arm whose frames run below frame factor 1, read with
+  positions summed in float64, and record its f32 reading beside it ungated), or more cap contact than
+  the stiffness-zero control, returns the
   bound `θ` or the limit itself to the design, and 4.7 waits. Record in
   `scratchpad/core-force-interface/g1-limit__<DD-MM-YY-HHmm>.md`, with per-seed readings, means and
   bounds by the gate convention.
