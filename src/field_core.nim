@@ -16,7 +16,7 @@
 #
 # Used by:
 #   - tests/test_field_core.nim (native analytic tests)
-#   - src/sim_registry.nim (RD_STEPS_PER_FRAME drives the frame's step count)
+#   - src/sim_registry.nim (FIELD_STEPS_PER_REFERENCE_FRAME drives the frame's step count)
 #   - src/shader_config.nim (the seed constants substituted into field-seed.wgsl)
 #
 # ==============================================================================
@@ -60,9 +60,9 @@ const
     ##
     ## COST at the shipped shrink of 4: 2.36M cells, carried in two rgba16float
     ## ping-pong textures (~19 MB each) plus one i32 deposit buffer (~9 MB).
-    ## Every frame runs 1 + RD_STEPS_PER_FRAME passes over all of it, so
-    ## RD_STEPS_PER_FRAME is the lever to reach for if the field pass costs too
-    ## much — it trades evolution speed for bandwidth and must stay odd.
+    ## A frame runs 1 + its field-step count passes over all of it, so
+    ## FIELD_STEPS_PER_REFERENCE_FRAME is the lever to reach for if the field pass costs too
+    ## much — it trades evolution speed for bandwidth.
 
 const
   RD_DIFFUSION_A* = 1.0
@@ -92,43 +92,38 @@ const
     ## amplification factor reaches the unit circle exactly at Da*dt == 1, so
     ## the activator channel runs ON that boundary rather than inside it. The
     ## -4-center 5-point form would need dt <= 0.25 at these rates.
-  RD_STEPS_PER_FRAME* = 7
-    ## Reaction-diffusion substeps run per rendered frame. The pattern
-    ## evolves slowly relative to a video frame, so multiple steps per frame
-    ## buys visible motion without lowering dt (and hence stability).
-    ## Must be ODD — see the static assertion below.
-    ## NOT a free performance lever, although each frame runs
-    ## 1 + RD_STEPS_PER_FRAME full-field passes and the cost is real: deposits
-    ## fold once per frame, so LOWERING the substep count raises the deposit
-    ## rate per unit of field time and dissolves the coherence requirement on
-    ## ignition. Measured unscaled at 3: a scattered deposit ignites on frame 6, the
-    ## critical splat radius falls from 5 to 3, and the single-cell negative
-    ## control lights the field. The fold
-    ## therefore renormalizes: RD_DEPOSIT_FRAME_SCALE below holds the deposit
-    ## rate per FIELD STEP invariant under this knob, which is what makes it
-    ## a speed lever at all. What the knob still changes is wall-clock: the
-    ## pattern evolves proportionally slower, and particles travel further
-    ## per field step, which the chemotaxis suite measures.
+  FIELD_STEPS_PER_REFERENCE_FRAME* = 7
+    ## Reaction-diffusion substeps owed per reference frame of world time
+    ## (`advanceFieldClock` below). The pattern evolves slowly relative to a
+    ## reference frame, so multiple steps per reference frame buy visible
+    ## motion without lowering dt (and hence stability).
+    ## NOT a free performance lever: deposits fold once per rendered frame, so
+    ## LOWERING this raises the deposit rate per unit of field time and
+    ## dissolves the coherence requirement on ignition. Measured unscaled at
+    ## 3: a scattered deposit ignites on frame 6, the critical splat radius
+    ## falls from 5 to 3, and the single-cell negative control lights the
+    ## field. RD_DEPOSIT_FRAME_SCALE below holds the deposit rate per FIELD
+    ## STEP invariant under a frame's actual count, which is what makes this a
+    ## speed lever at all.
   RD_DEPOSIT_STEP_REFERENCE* = 8
-    ## Field steps per frame — 1 + RD_STEPS_PER_FRAME — at which every deposit
-    ## constant in this file was measured: the splat radius, the cell cap, the
-    ## collapse bounds, and the regime deposit floors. The fold scales against
-    ## this reference so those measurements stay valid when the substep count
-    ## moves. Re-measuring the deposit constants at a new step count is the
-    ## only reason to change this number.
+    ## Field steps per frame — 1 + FIELD_STEPS_PER_REFERENCE_FRAME — at which
+    ## every deposit constant in this file was measured: the splat radius, the
+    ## cell cap, the collapse bounds, and the regime deposit floors. The fold
+    ## scales against this reference so those measurements stay valid at any
+    ## step count a frame runs. Re-measuring the deposit constants at a new
+    ## reference step count is the only reason to change this number.
   RD_REFERENCE_TIME_SCALE* = 0.5
-    ## The Time Scale RD_STEPS_PER_FRAME counts steps at — the shipped default
-    ## in ui/state/simulation_state.nim, which tests/test_field_core.nim ties
-    ## this to. Stated here because field_core is pure and cannot import the
-    ## state record.
+    ## The Time Scale at which a 60 Hz frame spans one reference frame — the
+    ## shipped default in ui/state/simulation_state.nim, which
+    ## tests/test_field_core.nim ties this to. Stated here because field_core
+    ## is pure and cannot import the state record.
 
   RD_DEPOSIT_FRAME_SCALE* =
-    float(1 + RD_STEPS_PER_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
-    ## Multiplier the resolve fold applies to each frame's capped deposit so
-    ## the deposit rate per FIELD STEP is invariant under RD_STEPS_PER_FRAME.
-    ## Exactly 1.0 when the substep count sits at the reference. Applied after
-    ## the cell cap, so the effective injection bound scales with it and the
-    ## measured stability margin holds in field time.
+    float(1 + FIELD_STEPS_PER_REFERENCE_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
+    ## The deposit fold's scale at the reference step count (7): exactly 1.0.
+    ## depositFrameScale(steps) below is the general form a frame's actual
+    ## count uses; this is its value at the constant every deposit measurement
+    ## in this file assumes.
   RD_DEFAULT_FEED* = 0.030
     ## Feed rate F. Paired with RD_DEFAULT_KILL below, this sits in Pearson's
     ## self-replicating-spots regime (see the constants' test suite for the
@@ -149,7 +144,7 @@ const
     ## point. Coherence, not magnitude, is what crosses the threshold.
     ##
     ## MEASURED BAND (64x64 grid, Pearson defaults, seeded field, deposit folded
-    ## once per frame ahead of RD_STEPS_PER_FRAME substeps): at 0.02 the pattern
+    ## once per frame ahead of FIELD_STEPS_PER_REFERENCE_FRAME substeps): at 0.02 the pattern
     ## survives the forcing largely intact; from ~0.15 the field floods into a
     ## uniform bath rather than spots; at ~0.30 it diverges. RD_DEPOSIT_MAX in
     ## config_ranges is set well below the flood point because the feed/kill
@@ -185,21 +180,6 @@ const
     ## MEASURED (128x128 torus, settled at the Pearson defaults): peak 0.0868,
     ## mean 0.0364. One regime only; other feed and kill points are unmeasured.
 
-func rdStepsForTimeScale*(timeScale, referenceTimeScale: float): int =
-  ## Field steps a rendered frame runs at this Time Scale.
-  ##
-  ## The chemistry lives in field steps rather than seconds — RD_DELTA_T is a
-  ## step, and the stability boundary binds it, not the count — so the clock
-  ## reaches the pattern only by changing how many steps a frame runs.
-  ##
-  ## ODD, always: the frame performs 1 + steps ping-pong swaps and an even total
-  ## leaves the live field on the texture nothing reads. Floored at 1 so a slow
-  ## clock still advances the pattern rather than freezing it.
-  ##
-  ## Cost is 1 + steps full-field passes, so it grows with the clock.
-  let raw = float(RD_STEPS_PER_FRAME) * timeScale / referenceTimeScale
-  max(1, 2 * int(round((raw - 1.0) / 2.0)) + 1)
-
 func depositFrameScale*(steps: int): float =
   ## The per-frame deposit fold at a given field-step count.
   ##
@@ -209,6 +189,70 @@ func depositFrameScale*(steps: int): float =
   ## that rate fixed, so buying pattern speed with Time Scale does not also
   ## change what it takes to ignite.
   float(1 + steps) / float(RD_DEPOSIT_STEP_REFERENCE)
+
+# ==============================================================================
+# THE FIELD CLOCK
+# ==============================================================================
+#
+# The chemistry lives in field steps rather than seconds, and Time Scale (via
+# the frame factor) reaches it only by changing how many steps a frame runs.
+# advanceFieldClock owes FIELD_STEPS_PER_REFERENCE_FRAME steps per reference
+# frame of world time and carries the fractional remainder to the next
+# rendered frame, so a slow display and a fast one running the same world time
+# run the same total steps.
+
+const
+  FIELD_STEPS_CEILING* = 71
+    ## Steps a held frame may run, at most. Equals the shipped Time Scale
+    ## slider's fastest setting under the retired per-frame model
+    ## (`7 * 5 / 0.5`, rounded to the nearest odd count), so the field's
+    ## per-frame cost under the clock never exceeds what today's fixed count
+    ## already ships at that setting. A frame that owes more than this drops
+    ## the rest, the way the 0.05s wall-clock cap drops time.
+
+type
+  FieldSteps* = object
+    raw: int
+      ## Always odd, 1 <= raw <= FIELD_STEPS_CEILING. Reachable only through
+      ## fieldSteps(), so an even or out-of-range count cannot reach the frame
+      ## builder.
+
+func fieldSteps*(count: int): FieldSteps =
+  ## The one way to build a FieldSteps. Panics outside its range — the parity
+  ## the field's ping-pong chain closes on.
+  doAssert count mod 2 == 1 and count in 1..FIELD_STEPS_CEILING
+  FieldSteps(raw: count)
+
+func count*(steps: FieldSteps): int =
+  steps.raw
+
+type
+  FieldClock* = object
+    carry*: float
+      ## Field steps owed and not yet run, in [-1, 2). Zero-initialized, which
+      ## is a valid starting clock.
+
+func advanceFieldClock*(clock: FieldClock, frameFactor: float):
+    tuple[steps: FieldSteps, clock: FieldClock] =
+  ## One rendered frame's field steps, and the clock this call leaves behind.
+  ## `frameFactor` is the whole frame's world time in reference frames.
+  ##
+  ## `owed` accumulates FIELD_STEPS_PER_REFERENCE_FRAME per reference frame;
+  ## `steps` takes the largest odd count at or below it, clamped to
+  ## [1, FIELD_STEPS_CEILING]; the remainder carries forward. Below one owed
+  ## step the floor of 1 runs the field ahead of world time rather than
+  ## stalling it, and the carry clamps at -1 so that lead is never paid back.
+  ## At the ceiling the carry clamps at 1, so a held frame drops the rest
+  ## rather than owing it to frames after.
+  let owed = clock.carry + float(FIELD_STEPS_PER_REFERENCE_FRAME) * frameFactor
+  var raw = int(floor(owed))
+  if raw mod 2 == 0: dec raw
+  let bounded = clamp(raw, 1, FIELD_STEPS_CEILING)
+  let residual = owed - float(bounded)
+  let carry =
+    if bounded == FIELD_STEPS_CEILING: min(residual, 1.0)
+    else: max(residual, -1.0)
+  (steps: fieldSteps(bounded), clock: FieldClock(carry: carry))
 
 # ==============================================================================
 # HOW BIG THE PATTERN DRAWS
@@ -267,14 +311,6 @@ static:
   # stretches every pattern the field draws by exactly that mismatch.
   doAssert abs(FIELD_W.float / FIELD_H.float - FIELD_WORLD_ASPECT) < 1e-9
 
-  # fieldResolve is itself a ping-pong stage — it reads the trailing texture
-  # and writes the front — so one frame performs 1 + RD_STEPS_PER_FRAME texture
-  # swaps. That total must be even for the live field to land back on the
-  # texture the renderer samples and the next frame's resolve reads. An even
-  # RD_STEPS_PER_FRAME leaves it on the wrong texture, silently discarding the
-  # last substep every frame.
-  doAssert RD_STEPS_PER_FRAME mod 2 == 1
-
 # ==============================================================================
 # DEPOSIT SPLAT KERNEL
 # ==============================================================================
@@ -296,7 +332,7 @@ const
     ##
     ## MEASURED (tests/test_field_core.nim, 64x64 grid, flat trivial-fixed-point
     ## start, deposit coverage matched to the scattered baseline, deposit folded
-    ## once per frame ahead of RD_STEPS_PER_FRAME substeps). Minimum igniting
+    ## once per frame ahead of FIELD_STEPS_PER_REFERENCE_FRAME substeps). Minimum igniting
     ## (radius, amplitude) at the shipped Pearson defaults:
     ##
     ##   Gaussian profile: radius 5 at amplitude 0.02 — ignites on frame 12

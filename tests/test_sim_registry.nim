@@ -39,6 +39,13 @@ proc dispatchSequence(couplings: WorldCouplings): seq[string] =
       for step in node.dispatches:
         result.add step.pipelineKey
 
+proc dispatchSequenceAt(couplings: WorldCouplings; rdSteps: FieldSteps): seq[string] =
+  ## dispatchSequence, at a field step count other than the shipped default.
+  for node in buildFrame(couplings, rdSteps):
+    if node.kind == fnkComputePass:
+      for step in node.dispatches:
+        result.add step.pipelineKey
+
 proc clearedBuffers(couplings: WorldCouplings): seq[SimBuffer] =
   for node in buildFrame(couplings):
     if node.kind == fnkClearBuffer:
@@ -49,7 +56,7 @@ proc without(sequence: seq[string]; key: string): seq[string] =
     if item != key: result.add item
 
 func rdStepKeys(): seq[string] =
-  for stepIndex in 0 ..< RD_STEPS_PER_FRAME:
+  for stepIndex in 0 ..< FIELD_STEPS_PER_REFERENCE_FRAME:
     result.add(
       if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail")
 
@@ -99,7 +106,7 @@ suite "The World Runs, Whatever The Strengths Are":
     var substeps = 0
     for key in dispatchSequence(UNCOUPLED):
       if key in ["rdStepToFront", "rdStepToTrail"]: inc substeps
-    check substeps == RD_STEPS_PER_FRAME
+    check substeps == FIELD_STEPS_PER_REFERENCE_FRAME
 
   test "integrate runs last and exactly once in every world":
     for couplings in ALL_COUPLINGS:
@@ -351,16 +358,33 @@ suite "The Grid Is Built Once":
 
 suite "Field Passes Compose Safely":
   test "the field ping-pong parity holds in every world":
-    # fieldResolve is itself one swap, so 1 + RD_STEPS_PER_FRAME swaps happen
-    # per frame. The substeps must start ToFront and end ToFront, or the live
-    # field lands on the texture nothing reads and the last substep is thrown
-    # away every frame. The field being world-intrinsic makes this unconditional
-    # rather than a property only some worlds must satisfy.
+    # fieldResolve is itself one swap, so 1 + FIELD_STEPS_PER_REFERENCE_FRAME
+    # swaps happen per frame. The substeps must start ToFront and end ToFront,
+    # or the live field lands on the texture nothing reads and the last
+    # substep is thrown away every frame. The field being world-intrinsic
+    # makes this unconditional rather than a property only some worlds must
+    # satisfy.
     for couplings in ALL_COUPLINGS:
       var steps: seq[string]
       for key in dispatchSequence(couplings):
         if key in ["rdStepToFront", "rdStepToTrail"]: steps.add key
-      check steps.len == RD_STEPS_PER_FRAME
+      check steps.len == FIELD_STEPS_PER_REFERENCE_FRAME
+      check steps[0] == "rdStepToFront"
+      check steps[^1] == "rdStepToFront"
+      for stepIndex, key in steps:
+        check key == (
+          if stepIndex mod 2 == 0: "rdStepToFront" else: "rdStepToTrail")
+
+  test "the frame description follows the clock's count":
+    # buildFrame takes its step count from the clock now, not a fixed
+    # constant, so the chain must close at every odd count the clock can
+    # hand it, not only the shipped default.
+    for count in countup(1, FIELD_STEPS_CEILING, 2):
+      var steps: seq[string]
+      for key in dispatchSequenceAt(FULLY_COUPLED, fieldSteps(count)):
+        if key in ["rdStepToFront", "rdStepToTrail"]: steps.add key
+      checkpoint("count " & $count)
+      check steps.len == count
       check steps[0] == "rdStepToFront"
       check steps[^1] == "rdStepToFront"
       for stepIndex, key in steps:
@@ -578,19 +602,20 @@ suite "The Field Chemistry Runs Once Per Rendered Frame":
         check key in everySubstep
 
   test "the ping-pong chain closes inside the per-frame group":
-    # fieldResolve is itself a swap, so the frame performs 1 + RD_STEPS_PER_FRAME
-    # of them and must land the live field back on the front texture. Splitting
-    # the field force out of this group must not have taken a swap with it.
+    # fieldResolve is itself a swap, so the frame performs
+    # 1 + FIELD_STEPS_PER_REFERENCE_FRAME of them and must land the live field
+    # back on the front texture. Splitting the field force out of this group
+    # must not have taken a swap with it.
     for couplings in ALL_COUPLINGS:
       let oncePerFrame = nodesWithCadence(couplings, fncOncePerFrame)
       var swaps = 0
       for key in oncePerFrame:
         if key in ["fieldResolve", "rdStepToFront", "rdStepToTrail"]:
           swaps.inc
-      check swaps == 1 + RD_STEPS_PER_FRAME
+      check swaps == 1 + FIELD_STEPS_PER_REFERENCE_FRAME
       # An even total returns the live field to the texture it started on,
       # which is the one the renderer, the field force and the next frame's
-      # resolve all read. field_core asserts RD_STEPS_PER_FRAME odd for it.
+      # resolve all read. fieldSteps() panics on an even count for it.
       check swaps mod 2 == 0
 
   test "the mesh solve runs once per frame and the force it feeds every substep":

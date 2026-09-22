@@ -107,7 +107,7 @@ particle-particle particle-mesh one: pairs inside 150 units, mesh beyond.
 `src/sim_registry.nim` composes the chemistry as deposit, solve, gradient force:
 
 ```
-  particles --> field-deposit --> [ Gray-Scott, RD_STEPS_PER_FRAME steps ] --> field-force --> particles
+  particles --> field-deposit --> [ Gray-Scott, the field clock's steps ] --> field-force --> particles
                (Gaussian splat,       (the solve)                             (gradient sample,
                 per-species sign)                                              per-species sign)
 ```

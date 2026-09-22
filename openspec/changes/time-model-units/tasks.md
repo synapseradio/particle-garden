@@ -130,12 +130,12 @@ Files:
   fold at `:1097-1098` only
 - `tests/test_field_core.nim` and `tests/test_sim_registry.nim`
 
-- [ ] 4.1 **Red.**
+- [x] 4.1 **Red.**
   - `tests/test_field_core.nim`: tests 17–19, against a stub `advanceFieldClock` returning today's
     `rdStepsForTimeScale` count and carry 0.
   - `tests/test_sim_registry.nim`: test 20.
   - Verify each fails for its stated reason: test 17 fails at 143 Hz with 10 003 steps, not 4 200.
-- [ ] 4.2 **Green.**
+- [x] 4.2 **Green.**
   - `src/field_core.nim`:
     - Add `FieldSteps` (an odd int in `[1, FIELD_STEPS_CEILING]`, smart constructor only), `FieldClock`,
       and `advanceFieldClock(clock, ff)` per D6.

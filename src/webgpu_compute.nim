@@ -18,6 +18,7 @@ from std/jsffi import JsObject, toJs, to, `[]`, `[]=`
 import std/asyncjs
 import std/options
 import std/strutils
+import std/tables
 from std/math import pow
 import bindings/js_interop
 import bindings/webgpu
@@ -121,16 +122,32 @@ var cachedBindGroupGridW: int = -1
 var cachedBindGroupGridH: int = -1
 var isPipelineReady* {.exportc.}: bool = false
 
-# The frame description the executor walks. Rebuilt only when a strength
-# crosses zero, never per frame — see sim_registry.nim.
+# The frame description the executor walks. Rebuilt when a strength crosses
+# zero (setCouplings) or the field clock's step count changes (advanceField,
+# called once per rendered frame) — see sim_registry.nim.
 var activeFrame: FrameDescription = @[]
 var activeCouplings*: WorldCouplings
-var activeRdSteps = 0
-  ## Field steps the active description encodes. Zero until the first build, so
-  ## the first setCouplings always builds.
-  ## Zero until app.nim's subscription delivers the live strengths, which it
-  ## does before the frame loop starts. This module sits below the typed state
-  ## in the import order and reads the couplings only through setCouplings.
+var activeRdSteps = fieldSteps(FIELD_STEPS_PER_REFERENCE_FRAME)
+  ## Field steps the active description encodes. Holds the reference count
+  ## until the first advanceField call moves it.
+  ## activeCouplings sits at its zero value until app.nim's subscription
+  ## delivers the live strengths, which it does before the frame loop starts.
+  ## This module sits below the typed state in the import order and reads the
+  ## couplings only through setCouplings.
+var fieldClock: FieldClock
+  ## Carries the field's owed-but-unrun steps across rendered frames
+  ## (field_core.advanceFieldClock). Zero-initialized, a valid starting clock.
+var frameCache = initTable[int, FrameDescription]()
+  ## Frame descriptions already built at the active couplings, keyed by field
+  ## step count. Cleared whenever the couplings shape changes; holds at most
+  ## the ceiling's 36 odd counts otherwise, since the count is the only thing
+  ## that varies frame to frame.
+
+proc frameFor(couplings: WorldCouplings; steps: FieldSteps): FrameDescription =
+  if frameCache.hasKey(steps.count):
+    return frameCache[steps.count]
+  result = buildFrame(couplings, steps)
+  frameCache[steps.count] = result
 
 var pendingFieldSeed = false
   ## Set when something asks for a fresh reaction-diffusion pattern; consumed
@@ -268,17 +285,28 @@ proc setCouplings*(couplings: WorldCouplings) =
   ## ignites where colonies deposit, which is what makes the pattern a record of
   ## the particles rather than a backdrop they sit on. Seeding is only ever a
   ## deliberate user action (requestFieldSeed).
-  ## Time Scale rebuilds too: it sets how many Gray-Scott steps a frame runs,
-  ## and the step count is part of the description rather than a uniform.
-  let rdSteps = rdStepsForTimeScale(config.CONFIG.timeScale,
-    RD_REFERENCE_TIME_SCALE)
-  let rebuild = activeFrame.len == 0 or
-    not sameFrameShape(activeCouplings, couplings) or
-    rdSteps != activeRdSteps
+  ##
+  ## The field step count comes from advanceField, called once per rendered
+  ## frame; this proc reacts only to the couplings shape, at whatever count
+  ## advanceField last set.
+  let shapeChanged = not sameFrameShape(activeCouplings, couplings)
+  let rebuild = activeFrame.len == 0 or shapeChanged
+  if shapeChanged:
+    frameCache.clear()
   activeCouplings = couplings
-  activeRdSteps = rdSteps
   if rebuild:
-    activeFrame = buildFrame(couplings, rdSteps)
+    activeFrame = frameFor(couplings, activeRdSteps)
+
+proc advanceField*(frameFactorNow: float) =
+  ## Owes this rendered frame's field steps from world time
+  ## (field_core.advanceFieldClock) and adopts the frame description they
+  ## need. Called once per rendered frame, ahead of the deposit fold, which
+  ## scales by the count this leaves in activeRdSteps.
+  let (steps, next) = advanceFieldClock(fieldClock, frameFactorNow)
+  fieldClock = next
+  if steps.count != activeRdSteps.count:
+    activeRdSteps = steps
+    activeFrame = frameFor(activeCouplings, steps)
 
 proc jsArrayLength*(arr: JsObject): int {.importjs: "#.length".}
 proc jsArrayFilter*(arr: JsObject, predicate: proc(item: JsObject): bool): JsObject {.importjs: "#.filter(#)".}
@@ -516,11 +544,12 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   #   fieldResolve   A -> B   (folds this frame's particle deposits in)
   #   rdStepToFront  B -> A   substep 1
   #   rdStepToTrail  A -> B   substep 2
-  #   ...            alternating, RD_STEPS_PER_FRAME of them
-  #   rdStepToFront  B -> A   substep RD_STEPS_PER_FRAME (odd, so it ends here)
+  #   ...            alternating, the field clock's step count of them
+  #   rdStepToFront  B -> A   the last substep (odd, so it ends here)
   # The live field lands on A, where fieldForce and the renderer sample it and
   # the next frame's resolve picks it up. Every key below names its DESTINATION
-  # for that reason.
+  # for that reason. The step count varies frame to frame (field_core.FieldSteps,
+  # advanced below); FIELD_STEPS_PER_REFERENCE_FRAME is what it averages at ff 1.
   let fieldViewFront = cast[JsObject](webgpu_init.fieldSampledViewA())
   let fieldViewTrail = cast[JsObject](webgpu_init.fieldSampledViewB())
   let fieldDepositBuf = cast[JsObject](webgpu_init.fieldDepositGpuBuffer())
@@ -986,6 +1015,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # the plan's ceiling it hands back the two effect-time values that hold the
   # bounds the count could not.
   let frameFactorNow = frameFactor(dt)
+  advanceField(frameFactorNow)
   let framePlan = substepPlan(frameFactorNow, LiveValues(
     forces: config.CONFIG.forceStrength,
     fluid: config.CONFIG.fluidStrength,
@@ -1094,13 +1124,13 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   fieldParamsData[FIELD_DIFFUSION_B] = float32(diffusionRates.inhibitor)
   fieldParamsData[FIELD_DELTA_T] = float32(RD_DELTA_T)
   # field-resolve.wgsl multiplies the deposit by the RD_DEPOSIT_FRAME_SCALE the
-  # bundler substituted, which is pinned to the shipped step count. Time Scale
-  # moves the live count, so the ratio here restores the product: the deposit
-  # rate per FIELD STEP is what every ignition constant was measured against,
-  # and holding it fixed is what keeps Time Scale a speed control rather than a
-  # second control on what it takes to ignite.
+  # bundler substituted, which is pinned to the shipped step count. The field
+  # clock moves the live count frame to frame, so the ratio here restores the
+  # product: the deposit rate per FIELD STEP is what every ignition constant
+  # was measured against, and holding it fixed is what keeps that count a
+  # speed control rather than a second control on what it takes to ignite.
   fieldParamsData[FIELD_DEPOSIT_AMOUNT] = float32(config.CONFIG.rdDeposit *
-    depositFrameScale(activeRdSteps) / RD_DEPOSIT_FRAME_SCALE)
+    depositFrameScale(activeRdSteps.count) / RD_DEPOSIT_FRAME_SCALE)
   # The pattern shrinks under Pattern Scale, and its per-cell gradient grows
   # as 1/sqrt(scale) as it does; rdScentGainFactor corrects the gain so a
   # fixed strength keeps the push it had at scale 1.

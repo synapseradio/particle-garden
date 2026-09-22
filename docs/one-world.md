@@ -50,8 +50,8 @@ therefore divide in two.
 
 **World-intrinsic passes run at every setting of every strength.** The grid
 triad (`binCount` and the three prefix-sum stages) with `binScatter`, the
-neighbour sweep in `forces.wgsl`, `fieldResolve`, the `RD_STEPS_PER_FRAME`
-Gray-Scott substeps, and `integrate`. These make up what the world is.
+neighbour sweep in `forces.wgsl`, `fieldResolve`, the field clock's Gray-Scott
+substeps, and `integrate`. These make up what the world is.
 
 **Coupling-owned passes drop out at exactly zero.** `forcesSph` under `fluid`,
 `fieldDeposit` under `deposit`, `fieldForce` under `fieldForce`, `bodyForce`
@@ -103,10 +103,12 @@ mode, and a visible one. What chemistry's strengths own is the two couplings
 out.
 
 The ping-pong parity sharpens this. `fieldResolve` is itself one stage of the
-field's texture swap, so a frame performs `1 + RD_STEPS_PER_FRAME` swaps in
-total. `field_core.nim` statically asserts that total comes out even — that
-`RD_STEPS_PER_FRAME` stays odd — because the live field must land back on the
-texture the renderer, `fieldForce`, and the next frame's resolve all read.
+field's texture swap, so a frame performs `1 + steps` swaps in total, where
+`steps` is the field clock's count for that frame
+(`field_core.advanceFieldClock`). `field_core.nim`'s `FieldSteps` type admits
+only odd counts, so that total comes out even by construction — the live
+field always lands back on the texture the renderer, `fieldForce`, and the
+next frame's resolve all read.
 Skipping `fieldResolve` at zero deposit would remove one swap and strand the
 field on the texture nothing looks at.
 
@@ -150,8 +152,8 @@ of work.
 5. **Long Range Solve** where `longRange` acts — `lrDeposit`, the forward
    transforms, `lrKernel`, the inverse transforms.
 6. **Field (RD)** — `fieldDeposit` where `deposit` acts, then `fieldResolve`,
-   then `RD_STEPS_PER_FRAME` substeps alternating `rdStepToFront` and
-   `rdStepToTrail`, then `fieldForce` where `fieldForce` acts.
+   then the field clock's step count of substeps alternating `rdStepToFront`
+   and `rdStepToTrail`, then `fieldForce` where `fieldForce` acts.
 7. **Long Range Force** where `longRange` acts — `lrForce`.
 8. **Integrate** — `integrate`.
 

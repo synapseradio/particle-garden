@@ -309,13 +309,14 @@ func dispatch*(pipelineKey: string, size: DispatchSize): Dispatch =
   Dispatch(pipelineKey: pipelineKey, size: size)
 
 func buildFrame*(couplings: WorldCouplings;
-    rdSteps: int = RD_STEPS_PER_FRAME): FrameDescription =
+    rdSteps: FieldSteps = fieldSteps(FIELD_STEPS_PER_REFERENCE_FRAME)): FrameDescription =
   ## The full GPU frame this world runs: everything world-intrinsic, plus each
   ## coupling whose strength is not zero.
   ##
   ## rdSteps is how many Gray-Scott steps the chemistry runs this frame, which
-  ## Time Scale sets through field_core.rdStepsForTimeScale. It must be odd for
-  ## the ping-pong chain to close, which that function guarantees.
+  ## the field clock sets from world time (field_core.advanceFieldClock).
+  ## FieldSteps admits only odd counts within the ceiling, so the chain closes
+  ## by construction.
   ##
   ## READ THIS AS A UNION, NEVER AS A TABLE OF WORLDS. The intrinsic sequence is
   ## always present and always in this order; each `acts(...)` guard inserts one
@@ -436,19 +437,18 @@ func buildFrame*(couplings: WorldCouplings;
   #
   # THE CHAIN MUST CLOSE. fieldResolve above is itself a ping-pong stage — it
   # reads the front texture and writes the trailing one — so the frame performs
-  # 1 + rdSteps swaps in total. The substeps therefore start on the
+  # 1 + rdSteps.count swaps in total. The substeps therefore start on the
   # texture resolve just wrote (the trail, hence ToFront first) and must end back
   # on the front, which is what the renderer, fieldForce, and the next frame's
   # resolve all read. That closure is why the count must be odd: an even count
   # leaves the live field on the trailing texture where nothing looks for it,
-  # silently discarding the last substep every single frame. field_core asserts
-  # it of RD_STEPS_PER_FRAME and guarantees it of every count
-  # rdStepsForTimeScale returns.
+  # silently discarding the last substep every single frame. FieldSteps admits
+  # no even count, so this cannot happen.
   #
   # Both stages are unguarded, and the parity argument is why that matters
   # beyond the field being intrinsic: skipping fieldResolve at zero deposit
   # would remove one swap and land the live field on the wrong texture.
-  for stepIndex in 0 ..< rdSteps:
+  for stepIndex in 0 ..< rdSteps.count:
     if stepIndex mod 2 == 0:
       fieldDispatches.add dispatch("rdStepToFront", dsFieldWorkgroups)
     else:

@@ -6,6 +6,7 @@
 
 import std/unittest
 import std/math
+import std/random
 import std/[os, strutils]
 import ../src/field_core
 import ../src/config_ranges
@@ -35,7 +36,7 @@ const CONFIG_WORLD_W = configWorldExtent(staticRead("../src/config.nim"),
 #
 # evolve() mirrors one reaction-diffusion frame in the order webgpu_compute
 # encodes it: fieldResolve folds every particle's deposit into the inhibitor
-# channel once, then RD_STEPS_PER_FRAME Gray-Scott substeps run. Anything that
+# channel once, then FIELD_STEPS_PER_REFERENCE_FRAME Gray-Scott substeps run. Anything that
 # claims a seed does or does not ignite has to be measured through this order —
 # a per-substep deposit would force the field ~7x harder than the real frame.
 #
@@ -48,7 +49,7 @@ const
     ## suite fast, large enough that a blob of HARNESS_BLOB_RADIUS has room to
     ## grow structure rather than immediately wrapping into itself.
   HARNESS_FRAMES = 60
-    ## Frames per evolve() run. At RD_STEPS_PER_FRAME substeps each this is
+    ## Frames per evolve() run. At FIELD_STEPS_PER_REFERENCE_FRAME substeps each this is
     ## enough for Gray-Scott spots to divide and fill from the seed.
   HARNESS_BLOB_COUNT = 6
     ## Blobs the harness seeds. RD_SEED_BLOB_COUNT is calibrated for the
@@ -240,21 +241,21 @@ func substep(sourceA, sourceB: HarnessField, targetA, targetB: var HarnessField,
 
 func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
     mask: HarnessField, deposit, feed, kill: float,
-    substeps = RD_STEPS_PER_FRAME, depositScale = RD_DEPOSIT_FRAME_SCALE,
+    substeps = FIELD_STEPS_PER_REFERENCE_FRAME, depositScale = RD_DEPOSIT_FRAME_SCALE,
     patternScale = 1.0) =
   ## One shipped frame in the order webgpu_compute encodes it: fieldResolve
   ## folds every particle's deposit into the inhibitor channel once — scaled
   ## by RD_DEPOSIT_FRAME_SCALE, mirroring field-resolve.wgsl — then
-  ## RD_STEPS_PER_FRAME Gray-Scott substeps run. The two trailing parameters
+  ## FIELD_STEPS_PER_REFERENCE_FRAME Gray-Scott substeps run. The two trailing parameters
   ## exist for the fold-invariance test; every other caller takes the shipped
   ## defaults. A non-default substep count must stay ODD or the copy-back
   ## below returns the wrong buffer.
   ##
   ## The substeps ping-pong between the field pair and a caller-owned scratch
   ## pair, exactly as the GPU ping-pongs its two field textures. Because
-  ## RD_STEPS_PER_FRAME is odd — asserted in field_core.nim, and the same
-  ## parity the real frame depends on — the live state lands in scratch, so
-  ## the frame closes with one copy back rather than one per substep.
+  ## FIELD_STEPS_PER_REFERENCE_FRAME is odd — the same parity fieldSteps()
+  ## panics on in field_core.nim — the live state lands in scratch, so the
+  ## frame closes with one copy back rather than one per substep.
   for y in 0 ..< HARNESS_GRID:
     for x in 0 ..< HARNESS_GRID:
       fieldB[y][x] = fieldB[y][x] + depositScale * mask[y][x] * deposit
@@ -268,7 +269,7 @@ func advanceFrame(fieldA, fieldB, scratchA, scratchB: var HarnessField,
 
 func evolve(seedA, seedB: HarnessField, frames: int, deposit: float,
     feed = RD_DEFAULT_FEED, kill = RD_DEFAULT_KILL,
-    mask = depositMask(), substeps = RD_STEPS_PER_FRAME,
+    mask = depositMask(), substeps = FIELD_STEPS_PER_REFERENCE_FRAME,
     depositScale = RD_DEPOSIT_FRAME_SCALE, patternScale = 1.0): FieldStats =
   ## Run `frames` shipped frames from a seed and summarize the inhibitor
   ## channel. `substeps` and `depositScale` pass through to advanceFrame for
@@ -1058,7 +1059,7 @@ suite "Chemotactic Collapse Bound":
   const COLLAPSE_TROPISM_MULTIPLE = 2.0
     ## The tropism, in multiples of TROPISM_MAX, that diverges the field at
     ## COLLAPSE_DEPOSIT_MULTIPLE.
-    ## Measured at the reference step count: if RD_STEPS_PER_FRAME moves, the
+    ## Measured at the reference step count: if FIELD_STEPS_PER_REFERENCE_FRAME moves, the
     ## demonstration needs field-time parity — nominal multiple scaled by the
     ## inverse of RD_DEPOSIT_FRAME_SCALE and demo frames scaled to the same
     ## total field steps (a substeps-3 recalibration measured 30x over doubled
@@ -1510,24 +1511,24 @@ suite "Reaction-Diffusion Tuning Constants":
     # have to satisfy rather than by their literals — see "The Field Draws A
     # Small Pattern On Square Cells" below.
     check RD_DELTA_T == 1.0
-    check RD_STEPS_PER_FRAME == 7
+    check FIELD_STEPS_PER_REFERENCE_FRAME == 7
     check RD_DEFAULT_FEED == 0.030
     check RD_DEFAULT_KILL == 0.062
     check RD_DEPOSIT_STEP_REFERENCE == 8
     check RD_DEPOSIT_FRAME_SCALE ==
-      float(1 + RD_STEPS_PER_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
+      float(1 + FIELD_STEPS_PER_REFERENCE_FRAME) / float(RD_DEPOSIT_STEP_REFERENCE)
 
   test "the substep count keeps the field ping-pong chain closed":
     # CONTRACT: fieldResolve is itself one ping-pong stage (it reads the trail
-    # texture and writes the front), so a frame performs 1 + RD_STEPS_PER_FRAME
+    # texture and writes the front), so a frame performs 1 + FIELD_STEPS_PER_REFERENCE_FRAME
     # texture swaps. That total must be even for the live field to land back on
     # the texture the next frame's resolve reads and the renderer samples. An
-    # even RD_STEPS_PER_FRAME silently discards the last substep every frame.
-    check RD_STEPS_PER_FRAME mod 2 == 1
+    # even FIELD_STEPS_PER_REFERENCE_FRAME silently discards the last substep every frame.
+    check FIELD_STEPS_PER_REFERENCE_FRAME mod 2 == 1
 
   test "the deposit fold is invariant per field step under the substep knob":
     # CONTRACT: deposits fold once per frame while the reaction runs
-    # 1 + RD_STEPS_PER_FRAME steps, so without the frame scale a lower substep
+    # 1 + FIELD_STEPS_PER_REFERENCE_FRAME steps, so without the frame scale a lower substep
     # count delivers MORE deposit per unit of field time — measured unscaled
     # at 3 substeps as a scattered mask igniting on frame 6, the critical
     # radius falling from 5 to 3, and the single-cell negative control
@@ -1556,6 +1557,17 @@ suite "Reaction-Diffusion Tuning Constants":
       mask = depositMask(), substeps = 3, depositScale = 4.0 / 8.0)
     check scattered.aliveFraction > 0.0
     check scatteredScaled.aliveFraction == 0.0
+
+  test "the deposit rate per field step is held across the step count":
+    # RD_DEPOSIT_STEP_REFERENCE is the step count every deposit constant in this
+    # module was measured at. Buying pattern speed must not also change what it
+    # takes to ignite, so the per-frame fold is renormalized by the step count.
+    for steps in [1, 3, 7, 15, 71]:
+      let perFieldStep = depositFrameScale(steps) / float(1 + steps)
+      check abs(perFieldStep - 1.0 / float(RD_DEPOSIT_STEP_REFERENCE)) < 1e-12
+
+  test "the shipped constant is the shipped step count's scale":
+    check depositFrameScale(FIELD_STEPS_PER_REFERENCE_FRAME) == RD_DEPOSIT_FRAME_SCALE
 
   test "the Pearson defaults sit in the classic self-replicating-spots regime":
     # Pearson, J.E. (1993), "Complex Patterns in a Simple System", Science
@@ -1845,7 +1857,7 @@ suite "A Cell's Per-Frame Deposit Is Bounded":
           inhibitor[yy][xx] =
             if bounded: resolveCellDeposit(inhibitor[yy][xx], UNBOUNDED_DEPOSIT)
             else: inhibitor[yy][xx] + UNBOUNDED_DEPOSIT
-      for substep in 0 ..< RD_STEPS_PER_FRAME:
+      for substep in 0 ..< FIELD_STEPS_PER_REFERENCE_FRAME:
         var nextA = activator
         var nextB = inhibitor
         for y in 0 ..< gridH:
@@ -1953,50 +1965,42 @@ suite "The Field Force Carries No Time Factor":
       checkpoint("substeps " & $substeps)
       check abs(part * substeps.float32 - whole) < 1e-5 * abs(whole)
 
-suite "Time Scale Sets How Fast The Pattern Runs":
+suite "The Field Clock Owes Steps From World Time":
   # The chemistry lives in field steps, not seconds, so the clock reaches it
-  # only through how many steps a frame runs. Time Scale therefore buys pattern
-  # speed by buying steps.
+  # only by owing FIELD_STEPS_PER_REFERENCE_FRAME steps per reference frame of
+  # world time, carried across rendered frames.
 
-  test "the shipped Time Scale runs the shipped step count":
-    check rdStepsForTimeScale(RD_REFERENCE_TIME_SCALE,
-      RD_REFERENCE_TIME_SCALE) == RD_STEPS_PER_FRAME
+  test "The Field Runs Seven Steps Per Reference Frame On Any Display":
+    proc totalSteps(ff: float, frames: int): int =
+      var clock: FieldClock
+      for _ in 0 ..< frames:
+        let (steps, next) = advanceFieldClock(clock, ff)
+        result += steps.count
+        clock = next
+    let atFf1 = totalSteps(1.0, 600)
+    let atFf042 = totalSteps(0.42, 1429)
+    checkpoint("ff 1: " & $atFf1 & ", ff 0.42: " & $atFf042)
+    check abs(atFf1 - 4200) <= 2
+    check abs(atFf042 - 4200) <= 2
 
-  test "the step count is always odd":
-    # The ping-pong chain closes on an even total of 1 + steps swaps, so an even
-    # step count would leave the live field on the texture nothing reads.
-    for hundredths in 1 .. 1000:
-      let steps = rdStepsForTimeScale(hundredths.float / 100.0,
-        RD_REFERENCE_TIME_SCALE)
-      checkpoint("timeScale " & $(hundredths.float / 100.0))
-      check steps mod 2 == 1
+  test "Every Field Step Count Is Odd And Within Its Bounds":
+    var rng = initRand(9001)
+    for trial in 0 ..< 500:
+      var clock: FieldClock
+      for frame in 0 ..< 20:
+        let ff = rng.rand(0.0 .. 30.0)
+        let (steps, next) = advanceFieldClock(clock, ff)
+        checkpoint("trial " & $trial & " frame " & $frame & " ff " & $ff &
+          " steps " & $steps.count & " carry " & $next.carry)
+        check steps.count mod 2 == 1
+        check steps.count >= 1
+        check steps.count <= FIELD_STEPS_CEILING
+        check next.carry >= -1.0
+        check next.carry < 2.0
+        clock = next
 
-  test "the step count never falls below one":
-    for timeScale in [0.0, 1e-9, 0.01, 0.1]:
-      check rdStepsForTimeScale(timeScale, RD_REFERENCE_TIME_SCALE) >= 1
+  test "A Held Frame Drops The Field Steps Past The Ceiling":
+    let (steps, next) = advanceFieldClock(FieldClock(), 30.0)
+    check steps.count == FIELD_STEPS_CEILING
+    check next.carry <= 1.0
 
-  test "the step count rises with the clock and never falls":
-    var previous = 0
-    for hundredths in 1 .. 1000:
-      let steps = rdStepsForTimeScale(hundredths.float / 100.0,
-        RD_REFERENCE_TIME_SCALE)
-      check steps >= previous
-      previous = steps
-
-  test "the step count grows about linearly above the reference":
-    # Cost is 1 + steps full-field passes, so this is the price of the speed.
-    for multiple in [2.0, 4.0, 10.0]:
-      let steps = rdStepsForTimeScale(multiple * RD_REFERENCE_TIME_SCALE,
-        RD_REFERENCE_TIME_SCALE).float
-      check abs(steps - multiple * RD_STEPS_PER_FRAME.float) <= 1.0
-
-  test "the deposit rate per field step is held across the step count":
-    # RD_DEPOSIT_STEP_REFERENCE is the step count every deposit constant in this
-    # module was measured at. Buying pattern speed must not also change what it
-    # takes to ignite, so the per-frame fold is renormalized by the step count.
-    for steps in [1, 3, 7, 15, 71]:
-      let perFieldStep = depositFrameScale(steps) / float(1 + steps)
-      check abs(perFieldStep - 1.0 / float(RD_DEPOSIT_STEP_REFERENCE)) < 1e-12
-
-  test "the shipped constant is the shipped step count's scale":
-    check depositFrameScale(RD_STEPS_PER_FRAME) == RD_DEPOSIT_FRAME_SCALE

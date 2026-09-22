@@ -385,8 +385,9 @@ type FieldProbeField = array[FieldProbeGrid, array[FieldProbeGrid, float]]
 func fieldAliveFraction(feed, kill, deposit: float): float =
   ## The fraction of cells holding a live pattern after the declared horizon:
   ## a deterministic center seed plus a scattered deposit mask, advanced with
-  ## the shipped frame shape — one deposit fold, then RD_STEPS_PER_FRAME
-  ## Gray-Scott substeps (field_core owns every constant).
+  ## the shipped frame shape — one deposit fold, then
+  ## FIELD_STEPS_PER_REFERENCE_FRAME Gray-Scott substeps (field_core owns
+  ## every constant).
   var activator, inhibitor, scratchA, scratchB: FieldProbeField
   for y in 0 ..< FieldProbeGrid:
     for x in 0 ..< FieldProbeGrid:
@@ -405,7 +406,7 @@ func fieldAliveFraction(feed, kill, deposit: float): float =
       for x in 0 ..< FieldProbeGrid:
         if (y * FieldProbeGrid + x) mod 16 == 0:
           inhibitor[y][x] = resolveCellDeposit(inhibitor[y][x], deposit)
-    for _ in 0 ..< RD_STEPS_PER_FRAME:
+    for _ in 0 ..< FIELD_STEPS_PER_REFERENCE_FRAME:
       for y in 0 ..< FieldProbeGrid:
         let north = wrapPrev(y)
         let south = wrapNext(y)
