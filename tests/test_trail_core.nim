@@ -4,13 +4,13 @@
 # runs, and the mapping is what src/webgpu_render.nim writes into the fade
 # uniform, from this module.
 #
-# What a response probe reads: `persistenceFrames` is the observable the trail
-# slider is measured through: the frames a trail takes to decay to 1/e of its
-# brightness. Frames are what a viewer sees the trail last for, and
-# fadeAmount is not — the fade multiplier crowds into the top of its own range
-# while the trail it produces keeps growing.
+# What a response probe reads: `persistenceReferenceFrames` is the observable
+# the trail slider is measured through: the reference frames a trail takes to
+# decay to 1/e of its brightness. Reference frames are what a viewer sees the
+# trail last for, and fadeAmount is not — the fade multiplier crowds into the
+# top of its own range while the trail it produces keeps growing.
 
-import std/[unittest, math]
+import std/[unittest, math, random]
 import ../src/trail_core
 import ../src/config_ranges
 import ../src/ui/state/render_state
@@ -57,7 +57,7 @@ suite "The Trail Decays Geometrically":
     # A persistence of "one frame" would credit the trail with a frame the
     # viewer never sees.
     check persistenceFramesForFade(0.0) == 0.0
-    check persistenceFrames(TRAIL_LENGTH_MIN) == 0.0
+    check persistenceReferenceFrames(TRAIL_LENGTH_MIN) == 0.0
     check fadeAmountFor(TRAIL_LENGTH_MIN) == 0.0
     check fadedAlpha(1.0, 0.0) == 0.0
 
@@ -73,35 +73,37 @@ suite "The Trail Decays Geometrically":
           EPSILON
 
 
-suite "The Trail Slider Buys Frames":
+suite "The Trail Slider Buys Reference Frames":
   test "persistence rises monotonically with trailLength":
     # CONTRACT: the slider's promise. Every step along the track buys more
     # trail than the step before it left.
     var previous = -1.0
     for step in 0 .. SWEEP_STEPS:
-      let frames = persistenceFrames(sweptLength(step))
+      let frames = persistenceReferenceFrames(sweptLength(step))
       check frames > previous
       previous = frames
 
-  test "persistence in frames is linear in trail length":
+  test "persistence in reference frames is linear in trail length":
     # What the mapping buys: fadeAmountFor crowds into the top of its own
     # range — 0.963 by a fifth of the track, and only 0.993 at the end of it —
-    # while the frames it produces are exactly proportional to the position:
-    # persistence = trailLength * TRAIL_FRAMES_PER_DIAMETER / ln(1/residual).
-    # This is the fact a response-probe sweep of trailLength rests on, and it
-    # is a property of the mapping rather than of any coordinate.
+    # while the reference frames it produces are exactly proportional to the
+    # position: persistence = trailLength * TRAIL_FRAMES_PER_DIAMETER /
+    # ln(1/residual). This is the fact a response-probe sweep of trailLength
+    # rests on, and it is a property of the mapping rather than of any
+    # coordinate.
     let expectedSlope = TRAIL_FRAMES_PER_DIAMETER /
       ln(1.0 / TRAIL_RESIDUAL_FRACTION)
     for step in 1 .. SWEEP_STEPS:
       let length = sweptLength(step)
-      check abs(persistenceFrames(length) - length * expectedSlope) <
+      check abs(persistenceReferenceFrames(length) - length * expectedSlope) <
         FRAME_TOLERANCE
 
-  test "a trail decays to the residual fraction over the frames it names":
+  test "a trail decays to the residual fraction over the reference frames it names":
     # CONTRACT: the mapping's own construction (webgpu_render's decay target).
     # A trail of L diameters is meant to be visible for L * frames-per-diameter
-    # frames, which is the claim recorded beside TRAIL_LENGTH_WHEN_ENABLED:
-    # 25 diameters decays to 5% over roughly 50 frames.
+    # reference frames, which is the claim recorded beside
+    # TRAIL_LENGTH_WHEN_ENABLED: 25 diameters decays to 5% over roughly 50
+    # reference frames.
     for length in [TRAIL_LENGTH_WHEN_ENABLED, TRAIL_LENGTH_MAX,
         TRAIL_LENGTH_MAX * 0.1]:
       let fade = fadeAmountFor(length)
@@ -193,3 +195,66 @@ suite "The Trail Opens From Rest Without A Step":
         let alpha = trailTaperAlpha(sampledAlongN(sample, elongN), elongN)
         check alpha >= 0.0
         check alpha <= 1.0
+
+
+suite "The Trail Fades Per Reference Frame":
+  const
+    FF_SEQUENCE_SEED = 20_260_922
+    FF_SPANS = [(span: 1.0, steps: 3), (span: 120.0, steps: 12),
+      (span: 600.0, steps: 40)]
+      ## Each span is split into `steps` random frame factors summing to it
+      ## exactly, each drawn from [0, min(30, remaining)] — a subrange of the
+      ## app's own ff domain [0, 30] (design.md, D6's boundary table).
+    FF_TRIALS_PER_SPAN = 5
+    FADE_PRODUCT_TOLERANCE = 1e-6
+
+  template checkNoVerdicts(verdicts: seq[string]) =
+    for message in verdicts[0 ..< min(verdicts.len, 4)]:
+      checkpoint message
+    check verdicts.len == 0
+
+  func ffSequenceSumming(rng: var Rand, span: float, steps: int): seq[float] =
+    ## `steps` frame factors, each at most the span left to spend, summing to
+    ## exactly `span`.
+    result = newSeq[float](steps)
+    var total = 0.0
+    for i in 0 ..< steps - 1:
+      let v = rng.rand(0.0 .. min(30.0, span - total))
+      result[i] = v
+      total += v
+    result[steps - 1] = span - total
+
+  test "a trail keeps the same share over the same world time at every frame factor (22)":
+    # CONTRACT: frameFadeFor(L, ff) = fadeRef^ff, so any split of a span of
+    # reference frames into rendered frames has to multiply back to
+    # fadeRef^(sum of ff) — design.md D8, "frames compose exactly".
+    var rng = initRand(FF_SEQUENCE_SEED)
+    var verdicts: seq[string]
+    for step in 1 .. SWEEP_STEPS:
+      let length = sweptLength(step)
+      for spanCase in FF_SPANS:
+        for trial in 0 ..< FF_TRIALS_PER_SPAN:
+          let sequence = ffSequenceSumming(rng, spanCase.span, spanCase.steps)
+          var product = 1.0
+          for ff in sequence:
+            product *= frameFadeFor(length, ff)
+          let expected = pow(TRAIL_RESIDUAL_FRACTION,
+            spanCase.span / (length * TRAIL_FRAMES_PER_DIAMETER))
+          if abs(product - expected) > FADE_PRODUCT_TOLERANCE:
+            verdicts.add "L " & $length & " span " & $spanCase.span &
+              " trial " & $trial & ": product " & $product & ", expected " &
+              $expected
+    checkNoVerdicts(verdicts)
+
+  test "a zero-length trail clears at every frame factor (23)":
+    # CONTRACT: pow(0.0, 0.0) is 1 in Nim's std/math, so the zero-length
+    # branch has to run ahead of the power or a stopped frame would keep a
+    # cleared trail whole.
+    for ff in [0.0, 0.084, 0.42, 1.0, 30.0]:
+      check frameFadeFor(0.0, ff) == 0.0
+
+  test "a frame that advances no world time keeps the trail whole (24)":
+    # CONTRACT: ff 0 means the world did not move this frame, so nothing of
+    # any trail may fade.
+    for length in [1.0, 25.0, 200.0]:
+      check frameFadeFor(length, 0.0) == 1.0

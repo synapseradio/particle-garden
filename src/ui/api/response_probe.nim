@@ -620,11 +620,12 @@ func glowWarmthProbe(value: float; ctx: ProbeContext): float =
   haloWarmth(glowTuning(), uniforms, RefGlowDensity)
 
 func trailPersistenceProbe(value: float; ctx: ProbeContext): float =
-  ## trailLength: the 1/e persistence horizon in frames. Linear in the
-  ## slider: the shipped mapping decays to a fixed residual over a frame
-  ## count proportional to the length (trail_core.persistenceFrames), so
-  ## the horizon measures live end to end.
-  persistenceFrames(value)
+  ## trailLength: the 1/e persistence horizon in reference frames. Linear in
+  ## the slider: the shipped mapping decays to a fixed residual over a
+  ## reference-frame count proportional to the length
+  ## (trail_core.persistenceReferenceFrames), so the horizon measures live
+  ## end to end.
+  persistenceReferenceFrames(value)
 
 func bloomIntensityProbe(value: float; ctx: ProbeContext): float =
   ## bloomIntensity: graded output luminance with the bloom term scaled by

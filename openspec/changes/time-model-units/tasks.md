@@ -193,13 +193,13 @@ Files:
 
 It reads `physics_core.frameFactor` (`src/physics_core.nim:37-43`), which group 2 leaves as it is.
 
-- [ ] 6.1 **Red, in `tests/test_trail_core.nim`**, design.md's tests 22–24, against a stub
+- [x] 6.1 **Red, in `tests/test_trail_core.nim`**, design.md's tests 22–24, against a stub
   `frameFadeFor(trailLength, frameFactor)` that returns `fadeAmountFor(trailLength)`, today's per-frame
   value. Run `nim c -r` with the `quality_flags` from the `justfile` on the suite. Verify test 22 fails on
   sequences whose frame factors are not all 1, and test 24 at ff 0. Test 23 guards the branch order and
   passes against this stub: verify it red once against the body `pow(fadeAmountFor(trailLength),
   frameFactor)`, where it fails at ff 0.
-- [ ] 6.2 **Green.**
+- [x] 6.2 **Green.**
   - `src/trail_core.nim`:
     - Add `func frameFadeFor*(trailLength, frameFactor: float): float` per D8, with the length branch
       ahead of the power.

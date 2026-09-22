@@ -73,7 +73,7 @@ test "computeMemoryOffsets adds padding correctly":
 | `test_long_range_core.nim` | The long-range mesh oracle: the reference transform against a naive direct transform, the Yukawa kernel and its wavenumber mapping, isotropy in world units on an anisotropic grid, the softening's attenuation at Nyquist, cloud-in-cell weights and their toroidal wrap, the density accumulator's fixed point, and the k-space species mix with its gradient — superposition, a still uniform world, and momentum under a symmetric matrix | Native |
 | `test_bloom_core.nim` | Separable Gaussian blur kernel and bloom/grade defaults | Native |
 | `test_glow_core.nim` | The particle halo: radius composition, Gaussian falloff, the warm shift, and the display-clamped alpha integral a response probe reads | Native |
-| `test_trail_core.nim` | The trail: its per-frame geometric decay, and the frames of persistence the trail-length slider buys | Native |
+| `test_trail_core.nim` | The trail: its per-frame geometric decay, and the reference frames of persistence the trail-length slider buys | Native |
 | `test_camera_core.nim` | Toroidal camera: nearest-image seam hiding, clip mapping, seamless pan, zoom clamping and anchoring, the screen-UV/world reprojection pair, and the floor on the composed visible radius | Native |
 | `test_camera_input.nim` | Wheel and key navigation: zoom-at-cursor anchoring, composable zoom steps, key bindings | Native |
 | `test_audio_core.nim` | The audio feature core: a tone's brightness at its logarithmic position, band energy reaching its own feature, onsets on a click train with the refractory window holding, silence reading exactly zero, a 20 dB gain step absorbed inside a pinned frame count, a fuzz sweep for finiteness and range, and every time constant spanning the same wall-clock seconds at two frame deltas | Native |
@@ -122,7 +122,7 @@ test_all.nim (runner)
     ├── test_long_range_core.nim → long_range_core.nim (transform, kernel, CIC, k-space mix)
     ├── test_bloom_core.nim     → bloom_core.nim (blur kernel, grade defaults)
     ├── test_glow_core.nim      → glow_core.nim (halo radius, falloff, warmth, alpha integral)
-    ├── test_trail_core.nim     → trail_core.nim (trail decay, persistence in frames)
+    ├── test_trail_core.nim     → trail_core.nim (trail decay, persistence in reference frames)
     ├── test_camera_core.nim    → camera_core.nim (toroidal camera, reprojection, visible-radius floor)
     ├── test_camera_input.nim   → ui/input/wheel_handler.nim, key_handler.nim
     ├── test_audio_core.nim     → ui/input/audio_core.nim (features, onsets, adaptive windows)

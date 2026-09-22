@@ -1412,7 +1412,7 @@ proc createBloomBindGroups() =
   tonemapBindGroupTrailA = makeTonemapBindGroup("Tonemap Bind Group Trail A", trailViewA)
   tonemapBindGroupTrailB = makeTonemapBindGroup("Tonemap Bind Group Trail B", trailViewB)
 
-proc render*(particleCount: int) =
+proc render*(particleCount: int, frameFactor: float) =
   ## Render particles using WebGPU with ping-pong trail rendering.
   ##
   ## Ping-pong architecture:
@@ -1481,11 +1481,14 @@ proc render*(particleCount: int) =
     webgpu_init.queue.writeBuffer(colorBuffer, 0, colorData)
 
   # Layout matches FadeParams indices in gpu_types.nim
-  # The trail length the user set, in particle diameters, becomes the per-frame
+  # The trail length the user set, in particle diameters, becomes the
   # multiplier fade.wgsl keeps of the previous frame: higher = more of the
   # previous frame retained = longer trails, and zero clears outright. The
-  # mapping lives in trail_core, where the suite measures the frames it buys.
-  fadeData[FADE_AMOUNT] = float32(fadeAmountFor(config.CONFIG.trailLength))
+  # mapping lives in trail_core, where the suite measures the reference
+  # frames it buys. `frameFactor` is the whole rendered frame's, since the
+  # fade pass runs once per frame, after every substep.
+  fadeData[FADE_AMOUNT] =
+    float32(frameFadeFor(config.CONFIG.trailLength, frameFactor))
   fadeData[FADE_PAD0] = 0.0
   fadeData[FADE_PAD1] = 0.0
   fadeData[FADE_PAD2] = 0.0

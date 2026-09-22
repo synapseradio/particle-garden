@@ -28,6 +28,10 @@ import camera_drift
 # zoom-scaled radius divides.
 import shader_config
 
+# Reference-frame arithmetic (pure): dt as a multiple of the reference frame,
+# read by the render call below.
+from physics_core import frameFactor
+
 # Layer 3: Browser integration modules
 import grid
 import canvas_input
@@ -278,7 +282,7 @@ proc loop(now: float): Future[void] {.async.} =
   # Render using WebGPU - data stays on GPU, no readback needed. Render/glow
   # bind groups are built once at init (webgpu_render.initWebGPURender);
   # nothing about them varies per frame, so they are never rebuilt here.
-  webgpu_render.render(runtimeState.particleCount)
+  webgpu_render.render(runtimeState.particleCount, frameFactor(dt))
 
   currentTiming.frameTimeMs = performanceNow() - frameStart
   currentTiming.computeTimeMs = computeTimeMs

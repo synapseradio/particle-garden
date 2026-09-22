@@ -15,11 +15,11 @@
 # suite measures are one number rather than two that must be kept in
 # agreement.
 #
-# WHAT A RESPONSE PROBE READS. `persistenceFrames` is the observable the trail
-# slider is measured through: the frames a trail takes to fall to
-# 1/e of its brightness. The fade multiplier itself is a poor observable, since
-# it crowds into the top of its range while the trail keeps lengthening; frames
-# are what a viewer actually watches.
+# WHAT A RESPONSE PROBE READS. `persistenceReferenceFrames` is the observable
+# the trail slider is measured through: the reference frames a trail takes to
+# fall to 1/e of its brightness. The fade multiplier itself is a poor
+# observable, since it crowds into the top of its range while the trail keeps
+# lengthening; reference frames are what a viewer actually watches.
 #
 # Used by:
 #   - tests/test_trail_core.nim (native tests)
@@ -31,9 +31,11 @@ import std/math
 
 const
   TRAIL_FRAMES_PER_DIAMETER* = 2.0
-    ## Frames a typical particle takes to cross one of its own diameters at
-    ## 60fps. This is what turns a trail length in diameters — the unit the
-    ## slider is labelled in — into a count of frames the trail must survive.
+    ## Reference frames a typical particle takes to cross one of its own
+    ## diameters. At 60 Hz and Time Scale 0.5 a rendered frame spans one
+    ## reference frame, so this reads as frames at 60fps there too. This is
+    ## what turns a trail length in diameters — the unit the slider is
+    ## labelled in — into a reference-frame count the trail must survive.
   TRAIL_RESIDUAL_FRACTION* = 0.05
     ## What is left of a trail at the end of the frames its length names. Five
     ## percent is faint enough to read as the end of the trail and bright
@@ -49,18 +51,27 @@ const
     ## it.
 
 func fadeAmountFor*(trailLength: float): float =
-  ## The per-frame multiplier the fade pass keeps of the previous frame, for a
-  ## trail of `trailLength` particle diameters.
+  ## The multiplier the fade pass keeps per reference frame, for a trail of
+  ## `trailLength` particle diameters.
   ##
   ## Zero length keeps nothing: the pass clears instead of trailing, which is
   ## what makes a zero-length trail invisible rather than permanent. Above
   ## zero, the multiplier is whatever decays the trail to
-  ## TRAIL_RESIDUAL_FRACTION over the frames the length names.
+  ## TRAIL_RESIDUAL_FRACTION over the reference frames the length names.
   if trailLength <= 0.0:
     0.0
   else:
     let visibleFrames = trailLength * TRAIL_FRAMES_PER_DIAMETER
     pow(TRAIL_RESIDUAL_FRACTION, 1.0 / visibleFrames)
+
+func frameFadeFor*(trailLength, frameFactor: float): float =
+  ## What the fade pass keeps of the previous frame's trail over one rendered
+  ## frame, for a trail of `trailLength` diameters and a frame spanning
+  ## `frameFactor` reference frames.
+  if trailLength <= 0.0:
+    0.0
+  else:
+    pow(fadeAmountFor(trailLength), frameFactor)
 
 func trailElongationScale*(trailLength: float): float =
   ## The velocity-elongation multiplier the renderer writes for a trail of
@@ -97,23 +108,25 @@ func fadedChannel*(background, previous, fadeAmount: float): float =
   background + (previous - background) * fadeAmount
 
 func persistenceFramesForFade*(fadeAmount: float): float =
-  ## The frames a trail decaying by `fadeAmount` each frame takes to fall to
-  ## 1/e of its brightness: fadeAmount^n = 1/e, so n = -1 / ln(fadeAmount).
+  ## The reference frames a trail decaying by `fadeAmount` each reference
+  ## frame takes to fall to 1/e of its brightness: fadeAmount^n = 1/e, so
+  ## n = -1 / ln(fadeAmount).
   ##
-  ## A fade amount of zero persists for no frames at all — the pass clears the
-  ## frame it is given.
+  ## A fade amount of zero persists for no reference frames at all — the pass
+  ## clears the frame it is given.
   if fadeAmount <= 0.0:
     0.0
   else:
     -1.0 / ln(fadeAmount)
 
-func persistenceFrames*(trailLength: float): float =
-  ## The observable behind the trail-length slider: the frames a trail of
-  ## `trailLength` diameters stays visible, to the 1/e point.
+func persistenceReferenceFrames*(trailLength: float): float =
+  ## The observable behind the trail-length slider: the reference frames a
+  ## trail of `trailLength` diameters stays visible, to the 1/e point.
   ##
   ## Composing the two functions above collapses to a straight line —
   ## trailLength * TRAIL_FRAMES_PER_DIAMETER / ln(1 / TRAIL_RESIDUAL_FRACTION)
-  ## — because the mapping is built to hit a fixed residual over a frame count
-  ## proportional to the length. The composition is written out rather than
-  ## short-cut to that line, so a change to either half stays visible here.
+  ## — because the mapping is built to hit a fixed residual over a
+  ## reference-frame count proportional to the length. The composition is
+  ## written out rather than short-cut to that line, so a change to either
+  ## half stays visible here.
   persistenceFramesForFade(fadeAmountFor(trailLength))
