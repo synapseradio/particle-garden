@@ -204,12 +204,13 @@ func maxVelocityProbe(value: float; ctx: ProbeContext): float =
 
 func timeScaleProbe(value: float; ctx: ProbeContext): float =
   ## timeScale: the velocity impulse a reference acceleration delivers in one
-  ## rendered frame. app.nim multiplies the frame's seconds by timeScale, and
+  ## reference frame. app.nim multiplies the frame's seconds by timeScale, and
   ## every force pass that carries dt multiplies its acceleration by the result,
   ## so this is the quantity the slider actually moves.
   ##
-  ## Not a travel distance: integrate.wgsl advances pos += vel with no dt, so no
-  ## frame duration multiplies a position anywhere in the simulation.
+  ## The probe reports that impulse alone, before the clock's retention and
+  ## gain (`physics_core.stepClock`) fold it into a velocity and the frame
+  ## factor scales the resulting travel.
   RefAccel * value * FRAME_DT_REFERENCE
 
 func ruleWildnessProbe(value: float; ctx: ProbeContext): float =

@@ -266,10 +266,10 @@ suite "The Measured Table Is The Deliverable":
 
 suite "The Time Scale Probe Reports An Impulse":
   # The probe used to call its number a distance travelled in one frame.
-  # integrate.wgsl advances pos += vel with no dt, so no frame duration enters
-  # that product and nothing in the simulation computes it. What Time Scale
-  # really buys is the impulse a given acceleration delivers over a frame, and
-  # that is what physics_core.frameFactor measures in multiples of the
+  # What Time Scale really buys is the impulse Δ a given acceleration
+  # delivers per reference frame, before physics_core.stepClock folds it into
+  # a velocity and the frame factor scales that velocity into travel. The
+  # probe reports Δ alone, in multiples of physics_core.frameFactor's
   # reference frame.
 
   let timeScaleProbeFn = probeRegistry()["motion.frameTravel"].fn
