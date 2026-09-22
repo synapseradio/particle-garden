@@ -2266,3 +2266,57 @@ when defined(calibrateBalance):
       echo "- far-crowd ratio mean ", shown(meanOf(far)), ", bound mean + " &
         "largest distance ", shown(derivedBound(far)), ", margin ",
         shown(derivedBound(far) - 1.0)
+
+suite "The Oracle Step Matches The Clock At Every Frame Factor":
+  test "one particle's velocity and position through stepFrame match rho=r^ff and x'=x+ff*u'":
+    # A single particle draws no pair or body force (forceMultiplier and
+    # bodiesStrength are 0), so Delta is 0 and stepFrame exercises only the
+    # clock's retention and the position's frame-factor scaling: the two
+    # places the old map differed from D1.
+    var verdicts: Verdicts
+    let params = OracleParams(
+      interactionRadius: 50.0'f32,
+      worldWidth: 300.0'f32, worldHeight: 300.0'f32,
+      minDistanceSq: PRODUCTION_TUNING.minDistanceSq.float32,
+      forceModel: ofmPolynomial,
+      forceMultiplier: 0.0'f32,
+      repulsionEnd: 0.5'f32, attractionPeak: 0.75'f32,
+      crowdingStrength: 0.0'f32,
+      pressureOnset: 1.0e6'f32,
+      pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
+      pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
+      pressureStepBound: PRESSURE_STEP_BOUND.float32,
+      stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
+      stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
+      friction: 0.8'f32,
+      maxVelocity: 1.0e6'f32,
+      fixedPointScale: PRODUCTION_TUNING.fixedPointScale.float32,
+      crowdDensityScale: sphDensityFixedPointScale(MAX_PARTICLES).float32,
+      densitySmoothFactor: PRODUCTION_TUNING.densitySmoothFactor.float32,
+      bodiesStrength: 0.0,
+      fluid: OracleFluidParams(strength: 0.0, coarseShift: VELOCITY_COARSE_SHIFT))
+    for ff in [0.42'f32, 1.0'f32, 10.0'f32]:
+      var world = initOracleWorld(params, 1, 1, @[0.0'f32], 77)
+      world.posX[0] = 150.0'f32
+      world.posY[0] = 150.0'f32
+      world.velX[0] = 5.0'f32
+      world.velY[0] = -3.0'f32
+      stepFrame(world, ff.float, 1)
+      let rho = pow(params.friction, ff)
+      let expectedVelX = rho * 5.0'f32
+      let expectedVelY = rho * -3.0'f32
+      let expectedPosX = 150.0'f32 + ff * expectedVelX
+      let expectedPosY = 150.0'f32 + ff * expectedVelY
+      if abs(world.velX[0] - expectedVelX) > 1e-3'f32 * abs(expectedVelX):
+        verdicts.add "ff " & $ff & ": velX is " & $world.velX[0] &
+          ", expected " & $expectedVelX
+      if abs(world.velY[0] - expectedVelY) > 1e-3'f32 * abs(expectedVelY):
+        verdicts.add "ff " & $ff & ": velY is " & $world.velY[0] &
+          ", expected " & $expectedVelY
+      if abs(world.posX[0] - expectedPosX) > 1e-3'f32 * abs(expectedPosX - 150.0'f32):
+        verdicts.add "ff " & $ff & ": posX is " & $world.posX[0] &
+          ", expected " & $expectedPosX
+      if abs(world.posY[0] - expectedPosY) > 1e-3'f32 * abs(expectedPosY - 150.0'f32):
+        verdicts.add "ff " & $ff & ": posY is " & $world.posY[0] &
+          ", expected " & $expectedPosY
+    checkNoVerdicts(verdicts)
