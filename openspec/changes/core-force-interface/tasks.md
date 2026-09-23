@@ -201,6 +201,16 @@ Conventions every task below uses:
   bound `θ` or the limit itself to the design, and 4.7 waits. Record in
   `scratchpad/core-force-interface/g1-limit__<DD-MM-YY-HHmm>.md`, with per-seed readings, means and
   bounds by the gate convention.
+  - **First smoke reading, under D4/D5/D9 (time-model-units, `tmu-bound`), 2000 particles, not the
+    gate's 16 000/128 000.** `nim c -r -d:release -d:calibrateBalance -d:calibrateSmoke
+    --styleCheck:error --styleCheck:usages --warningAsError:Deprecated --warningAsError:BareExcept
+    --warningAsError:CStringConv --warningAsError:EnumConv --warningAsError:HoleEnumConv
+    --warningAsError:SmallLshouldNotBeUsed --warningAsError:ProveInit --warningAsError:UnusedImport
+    --warningAsError:Effect --hint:XDeclaredButNotUsed:on tests/test_balance_core.nim`: the held
+    crowd's mean peak density failed against the stiffness-zero control; the released crowd's mean
+    neighbour count read a compression ratio of 1.232 against Compression Is Not Remembered's ≤ 1.0;
+    arm A at frame factor 0.42 read a mean ratio of 2.867 against frame factor 1's f32 sum, ungated per
+    this task.
 - [ ] 4.6 **Reopened** (crowding-redesign design §10): reruns under the lumped stiffness step limit
   (4.4b) rather than the explicit push. **Gate G1.3, the stacked hold; it gates 4.7.** At the recorded
   `x_on`, `K` and `q_max`, run the 128 000-particle stacked hold on the gate seeds, with its

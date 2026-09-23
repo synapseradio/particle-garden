@@ -62,7 +62,7 @@ particles while the machine is shared.
 Files: `src/physics_core.nim`, `src/balance_core.nim`, `src/config_ranges.nim`,
 `src/ui/api/response_probe.nim`, `tests/test_physics.nim`, `tests/test_balance_core.nim`.
 
-- [ ] 2.1 **Red, unit grain, in `tests/test_physics.nim`**, in design.md's writing order, tests 1–12, 25 and
+- [x] 2.1 **Red, unit grain, in `tests/test_physics.nim`**, in design.md's writing order, tests 1–12, 25 and
   26. Write them against stubs that compile: `stepClock` returning the landed map's values (`ρ = r^ff`,
   `h = ff`), `speciesRestoringSlope` returning 0, `loopGainBound` returning 0.009, and `smoothingGain`
   returning 1. Test 25 passes against that stub, so verify it red once against the body `(B/θ)/h` with
@@ -72,10 +72,23 @@ Files: `src/physics_core.nim`, `src/balance_core.nim`, `src/config_ranges.nim`,
   fraction of speed". Run
   `nim c -r` with the `quality_flags` from the `justfile` on `tests/test_physics.nim`, and verify each new
   test fails for the reason its row names.
-- [ ] 2.2 **Red, oracle grain, in `tests/test_balance_core.nim`**: test 13 (T5f), test 14, test 21 (T7s,
+  - Result: rows 1-12, 25 and 26 landed red against the stubs and turned green across
+    `8e2fb6a`/`cfd9b4c` (D9, rows 25-26), `a54da4b`/`71a3a53`/`86591f8` (D4, rows 8-9) and
+    `cd39907`/`0b544e3` (D5's `loopGainBound`/`loopLimit`, rows 10-11); `7f5dddf` amended D9's
+    `smoothingGain` for the `r/h` clamp and turned row 26's second branch green. `nim c -r` with the
+    justfile's `quality_flags` on `tests/test_physics.nim`: all suites `[OK]`.
+- [x] 2.2 **Red, oracle grain, in `tests/test_balance_core.nim`**: test 13 (T5f), test 14, test 21 (T7s,
   integration, 2 000 particles, under the `calibrateBalance` define), and test 28 (the fluid, under the
   same define). Verify each fails for its stated reason.
-- [ ] 2.3 **Green.**
+  - Result: test 13 (T5f) and its mean-field-only control, and tests 21 (T7s) and 28 (the fluid gate),
+    passed on their first genuine run against the already-landed `crowdLoopSlope`/`crowdLoopMeanField`
+    and the D5/D9 wiring, under `-d:release -d:calibrateBalance -d:calibrateSmoke`; the control's
+    `check violated` (the mean-field-only candidate under-counting `C_i`) is the genuine discriminating
+    evidence in place of a stub-then-green cycle, since the production functions it calls already
+    existed. Test 14 ("The Oracle Step Matches The Clock At Every Frame Factor") predates this
+    worktree's scoped items and passed on the same run: `[OK] one particle's velocity and position
+    through stepFrame match rho=r^ff and x'=x+ff*u'`.
+- [x] 2.3 **Green.**
   - `src/physics_core.nim`:
     - `StepClock` with its three cases and `stepClock(ff, retention)`. It rejects retention outside
       `[0.5, 1]` in the test build.
@@ -110,6 +123,14 @@ Files: `src/physics_core.nim`, `src/balance_core.nim`, `src/config_ranges.nim`,
       the landed limit.
   - `src/ui/api/response_probe.nim`: `timeScaleProbe`'s doc (`:205-213`) drops "integrate.wgsl
     advances pos += vel with no dt". The position now carries the frame factor.
+  - Result: all bullets landed, `src/balance_core.nim`'s three across `0accff6` (this worktree's
+    final commit, after `7f5dddf`'s D9 `r/h` clamp, `cd39907`/`0b544e3`'s D5 rows 10-11, and
+    `a54da4b`/`71a3a53`/`86591f8`'s D4 rows 8-9). `nim c -r -d:release -d:calibrateBalance
+    -d:calibrateSmoke` on `tests/test_balance_core.nim` (command recorded under core-force-interface
+    tasks.md 4.5): every test from 2.1 and 2.2 passed, including test 14, which predates this
+    worktree's scope. The same run's three other `calibrateBalance` suites are open
+    core-force-interface gate readings (4.5/4.6/4.9, all `[ ]`), recorded there rather than gating
+    this change.
 
   Verify every test from 2.1 and 2.2 passes.
 - [ ] 2.4 `just happen` and `just check` green.
