@@ -122,9 +122,8 @@ fn crowdPressure(density: f32, onset: f32) -> f32 {
 // =============================================================================
 // crowdPressure's own slope in density, phi'(x) = 2*max(x - x_on, 0)/x_on^2.
 // Feeds C_i, the density-lag loop's per-pair source term, which
-// integrate.wgsl's loop limit reads through theta_c. Unmirrored on the CPU:
-// no oracle accumulates C, so this is design.md D5's formula transcribed
-// directly, not a shader mirror of a native function.
+// integrate.wgsl's loop limit reads through theta_c. Mirrored by
+// physics_core.crowdLoopSlope.
 fn crowdPressureDerivative(density: f32, onset: f32) -> f32 {
   return 2.0 * max(density - onset, 0.0) / (onset * onset);
 }

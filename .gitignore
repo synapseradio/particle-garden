@@ -13,6 +13,7 @@ web/shaders/*.wgsl
 web/shaders/modules/particle.wgsl
 web/shaders/modules/grid_params.wgsl
 web/shaders/modules/scan_params.wgsl
+web/shaders/modules/integration_params.wgsl
 web/shaders/modules/sim_params.wgsl
 web/shaders/modules/render_params.wgsl
 web/shaders/modules/fade_params.wgsl

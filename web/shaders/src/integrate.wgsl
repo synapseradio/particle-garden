@@ -22,21 +22,7 @@
 
 //! import particle
 //! import fixed_point
-
-struct IntegrationParams {
-  worldWidth: f32,       // World width (offset 0)
-  worldHeight: f32,      // World height (offset 4)
-  friction: f32,         // The clock's retention, rho = r^ff (offset 8)
-  maxVelocity: f32,      // Maximum velocity (offset 12)
-  particleCount: u32,    // Active particle count (offset 16)
-  frameFactor: f32,      // The substep as a multiple of the reference frame (offset 20)
-  forceGain: f32,        // The clock's force gain, h (offset 24)
-  stepBound: f32,        // B, D4's long-step bound (offset 28)
-  densityCarry: f32,     // alpha = densitySmoothFactor^ff (offset 32)
-  loopGainBound: f32,    // theta_c, D5's loop gain bound (offset 36)
-  loopFloor: f32,        // D5's lambda * min(1, 1/ff) (offset 40)
-  pad0: u32,             // Padding (offset 44)
-};
+//! import integration_params
 
 @group(0) @binding(0) var<uniform> params: IntegrationParams;
 @group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
@@ -81,6 +67,7 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // flicker with it — the opposite of what a cap is for.
   let deltaCrowdDensity =
     f32(crowdDensityDeltaFixed[particleIdx * 5u]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
+  let crowdDensityMax = max(deltaCrowdDensity, p.crowdDensity);
   p.crowdDensity = p.crowdDensity * params.densityCarry +
     deltaCrowdDensity * (1.0 - params.densityCarry);
 
@@ -102,9 +89,16 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // theta_c/reach or params.loopFloor, whichever holds more (design.md D5).
   // Mirrored by physics_core.loopLimit, minus its internal theta_c and alpha
   // (both folded into params.loopGainBound on the host).
-  let loopSource = (f32(crowdDensityDeltaFixed[particleIdx * 5u + 3u]) +
+  let loopPairSum = (f32(crowdDensityDeltaFixed[particleIdx * 5u + 3u]) +
     f32(crowdDensityDeltaFixed[particleIdx * 5u + 4u]) * STIFFNESS_COARSE_UNIT) *
     STIFFNESS_INV_FIXED_POINT_SCALE;
+  // C raised to D5's mean-field floor, rho_max the larger of the raw and the
+  // lagged crowd density. Mirrored by physics_core.crowdLoopMeanField.
+  let onset = params.pressureOnset;
+  let crowdSlope = 2.0 * max(crowdDensityMax - onset, 0.0) / (onset * onset);
+  let loopMeanField = params.loopMeanFieldGain *
+    crowdDensityMax * crowdDensityMax * crowdSlope;
+  let loopSource = max(loopPairSum, loopMeanField);
   let loopReach = params.frameFactor * params.forceGain * loopSource /
     params.friction;
   let loopLimit = select(

@@ -43,7 +43,7 @@ import long_range_core
 # config_ranges owns LR_GRID_SIZES, the declared mesh sizes the selector
 # indexes; the live size bounds every long-range dispatch and clear below.
 import config_ranges
-from physics_core import frameFactor
+from physics_core import frameFactor, crowdLoopMeanFieldGain
 from memory_layout import MAX_BODIES
 from body_core import nil
   # Qualified throughout: gpu_types generates BodyParams' field indices under
@@ -853,7 +853,8 @@ proc initPipelines*(): Future[JsObject] {.async, exportc.} =
       wgslUniformSize(ScanParamsLayout), uniformUsage, "Scan Parameters Uniform")
     uniformBuffers["simParams"] = device.createBufferLabeled(
       wgslUniformSize(SimParamsLayout), uniformUsage, "Simulation Parameters Uniform (with matrix + force model)")
-    uniformBuffers["integrationParams"] = device.createBufferLabeled(32, uniformUsage, "Integration Parameters Uniform")
+    uniformBuffers["integrationParams"] = device.createBufferLabeled(
+      wgslUniformSize(IntegrationParamsLayout), uniformUsage, "Integration Parameters Uniform")
     # Reaction-diffusion field uniform (feed/kill/diffusion/deltaT/deposit/force).
     uniformBuffers["fieldParams"] = device.createBufferLabeled(
       wgslUniformSize(FieldParamsLayout), uniformUsage, "Field Parameters Uniform (RD)")
@@ -1088,12 +1089,13 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # the count, the radius and the world size all move under the user's hand.
   # rMax is the radius the sweep uses, so the onset is measured over the same
   # neighbourhood forces.wgsl counts.
-  simParamsData[SIM_PRESSURE_ONSET] = float32(pressureOnset(PressureWorld(
+  let onset = float32(pressureOnset(PressureWorld(
     particleCount: particleCount,
     interactionRadius: rMax,
     worldWidth: width,
     worldHeight: height,
     repulsionEnd: float(config.CONFIG.repulsionEnd))))
+  simParamsData[SIM_PRESSURE_ONSET] = onset
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["simParams"]), 0, simParamsData)
 
   # Layout matches IntegrationParams indices in gpu_types.nim
@@ -1124,6 +1126,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsData[INTEG_STEP_BOUND] = clock.stepBound
   integrationParamsData[INTEG_LOOP_GAIN_BOUND] = clock.loopGainBound
   integrationParamsData[INTEG_LOOP_FLOOR] = clock.loopFloor
+  integrationParamsData[INTEG_PRESSURE_ONSET] = onset
+  integrationParamsData[INTEG_LOOP_MEAN_FIELD_GAIN] = crowdLoopMeanFieldGain(
+    WORLD_PRESSURE_STIFFNESS.float32, 1.0'f32 / float32(rMax))
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # Field parameters. feed, kill, deposit, and field force are the live UI

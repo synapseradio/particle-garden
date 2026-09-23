@@ -572,12 +572,17 @@ func crowdLoopSlope*(densityThis, densityOther, onset, stiffness,
     (crowdPressureSlope(densityThis, onset) * densityThis +
       crowdPressureSlope(densityOther, onset) * densityOther)
 
+func crowdLoopMeanFieldGain*(stiffness, invRadius: float32): float32 =
+  ## The density-free factor of D5's mean-field floor, `K *
+  ## FRAME_DT_REFERENCE * (12/R)`. integrate.wgsl receives it as a uniform.
+  FRAME_DT_REFERENCE.float32 * stiffness * 12.0'f32 * invRadius
+
 func crowdLoopMeanField*(densityMax, onset, stiffness, invRadius: float32):
     float32 =
   ## D5's mean-field floor on `C_i`: `K * FRAME_DT_REFERENCE * (12/R) *
   ## rho_max^2 * phi'(rho_max)`, `rho_max` the larger of this step's raw and
   ## lagged crowd density.
-  FRAME_DT_REFERENCE.float32 * stiffness * 12.0'f32 * invRadius *
+  crowdLoopMeanFieldGain(stiffness, invRadius) *
     densityMax * densityMax * crowdPressureSlope(densityMax, onset)
 
 func stepLimit*(frameFactor, stiffness, bound: float32): float32 =

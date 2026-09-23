@@ -147,7 +147,8 @@ Files:
 - `tests/test_gpu_types.nim` and `tests/test_sim_registry.nim`
 
 - [x] 3.1 **Red.**
-  - `tests/test_gpu_types.nim`: test 16, "IntegrationParams Holds Twelve Floats With The Clock's Fields".
+  - `tests/test_gpu_types.nim`: test 16, "Generated IntegrationParams Layout" (renamed when the struct
+    moved onto a layout table).
   - `tests/test_sim_registry.nim`: test 15, "The Integration Uniforms Come From One Clock", against a
     stub producer that writes `h = ff`, and test 27, "The Plan Hands The Fluid The Clock's Smoothing
     Gain", against a plan whose `effSmoothGain` is 1.
@@ -157,8 +158,10 @@ Files:
     forceGain(clock)` against a stubbed `forceGain: ff` and failed test 27 on `plan.effSmoothGain ==
     expected` against a stubbed `1.0`, both on values.
 - [x] 3.2 **Green.**
-  - `src/gpu_types.nim`: IntegrationParams gains h, B, α, θ_c and the floor `λ·min(1, 1/ff)` in the two
-    pads and three new slots. `INTEG_PARAMS_F32_COUNT` becomes 12.
+  - `src/gpu_types.nim`: IntegrationParams gains h, B, α, θ_c, the floor `λ·min(1, 1/ff)`, the pressure
+    onset and D5's mean-field gain (`physics_core.crowdLoopMeanFieldGain`). It is declared as
+    `IntegrationParamsLayout`, its `INTEG_*` indices come from `genFieldIndices`, and
+    `src/webgpu_compute.nim` sizes its buffer with `wgslUniformSize`. `INTEG_PARAMS_F32_COUNT` becomes 16.
   - `src/sim_registry.nim`: `integrationUniforms(ff, retention)` builds the block from `stepClock` and
     `loopGainBound`. `src/webgpu_compute.nim` writes it in place of `:1070-1079`.
   - `src/sim_registry.nim`: `LiveValues` gains `friction` and `sphViscosity`, and `SubstepPlan` gains
@@ -169,7 +172,8 @@ Files:
   - `web/shaders/src/integrate.wgsl`:
     - Decode the delta without `frameFactor` (`:64`, `:67`), and smooth with `densityCarry`
       (`:72`, `:82-83`).
-    - Form `s_D` from `B` and `h` (`:93-94`), and `s_C` from `C`, θ_c and the floor.
+    - Form `s_D` from `B` and `h` (`:93-94`), and `s_C` from `C`, θ_c and the floor, with `C` raised to
+      D5's mean-field term at the larger of the raw and lagged crowd density.
     - Compute `newVel = s·(ρ·vel + h·Δ)` (`:110-111`) and cap it directly. `perFrame`, `:123`, goes.
     - Move by `frameFactor · newVel` (`:138-139`).
   - `web/shaders/src/forces.wgsl`:
@@ -337,7 +341,7 @@ Note, outside the checkboxes: `core-force-interface` tasks that wait on this cha
   "What the design claims below ff 1", states what holds; the restated criterion is the coordinator's.
 - **4.6** (`:197`): the 128 000 stacked hold, under the same step.
 - **4.7** (`:204`): the recorded constants, read from 4.5 and 4.6.
-- **4.9** (`:222`): the in-app cost, G1.4. The crowd buffer stride grows to 5, and IntegrationParams to 12
+- **4.9** (`:222`): the in-app cost, G1.4. The crowd buffer stride grows to 5, and IntegrationParams to 16
   floats.
 - **12.1** (`:443`): its Time Scale 5 held-frame hold.
 

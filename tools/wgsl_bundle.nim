@@ -274,6 +274,10 @@ proc generateStructModules() =
   generateStructModule("scan_params",
     structModuleHeader("scan_params", "ScanParamsLayout", ScanParamsLayout.notes),
     toWgslStruct(ScanParamsLayout))
+  generateStructModule("integration_params",
+    structModuleHeader("integration_params", "IntegrationParamsLayout",
+      IntegrationParamsLayout.notes),
+    toWgslStruct(IntegrationParamsLayout))
   generateStructModule("sim_params",
     structModuleHeader("sim_params", "SimParamsLayout"),
     toWgslStruct(SimParamsLayout))

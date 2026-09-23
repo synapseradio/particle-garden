@@ -482,8 +482,10 @@ position sum.
 | Plan → forces-sph | `g` per substep, host to shader in `SimParams` | `g` derives from the substep's clock and the live fluid values through `smoothingGain` | The plan with the frame's substeps, forces-sph with the pair law |
 | Run loop → fade pass | the frame's whole frame factor, app to `webgpu_render.render`; `frameFadeFor`'s value in `FADE_AMOUNT` | The product of the frame fades over any span is `fadeRef^(reference frames elapsed)` | The loop with the clock, the renderer with the look |
 
-IntegrationParams grows from 8 to 12 f32s. h, B, α, θ_c and the floor take the two pads and three new
-slots, and one more pad keeps 16-byte alignment. No new binding or pass is added.
+IntegrationParams grows from 8 to 16 f32s, declared as `IntegrationParamsLayout` in `src/gpu_types.nim`
+and generated into `web/shaders/modules/integration_params.wgsl` like the other uniforms. h, B, α, θ_c,
+the floor, the pressure onset and D5's mean-field gain `K·FRAME_DT_REFERENCE·12/R` take the two pads and
+five new slots, and three pads keep 16-byte alignment. No new binding or pass is added.
 
 ### Tests, in writing order
 
@@ -507,7 +509,7 @@ under test.
 | 13 | T5f "The Loop Gain Bounds The Measured One" | `tests/test_balance_core.nim` | unit | finite difference over a 200-particle crowd | `C` under-counts |
 | 14 | "The Oracle Step Matches The Clock At Every Frame Factor" | `tests/test_balance_core.nim` | unit | one particle, tests 2 and 3's values through `integrateParticles` | the oracle mirrors the old map |
 | 15 | "The Integration Uniforms Come From One Clock" | `tests/test_sim_registry.nim` | unit | `stepClock(ff, r)` accessors equal the written block, ff ∈ {0, 0.42, 1, 30}, r ∈ {1, 0.88} | the producer computes a value apart from the clock |
-| 16 | "IntegrationParams Holds Twelve Floats With The Clock's Fields" | `tests/test_gpu_types.nim` | unit | the D1–D5 list | a field is missing or misplaced |
+| 16 | "Generated IntegrationParams Layout" | `tests/test_gpu_types.nim` | unit | 16 floats, 64 bytes; field offsets are checked at build time by `toWgslStruct` | the layout or its allocation drifts |
 | 17 | "The Field Runs Seven Steps Per Reference Frame On Any Display" | `tests/test_field_core.nim` | unit | 600 reference frames at ff 1 (600 frames) and ff 0.42 (1 429 frames): Σ steps 4 200 within 2 | steps stay per rendered frame |
 | 18 | "Every Field Step Count Is Odd And Within Its Bounds" | `tests/test_field_core.nim` | property | ff ∈ [0, 30] sequences: `steps` odd, 1 ≤ steps ≤ 71, carry ∈ [−1, 2) | the rounding or clamp is wrong |
 | 19 | "A Held Frame Drops The Field Steps Past The Ceiling" | `tests/test_field_core.nim` | unit | ff 30: 71 steps, carry ≤ 1 | the ceiling is missing |

@@ -139,6 +139,37 @@ const
       "// numBlocks is the workgroup count (ceil(numCells / BLOCK_SIZE)).\n"
   )
 
+  # IntegrationParams struct (64 bytes, generated into
+  # web/shaders/modules/integration_params.wgsl)
+  IntegrationParamsLayout* = GpuStruct(
+    name: "IntegrationParams",
+    fields: @[
+      GpuField(name: "worldWidth",        kind: gtF32, offset: 0,  size: 4, count: 1),
+      GpuField(name: "worldHeight",       kind: gtF32, offset: 4,  size: 4, count: 1),
+      GpuField(name: "friction",          kind: gtF32, offset: 8,  size: 4, count: 1),
+      GpuField(name: "maxVelocity",       kind: gtF32, offset: 12, size: 4, count: 1),
+      GpuField(name: "particleCount",     kind: gtU32, offset: 16, size: 4, count: 1),
+      GpuField(name: "frameFactor",       kind: gtF32, offset: 20, size: 4, count: 1),
+      GpuField(name: "forceGain",         kind: gtF32, offset: 24, size: 4, count: 1),
+      GpuField(name: "stepBound",         kind: gtF32, offset: 28, size: 4, count: 1),
+      GpuField(name: "densityCarry",      kind: gtF32, offset: 32, size: 4, count: 1),
+      GpuField(name: "loopGainBound",     kind: gtF32, offset: 36, size: 4, count: 1),
+      GpuField(name: "loopFloor",         kind: gtF32, offset: 40, size: 4, count: 1),
+      GpuField(name: "pressureOnset",     kind: gtF32, offset: 44, size: 4, count: 1),
+      GpuField(name: "loopMeanFieldGain", kind: gtF32, offset: 48, size: 4, count: 1),
+      GpuField(name: "pad0",              kind: gtF32, offset: 52, size: 4, count: 1),
+      GpuField(name: "pad1",              kind: gtF32, offset: 56, size: 4, count: 1),
+      GpuField(name: "pad2",              kind: gtF32, offset: 60, size: 4, count: 1),
+    ],
+    totalSize: 64,
+    notes: "// Used by: integrate\n" &
+      "//\n" &
+      "// friction is the clock's retention rho = r^ff, forceGain its h, stepBound\n" &
+      "// D4's B, densityCarry alpha = densitySmoothFactor^ff, loopGainBound D5's\n" &
+      "// theta_c, loopFloor lambda * min(1, 1/ff), and loopMeanFieldGain the\n" &
+      "// factor K * FRAME_DT_REFERENCE * 12/R of D5's mean-field floor on C.\n"
+  )
+
   # SimParams struct (696 bytes written, 704 allocated; matches forces.wgsl /
   # forces-sph.wgsl)
   # Layout: 16 scalar fields (64 bytes) + 36 vec4 matrix (576 bytes) + 6 force-model
@@ -778,20 +809,7 @@ const
 # INTEGRATIONPARAMS FIELD INDICES (webgpu_compute.nim)
 # =============================================================================
 
-const
-  INTEG_WORLD_WIDTH* = 0
-  INTEG_WORLD_HEIGHT* = 1
-  INTEG_FRICTION* = 2  # retention rho = r^ff, from the clock
-  INTEG_MAX_VELOCITY* = 3
-  INTEG_PARTICLE_COUNT* = 4  # u32 via aliased buffer
-  INTEG_FRAME_FACTOR* = 5
-  INTEG_FORCE_GAIN* = 6  # h, the clock's force gain
-  INTEG_STEP_BOUND* = 7  # B, D4's long-step bound
-  INTEG_DENSITY_CARRY* = 8  # alpha = densitySmoothFactor^ff
-  INTEG_LOOP_GAIN_BOUND* = 9  # theta_c, D5's loop gain bound
-  INTEG_LOOP_FLOOR* = 10  # D5's lambda * min(1, 1/ff)
-  INTEG_PAD0* = 11
-  INTEG_PARAMS_F32_COUNT* = 12
+genFieldIndices(IntegrationParamsLayout, "INTEG")
 
 # =============================================================================
 # RENDERPARAMS / FADEPARAMS FIELD INDICES (webgpu_render.nim)

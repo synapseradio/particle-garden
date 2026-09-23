@@ -78,7 +78,7 @@ This change builds on the time model of `core-force-interface` as it stands on t
 
 - `src/physics_core.nim` (the step clock, `integrateVelocity`, `stepLimit`, the species slope, the loop
   bound), `src/balance_core.nim` (`integrateParticles`, `sweepPairs`), `src/config_ranges.nim`,
-  `src/shader_config.nim`, `src/gpu_types.nim` (IntegrationParams grows to 12 floats),
+  `src/shader_config.nim`, `src/gpu_types.nim` (IntegrationParams grows to 16 floats),
   `src/sim_registry.nim`, `src/webgpu_init.nim` (crowd buffer stride 3 to 5), and
   `src/webgpu_compute.nim`.
 - `web/shaders/src/integrate.wgsl` and `web/shaders/src/forces.wgsl`. `web/shaders/src/render.wgsl` and
