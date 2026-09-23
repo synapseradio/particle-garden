@@ -31,11 +31,12 @@ from std/math import ceil
 # The substep plan reads the range authority's ceilings and the fluid's own
 # stiffness law; the pressure onset reads the crowd onset ratio. Both modules
 # are pure, so importing them keeps this module's purity.
-from config_ranges import SUBSTEPS_MAX, SPH_STIFFNESS_MAX, CROWD_ONSET_RATIO
+from config_ranges import SUBSTEPS_MAX, SPH_STIFFNESS_MAX, CROWD_ONSET_RATIO,
+  PRESSURE_STEP_BOUND, LONG_STEP_BOUND, LOOP_LIMIT_FLOOR
 from sph_core import SPH_STABILITY_COEFFICIENT,
-  SPH_CEILING_REFERENCE_FRAME_SECONDS, stableStiffnessCeiling
+  SPH_CEILING_REFERENCE_FRAME_SECONDS, stableStiffnessCeiling, SPH_XSPH_EPSILON
 from physics_core import FRAME_DT_REFERENCE, stepClock, travel, retention,
-  forceGain
+  forceGain, loopGainBound, smoothingGain
 
 # ==============================================================================
 # SECTION 1: COUPLING STRENGTHS
@@ -673,6 +674,10 @@ type
     interactionRadius*: float
     sphRadiusFraction*: float
     sphStiffness*: float
+    sphViscosity*: float
+    friction*: float
+      ## The clock's retention input r, D9's smoothing gain reads it through
+      ## the substep's own stepClock.
     timeScale*: float
     bodyBand*: float
     bodyLive*: bool
@@ -695,6 +700,9 @@ type
     count*: int
     effMaxVelocity*: float
     effStiffness*: float
+    effSmoothGain*: float
+      ## D9's g for this frame's substep clock: the fluid's per-pair
+      ## smoothing coefficient multiplier.
     source*: SubstepCountSource
 
 const SUBSTEP_STIFFNESS_RATE = SPH_STABILITY_COEFFICIENT / FRAME_DT_REFERENCE
@@ -767,6 +775,20 @@ func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
 
   let asked = max(askedByTravel, askedByCoupling)
   result.count = int(min(asked, SUBSTEPS_MAX.float))
+
+  # D9: g for this frame's own substep clock. nu_max bounds every particle's
+  # XSPH-plus-viscosity blend; smoothingGain reads it through the same clock
+  # the loop and step limits read, ff over the substep count this frame runs.
+  # friction 0 is never a valid retention (stepClock wants [0.5, 1]), so it
+  # marks a caller that has no gain to clamp; g stays the unclamped 1.
+  result.effSmoothGain = 1.0
+  if live.friction > 0.0:
+    let substepFf = (ff / result.count.float).float32
+    let smoothClock = stepClock(substepFf, live.friction.float32)
+    let nuMax = live.fluid.float32 * (live.sphViscosity.float32 + SPH_XSPH_EPSILON)
+    result.effSmoothGain = smoothingGain(smoothClock, nuMax,
+      PRESSURE_STEP_BOUND.float32, LONG_STEP_BOUND.float32).float
+
   # A tie is named by the more particular asker: a coupling's own declaration
   # over the world's travel bound.
   result.source =
@@ -779,24 +801,41 @@ func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
 # ==============================================================================
 #
 # The clock-derived subset of IntegrationParams (src/gpu_types.nim): what
-# stepClock alone determines from a substep's frame factor and retention.
-# webgpu_compute.nim fills the remaining fields (world size, particle count,
-# max velocity, density carry, and the loop term's B/theta_c/floor) from
-# inputs stepClock does not take.
+# stepClock alone determines from a substep's frame factor and retention,
+# plus D4's B and D5's theta_c/floor, both read from the same clock so a
+# value computed at a different ff or retention than its substep cannot
+# reach the uniform block. webgpu_compute.nim fills the remaining fields
+# (world size, particle count, max velocity) from inputs stepClock does not
+# take.
 
 type
   IntegrationUniforms* = object
     frameFactor*, retention*, forceGain*: float32
+    stepBound*: float32       ## D4's B
+    loopGainBound*: float32   ## D5's theta_c
+    loopFloor*: float32       ## D5's lambda * min(1, 1/ff)
 
-func integrationUniforms*(ff, retention: float32): IntegrationUniforms =
-  ## D1's clock, read once per substep. Every field below is one of
-  ## stepClock's own accessors, so a gain computed at a different ff than its
-  ## retention cannot reach the uniform block.
+func integrationUniforms*(ff, retention, densityCarry: float32):
+    IntegrationUniforms =
+  ## D1's clock, read once per substep. `densityCarry` is D3's alpha, already
+  ## raised to this substep's ff by the caller, and feeds D5's theta_c the
+  ## way `loopGainBound(rho, alpha)` takes it. `longStepB` (physics_core)
+  ## stays private, so B is hand-formed here from the same clock's own rho
+  ## and its retention input, `bound * rho + longStepBound * (1 - rho / r)`.
   let clock = stepClock(ff, retention)
+  let rho = retention(clock)
+  let stepBound = PRESSURE_STEP_BOUND.float32 * rho +
+    LONG_STEP_BOUND.float32 * (1.0'f32 - rho / retention)
+  let thetaC = loopGainBound(rho, densityCarry)
+  let loopFloor = LOOP_LIMIT_FLOOR.float32 *
+    min(1.0'f32, 1.0'f32 / ff)
   IntegrationUniforms(
     frameFactor: travel(clock),
-    retention: retention(clock),
-    forceGain: forceGain(clock))
+    retention: rho,
+    forceGain: forceGain(clock),
+    stepBound: stepBound,
+    loopGainBound: thetaC,
+    loopFloor: loopFloor)
 
 # ==============================================================================
 # SECTION 5: THE WORLD PRESSURE'S ONSET

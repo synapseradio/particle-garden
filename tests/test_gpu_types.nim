@@ -100,8 +100,8 @@ suite "WGSL Struct Codegen Matches The Layout Table":
     # leave the tail of the struct unchecked there.
     check wgslComputedOffsets(SimParamsLayout).len == SimParamsLayout.fields.len
 
-  test "SimParams is 692 bytes written inside a 704-byte allocation":
-    check SimParamsLayout.totalSize == 692
+  test "SimParams is 696 bytes written inside a 704-byte allocation":
+    check SimParamsLayout.totalSize == 696
     check wgslUniformSize(SimParamsLayout) == 704
 
   test "toWgslStruct renders the SimParams fields with WGSL types in order":
@@ -143,7 +143,8 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
     check SIM_CROWDING_STRENGTH == 170
     check SIM_SPH_RADIUS_FRACTION == 171
     check SIM_PRESSURE_ONSET == 172
-    check SIM_PARAMS_F32_COUNT == 173
+    check SIM_SPH_SMOOTH_GAIN == 173
+    check SIM_PARAMS_F32_COUNT == 174
 
   test "the pressure onset has the word after the radius fraction":
     # forces.wgsl reads params.pressureOnset per pair; a write landing on
@@ -159,18 +160,21 @@ suite "Generated SIM_ Indices Match The SimParams Byte Layout":
   test "SIM_PARAMS_F32_COUNT covers every written word of the struct":
     check SIM_PARAMS_F32_COUNT == SimParamsLayout.totalSize div 4
 
-  test "the crowding, radius-fraction and onset slots close the struct in order":
-    # All three were appended rather than folded into the pad word (since spent
+  test "the crowding, radius-fraction, onset and smoothing-gain slots close the struct in order":
+    # All four were appended rather than folded into the pad word (since spent
     # on mouseRange), so every offset that existed before them still points at
-    # the field it did. The onset is last, and a slot that stopped being last
-    # would mean something else was appended without this test seeing it.
+    # the field it did. The smoothing gain is last, and a slot that stopped
+    # being last would mean something else was appended without this test
+    # seeing it.
     check SIM_CROWDING_STRENGTH ==
       SimParamsLayout.fieldOffset("crowdingStrength") div 4
     check SIM_CROWDING_STRENGTH == SIM_SPH_VISCOSITY + 1
     check SIM_SPH_RADIUS_FRACTION ==
       SimParamsLayout.fieldOffset("sphRadiusFraction") div 4
     check SIM_SPH_RADIUS_FRACTION == SIM_CROWDING_STRENGTH + 1
-    check SIM_PRESSURE_ONSET == SIM_PARAMS_F32_COUNT - 1
+    check SIM_PRESSURE_ONSET == SIM_SPH_RADIUS_FRACTION + 1
+    check SIM_SPH_SMOOTH_GAIN == SIM_PRESSURE_ONSET + 1
+    check SIM_SPH_SMOOTH_GAIN == SIM_PARAMS_F32_COUNT - 1
 
 
 suite "Generated SIM_ SPH Indices Follow The Force-Model Block":

@@ -31,10 +31,10 @@ struct IntegrationParams {
   particleCount: u32,    // Active particle count (offset 16)
   frameFactor: f32,      // The substep as a multiple of the reference frame (offset 20)
   forceGain: f32,        // The clock's force gain, h (offset 24)
-  stepBound: f32,        // B; unread until the loop term lands (offset 28)
+  stepBound: f32,        // B, D4's long-step bound (offset 28)
   densityCarry: f32,     // alpha = densitySmoothFactor^ff (offset 32)
-  loopGainBound: f32,    // theta_c; unread until the loop term lands (offset 36)
-  loopFloor: f32,        // the loop's floor; unread until it lands (offset 40)
+  loopGainBound: f32,    // theta_c, D5's loop gain bound (offset 36)
+  loopFloor: f32,        // D5's lambda * min(1, 1/ff) (offset 40)
   pad0: u32,             // Padding (offset 44)
 };
 
@@ -43,12 +43,10 @@ struct IntegrationParams {
 @group(0) @binding(2) var<storage, read> velocityDeltaFixed: array<i32>;
 @group(0) @binding(3) var<storage, read> densityDeltaFixed: array<i32>;
 @group(0) @binding(4) var<storage, read> sphDensityDeltaFixed: array<i32>;
-// Stride 3 per particle: [crowd, stiffnessFine, stiffnessCoarse]. See
-// forces.wgsl's binding 7 for what each word carries.
+// Stride 5 per particle: [crowd, stiffnessFine, stiffnessCoarse, cFine,
+// cCoarse]. See forces.wgsl's binding 7 for what each word carries.
 @group(0) @binding(5) var<storage, read> crowdDensityDeltaFixed: array<i32>;
 @group(0) @binding(6) var<storage, read> velocityCoarseFixed: array<i32>;
-
-const PRESSURE_STEP_BOUND: f32 = {{PRESSURE_STEP_BOUND}};
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
@@ -82,21 +80,41 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // the crowding cap reading a flickering density would make the force law
   // flicker with it — the opposite of what a cap is for.
   let deltaCrowdDensity =
-    f32(crowdDensityDeltaFixed[particleIdx * 3u]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
+    f32(crowdDensityDeltaFixed[particleIdx * 5u]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
   p.crowdDensity = p.crowdDensity * params.densityCarry +
     deltaCrowdDensity * (1.0 - params.densityCarry);
 
   // This particle's summed pair stiffness D, decoded from the crowd buffer's
-  // two stiffness words the way the velocity words are rejoined above. The
-  // factor the whole decoded delta is scaled by below: 1 unless one step
-  // would carry frameFactor * 2 * forceGain * D past PRESSURE_STEP_BOUND.
+  // two stiffness words the way the velocity words are rejoined above. s_D
+  // is 1 unless one step would carry frameFactor * 2 * forceGain * D past
+  // params.stepBound (B, D4's long-step bound, folded in on the host).
   // Mirrored by physics_core.stepLimit.
-  let stiffness = (f32(crowdDensityDeltaFixed[particleIdx * 3u + 1u]) +
-    f32(crowdDensityDeltaFixed[particleIdx * 3u + 2u]) * STIFFNESS_COARSE_UNIT) *
+  let stiffness = (f32(crowdDensityDeltaFixed[particleIdx * 5u + 1u]) +
+    f32(crowdDensityDeltaFixed[particleIdx * 5u + 2u]) * STIFFNESS_COARSE_UNIT) *
     STIFFNESS_INV_FIXED_POINT_SCALE;
   let stiffnessReach = 2.0 * params.frameFactor * params.forceGain * stiffness;
-  let stepLimit = select(1.0, PRESSURE_STEP_BOUND / stiffnessReach,
-    stiffnessReach > PRESSURE_STEP_BOUND);
+  let stepLimit = select(1.0, params.stepBound / stiffnessReach,
+    stiffnessReach > params.stepBound);
+
+  // The density-lag loop's own source C, decoded from the crowd buffer's two
+  // loop words. s_C is 1 unless the loop's reach per substep, ff*h*C/rho,
+  // would carry the loop past its stable gain theta_c, where it falls to
+  // theta_c/reach or params.loopFloor, whichever holds more (design.md D5).
+  // Mirrored by physics_core.loopLimit, minus its internal theta_c and alpha
+  // (both folded into params.loopGainBound on the host).
+  let loopSource = (f32(crowdDensityDeltaFixed[particleIdx * 5u + 3u]) +
+    f32(crowdDensityDeltaFixed[particleIdx * 5u + 4u]) * STIFFNESS_COARSE_UNIT) *
+    STIFFNESS_INV_FIXED_POINT_SCALE;
+  let loopReach = params.frameFactor * params.forceGain * loopSource /
+    params.friction;
+  let loopLimit = select(
+    max(params.loopGainBound / loopReach, params.loopFloor),
+    1.0,
+    loopReach <= params.loopGainBound);
+
+  // D1's s: the smaller of the two limits, applied to the whole velocity
+  // below, carried term included.
+  let s = min(stepLimit, loopLimit);
 
   // The fluid's kernel density, resolved the same way but kept in its own
   // field. Unsmoothed: the Tait equation of state wants this frame's density,
@@ -110,10 +128,11 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
     f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
   // D1: newVel = s . (rho . vel + h . delta), rho the clock's retention
-  // (params.friction) and h its force gain. The step limit scales the
-  // carried velocity too, or a limited particle coasts through the crowd.
-  var newVelX = stepLimit * (params.friction * p.vel.x + params.forceGain * deltaVx);
-  var newVelY = stepLimit * (params.friction * p.vel.y + params.forceGain * deltaVy);
+  // (params.friction) and h its force gain. s, the smaller of the two
+  // limits, scales the carried velocity too, or a limited particle coasts
+  // through the crowd.
+  var newVelX = s * (params.friction * p.vel.x + params.forceGain * deltaVx);
+  var newVelY = s * (params.friction * p.vel.y + params.forceGain * deltaVy);
 
   // Logarithmic velocity capping reduces jank in high-activity areas.
   //

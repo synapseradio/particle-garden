@@ -146,13 +146,17 @@ Files:
 - `web/shaders/src/forces-sph.wgsl`, the smoothing coefficient at `:273` only
 - `tests/test_gpu_types.nim` and `tests/test_sim_registry.nim`
 
-- [ ] 3.1 **Red.**
+- [x] 3.1 **Red.**
   - `tests/test_gpu_types.nim`: test 16, "IntegrationParams Holds Twelve Floats With The Clock's Fields".
   - `tests/test_sim_registry.nim`: test 15, "The Integration Uniforms Come From One Clock", against a
     stub producer that writes `h = ff`, and test 27, "The Plan Hands The Fluid The Clock's Smoothing
     Gain", against a plan whose `effSmoothGain` is 1.
   - Verify both fail on values.
-- [ ] 3.2 **Green.**
+  - Result: `nim c -r tests/test_gpu_types.nim` failed test 16 on `INTEG_PARAMS_F32_COUNT was 8` against
+    a stub, and `nim c -r tests/test_sim_registry.nim` failed test 15 on `uniforms.forceGain ==
+    forceGain(clock)` against a stubbed `forceGain: ff` and failed test 27 on `plan.effSmoothGain ==
+    expected` against a stubbed `1.0`, both on values.
+- [x] 3.2 **Green.**
   - `src/gpu_types.nim`: IntegrationParams gains h, B, α, θ_c and the floor `λ·min(1, 1/ff)` in the two
     pads and three new slots. `INTEG_PARAMS_F32_COUNT` becomes 12.
   - `src/sim_registry.nim`: `integrationUniforms(ff, retention)` builds the block from `stepClock` and
@@ -178,6 +182,11 @@ Files:
     they read `p.vel` against `maxVelocity`, with no frame factor.
 
   Verify 3.1's tests pass.
+  - Result: `nim c -r <quality_flags> tests/test_gpu_types.nim`, `tests/test_sim_registry.nim`,
+    `tests/test_body_core.nim`, `tests/test_sph_core.nim` and `tests/test_balance_core.nim` all green;
+    `just shaders` regenerated `web/shaders/modules/sim_params.wgsl` and every bundle with no diff
+    failure; `nim c -r tests/test_wgsl_lint.nim` green; `nim js -d:release <quality_flags>
+    --out:/tmp/app.unminified.js src/app.nim` typechecked clean.
 - [ ] 3.3 **S12, verification in-app at 16 000** (design.md, Spikes). Follow the in-app procedure in
   `CLAUDE.md` (`./main --serve`, a new Claude in Chrome tab, `window.gardenAPI` through
   `javascript_tool`). Read `[gpu-profile]` over 30 s before (the parent commit) and after, at Time Scale

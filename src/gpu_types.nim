@@ -139,12 +139,13 @@ const
       "// numBlocks is the workgroup count (ceil(numCells / BLOCK_SIZE)).\n"
   )
 
-  # SimParams struct (692 bytes written, 704 allocated; matches forces.wgsl /
+  # SimParams struct (696 bytes written, 704 allocated; matches forces.wgsl /
   # forces-sph.wgsl)
   # Layout: 16 scalar fields (64 bytes) + 36 vec4 matrix (576 bytes) + 6 force-model
   # fields (24 bytes) + 4 SPH fields (16 bytes) + crowding (4 bytes) + the SPH
-  # radius fraction (4 bytes) + the pressure onset (4 bytes). The onset opened a
-  # 16-byte block, so three more words cost nothing.
+  # radius fraction (4 bytes) + the pressure onset (4 bytes) + D9's smoothing
+  # gain (4 bytes). The onset opened a 16-byte block, so four more words cost
+  # nothing.
   SimParamsLayout* = GpuStruct(
     name: "SimParams",
     fields: @[
@@ -205,8 +206,14 @@ const
       # (sim_registry.pressureOnset). forces.wgsl divides by it per pair, and
       # the contact floor keeps it above zero.
       GpuField(name: "pressureOnset",   kind: gtF32, offset: 688, size: 4, count: 1),
+      # D9's g, the fluid's own smoothing-gain clamp for this substep
+      # (sim_registry.SubstepPlan.effSmoothGain), read once from the
+      # substep's clock rather than per pair. forces-sph.wgsl multiplies the
+      # pair's smoothing coefficient by it alone; pressure and the carried
+      # velocity are untouched.
+      GpuField(name: "sphSmoothGain",   kind: gtF32, offset: 692, size: 4, count: 1),
     ],
-    totalSize: 692
+    totalSize: 696
   )
 
   # RenderParams struct (64 bytes, generated into web/shaders/modules/render_params.wgsl)
@@ -735,7 +742,7 @@ static:
     for fieldIndex in 0 ..< SimParamsLayout.fields.len:
       assert computedOffsets[fieldIndex] == SimParamsLayout.fields[fieldIndex].offset,
         "SimParams." & SimParamsLayout.fields[fieldIndex].name & " offset drift"
-    assert SimParamsLayout.totalSize == 692, "SimParams writes 692 bytes"
+    assert SimParamsLayout.totalSize == 696, "SimParams writes 696 bytes"
     assert SimParamsLayout.wgslUniformSize == 704, "SimParams allocates 704 bytes"
 
 # =============================================================================
@@ -779,10 +786,10 @@ const
   INTEG_PARTICLE_COUNT* = 4  # u32 via aliased buffer
   INTEG_FRAME_FACTOR* = 5
   INTEG_FORCE_GAIN* = 6  # h, the clock's force gain
-  INTEG_STEP_BOUND* = 7  # B; phase A leaves this inert (theta stays a shader constant)
+  INTEG_STEP_BOUND* = 7  # B, D4's long-step bound
   INTEG_DENSITY_CARRY* = 8  # alpha = densitySmoothFactor^ff
-  INTEG_LOOP_GAIN_BOUND* = 9  # theta_c; phase A leaves this inert
-  INTEG_LOOP_FLOOR* = 10  # the loop's floor; phase A leaves this inert
+  INTEG_LOOP_GAIN_BOUND* = 9  # theta_c, D5's loop gain bound
+  INTEG_LOOP_FLOOR* = 10  # D5's lambda * min(1, 1/ff)
   INTEG_PAD0* = 11
   INTEG_PARAMS_F32_COUNT* = 12
 

@@ -169,9 +169,9 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
-  # Stride 3: crowd, stiffnessFine, stiffnessCoarse. forces.wgsl and
-  # integrate.wgsl both index it at particleIdx * 3u.
-  result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 3 * 4
+  # Stride 5: crowd, stiffnessFine, stiffnessCoarse, cFine, cCoarse. forces.wgsl
+  # and integrate.wgsl both index it at particleIdx * 5u.
+  result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 5 * 4
   result.fieldAlive = 4  # one u32: the frame's alive-cell census
 
   # The bodies triple. Sized from the layout table rather than from literals, so
@@ -387,7 +387,7 @@ proc initWebGPU*(): Future[JsObject] {.async, exportc.} =
     sizes.sphDensityDelta, bufferUsage, "SPH Kernel Density Delta (fixed-point i32)")
   buffers.crowdDensityDelta = createBuf(
     sizes.crowdDensityDelta, bufferUsage,
-    "Crowd Density + Stiffness Delta (fixed-point i32, stride 3)")
+    "Crowd Density + Stiffness + Loop Delta (fixed-point i32, stride 5)")
   buffers.fieldAlive = createBuf(
     sizes.fieldAlive, bufferUsage, "Field Alive-Cell Census (u32)")
   buffers.fieldAliveReadback = createBuf(sizes.fieldAlive,

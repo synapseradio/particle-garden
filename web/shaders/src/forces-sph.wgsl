@@ -269,8 +269,11 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         // Density-normalized (by the denser of the pair, symmetric in i/j) so a
         // single pair can never move the velocity by more than (viscosity +
         // epsilon) times the velocity gap — the XSPH stability bound.
+        // params.sphSmoothGain is D9's g, this substep's own clamp on the
+        // channel's reach — read once from the substep's clock, not per pair.
         let velocitySmoothDenom = max(max(laggedDensityThis, laggedDensityOther), 1.0);
-        let velocitySmoothCoeff = (viscosity + SPH_XSPH_EPSILON) * densityWeight / velocitySmoothDenom;
+        let velocitySmoothCoeff = (viscosity + SPH_XSPH_EPSILON) * densityWeight /
+          velocitySmoothDenom * params.sphSmoothGain;
         let velocityDiffX = otherParticle.vel.x - thisParticle.vel.x;
         let velocityDiffY = otherParticle.vel.y - thisParticle.vel.y;
 

@@ -479,7 +479,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard forcesEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.gridCounts)))
   discard forcesEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.velocityDelta)))
   discard forcesEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.densityDelta)))  # Symmetric colony density
-  discard forcesEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Species-blind crowd density + the two stiffness words (stride 3)
+  discard forcesEntries.push(createBindGroupEntry(7, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Species-blind crowd density + the two stiffness words + the two C words (stride 5)
   discard forcesEntries.push(createBindGroupEntry(8, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(forcesEntries, "forces", "bind group creation")
@@ -520,7 +520,7 @@ proc createBindGroups*(gridW: int, gridH: int): Future[void] {.async, exportc.} 
   discard integrateEntries.push(createBindGroupEntry(2, cast[JsObject](gpuBuffers.velocityDelta)))
   discard integrateEntries.push(createBindGroupEntry(3, cast[JsObject](gpuBuffers.densityDelta)))  # Colony density
   discard integrateEntries.push(createBindGroupEntry(4, cast[JsObject](gpuBuffers.sphDensityDelta)))  # Fluid's kernel density
-  discard integrateEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Crowd density + the two stiffness words (stride 3)
+  discard integrateEntries.push(createBindGroupEntry(5, cast[JsObject](gpuBuffers.crowdDensityDelta)))  # Crowd density + the two stiffness words + the two C words (stride 5)
   discard integrateEntries.push(createBindGroupEntry(6, cast[JsObject](gpuBuffers.velocityCoarse)))
 
   validateBindGroupEntryCount(integrateEntries, "integrate", "bind group creation")
@@ -1027,6 +1027,8 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
     interactionRadius: float(config.CONFIG.interactionRadius),
     sphRadiusFraction: config.CONFIG.sphRadiusFraction,
     sphStiffness: config.CONFIG.sphStiffness,
+    sphViscosity: config.CONFIG.sphViscosity,
+    friction: friction,
     timeScale: config.CONFIG.timeScale,
     bodyBand: config.CONFIG.bodyBand,
     bodyLive: body_core.liveSlots(bodyState, bodySeconds) > 0))
@@ -1068,6 +1070,9 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   simParamsData[SIM_SPH_STIFFNESS] = float32(framePlan.effStiffness)
   simParamsData[SIM_SPH_GAMMA] = float32(SPH_DEFAULT_GAMMA)
   simParamsData[SIM_SPH_VISCOSITY] = float32(config.CONFIG.sphViscosity)
+  # D9's g for this frame's own substep clock, read once and multiplied into
+  # every pair's smoothing coefficient in forces-sph.wgsl.
+  simParamsData[SIM_SPH_SMOOTH_GAIN] = float32(framePlan.effSmoothGain)
 
   # Crowding: how hard local density attenuates the attractive half of the
   # species force. Zero is the force law without it.
@@ -1094,9 +1099,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Layout matches IntegrationParams indices in gpu_types.nim
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
+  # Raised the same way retention is: shared across every particle in the
+  # substep, not recomputed per particle in the shader. Read here, ahead of
+  # the clock, since D5's theta_c takes it as an input.
+  let densityCarry =
+    pow(float32(shader_config.activeConfig.tuning.densitySmoothFactor),
+      float32(substepFrameFactor))
   # One clock per substep, read by every particle in it: a gain computed at a
-  # different ff than its retention cannot reach the uniform block.
-  let clock = integrationUniforms(float32(substepFrameFactor), float32(friction))
+  # different ff than its retention cannot reach the uniform block. B and
+  # theta_c fold in here too, so neither is recomputed per particle.
+  let clock = integrationUniforms(float32(substepFrameFactor), float32(friction),
+    densityCarry)
   integrationParamsData[INTEG_FRICTION] = clock.retention
   # The plan's Max Velocity, which is the stored one until the substep count
   # clamps and the travel bound has to be held by the speed instead.
@@ -1107,15 +1120,10 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # accumulates per reference frame.
   integrationParamsData[INTEG_FRAME_FACTOR] = clock.frameFactor
   integrationParamsData[INTEG_FORCE_GAIN] = clock.forceGain
-  # Raised the same way retention is: shared across every particle in the
-  # substep, not recomputed per particle in the shader.
-  integrationParamsData[INTEG_DENSITY_CARRY] =
-    pow(float32(shader_config.activeConfig.tuning.densitySmoothFactor),
-      float32(substepFrameFactor))
-  # B, theta_c and the floor: unread until the loop term lands; zero is inert.
-  integrationParamsData[INTEG_STEP_BOUND] = 0.0
-  integrationParamsData[INTEG_LOOP_GAIN_BOUND] = 0.0
-  integrationParamsData[INTEG_LOOP_FLOOR] = 0.0
+  integrationParamsData[INTEG_DENSITY_CARRY] = densityCarry
+  integrationParamsData[INTEG_STEP_BOUND] = clock.stepBound
+  integrationParamsData[INTEG_LOOP_GAIN_BOUND] = clock.loopGainBound
+  integrationParamsData[INTEG_LOOP_FLOOR] = clock.loopFloor
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # Field parameters. feed, kill, deposit, and field force are the live UI

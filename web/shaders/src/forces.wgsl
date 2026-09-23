@@ -43,12 +43,15 @@
 @group(0) @binding(5) var<storage, read_write> velocityDeltaFixed: array<atomic<i32>>;
 @group(0) @binding(6) var<storage, read_write> densityDeltaFixed: array<atomic<i32>>;
 
-// Stride 3 per particle: [crowd, stiffnessFine, stiffnessCoarse]. crowd is
-// the second density channel, every neighbour with no species gate, encoded
-// at the crowd scale rather than the velocity one — see fixed_point.wgsl for
-// why a neighbour count needs the coarser of the two. The two stiffness words
-// carry the particle's summed pair slope D that integrate.wgsl's step limit
-// reads.
+// Stride 5 per particle: [crowd, stiffnessFine, stiffnessCoarse, cFine,
+// cCoarse]. crowd is the second density channel, every neighbour with no
+// species gate, encoded at the crowd scale rather than the velocity one —
+// see fixed_point.wgsl for why a neighbour count needs the coarser of the
+// two. The two stiffness words carry the particle's summed pair slope D that
+// integrate.wgsl's step limit reads; the two C words carry the density-loop
+// source term (design.md D5) that its loop limit reads. Both pairs share the
+// stiffness fixed-point scale: both are pressure-slope-shaped sums over the
+// same neighbourhood.
 @group(0) @binding(7) var<storage, read_write> crowdDensityDeltaFixed: array<atomic<i32>>;
 
 // The coarse velocity word, which the world pressure below splits into.
@@ -112,6 +115,18 @@ fn crowdingAttenuation(density: f32, strength: f32) -> f32 {
 fn crowdPressure(density: f32, onset: f32) -> f32 {
   let excess = max(density - onset, 0.0) / onset;
   return excess * excess;
+}
+
+// =============================================================================
+// THE DENSITY-LOOP SOURCE TERM (form F, D5)
+// =============================================================================
+// crowdPressure's own slope in density, phi'(x) = 2*max(x - x_on, 0)/x_on^2.
+// Feeds C_i, the density-lag loop's per-pair source term, which
+// integrate.wgsl's loop limit reads through theta_c. Unmirrored on the CPU:
+// no oracle accumulates C, so this is design.md D5's formula transcribed
+// directly, not a shader mirror of a native function.
+fn crowdPressureDerivative(density: f32, onset: f32) -> f32 {
+  return 2.0 * max(density - onset, 0.0) / (onset * onset);
 }
 
 // =============================================================================
@@ -183,6 +198,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   var densityAccum = 0.0;
   var crowdDensityAccum = 0.0;
   var stiffnessAccum = 0.0;
+  var loopSourceAccum = 0.0;
 
   // THIS PASS ACCUMULATES ONLY. The frame clears velocityDelta and both density
   // deltas before anything writes them (sim_registry.buildFrame opens with those
@@ -202,6 +218,8 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // same reason: its density is fixed while the loop runs.
   let crowdPressureOnThis =
     crowdPressure(thisParticle.crowdDensity, params.pressureOnset);
+  let crowdPressureDerivativeThis =
+    crowdPressureDerivative(thisParticle.crowdDensity, params.pressureOnset);
 
   var cellX = i32(thisParticle.pos.x * invCellWidth);
   var cellY = i32(thisParticle.pos.y * invCellHeight);
@@ -282,6 +300,10 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         let distance = sqrt(clampedDistSq);
         let invDistance = 1.0 / distance;
         let normalizedDist = distance * invRadius;  // 0.0 = touching, 1.0 = at radius edge
+        // Shared by the world pressure's radial falloff, the density
+        // accumulation below and the loop source term: touching = 1, at the
+        // radius edge = 0.
+        let proximityWeight = 1.0 - normalizedDist;
 
         // Matrix is asymmetric: Red may attract Blue, while Blue repels Red
         let matrixIdxThisToOther = thisParticle.species * MAX_SPECIES + otherParticle.species;
@@ -450,29 +472,51 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         if (stiffnessOnOther > 0.0) {
           let stiffnessOtherFixed =
             i32(round(stiffnessOnOther * STIFFNESS_FIXED_POINT_SCALE));
-          atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u + 1u],
+          atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 5u + 1u],
             stiffnessOtherFixed & STIFFNESS_FINE_MASK);
           let stiffnessOtherCoarse = stiffnessOtherFixed >> STIFFNESS_COARSE_SHIFT;
           if (stiffnessOtherCoarse != 0) {
-            atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u + 2u],
+            atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 5u + 2u],
               stiffnessOtherCoarse);
+          }
+        }
+
+        // The pair's contribution to C, the density-lag loop's source term
+        // (design.md D5): K * FRAME_DT_REFERENCE * (6/R) * (1 - d/R) *
+        // (phi'(rho_i)*rho_i + phi'(rho_j)*rho_j), identical for both sides
+        // since neither phi' term singles out a receiver the way the species
+        // slope does. THIS's share accumulates in a register and splits once
+        // after the loop, like D's; OTHER's goes by atomic here.
+        let crowdPressureDerivativeOther =
+          crowdPressureDerivative(otherParticle.crowdDensity, params.pressureOnset);
+        let loopSource = WORLD_PRESSURE_STIFFNESS * FRAME_DT_REFERENCE *
+          (6.0 * invRadius) * proximityWeight *
+          (crowdPressureDerivativeThis * thisParticle.crowdDensity +
+            crowdPressureDerivativeOther * otherParticle.crowdDensity);
+        if (loopSource > 0.0) {
+          loopSourceAccum += loopSource;
+          let loopSourceOtherFixed =
+            i32(round(loopSource * STIFFNESS_FIXED_POINT_SCALE));
+          atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 5u + 3u],
+            loopSourceOtherFixed & STIFFNESS_FINE_MASK);
+          let loopSourceOtherCoarse = loopSourceOtherFixed >> STIFFNESS_COARSE_SHIFT;
+          if (loopSourceOtherCoarse != 0) {
+            atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 5u + 4u],
+              loopSourceOtherCoarse);
           }
         }
 
         // Symmetric density accumulation into two channels, colony
         // (species-gated) and crowd (ungated); what each answers and why they
-        // stay separate: particle.wgsl's THREE DENSITIES block. Both share one
-        // proximity weight — (1.0 - normalizedDist), touching=1, at the radius
-        // edge=0 — and differ only in the gate above them.
+        // stay separate: particle.wgsl's THREE DENSITIES block. Both share the
+        // proximity weight above and differ only in the gate above them.
         //
         // CRITICAL: Half-neighbor iteration means each pair is processed ONCE.
         // Both particles must receive the contribution from this pair. Same
         // atomic pattern as velocity: write to OTHER immediately, accumulate
         // THIS in a register and write once at the end.
-        let proximityWeight = 1.0 - normalizedDist;
-
         crowdDensityAccum += proximityWeight;
-        atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u],
+        atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 5u],
           i32(proximityWeight * CROWD_DENSITY_FIXED_POINT_SCALE));
 
         if (otherParticle.species == thisParticle.species) {
@@ -544,7 +588,7 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let densityThisFixed = i32(densityAccum * FIXED_POINT_SCALE);
   atomicAdd(&densityDeltaFixed[thisOriginalIdx], densityThisFixed);
 
-  atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 3u],
+  atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 5u],
     i32(crowdDensityAccum * CROWD_DENSITY_FIXED_POINT_SCALE));
 
   // THIS particle's summed stiffness, split once rather than per pair
@@ -553,12 +597,25 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   if (stiffnessAccum > 0.0) {
     let stiffnessThisFixed =
       i32(round(stiffnessAccum * STIFFNESS_FIXED_POINT_SCALE));
-    atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 3u + 1u],
+    atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 5u + 1u],
       stiffnessThisFixed & STIFFNESS_FINE_MASK);
     let stiffnessThisCoarse = stiffnessThisFixed >> STIFFNESS_COARSE_SHIFT;
     if (stiffnessThisCoarse != 0) {
-      atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 3u + 2u],
+      atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 5u + 2u],
         stiffnessThisCoarse);
+    }
+  }
+
+  // THIS particle's summed loop source C, split the same way.
+  if (loopSourceAccum > 0.0) {
+    let loopSourceThisFixed =
+      i32(round(loopSourceAccum * STIFFNESS_FIXED_POINT_SCALE));
+    atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 5u + 3u],
+      loopSourceThisFixed & STIFFNESS_FINE_MASK);
+    let loopSourceThisCoarse = loopSourceThisFixed >> STIFFNESS_COARSE_SHIFT;
+    if (loopSourceThisCoarse != 0) {
+      atomicAdd(&crowdDensityDeltaFixed[thisOriginalIdx * 5u + 4u],
+        loopSourceThisCoarse);
     }
   }
 }

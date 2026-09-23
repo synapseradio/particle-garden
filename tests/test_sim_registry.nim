@@ -14,7 +14,8 @@ import std/strutils
 import std/tables
 import ../src/sim_registry
 import ../src/balance_core
-from ../src/physics_core import stepClock, travel, retention, forceGain
+from ../src/physics_core import stepClock, travel, retention, forceGain,
+  smoothingGain, loopGainBound
 import ../src/field_core
 import ../src/config_ranges
 import ../src/sph_core
@@ -760,11 +761,11 @@ suite "Only Integrate Reads The Frame Factor":
 
 
 suite "The Crowd Buffer's Clear Covers All Three Words":
-  # webgpu_init sizes the crowd buffer at stride 3 (crowd, stiffnessFine,
-  # stiffnessCoarse). A clear sized like the single-word delta buffers would
-  # leave the two stiffness words holding the previous frame's slope with no
-  # validation error. Read from source, since webgpu_compute opens on
-  # std/jsffi and no native test can import it.
+  # webgpu_init sizes the crowd buffer at stride 5 (crowd, stiffnessFine,
+  # stiffnessCoarse, cFine, cCoarse). A clear sized like the single-word delta
+  # buffers would leave the stiffness and loop words holding the previous
+  # frame's slope with no validation error. Read from source, since
+  # webgpu_compute opens on std/jsffi and no native test can import it.
 
   test "sbCrowdDensityDelta's byte length is not grouped with the single-word deltas":
     let lines = readFile("src/webgpu_compute.nim").splitLines
@@ -871,7 +872,8 @@ suite "Substeps Follow The Tightest Coupling":
       bodies: BODIES_DEFAULT_STRENGTH,  # 1.0 (config_ranges.nim:492)
       bodyBand: BODY_DEFAULT_BAND,  # 120 (config_ranges.nim:500)
       bodyLive: false,
-      maxVelocity: 50.0)  # simulation_state.nim:139
+      maxVelocity: 50.0,  # simulation_state.nim:139
+      friction: 0.88)  # the shipped retention, 1 - friction 0.12
     let plan = substepPlan(1.0, live)
     check plan.count == 1
     check plan.source == scNone
@@ -887,7 +889,8 @@ suite "Substeps Follow The Tightest Coupling":
       interactionRadius: 50.0,
       sphRadiusFraction: 1.0,
       sphStiffness: SPH_STIFFNESS_MAX,
-      bodyLive: false)
+      bodyLive: false,
+      friction: 0.88)
     let plan = substepPlan(1.0, live)
     check plan.count == 3
     check plan.source == scCouplingNeed
@@ -904,7 +907,8 @@ suite "Substeps Follow The Tightest Coupling":
       bodies: BODIES_DEFAULT_STRENGTH,
       bodyBand: BODY_DEFAULT_BAND,
       bodyLive: true,
-      maxVelocity: 50.0)
+      maxVelocity: 50.0,
+      friction: 0.88)
     let plan = substepPlan(10.0, live)
     check plan.count == 3
     check plan.effMaxVelocity == 36.0
@@ -919,7 +923,8 @@ suite "Substeps Follow The Tightest Coupling":
       bodies: BODIES_DEFAULT_STRENGTH,
       bodyBand: BODY_DEFAULT_BAND,
       bodyLive: false,
-      maxVelocity: 50.0)
+      maxVelocity: 50.0,
+      friction: 0.88)
     let plan = substepPlan(30.0, live)
     check plan.count == 1
     check plan.source == scNone
@@ -932,7 +937,8 @@ suite "Substeps Follow The Tightest Coupling":
       bodies: BODIES_DEFAULT_STRENGTH,
       bodyBand: BODY_BAND_MIN,
       bodyLive: true,
-      maxVelocity: 50.0)
+      maxVelocity: 50.0,
+      friction: 0.88)
     let plan = substepPlan(1.0, live)
     check plan.count == 2
     check plan.source == scTravelBound
@@ -950,7 +956,8 @@ suite "Substeps Follow The Tightest Coupling":
       fluid: 0.0,
       bodies: BODIES_DEFAULT_STRENGTH,
       bodyBand: BODY_BAND_MIN,
-      maxVelocity: 50.0)
+      maxVelocity: 50.0,
+      friction: 0.88)
 
     var withLiveBody = base
     withLiveBody.bodyLive = true
@@ -988,7 +995,8 @@ suite "Substeps Follow The Tightest Coupling":
       sphRadiusFraction: 1.0,
       sphStiffness: stiffness,
       timeScale: timeScale,
-      bodyLive: false)
+      bodyLive: false,
+      friction: 0.88)
     let plan = substepPlan(ff, live)
     check plan.count == 3
     check plan.effStiffness == expectedEffStiffness
@@ -1089,8 +1097,10 @@ suite "Form F: Friction Is Per Reference Frame, Carried On The Whole Velocity":
     # substepFrameFactor. Weakened from checking "pow(" and
     # "substepFrameFactor" in the INTEG_FRICTION assignment itself, since
     # that computation now lives in sim_registry.integrationUniforms.
+    # design.md D5: integrationUniforms grew a third argument, densityCarry,
+    # so the call now spans two lines; the check follows it there.
     let source = readFile("src/webgpu_compute.nim")
-    check "integrationUniforms(float32(substepFrameFactor), float32(friction))" in source
+    check "integrationUniforms(float32(substepFrameFactor), float32(friction)," in source
     check "integrationParamsData[INTEG_FRICTION] = clock.retention" in source
 
   test "integrate.wgsl scales the carried velocity by the step limit, not only the delta":
@@ -1116,8 +1126,37 @@ suite "The Integration Uniforms Come From One Clock":
     for ff in [0.0'f32, 0.42'f32, 1.0'f32, 30.0'f32]:
       for r in [1.0'f32, 0.88'f32]:
         let clock = stepClock(ff, r)
-        let uniforms = integrationUniforms(ff, r)
+        let uniforms = integrationUniforms(ff, r, 0.7'f32)
         checkpoint("ff=" & $ff & " r=" & $r)
         check uniforms.frameFactor == travel(clock)
         check uniforms.retention == retention(clock)
         check uniforms.forceGain == forceGain(clock)
+
+
+suite "The Plan Hands The Fluid The Clock's Smoothing Gain":
+  test "effSmoothGain matches smoothingGain at the plan's own substep clock":
+    # design.md D9: g = min(1, (B/theta)/(h * min(1, 2*nu_max)), r/h), read
+    # from the same clock the substep count divides ff by, not the frame's
+    # own ff.
+    for ff in [0.42, 1.0, 12.0, 30.0]:
+      let live = LiveValues(
+        forces: 0.0, fluid: 1.0, scent: 0.0, deposit: 0.0, bodies: 0.0,
+        longRange: 0.0,
+        maxVelocity: 50.0,
+        interactionRadius: 40.0,
+        sphRadiusFraction: 0.5,
+        sphStiffness: SPH_STIFFNESS_MAX,
+        sphViscosity: 0.4,
+        friction: 0.88,
+        timeScale: 1.0,
+        bodyBand: 0.0,
+        bodyLive: false)
+      let plan = substepPlan(ff, live)
+      let substepFf = (ff / plan.count.float).float32
+      let clock = stepClock(substepFf, live.friction.float32)
+      let nuMax = live.fluid.float32 * (live.sphViscosity.float32 + SPH_XSPH_EPSILON)
+      let expected = smoothingGain(clock, nuMax,
+        PRESSURE_STEP_BOUND.float32, LONG_STEP_BOUND.float32).float
+      checkpoint("ff=" & $ff & " count=" & $plan.count &
+        " expected=" & $expected & " got=" & $plan.effSmoothGain)
+      check plan.effSmoothGain == expected
