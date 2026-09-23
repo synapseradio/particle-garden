@@ -16,7 +16,8 @@
 //
 // TEMPORAL SMOOTHING:
 // Raw density can flicker frame-to-frame as particles move in/out of range.
-// DENSITY_SMOOTH_FACTOR below sets the exponential-moving-average blend.
+// params.densityCarry sets the exponential-moving-average blend, raised to
+// this substep's frame factor on the host (D3).
 // =============================================================================
 
 //! import particle
@@ -25,13 +26,16 @@
 struct IntegrationParams {
   worldWidth: f32,       // World width (offset 0)
   worldHeight: f32,      // World height (offset 4)
-  friction: f32,         // Retention raised to this substep's frame factor
-                         // (friction^ff), computed on the CPU (offset 8)
+  friction: f32,         // The clock's retention, rho = r^ff (offset 8)
   maxVelocity: f32,      // Maximum velocity (offset 12)
   particleCount: u32,    // Active particle count (offset 16)
   frameFactor: f32,      // The substep as a multiple of the reference frame (offset 20)
-  pad1: u32,             // Padding (offset 24)
-  pad2: u32,             // Padding (offset 28)
+  forceGain: f32,        // The clock's force gain, h (offset 24)
+  stepBound: f32,        // B; unread until the loop term lands (offset 28)
+  densityCarry: f32,     // alpha = densitySmoothFactor^ff (offset 32)
+  loopGainBound: f32,    // theta_c; unread until the loop term lands (offset 36)
+  loopFloor: f32,        // the loop's floor; unread until it lands (offset 40)
+  pad0: u32,             // Padding (offset 44)
 };
 
 @group(0) @binding(0) var<uniform> params: IntegrationParams;
@@ -44,7 +48,6 @@ struct IntegrationParams {
 @group(0) @binding(5) var<storage, read> crowdDensityDeltaFixed: array<i32>;
 @group(0) @binding(6) var<storage, read> velocityCoarseFixed: array<i32>;
 
-const DENSITY_SMOOTH_FACTOR: f32 = {{TUNABLE_DENSITY_SMOOTH_FACTOR}};  // 70% old + 30% new for temporal smoothing
 const PRESSURE_STEP_BOUND: f32 = {{PRESSURE_STEP_BOUND}};
 
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
@@ -57,19 +60,20 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
 
   var p = particles[particleIdx];
 
-  // Both words rejoined, then the one multiply by the substep's frame factor a
-  // particle's velocity receives: every writer accumulates per reference frame.
+  // Both words rejoined into the delta per reference frame, D1's Delta: every
+  // writer accumulates at that unit, and the clock's force gain below is the
+  // one place ff enters the velocity.
   let deltaVx = (f32(velocityDeltaFixed[particleIdx * 2u]) +
     f32(velocityCoarseFixed[particleIdx * 2u]) * VELOCITY_COARSE_UNIT) *
-    INV_FIXED_POINT_SCALE * params.frameFactor;
+    INV_FIXED_POINT_SCALE;
   let deltaVy = (f32(velocityDeltaFixed[particleIdx * 2u + 1u]) +
     f32(velocityCoarseFixed[particleIdx * 2u + 1u]) * VELOCITY_COARSE_UNIT) *
-    INV_FIXED_POINT_SCALE * params.frameFactor;
+    INV_FIXED_POINT_SCALE;
 
   let deltaDensityFixed = densityDeltaFixed[particleIdx];
   let deltaDensity = f32(deltaDensityFixed) * INV_FIXED_POINT_SCALE;
 
-  let smoothedDensity = p.density * DENSITY_SMOOTH_FACTOR + deltaDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
+  let smoothedDensity = p.density * params.densityCarry + deltaDensity * (1.0 - params.densityCarry);
   p.density = smoothedDensity;
 
   // Crowd density, resolved exactly the way colony density is: same weight, same
@@ -79,18 +83,18 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   // flicker with it — the opposite of what a cap is for.
   let deltaCrowdDensity =
     f32(crowdDensityDeltaFixed[particleIdx * 3u]) * CROWD_DENSITY_INV_FIXED_POINT_SCALE;
-  p.crowdDensity = p.crowdDensity * DENSITY_SMOOTH_FACTOR +
-    deltaCrowdDensity * (1.0 - DENSITY_SMOOTH_FACTOR);
+  p.crowdDensity = p.crowdDensity * params.densityCarry +
+    deltaCrowdDensity * (1.0 - params.densityCarry);
 
   // This particle's summed pair stiffness D, decoded from the crowd buffer's
   // two stiffness words the way the velocity words are rejoined above. The
   // factor the whole decoded delta is scaled by below: 1 unless one step
-  // would carry frameFactor * 2 * D past PRESSURE_STEP_BOUND. Mirrored by
-  // physics_core.stepLimit.
+  // would carry frameFactor * 2 * forceGain * D past PRESSURE_STEP_BOUND.
+  // Mirrored by physics_core.stepLimit.
   let stiffness = (f32(crowdDensityDeltaFixed[particleIdx * 3u + 1u]) +
     f32(crowdDensityDeltaFixed[particleIdx * 3u + 2u]) * STIFFNESS_COARSE_UNIT) *
     STIFFNESS_INV_FIXED_POINT_SCALE;
-  let stiffnessReach = 2.0 * params.frameFactor * stiffness;
+  let stiffnessReach = 2.0 * params.frameFactor * params.forceGain * stiffness;
   let stepLimit = select(1.0, PRESSURE_STEP_BOUND / stiffnessReach,
     stiffnessReach > PRESSURE_STEP_BOUND);
 
@@ -105,28 +109,24 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   p.sphDensity =
     f32(sphDensityDeltaFixed[particleIdx]) * SPH_DENSITY_INV_FIXED_POINT_SCALE;
 
-  // The step limit scales the carried velocity too, or a limited particle
-  // coasts through the crowd.
-  var newVelX = (p.vel.x + deltaVx) * stepLimit * params.friction;
-  var newVelY = (p.vel.y + deltaVy) * stepLimit * params.friction;
+  // D1: newVel = s . (rho . vel + h . delta), rho the clock's retention
+  // (params.friction) and h its force gain. The step limit scales the
+  // carried velocity too, or a limited particle coasts through the crowd.
+  var newVelX = stepLimit * (params.friction * p.vel.x + params.forceGain * deltaVx);
+  var newVelY = stepLimit * (params.friction * p.vel.y + params.forceGain * deltaVy);
 
   // Logarithmic velocity capping reduces jank in high-activity areas.
   //
-  // The cap bounds travel per reference frame, so a substep spanning
-  // frameFactor of them may carry a particle maxVelocity * frameFactor: the
-  // curve acts on the speed per reference frame and the result is rescaled.
-  // At frameFactor 1 that is bit-identical to capping the speed itself. A
-  // stopped clock delivers frameFactor 0 and no travel, so the curve acts on
-  // the speed there rather than dividing by zero.
-  // Mirrored by physics_core.integrateVelocity.
+  // The cap bounds travel per reference frame; newVel already carries that
+  // unit (D1), so the curve acts on the speed directly, with no frame-factor
+  // rescale either side.
+  // Mirrored by physics_core.integrateVelocityFromDelta.
   let speed = sqrt(newVelX * newVelX + newVelY * newVelY);
-  let perFrame = select(1.0, params.frameFactor, params.frameFactor > 0.0);
-  let frameSpeed = speed / perFrame;
   let softCapThreshold = params.maxVelocity * 0.5;
-  if (frameSpeed > softCapThreshold && frameSpeed > 0.0) {
-    let excess = frameSpeed - softCapThreshold;
+  if (speed > softCapThreshold && speed > 0.0) {
+    let excess = speed - softCapThreshold;
     let compressedSpeed = softCapThreshold + log(1.0 + excess);
-    let cappedSpeed = min(compressedSpeed, params.maxVelocity) * perFrame;
+    let cappedSpeed = min(compressedSpeed, params.maxVelocity);
     let scale = cappedSpeed / speed;
     newVelX *= scale;
     newVelY *= scale;
@@ -135,8 +135,10 @@ fn integrate(@builtin(global_invocation_id) globalId: vec3<u32>) {
   p.vel.x = newVelX;
   p.vel.y = newVelY;
 
-  var newPosX = p.pos.x + newVelX;
-  var newPosY = p.pos.y + newVelY;
+  // D1: x' = x + ff . u'. The stored velocity is travel per reference frame;
+  // a substep spanning frameFactor of them moves the particle that many.
+  var newPosX = p.pos.x + params.frameFactor * newVelX;
+  var newPosY = p.pos.y + params.frameFactor * newVelY;
 
   if (newPosX < 0.0) {
     newPosX += params.worldWidth;

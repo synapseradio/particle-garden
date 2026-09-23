@@ -114,6 +114,48 @@ fn crowdPressure(density: f32, onset: f32) -> f32 {
   return excess * excess;
 }
 
+// =============================================================================
+// THE SPECIES RESTORING SLOPE
+// =============================================================================
+// The positive part of the species force's own radial derivative, over one
+// reference frame: forceMultiplier * FRAME_DT_REFERENCE * invRadius *
+// max(0, dF/d(normalizedDist)). Mirrored by physics_core's
+// polynomialRestoringSlope / exponentialRestoringSlope, which the native
+// suite checks against a central difference. integrate.wgsl's step limit
+// reads it as part of D, beside the world pressure's own slope.
+fn polynomialRestoringSlope(normalizedDist: f32, attraction: f32,
+    repulsionEnd: f32, attractionPeak: f32, attenuation: f32,
+    forceMultiplier: f32, invRadius: f32) -> f32 {
+  var slope: f32;
+  if (normalizedDist < repulsionEnd) {
+    let t = normalizedDist / repulsionEnd;
+    slope = (6.0 * t - 6.0 * t * t) / repulsionEnd;
+  } else {
+    let zoneWidth = 1.0 - repulsionEnd;
+    let peakPos = (attractionPeak - repulsionEnd) / zoneWidth;
+    let t = (normalizedDist - repulsionEnd) / zoneWidth;
+    let leftDist = t / peakPos;
+    let rightDist = (1.0 - t) / (1.0 - peakPos);
+    let left = min(leftDist, 1.0);
+    let right = min(rightDist, 1.0);
+    let leftSlope = select(0.0, 1.0 / peakPos, leftDist < 1.0);
+    let rightSlope = select(0.0, -1.0 / (1.0 - peakPos), rightDist < 1.0);
+    let crowding = select(1.0, attenuation, attraction > 0.0);
+    let bumpSlope = 2.0 * left * leftSlope * right * right +
+      2.0 * right * rightSlope * left * left;
+    slope = attraction * 4.0 * crowding * bumpSlope / zoneWidth;
+  }
+  return max(0.0, forceMultiplier * FRAME_DT_REFERENCE * invRadius * slope);
+}
+
+fn exponentialRestoringSlope(normalizedDist: f32, attraction: f32, alpha: f32,
+    beta: f32, attenuation: f32, forceMultiplier: f32, invRadius: f32) -> f32 {
+  let crowding = select(1.0, attenuation, attraction > 0.0);
+  let slope = alpha * exp(-alpha * normalizedDist) -
+    attraction * 2.0 * crowding * beta * exp(-beta * normalizedDist);
+  return max(0.0, forceMultiplier * FRAME_DT_REFERENCE * invRadius * slope);
+}
+
 @compute @workgroup_size({{WORKGROUP_SIZE}}, 1, 1)
 fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
   let thisSortedIdx = globalId.x;
@@ -310,6 +352,28 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
         forceMagnitudeOnThis *= params.forceMultiplier * invDistance;
         forceMagnitudeOnOther *= params.forceMultiplier * invDistance;
 
+        // Each side's own receiving restoring slope — the species matrix is
+        // asymmetric, so THIS and OTHER read their own attraction and
+        // crowding. Mirrored by physics_core.polynomialRestoringSlope /
+        // exponentialRestoringSlope.
+        var slopeOnThis: f32;
+        var slopeOnOther: f32;
+        if (params.forceModel == 1u) {
+          slopeOnThis = exponentialRestoringSlope(normalizedDist,
+            attractionThisToOther, params.expAlpha, params.expBeta,
+            attenuationOnThis, params.forceMultiplier, invRadius);
+          slopeOnOther = exponentialRestoringSlope(normalizedDist,
+            attractionOtherToThis, params.expAlpha, params.expBeta,
+            attenuationOnOther, params.forceMultiplier, invRadius);
+        } else {
+          slopeOnThis = polynomialRestoringSlope(normalizedDist,
+            attractionThisToOther, params.repulsionEnd, params.attractionPeak,
+            attenuationOnThis, params.forceMultiplier, invRadius);
+          slopeOnOther = polynomialRestoringSlope(normalizedDist,
+            attractionOtherToThis, params.repulsionEnd, params.attractionPeak,
+            attenuationOnOther, params.forceMultiplier, invRadius);
+        }
+
         // Accumulate force on THIS in register (no atomic needed - we own this thread)
         forceOnThisX += separationX * forceMagnitudeOnThis;
         forceOnThisY += separationY * forceMagnitudeOnThis;
@@ -370,17 +434,22 @@ fn computeForces(@builtin(global_invocation_id) globalId: vec3<u32>) {
           (-pressureVyFixed) >> VELOCITY_COARSE_SHIFT);
 
         // The pair's contribution to each particle's summed stiffness D: the
-        // saturated sum's radial slope, the same for both sides. Mirrored by
-        // physics_core.pairStiffnessSlope / balance_core.addStiffness. THIS's
-        // share accumulates in a register
-        // and splits once after the loop; OTHER's goes by atomic here, and
-        // the coarse word only when the pair's slope reaches it — below the
-        // onset no add happens at all.
-        let pairStiffness = pressureSum * invRadius;
-        if (pairStiffness > 0.0) {
-          stiffnessAccum += pairStiffness;
+        // saturated pressure sum's radial slope, the same for both sides,
+        // plus each side's own species restoring slope (design.md D4).
+        // Mirrored by physics_core.pairStiffnessSlope / balance_core.
+        // addStiffness. THIS's share accumulates in a register and splits
+        // once after the loop; OTHER's goes by atomic here, and the coarse
+        // word only when the pair's slope reaches it — below the onset and
+        // outside every species' restoring zone no add happens at all.
+        let pressureSlope = pressureSum * invRadius;
+        let stiffnessOnThis = pressureSlope + slopeOnThis;
+        let stiffnessOnOther = pressureSlope + slopeOnOther;
+        if (stiffnessOnThis > 0.0) {
+          stiffnessAccum += stiffnessOnThis;
+        }
+        if (stiffnessOnOther > 0.0) {
           let stiffnessOtherFixed =
-            i32(round(pairStiffness * STIFFNESS_FIXED_POINT_SCALE));
+            i32(round(stiffnessOnOther * STIFFNESS_FIXED_POINT_SCALE));
           atomicAdd(&crowdDensityDeltaFixed[otherOriginalIdx * 3u + 1u],
             stiffnessOtherFixed & STIFFNESS_FINE_MASK);
           let stiffnessOtherCoarse = stiffnessOtherFixed >> STIFFNESS_COARSE_SHIFT;
