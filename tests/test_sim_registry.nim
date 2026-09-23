@@ -14,6 +14,7 @@ import std/strutils
 import std/tables
 import ../src/sim_registry
 import ../src/balance_core
+from ../src/physics_core import stepClock, travel, retention, forceGain
 import ../src/field_core
 import ../src/config_ranges
 import ../src/sph_core
@@ -1083,23 +1084,14 @@ suite "Form F: Friction Is Per Reference Frame, Carried On The Whole Velocity":
   # std/jsffi or are not native Nim and no native test can import them.
 
   test "the friction uniform is raised to the substep frame factor before it reaches the GPU":
-    const SLOT = "integrationParamsData[INTEG_FRICTION]"
-    let lines = readFile("src/webgpu_compute.nim").splitLines
-    var statement = ""
-    for number, line in lines:
-      if not line.strip.startsWith(SLOT): continue
-      let indent = line.len - line.strip(trailing = false).len
-      statement = line
-      var next = number + 1
-      while next < lines.len and lines[next].strip.len > 0 and
-          lines[next].len - lines[next].strip(trailing = false).len > indent:
-        statement.add " " & lines[next]
-        inc next
-      break
-    checkpoint("assignment found for " & SLOT & ": " & statement)
-    check statement.len > 0
-    check "pow(" in statement
-    check "substepFrameFactor" in statement
+    # design.md D2: the retention moved from an inline pow() at this site to
+    # stepClock inside integrationUniforms, called once per substep with
+    # substepFrameFactor. Weakened from checking "pow(" and
+    # "substepFrameFactor" in the INTEG_FRICTION assignment itself, since
+    # that computation now lives in sim_registry.integrationUniforms.
+    let source = readFile("src/webgpu_compute.nim")
+    check "integrationUniforms(float32(substepFrameFactor), float32(friction))" in source
+    check "integrationParamsData[INTEG_FRICTION] = clock.retention" in source
 
   test "integrate.wgsl scales the carried velocity by the step limit, not only the delta":
     let lines = readFile("web/shaders/src/integrate.wgsl").splitLines
@@ -1114,4 +1106,18 @@ suite "Form F: Friction Is Per Reference Frame, Carried On The Whole Velocity":
       # That form leaves the carried velocity p.vel.x outside the limit, so
       # a limited particle keeps coasting on its old velocity while only
       # the incoming delta is capped.
-    check "+ deltaVx) * stepLimit" in statement
+    check "* (params.friction * p.vel.x + params.forceGain * deltaVx)" in statement
+      # design.md D1: newVel = s . (rho . vel + h . delta); rho is
+      # params.friction (the clock's retention) and h is params.forceGain.
+
+
+suite "The Integration Uniforms Come From One Clock":
+  test "frameFactor, retention and forceGain match stepClock's own accessors":
+    for ff in [0.0'f32, 0.42'f32, 1.0'f32, 30.0'f32]:
+      for r in [1.0'f32, 0.88'f32]:
+        let clock = stepClock(ff, r)
+        let uniforms = integrationUniforms(ff, r)
+        checkpoint("ff=" & $ff & " r=" & $r)
+        check uniforms.frameFactor == travel(clock)
+        check uniforms.retention == retention(clock)
+        check uniforms.forceGain == forceGain(clock)

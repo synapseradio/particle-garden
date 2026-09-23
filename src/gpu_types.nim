@@ -774,13 +774,17 @@ const
 const
   INTEG_WORLD_WIDTH* = 0
   INTEG_WORLD_HEIGHT* = 1
-  INTEG_FRICTION* = 2
+  INTEG_FRICTION* = 2  # retention rho = r^ff, from the clock
   INTEG_MAX_VELOCITY* = 3
   INTEG_PARTICLE_COUNT* = 4  # u32 via aliased buffer
   INTEG_FRAME_FACTOR* = 5
-  INTEG_PAD2* = 6
-  INTEG_PAD3* = 7
-  INTEG_PARAMS_F32_COUNT* = 8
+  INTEG_FORCE_GAIN* = 6  # h, the clock's force gain
+  INTEG_STEP_BOUND* = 7  # B; phase A leaves this inert (theta stays a shader constant)
+  INTEG_DENSITY_CARRY* = 8  # alpha = densitySmoothFactor^ff
+  INTEG_LOOP_GAIN_BOUND* = 9  # theta_c; phase A leaves this inert
+  INTEG_LOOP_FLOOR* = 10  # the loop's floor; phase A leaves this inert
+  INTEG_PAD0* = 11
+  INTEG_PARAMS_F32_COUNT* = 12
 
 # =============================================================================
 # RENDERPARAMS / FADEPARAMS FIELD INDICES (webgpu_render.nim)

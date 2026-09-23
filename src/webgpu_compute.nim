@@ -1094,11 +1094,10 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   # Layout matches IntegrationParams indices in gpu_types.nim
   integrationParamsData[INTEG_WORLD_WIDTH] = width
   integrationParamsData[INTEG_WORLD_HEIGHT] = height
-  # Friction is a loss per reference frame; every particle in a substep
-  # shares one frame factor, so raised here once rather than per particle
-  # in the shader.
-  integrationParamsData[INTEG_FRICTION] =
-    pow(float32(friction), float32(substepFrameFactor))
+  # One clock per substep, read by every particle in it: a gain computed at a
+  # different ff than its retention cannot reach the uniform block.
+  let clock = integrationUniforms(float32(substepFrameFactor), float32(friction))
+  integrationParamsData[INTEG_FRICTION] = clock.retention
   # The plan's Max Velocity, which is the stored one until the substep count
   # clamps and the travel bound has to be held by the speed instead.
   integrationParamsData[INTEG_MAX_VELOCITY] =
@@ -1106,7 +1105,17 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
   integrationParamsUint[INTEG_PARTICLE_COUNT] = particleCount
   # The one time factor a particle's velocity receives: every writer
   # accumulates per reference frame.
-  integrationParamsData[INTEG_FRAME_FACTOR] = float32(substepFrameFactor)
+  integrationParamsData[INTEG_FRAME_FACTOR] = clock.frameFactor
+  integrationParamsData[INTEG_FORCE_GAIN] = clock.forceGain
+  # Raised the same way retention is: shared across every particle in the
+  # substep, not recomputed per particle in the shader.
+  integrationParamsData[INTEG_DENSITY_CARRY] =
+    pow(float32(shader_config.activeConfig.tuning.densitySmoothFactor),
+      float32(substepFrameFactor))
+  # B, theta_c and the floor: unread until the loop term lands; zero is inert.
+  integrationParamsData[INTEG_STEP_BOUND] = 0.0
+  integrationParamsData[INTEG_LOOP_GAIN_BOUND] = 0.0
+  integrationParamsData[INTEG_LOOP_FLOOR] = 0.0
   queue.writeBufferTyped(cast[GPUBuffer](uniformBuffers["integrationParams"]), 0, integrationParamsData)
 
   # Field parameters. feed, kill, deposit, and field force are the live UI

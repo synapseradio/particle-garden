@@ -516,3 +516,32 @@ suite "toUpperSnake Names Index Constants From Field Names":
   test "leading underscores are dropped and trailing digits kept":
     check toUpperSnake("_pad") == "PAD"
     check toUpperSnake("_pad2") == "PAD2"
+
+
+suite "IntegrationParams Holds Twelve Floats With The Clock's Fields":
+  test "one index per D1-D5 field, twelve wide, none reused":
+    # D1: friction (retention), frameFactor, forceGain. D3: densityCarry.
+    # D4: stepBound. D5: loopGainBound, loopFloor.
+    let named = @[
+      ("worldWidth", INTEG_WORLD_WIDTH),
+      ("worldHeight", INTEG_WORLD_HEIGHT),
+      ("friction", INTEG_FRICTION),
+      ("maxVelocity", INTEG_MAX_VELOCITY),
+      ("particleCount", INTEG_PARTICLE_COUNT),
+      ("frameFactor", INTEG_FRAME_FACTOR),
+      ("forceGain", INTEG_FORCE_GAIN),
+      ("stepBound", INTEG_STEP_BOUND),
+      ("densityCarry", INTEG_DENSITY_CARRY),
+      ("loopGainBound", INTEG_LOOP_GAIN_BOUND),
+      ("loopFloor", INTEG_LOOP_FLOOR),
+    ]
+    check INTEG_PARAMS_F32_COUNT == 12
+    var seen: seq[int] = @[]
+    for (name, idx) in named:
+      checkpoint(name & " at index " & $idx)
+      check idx >= 0 and idx < INTEG_PARAMS_F32_COUNT
+      check idx notin seen
+      seen.add idx
+    check seen.len == 11
+    check INTEG_PAD0 notin seen
+    check INTEG_PAD0 < INTEG_PARAMS_F32_COUNT

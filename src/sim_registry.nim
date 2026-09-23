@@ -34,7 +34,8 @@ from std/math import ceil
 from config_ranges import SUBSTEPS_MAX, SPH_STIFFNESS_MAX, CROWD_ONSET_RATIO
 from sph_core import SPH_STABILITY_COEFFICIENT,
   SPH_CEILING_REFERENCE_FRAME_SECONDS, stableStiffnessCeiling
-from physics_core import FRAME_DT_REFERENCE
+from physics_core import FRAME_DT_REFERENCE, stepClock, travel, retention,
+  forceGain
 
 # ==============================================================================
 # SECTION 1: COUPLING STRENGTHS
@@ -772,6 +773,30 @@ func substepPlan*(ff: float; live: LiveValues): SubstepPlan =
     if asked <= 1.0: scNone
     elif askedByCoupling == asked: scCouplingNeed
     else: scTravelBound
+
+# ==============================================================================
+# SECTION 4B: THE INTEGRATION UNIFORMS
+# ==============================================================================
+#
+# The clock-derived subset of IntegrationParams (src/gpu_types.nim): what
+# stepClock alone determines from a substep's frame factor and retention.
+# webgpu_compute.nim fills the remaining fields (world size, particle count,
+# max velocity, density carry, and the loop term's B/theta_c/floor) from
+# inputs stepClock does not take.
+
+type
+  IntegrationUniforms* = object
+    frameFactor*, retention*, forceGain*: float32
+
+func integrationUniforms*(ff, retention: float32): IntegrationUniforms =
+  ## D1's clock, read once per substep. Every field below is one of
+  ## stepClock's own accessors, so a gain computed at a different ff than its
+  ## retention cannot reach the uniform block.
+  let clock = stepClock(ff, retention)
+  IntegrationUniforms(
+    frameFactor: travel(clock),
+    retention: retention(clock),
+    forceGain: forceGain(clock))
 
 # ==============================================================================
 # SECTION 5: THE WORLD PRESSURE'S ONSET
