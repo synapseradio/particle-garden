@@ -89,7 +89,9 @@ Files: `src/physics_core.nim`, `src/balance_core.nim`, `src/config_ranges.nim`,
       [0, `LOOP_GAIN_SEARCH_CEILING`]. `loopLimit` implements D5's `s_C`. Add
       `LOOP_GAIN_SEARCH_CEILING* = 10.0` beside it, its condition in two lines: caps θ_c at 5 from ff 19 at
       0.12; lifting it moved K 540 ff 30 motion under 1% (`q2_k540_ff30_thetatrue.log`).
-    - `smoothingGain(clock, nuMax)` returns D9's `g`.
+    - `smoothingGain(clock, nuMax)` returns D9's `g`, clamped by `r/h` (`clock.r / clock.h`) as well as
+      `(B/θ)/(h·min(1, 2ν_max))`, so `h·g ≤ r` holds by construction: `B/θ` alone passes `r` whenever
+      `r < 0.6` and `ff > 1`.
   - `src/balance_core.nim`:
     - `sweepPairs` (`:422`) adds each particle's receiving species slope to its `D` words, and
       accumulates `C` in two more words.

@@ -582,10 +582,12 @@ func stepLimit*(clock: StepClock; stiffness, bound, longStepBound: float32):
 func smoothingGain*(clock: StepClock; nuMax, bound, longStepBound: float32):
     float32 =
   ## D9's `g`: whole at or below a substep of ff 1, clamped past it so the
-  ## smoothing's own reach per step never outgrows ff 1's.
+  ## smoothing's own reach per step never outgrows ff 1's, and clamped by
+  ## `r/h` so `h*g` never passes the substep's own retention `r`.
   let b = longStepB(clock, bound, longStepBound)
-  min(1.0'f32,
-    (b / bound) / (clock.h * min(1.0'f32, 2.0'f32 * nuMax)))
+  min(1.0'f32, min(
+    (b / bound) / (clock.h * min(1.0'f32, 2.0'f32 * nuMax)),
+    clock.r / clock.h))
 
 const
   LOOP_GAIN_SEARCH_CEILING* = 10.0'f32

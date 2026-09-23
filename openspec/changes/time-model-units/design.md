@@ -373,7 +373,7 @@ frameFade = frameFadeFor(trailLength, ff)
 ```text
 ν_max = fluidStrength · (sphViscosity + SPH_XSPH_EPSILON)      bounds every particle's ν_i
 ν_i   = Σ_j fluidStrength · (sphViscosity + SPH_XSPH_EPSILON) · w_ij / max(ρ_i, ρ_j)
-g     = min(1, (B/θ) / (h · min(1, 2 · ν_max)))                 per substep, from the substep's clock
+g     = min(1, (B/θ) / (h · min(1, 2 · ν_max)), r/h)            per substep, from the substep's clock
 every pair's smoothing coefficient is multiplied by g; pressure and the carried velocity are not
 ```
 
@@ -402,9 +402,11 @@ every pair's smoothing coefficient is multiplied by g; pressure and the carried 
   - Where `ν_max ≤ 1/2`, `2·h·g·ν_i ≤ B/θ`. `B/θ` applies D4's share `B/(2(1 + ρ))` to this mode's bound
     `1 + ρ`. The multiplier `ρ − κ·h·g·ν_i` then stays above `ρ − B/θ > −1` for every mode with `κ ≤ 2`,
     so the step is stable by construction.
-  - Where `ν_max > 1/2`, `h·g ≤ B/θ ≤ r` from ff 1 up, so the smoothing's reach per step never exceeds ff
-    1's `r·ν_i`. Stability there rests on the mode factor. With `κ` 1.5 it holds up to `ν_i` 1.1, and the
-    run below at the viscosity ceiling settles.
+  - Where `ν_max > 1/2`, `g`'s third term clamps `h·g ≤ r` by construction, so the smoothing's reach per
+    step never exceeds ff 1's `r·ν_i`. `B/θ` alone does not hold `h·g` under `r`: `B/θ` passes `r`
+    whenever `r < B∞/θ = 0.6` (friction above 0.4) and `ff > 1`, so the `r/h` term was added on the
+    user's choice on 23-09-2026. Stability there rests on the mode factor. With `κ` 1.5 it holds up to
+    `ν_i` 1.1, and the run below at the viscosity ceiling settles.
 - **Measured** (S17, section V''). p99 reads 0.0032–0.0041 at ff 10, 12, 15 and 30 at the harness's
   viscosity, and 0.0030–0.0039 at ff 12 and 30 at the range's ceiling, `sphViscosity` + blend 1.5
   (`spike-s17/fluid/v3_*.log`). ff 1 reads 0.0066–0.0067 (`spike-s16/s16_full.log`).
