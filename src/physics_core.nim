@@ -559,6 +559,27 @@ func pairStiffnessSlope*(pressureThis, pressureOther, stiffness, impulseMax,
   worldPressureSum(pressureThis, pressureOther, stiffness, impulseMax) *
     invRadius
 
+func crowdPressureSlope(density, onset: float32): float32 =
+  ## phi'(x) = 2 * max(x - onset, 0) / onset^2, crowdPressure's own
+  ## derivative in the density it takes.
+  2.0'f32 * max(density - onset, 0.0'f32) / (onset * onset)
+
+func crowdLoopSlope*(densityThis, densityOther, onset, stiffness,
+    invRadius: float32): float32 =
+  ## D5's C_i pair contribution, before FRAME_DT_REFERENCE and the pair's own
+  ## proximity weight: `K * (6/R) * (phi'(rho_i)*rho_i + phi'(rho_j)*rho_j)`.
+  stiffness * 6.0'f32 * invRadius *
+    (crowdPressureSlope(densityThis, onset) * densityThis +
+      crowdPressureSlope(densityOther, onset) * densityOther)
+
+func crowdLoopMeanField*(densityMax, onset, stiffness, invRadius: float32):
+    float32 =
+  ## D5's mean-field floor on `C_i`: `K * FRAME_DT_REFERENCE * (12/R) *
+  ## rho_max^2 * phi'(rho_max)`, `rho_max` the larger of this step's raw and
+  ## lagged crowd density.
+  FRAME_DT_REFERENCE.float32 * stiffness * 12.0'f32 * invRadius *
+    densityMax * densityMax * crowdPressureSlope(densityMax, onset)
+
 func stepLimit*(frameFactor, stiffness, bound: float32): float32 =
   ## The factor integrate applies to a particle's whole delta: 1 unless one
   ## step would carry `frameFactor * 2 * stiffness` past `bound`.
@@ -647,13 +668,14 @@ func loopGainBound*(rho, alpha: float32): float32 =
       hi = mid
   (lo / 2.0).float32
 
-func loopLimit*(clock: StepClock; densityFactor, c, loopLimitFloor: float32):
+func loopLimit*(clock: StepClock; thetaC, c, loopLimitFloor: float32):
     float32 =
   ## D5's s_C: 1 unless the loop's reach per substep, `ff*h*C/rho`, would
-  ## carry the density-lag loop past its stable gain theta_c, where it falls
-  ## to theta_c/reach or the floor, whichever holds more.
-  let alpha = densityCarry(clock, densityFactor)
-  let thetaC = loopGainBound(clock.retention, alpha)
+  ## carry the density-lag loop past its stable gain `thetaC`
+  ## (`loopGainBound`, depending only on `clock.retention` and the density
+  ## carry alpha, so the caller computes it once per substep rather than
+  ## once per particle), where it falls to theta_c/reach or the floor,
+  ## whichever holds more.
   let reach = clock.ff * clock.forceGain * c / clock.retention
   if reach <= thetaC:
     1.0'f32

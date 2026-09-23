@@ -282,6 +282,8 @@ type
     longStepBound*: float32
       ## B∞: integrate.wgsl's LONG_STEP_BOUND, the step limit's bound as
       ## rho -> 0.
+    loopLimitFloor*: float32
+      ## lambda: integrate.wgsl's LOOP_LIMIT_FLOOR, D5's s_C floor.
     stiffnessFixedPointScale*: float32
     stiffnessCoarseShift*: int
     friction*: float32
@@ -324,6 +326,8 @@ type
     stiffnessFixed, stiffnessCoarseFixed: seq[int32]
       ## A particle's summed pair stiffness `D`, one scalar per particle
       ## rather than one per axis.
+    loopFixed, loopCoarseFixed: seq[int32]
+      ## A particle's summed density-loop term `C` (D5), encoded beside `D`.
     bodyAccumulators: seq[BodyAccumulator]
     rngState: uint64
 
@@ -379,6 +383,8 @@ proc initOracleWorld*(params: OracleParams; particleCount, speciesCount: int;
     sphFixed: newSeq[int32](particleCount),
     stiffnessFixed: newSeq[int32](particleCount),
     stiffnessCoarseFixed: newSeq[int32](particleCount),
+    loopFixed: newSeq[int32](particleCount),
+    loopCoarseFixed: newSeq[int32](particleCount),
     rngState: cast[uint64](seed.int64))
   for i in 0 ..< particleCount:
     result.posX[i] = nextUnit(result.rngState) * params.worldWidth
@@ -422,6 +428,16 @@ proc addStiffness(world: var OracleWorld; index: int; slope: float32) =
   world.stiffnessCoarseFixed[index] = wrapAdd(
     world.stiffnessCoarseFixed[index], words.coarse)
 
+proc addLoop(world: var OracleWorld; index: int; slope: float32) =
+  ## D5's `C` accumulation, encoded the same way `D`'s is.
+  let p = world.params
+  let words = splitVelocityWord(
+    encodeStiffness(slope, p.stiffnessFixedPointScale),
+    p.stiffnessCoarseShift)
+  world.loopFixed[index] = wrapAdd(world.loopFixed[index], words.fine)
+  world.loopCoarseFixed[index] = wrapAdd(world.loopCoarseFixed[index],
+    words.coarse)
+
 proc sweepPairs(world: var OracleWorld) =
   ## forces.wgsl's neighbour loop: both density channels and both force terms,
   ## each pair visited once.
@@ -449,6 +465,7 @@ proc sweepPairs(world: var OracleWorld) =
     var colonyAccum = 0.0'f32
     var crowdAccum = 0.0'f32
     var stiffnessAccum = 0.0'f32
+    var loopAccum = 0.0'f32
     let coords = computeCellCoords(thisX, thisY, world.gridW, world.gridH,
       invCellW, invCellH)
     for dy in -1 .. 1:
@@ -542,6 +559,11 @@ proc sweepPairs(world: var OracleWorld) =
           if otherStiffness > 0.0'f32:
             world.addStiffness(other, otherStiffness)
           let proximityWeight = 1.0'f32 - normalizedDist
+          let loopSlope = crowdLoopSlope(crowdThis, crowdOther,
+            p.pressureOnset, p.pressureStiffness, invRadius) *
+            FRAME_DT_REFERENCE.float32 * proximityWeight
+          loopAccum += loopSlope
+          world.addLoop(other, loopSlope)
           crowdAccum += proximityWeight
           world.crowdFixed[other] = wrapAdd(world.crowdFixed[other],
             int32(proximityWeight * p.crowdDensityScale))
@@ -558,12 +580,17 @@ proc sweepPairs(world: var OracleWorld) =
     world.crowdFixed[this] = wrapAdd(world.crowdFixed[this],
       int32(crowdAccum * p.crowdDensityScale))
     world.addStiffness(this, stiffnessAccum)
+    world.addLoop(this, loopAccum)
 
-proc sweepFluid(world: var OracleWorld) =
+proc sweepFluid(world: var OracleWorld; subFrameFactor: float32) =
   ## forces-sph.wgsl's neighbour loop (:240-326): the pressure and the
   ## velocity blend on both sides of each pair, and the fresh kernel density.
   let p = world.params
   let f = p.fluid
+  let clock = stepClock(subFrameFactor, p.friction)
+  let nuMax = f.strength.float32 * (f.viscosity.float32 + f.blend.float32)
+  let smoothGain = smoothingGain(clock, nuMax, p.pressureStepBound,
+    p.longStepBound)
   let smoothingRadius = p.interactionRadius * f.radiusFraction.float32
   let radiusSq = smoothingRadius * smoothingRadius
   let h = smoothingRadius.float
@@ -621,7 +648,8 @@ proc sweepFluid(world: var OracleWorld) =
           let smoothDenominator =
             max(max(laggedThis, world.sphDensity[other].float), 1.0)
           let smoothCoefficient =
-            (f.viscosity + f.blend) * densityWeight / smoothDenominator
+            (f.viscosity + f.blend) * densityWeight / smoothDenominator *
+              smoothGain.float
           let gapX = (world.velX[other] - world.velX[this]).float
           let gapY = (world.velY[other] - world.velY[this]).float
           let pairX = f.strength *
@@ -712,6 +740,7 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
   let invCrowd = 1.0'f32 / p.crowdDensityScale
   let carried = densityCarry(clock, p.densitySmoothFactor)
   let arriving = 1.0'f32 - carried
+  let thetaC = loopGainBound(clock.retention, carried)
   let fluidActs = p.fluid.strength != 0.0
   let invSph =
     if fluidActs: 1.0'f32 / p.fluid.densityScale.float32 else: 0.0'f32
@@ -719,17 +748,27 @@ proc integrateParticles(world: var OracleWorld; subFrameFactor: float32) =
     if p.stiffnessFixedPointScale != 0.0'f32:
       1.0'f32 / p.stiffnessFixedPointScale
     else: 0.0'f32
+  let invRadius = 1.0'f32 / p.interactionRadius
   for i in 0 ..< world.posX.len:
     world.colonyDensity[i] = world.colonyDensity[i] * carried +
       float32(world.colonyFixed[i]) * invFixed * arriving
-    world.crowdDensity[i] = world.crowdDensity[i] * carried +
-      float32(world.crowdFixed[i]) * invCrowd * arriving
+    let laggedCrowd = world.crowdDensity[i]
+    let rawCrowd = float32(world.crowdFixed[i]) * invCrowd
+    world.crowdDensity[i] = laggedCrowd * carried + rawCrowd * arriving
     world.sphDensity[i] = float32(world.sphFixed[i]) * invSph
     let stiffness = decodeStiffness(
       (fine: world.stiffnessFixed[i], coarse: world.stiffnessCoarseFixed[i]),
       invStiffnessFixed, p.stiffnessCoarseShift)
-    let limit = stepLimit(clock, stiffness, p.pressureStepBound,
+    let loopPairSum = decodeStiffness(
+      (fine: world.loopFixed[i], coarse: world.loopCoarseFixed[i]),
+      invStiffnessFixed, p.stiffnessCoarseShift)
+    let loopMeanField = crowdLoopMeanField(max(rawCrowd, laggedCrowd),
+      p.pressureOnset, p.pressureStiffness, invRadius)
+    let loopC = max(loopPairSum, loopMeanField)
+    let limitD = stepLimit(clock, stiffness, p.pressureStepBound,
       p.longStepBound)
+    let limitC = loopLimit(clock, thetaC, loopC, p.loopLimitFloor)
+    let limit = min(limitD, limitC)
     let decodedX = decodeVelocityWords(
       (fine: world.deltaFixed[i * 2], coarse: world.coarseFixed[i * 2]),
       invFixed, 1.0'f32, p.fluid.coarseShift)
@@ -771,10 +810,12 @@ proc stepFrame*(world: var OracleWorld; frameFactor: float; substeps: int) =
       world.sphFixed[i] = 0
       world.stiffnessFixed[i] = 0
       world.stiffnessCoarseFixed[i] = 0
+      world.loopFixed[i] = 0
+      world.loopCoarseFixed[i] = 0
     rebin(world)
     sweepPairs(world)
     if world.params.fluid.strength != 0.0:
-      sweepFluid(world)
+      sweepFluid(world, subFrameFactor.float32)
     applyBodies(world, subFrameFactor * FRAME_DT_REFERENCE)
     integrateParticles(world, subFrameFactor.float32)
 

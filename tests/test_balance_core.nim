@@ -511,6 +511,7 @@ func fluidOnlyParams(fluid: OracleFluidParams;
     pressureOnset: 1.0'f32, pressureStiffness: 0.0'f32,
     pressureStepBound: PRESSURE_STEP_BOUND.float32,
     longStepBound: LONG_STEP_BOUND.float32,
+    loopLimitFloor: LOOP_LIMIT_FLOOR.float32,
     stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
     stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
     friction: retention, maxVelocity: UNCAPPED_VELOCITY,
@@ -551,10 +552,13 @@ func minimumImage(fromAt, toAt, span: float32): float32 =
       best = wrapped
   best
 
-func expectFluid(world: OracleWorld): FluidExpectation =
+func expectFluid(world: OracleWorld; smoothGain = 1.0): FluidExpectation =
   ## Every pair over the torus, through sph_core's pair term. sph_core bakes
   ## in SPH_XSPH_EPSILON and SPH_FORCE_SCALE, so an arm's zero side reaches it
-  ## as the viscosity or stiffness that gives the same term.
+  ## as the viscosity or stiffness that gives the same term. `smoothGain`
+  ## isolates the velocity-blend half of that term by a second call at
+  ## viscosity `-SPH_XSPH_EPSILON` (which zeroes the blend), matching D9's
+  ## `smoothGain*` applying to that half alone in sweepFluid.
   let p = world.params
   let f = p.fluid
   doAssert f.pressureGain in [0.0, SPH_FORCE_SCALE],
@@ -599,9 +603,14 @@ func expectFluid(world: OracleWorld): FluidExpectation =
         oracleStiffness, f.gamma)
       let gap = (x: (world.velX[j] - world.velX[i]).float,
         y: (world.velY[j] - world.velY[i]).float)
-      let onI = sphPairVelocityDelta(pressureI, densityI, pressureJ, densityJ,
-        gradientWeight, densityWeight, laggedI, laggedJ, oracleViscosity,
-        f.strength, direction, gap)
+      let pressureOnly = sphPairVelocityDelta(pressureI, densityI, pressureJ,
+        densityJ, gradientWeight, densityWeight, laggedI, laggedJ,
+        -SPH_XSPH_EPSILON, f.strength, direction, gap)
+      let full = sphPairVelocityDelta(pressureI, densityI, pressureJ,
+        densityJ, gradientWeight, densityWeight, laggedI, laggedJ,
+        oracleViscosity, f.strength, direction, gap)
+      let onI = (x: pressureOnly.x + smoothGain * (full.x - pressureOnly.x),
+        y: pressureOnly.y + smoothGain * (full.y - pressureOnly.y))
       let unclamped = SPH_FORCE_SCALE * (pressureI / (densityI * densityI) +
         pressureJ / (densityJ * densityJ)) * gradientWeight
       if abs(unclamped) > SPH_MAX_PRESSURE_ACCEL:
@@ -626,14 +635,22 @@ type MirrorReading = object
 
 proc mirrorStep(label: string; fluid: OracleFluidParams;
     frameFactor = 1.0; retention = 1.0'f32): MirrorReading =
-  ## One mirrored step of a stirred world against sph_core's pair term. The
-  ## tolerance is one quantum per encode a particle's delta passes through
-  ## (one per pair it meets as the higher index, one for its own register,
-  ## one spare), plus the f32 roundings of its own register, the velocity add
-  ## and the friction multiply.
+  ## One mirrored step of a stirred world against sph_core's pair term, its
+  ## smoothing half scaled by D9's `smoothGain` the way sweepFluid scales it
+  ## (rows 25-26 hold `smoothingGain*` itself). The tolerance is one quantum
+  ## per encode a particle's delta passes through (one per pair it meets as
+  ## the higher index, one for its own register, one spare), plus the f32
+  ## roundings of its own register, the velocity add and the friction
+  ## multiply.
   var world = stirredWorld(fluidOnlyParams(fluid, retention), FLUID_TEST_SEED)
   let before = world
-  let expected = expectFluid(before)
+  let p = world.params
+  let clock = stepClock(frameFactor.float32, p.friction)
+  let nuMax = p.fluid.strength.float32 *
+    (p.fluid.viscosity.float32 + p.fluid.blend.float32)
+  let smoothGain = smoothingGain(clock, nuMax, p.pressureStepBound,
+    p.longStepBound)
+  let expected = expectFluid(before, smoothGain.float)
   stepFrame(world, frameFactor, 1)
   let quantum = 1.0 / PRODUCTION_TUNING.fixedPointScale
   let densityQuantum = 1.0 / fluid.densityScale
@@ -725,6 +742,7 @@ func armWorldParams(fluid: OracleFluidParams;
     pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
     pressureStepBound: PRESSURE_STEP_BOUND.float32,
     longStepBound: LONG_STEP_BOUND.float32,
+    loopLimitFloor: LOOP_LIMIT_FLOOR.float32,
     stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
     stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
     friction: (1.0 - shipped.friction).float32,
@@ -778,7 +796,7 @@ suite "The Fluid Mirror Steps As The Oracle Does":
         verdicts.add mirrorStep($arm.term & " step " & $index, step).verdicts
     checkNoVerdicts(verdicts)
 
-  test "the frame factor and friction meet the fluid's delta only in integrate":
+  test "the frame factor and friction meet the fluid only through integrate and the smoothing gain":
     var verdicts: Verdicts
     verdicts.add mirrorStep("frame factor 2", shippedFluid(),
       frameFactor = 2.0).verdicts
@@ -1418,6 +1436,160 @@ suite "A Limited Step Cannot Overshoot":
     check coupledExceeded
 
 # ==============================================================================
+# T5f: THE LOOP GAIN BOUNDS THE MEASURED ONE
+# ==============================================================================
+# A finite-difference oracle: move one neighbour of a crowded particle by
+# T5_EPS, recompute the two densities the moved pair's own proximity term
+# feeds, holding every other particle's density at its pre-perturbation
+# value so the check isolates the direct i-j chain crowdLoopSlope bounds,
+# and read the change in the particle's own pressure force.
+
+const T5F_TRIALS = 8
+
+func crowdProximityWeight(xs, ys: seq[float64]; i, j: int;
+    worldSize, radius: float64): float64 =
+  let half = worldSize * 0.5
+  let dx = wrapDelta((xs[j] - xs[i]).float32, worldSize.float32,
+    half.float32).float64
+  let dy = wrapDelta((ys[j] - ys[i]).float32, worldSize.float32,
+    half.float32).float64
+  let distSq = dx * dx + dy * dy
+  if distSq <= 0.0 or distSq >= radius * radius: 0.0
+  else: 1.0 - sqrt(distSq) / radius
+
+func crowdDensityRaw(xs, ys: seq[float64]; i: int;
+    worldSize, radius: float64): float64 =
+  ## The raw crowd density world.crowdDensity feeds once smoothed: the sum
+  ## of every neighbour's proximity weight, matching sweepPairs's crowdAccum
+  ## (src/balance_core.nim:561-567).
+  for j in 0 ..< xs.len:
+    if j == i: continue
+    result += crowdProximityWeight(xs, ys, i, j, worldSize, radius)
+
+func pressureForceOnCrowd(xs, ys, densities: seq[float64]; i: int;
+    worldSize, radius, onset, stiffness, impulseMax: float64):
+    tuple[x, y: float64] =
+  ## pressureForceOn, generalized from a crowd-wide fixed phi to each
+  ## particle's own density, through crowdPressure.
+  let half = worldSize * 0.5
+  let floorSq = PRODUCTION_TUNING.minDistanceSq
+  for j in 0 ..< xs.len:
+    if j == i: continue
+    let dx = wrapDelta((xs[j] - xs[i]).float32, worldSize.float32,
+      half.float32).float64
+    let dy = wrapDelta((ys[j] - ys[i]).float32, worldSize.float32,
+      half.float32).float64
+    let distSq = dx * dx + dy * dy
+    if distSq <= 0.0 or distSq >= radius * radius: continue
+    let dist = sqrt(max(distSq, floorSq))
+    let invDist = 1.0 / dist
+    let normalizedDist = dist / radius
+    let magnitude = worldPressureMagnitude(
+      crowdPressure(densities[i].float32, onset.float32),
+      crowdPressure(densities[j].float32, onset.float32),
+      normalizedDist.float32, stiffness.float32, impulseMax.float32).float64
+    result.x += -magnitude * dx * invDist
+    result.y += -magnitude * dy * invDist
+
+func predictedLoopC(xs, ys, densities: seq[float64]; i: int;
+    worldSize, radius, onset, stiffness: float64; pairSumOn,
+    meanFieldOn: bool): float64 =
+  ## The shipped C_i: crowdLoopSlope summed over i's pairs, floored by
+  ## crowdLoopMeanField (src/balance_core.nim:759-766). `pairSumOn` and
+  ## `meanFieldOn` let the control isolate the mean-field-only candidate.
+  let invRadius = 1.0 / radius
+  var pairSum = 0.0
+  for j in 0 ..< xs.len:
+    if j == i: continue
+    let w = crowdProximityWeight(xs, ys, i, j, worldSize, radius)
+    if w <= 0.0: continue
+    pairSum += crowdLoopSlope(densities[i].float32, densities[j].float32,
+      onset.float32, stiffness.float32, invRadius.float32).float64 *
+      FRAME_DT_REFERENCE.float64 * w
+  let meanField = crowdLoopMeanField(densities[i].float32, onset.float32,
+    stiffness.float32, invRadius.float32).float64
+  if pairSumOn and meanFieldOn: max(pairSum, meanField)
+  elif pairSumOn: pairSum
+  else: meanField
+
+func t5fForceSlope(crowd: T5Crowd; densities: seq[float64]; i, j: int):
+    tuple[slope: float64; w: float64] =
+  ## The central-difference force response on `i` to moving neighbour `j` by
+  ## T5_EPS, with `i` and `j`'s own densities updated through their mutual
+  ## proximity term alone and every other density held fixed.
+  let w = crowdProximityWeight(crowd.xs, crowd.ys, i, j, crowd.worldSize,
+    crowd.radius)
+  if w <= 0.0:
+    return (0.0, 0.0)
+  var xsPlus = crowd.xs
+  xsPlus[j] += T5_EPS
+  var xsMinus = crowd.xs
+  xsMinus[j] -= T5_EPS
+  let wPlus = crowdProximityWeight(xsPlus, crowd.ys, i, j, crowd.worldSize,
+    crowd.radius)
+  let wMinus = crowdProximityWeight(xsMinus, crowd.ys, i, j, crowd.worldSize,
+    crowd.radius)
+  var densPlus = densities
+  densPlus[i] = densities[i] - w + wPlus
+  densPlus[j] = densities[j] - w + wPlus
+  var densMinus = densities
+  densMinus[i] = densities[i] - w + wMinus
+  densMinus[j] = densities[j] - w + wMinus
+  let fPlus = pressureForceOnCrowd(xsPlus, crowd.ys, densPlus, i,
+    crowd.worldSize, crowd.radius, ONSET_RATIO, WORLD_PRESSURE_STIFFNESS,
+    WORLD_PRESSURE_IMPULSE_MAX)
+  let fMinus = pressureForceOnCrowd(xsMinus, crowd.ys, densMinus, i,
+    crowd.worldSize, crowd.radius, ONSET_RATIO, WORLD_PRESSURE_STIFFNESS,
+    WORLD_PRESSURE_IMPULSE_MAX)
+  let dfx = (fPlus.x - fMinus.x) / (2.0 * T5_EPS)
+  let dfy = (fPlus.y - fMinus.y) / (2.0 * T5_EPS)
+  (sqrt(dfx * dfx + dfy * dfy), w)
+
+suite "The Loop Gain Bounds The Measured One":
+  test "a moved neighbour's force change stays inside C_i (T5f)":
+    var verdicts: Verdicts
+    for trial in 0 ..< T5F_TRIALS:
+      let crowd = t5Crowd(trial, T5_PARTICLES)
+      var densities = newSeq[float64](crowd.xs.len)
+      for i in 0 ..< crowd.xs.len:
+        densities[i] = crowdDensityRaw(crowd.xs, crowd.ys, i, crowd.worldSize,
+          crowd.radius)
+      for i in 0 ..< crowd.xs.len:
+        let c = predictedLoopC(crowd.xs, crowd.ys, densities, i,
+          crowd.worldSize, crowd.radius, ONSET_RATIO, WORLD_PRESSURE_STIFFNESS,
+          true, true)
+        for j in 0 ..< crowd.xs.len:
+          if j == i: continue
+          let (slope, w) = t5fForceSlope(crowd, densities, i, j)
+          if w <= 0.0: continue
+          if slope > c * (1.0 + 1e-3):
+            verdicts.add "trial " & $trial & " particle " & $i & " neighbour " &
+              $j & ": measured slope " & $slope & " passes C_i " & $c
+    checkNoVerdicts(verdicts)
+
+  test "the mean-field-only candidate under-counts C_i (control)":
+    var violated = false
+    block outer:
+      for trial in 0 ..< T5F_TRIALS:
+        let crowd = t5Crowd(trial, T5_PARTICLES)
+        var densities = newSeq[float64](crowd.xs.len)
+        for i in 0 ..< crowd.xs.len:
+          densities[i] = crowdDensityRaw(crowd.xs, crowd.ys, i, crowd.worldSize,
+            crowd.radius)
+        for i in 0 ..< crowd.xs.len:
+          let cMeanFieldOnly = predictedLoopC(crowd.xs, crowd.ys, densities, i,
+            crowd.worldSize, crowd.radius, ONSET_RATIO, WORLD_PRESSURE_STIFFNESS,
+            false, true)
+          for j in 0 ..< crowd.xs.len:
+            if j == i: continue
+            let (slope, w) = t5fForceSlope(crowd, densities, i, j)
+            if w <= 0.0: continue
+            if slope > cMeanFieldOnly * (1.0 + 1e-3):
+              violated = true
+              break outer
+    check violated
+
+# ==============================================================================
 # THE STEP LIMIT REACHES INTEGRATE
 # ==============================================================================
 # T5a-T5d hold stepLimit's own formula. This holds that stepFrame applies the
@@ -1431,10 +1603,17 @@ const
   LIMIT_REACH_WORLD = 400.0'f32
   LIMIT_REACH_ONSET = 0.05'f32
   LIMIT_REACH_UNLIMITED_BOUND = 1.0e6'f32
-    ## A theta this large never binds `stepLimit`, so this copy shows the
-    ## delta the limited copy's `s` is meant to scale.
+    ## A theta this large never binds `stepLimit`'s `s_D`, so this copy shows
+    ## the delta the limited copy's `s` is meant to scale.
+  LIMIT_REACH_NEUTRAL_LOOP_FLOOR = 1.0'f32
+    ## At ff 1, `loopLimit`'s floor term is `loopLimitFloor * min(1, 1/ff)`;
+    ## 1.0 makes that term 1.0, so `max(thetaC/reach, 1.0)` never binds `s_C`.
+    ## Both copies below carry it: this suite holds `stepLimit`'s own (D5's
+    ## `s_D`) formula, so D5's loop term `s_C` is neutralized in both, not
+    ## only compared away by an oversized `pressureStepBound`.
 
-func limitReachParams(bound: float32): OracleParams =
+func limitReachParams(bound: float32; loopLimitFloor: float32 = 0.0'f32):
+    OracleParams =
   OracleParams(
     interactionRadius: LIMIT_REACH_RADIUS,
     worldWidth: LIMIT_REACH_WORLD, worldHeight: LIMIT_REACH_WORLD,
@@ -1447,6 +1626,7 @@ func limitReachParams(bound: float32): OracleParams =
     pressureStiffness: WORLD_PRESSURE_STIFFNESS.float32,
     pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
     pressureStepBound: bound,
+    loopLimitFloor: loopLimitFloor,
     stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
     stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
     friction: 1.0'f32,
@@ -1457,13 +1637,14 @@ func limitReachParams(bound: float32): OracleParams =
     bodiesStrength: 0.0,
     fluid: OracleFluidParams(strength: 0.0, coarseShift: VELOCITY_COARSE_SHIFT))
 
-func limitReachWorld(bound: float32): OracleWorld =
+func limitReachWorld(bound: float32; loopLimitFloor: float32 = 0.0'f32):
+    OracleWorld =
   ## Particle 0 at the world's own place, a 6x5 clump of 30 particles beyond
   ## the species repulsion lobe (`0.5 * radius`) so only the pressure term
   ## acts on particle 0. `forceMultiplier` is 0 as a second guard against the
   ## species term reaching this test.
-  result = initOracleWorld(limitReachParams(bound), LIMIT_REACH_PARTICLES, 1,
-    @[0.0'f32], 1)
+  result = initOracleWorld(limitReachParams(bound, loopLimitFloor),
+    LIMIT_REACH_PARTICLES, 1, @[0.0'f32], 1)
   result.posX[0] = 100.0'f32
   result.posY[0] = 100.0'f32
   var i = 1
@@ -1496,8 +1677,10 @@ func stiffnessSumFromWorld(world: OracleWorld; i: int): float32 =
 suite "A Limited Step Reaches Integrate":
 
   test "a particle past the bound receives exactly s times the unlimited delta through stepFrame":
-    var limited = limitReachWorld(PRESSURE_STEP_BOUND.float32)
-    var unlimited = limitReachWorld(LIMIT_REACH_UNLIMITED_BOUND)
+    var limited = limitReachWorld(PRESSURE_STEP_BOUND.float32,
+      LIMIT_REACH_NEUTRAL_LOOP_FLOOR)
+    var unlimited = limitReachWorld(LIMIT_REACH_UNLIMITED_BOUND,
+      LIMIT_REACH_NEUTRAL_LOOP_FLOOR)
     # Frame 1: crowdDensity starts at 0, so D is 0 and s is 1 in both copies
     # alike; this only warms crowdDensity for frame 2's sweepPairs to read.
     stepFrame(limited, 1.0, 1)
@@ -1520,8 +1703,10 @@ suite "A Limited Step Reaches Integrate":
     ## Form F: v' = r^ff * s * (v + ff*delta), so s scales the whole sum. A
     ## carried velocity dwarfing the step's own delta isolates that claim: the
     ## old delta-only scaling left an untouched v term of (1-s)*v behind.
-    var limited = limitReachWorld(PRESSURE_STEP_BOUND.float32)
-    var unlimited = limitReachWorld(LIMIT_REACH_UNLIMITED_BOUND)
+    var limited = limitReachWorld(PRESSURE_STEP_BOUND.float32,
+      LIMIT_REACH_NEUTRAL_LOOP_FLOOR)
+    var unlimited = limitReachWorld(LIMIT_REACH_UNLIMITED_BOUND,
+      LIMIT_REACH_NEUTRAL_LOOP_FLOOR)
     # Frame 1: crowdDensity starts at 0, so D is 0 and s is 1 in both copies
     # alike; this only warms crowdDensity for frame 2's sweepPairs to read.
     stepFrame(limited, 1.0, 1)
@@ -1580,6 +1765,7 @@ func t7Params(): OracleParams =
     pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
     pressureStepBound: PRESSURE_STEP_BOUND.float32,
     longStepBound: LONG_STEP_BOUND.float32,
+    loopLimitFloor: LOOP_LIMIT_FLOOR.float32,
     stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
     stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
     friction: (1.0 - shipped.friction).float32,
@@ -1720,6 +1906,7 @@ when defined(calibrateBalance):
       pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
       pressureStepBound: PRESSURE_STEP_BOUND.float32,
       longStepBound: LONG_STEP_BOUND.float32,
+      loopLimitFloor: LOOP_LIMIT_FLOOR.float32,
       stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
       stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
       friction: (1.0 - sliderFriction).float32,
@@ -2271,6 +2458,66 @@ when defined(calibrateBalance):
         "largest distance ", shown(derivedBound(far)), ", margin ",
         shown(derivedBound(far) - 1.0)
 
+  # --- T7s and S16's fluid gate, at T7's 2 000-particle scale -----------------
+
+  const T7S_WORLD_TIME = 8250.0
+    ## The reference-frame span every frame-factor condition matches, the
+    ## midpoint of design.md row 21's 7 500-9 000 window.
+
+  func matchedTimeSteps(frameFactor: float): int =
+    max(int(round(T7S_WORLD_TIME / frameFactor)), 1)
+
+  suite "The Species-Only World Stays Settled At Every Frame Factor":
+    test "ff 10 and 30's motion stays within 3x ff 1's, at matched world " &
+        "time (T7s)":
+      var verdicts: Verdicts
+      for seed in T7_SEEDS:
+        var base: float
+        for frameFactor in [1.0, 10.0, 30.0]:
+          var world = initOracleWorld(t7Params(), T7_PARTICLES, 1,
+            @[MATRIX_MAX_VALUE.float32], seed)
+          let steps = matchedTimeSteps(frameFactor)
+          for _ in 0 ..< steps:
+            stepFrame(world, frameFactor, 1)
+          let motion = meanSpeed(world) / frameFactor
+          if frameFactor == 1.0:
+            base = motion
+          elif motion > 3.0 * base:
+            verdicts.add "seed " & $seed & " ff " & $frameFactor &
+              ": motion " & $motion & " passes 3x ff 1's " & $base
+      checkNoVerdicts(verdicts)
+
+  suite "The Fluid Stays Settled At Every Frame Factor":
+    test "ff 12 and 30's p99 speed stays within 3x ff 1's, at the " &
+        "stiffness and viscosity ceilings (row 28)":
+      # One substep at every frame factor: the worst case for D9's per-substep
+      # clamp, since more substeps only shrink each one's own reach.
+      var params = t7Params()
+      params.fluid = shippedFluid()
+      params.fluid.viscosity = SPH_VISCOSITY_MAX
+      params.fluid.stiffness = SPH_STIFFNESS_MAX
+      var verdicts: Verdicts
+      for seed in T7_SEEDS:
+        var speeds: seq[float32]
+        var base: float
+        for frameFactor in [1.0, 12.0, 30.0]:
+          var world = initOracleWorld(params, T7_PARTICLES, 1,
+            @[MATRIX_MAX_VALUE.float32], seed)
+          let steps = matchedTimeSteps(frameFactor)
+          for _ in 0 ..< steps:
+            stepFrame(world, frameFactor, 1)
+          speeds.setLen(world.velX.len)
+          for i in 0 ..< world.velX.len:
+            speeds[i] = sqrt(world.velX[i] * world.velX[i] +
+              world.velY[i] * world.velY[i]) / frameFactor.float32
+          let p99 = percentile999(speeds)
+          if frameFactor == 1.0:
+            base = p99
+          elif p99 > 3.0 * base:
+            verdicts.add "seed " & $seed & " ff " & $frameFactor &
+              ": p99 speed " & $p99 & " passes 3x ff 1's " & $base
+      checkNoVerdicts(verdicts)
+
 suite "The Oracle Step Matches The Clock At Every Frame Factor":
   test "one particle's velocity and position through stepFrame match rho=r^ff and x'=x+ff*u'":
     # A single particle draws no pair or body force (forceMultiplier and
@@ -2291,6 +2538,7 @@ suite "The Oracle Step Matches The Clock At Every Frame Factor":
       pressureImpulseMax: WORLD_PRESSURE_IMPULSE_MAX.float32,
       pressureStepBound: PRESSURE_STEP_BOUND.float32,
       longStepBound: LONG_STEP_BOUND.float32,
+      loopLimitFloor: LOOP_LIMIT_FLOOR.float32,
       stiffnessFixedPointScale: STIFFNESS_FIXED_POINT_SCALE.float32,
       stiffnessCoarseShift: STIFFNESS_COARSE_SHIFT,
       friction: 0.8'f32,
