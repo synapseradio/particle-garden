@@ -9,7 +9,7 @@ import ../src/sph_core
 import ../src/field_core
 from ../src/physics_core import FRAME_DT_REFERENCE
 from ../src/config_ranges import VELOCITY_COARSE_SHIFT,
-  WORLD_PRESSURE_STIFFNESS, WORLD_PRESSURE_IMPULSE_MAX, PRESSURE_STEP_BOUND,
+  WORLD_PRESSURE_STIFFNESS, WORLD_PRESSURE_IMPULSE_MAX,
   STIFFNESS_COARSE_SHIFT, STIFFNESS_FIXED_POINT_SCALE
 import ../src/bloom_core
 
@@ -240,9 +240,8 @@ suite "The World Pressure's Two Constants Reach WGSL":
 
 suite "The Step Limit's Constants Reach WGSL":
   # forces.wgsl encodes each pair's radial slope into the stiffness words at
-  # this shift and scale; integrate.wgsl decodes them and holds the step to
-  # PRESSURE_STEP_BOUND. All three come from config_ranges, where the
-  # calibration that settles them writes.
+  # this shift and scale, and integrate.wgsl decodes them. Both come from
+  # config_ranges, where the calibration that settles them writes.
 
   test "the emitted stiffness coarse shift equals STIFFNESS_COARSE_SHIFT":
     check parseInt(getPlaceholderMap()["STIFFNESS_COARSE_SHIFT"]) ==
@@ -258,8 +257,3 @@ suite "The Step Limit's Constants Reach WGSL":
     let scale = parseFloat(placeholders["STIFFNESS_FIXED_POINT_SCALE"])
     let inverse = parseFloat(placeholders["STIFFNESS_INV_FIXED_POINT_SCALE"])
     check abs(scale * inverse - 1.0) < 1e-9
-
-  test "the emitted step bound equals PRESSURE_STEP_BOUND":
-    let emitted = getPlaceholderMap()["PRESSURE_STEP_BOUND"]
-    require "." in emitted
-    check abs(parseFloat(emitted) / PRESSURE_STEP_BOUND - 1.0) < 1e-9

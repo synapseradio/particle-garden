@@ -169,9 +169,8 @@ proc calculateBufferSizes*(): BufferSizes {.exportc.} =
 
   result.densityDelta = memory_layout.MAX_PARTICLES * 4
   result.sphDensityDelta = memory_layout.MAX_PARTICLES * 4
-  # Stride 5: crowd, stiffnessFine, stiffnessCoarse, cFine, cCoarse. forces.wgsl
-  # and integrate.wgsl both index it at particleIdx * 5u.
-  result.crowdDensityDelta = memory_layout.MAX_PARTICLES * 5 * 4
+  result.crowdDensityDelta =
+    memory_layout.MAX_PARTICLES * memory_layout.CROWD_DENSITY_DELTA_WORDS * 4
   result.fieldAlive = 4  # one u32: the frame's alive-cell census
 
   # The bodies triple. Sized from the layout table rather than from literals, so

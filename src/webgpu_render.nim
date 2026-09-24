@@ -923,25 +923,6 @@ proc initWebGPURender*(): bool =
   tonemapBuffer3["type"] = "uniform".cstring.toJs
   tonemapEntry3["buffer"] = tonemapBuffer3
   discard tonemapLayoutEntries.push(tonemapEntry3)
-  # Binding 4: RD field texture. Sampled in the tonemap so the field joins
-  # the graded HDR light; the bloom view stands in while the field view is nil.
-  let tonemapEntry4 = newJsObject()
-  tonemapEntry4["binding"] = 4.toJs
-  tonemapEntry4["visibility"] = gpuShaderStageFragment.toJs
-  let tonemapTexture4 = newJsObject()
-  tonemapTexture4["sampleType"] = "float".cstring.toJs
-  tonemapEntry4["texture"] = tonemapTexture4
-  discard tonemapLayoutEntries.push(tonemapEntry4)
-  # Binding 5: the camera, so the field sample maps through the view. The trail
-  # and bloom are screen-space targets and need no transform; only the field
-  # lives in the world.
-  let tonemapEntry5 = newJsObject()
-  tonemapEntry5["binding"] = 5.toJs
-  tonemapEntry5["visibility"] = gpuShaderStageFragment.toJs
-  let tonemapBuffer5 = newJsObject()
-  tonemapBuffer5["type"] = "uniform".cstring.toJs
-  tonemapEntry5["buffer"] = tonemapBuffer5
-  discard tonemapLayoutEntries.push(tonemapEntry5)
   validateEntryCount(tonemapLayoutEntries, "Tonemap Bind Group Layout",
     EXPECTED_BIND_GROUP_ENTRIES_TONEMAP)
   tonemapLayoutDesc["entries"] = tonemapLayoutEntries

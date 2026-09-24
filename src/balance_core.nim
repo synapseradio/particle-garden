@@ -278,12 +278,13 @@ type
     pressureStiffness*: float32
     pressureImpulseMax*: float32
     pressureStepBound*: float32
-      ## theta: integrate.wgsl's PRESSURE_STEP_BOUND.
+      ## theta. Reaches integrate.wgsl folded into IntegrationParams.stepBound.
     longStepBound*: float32
-      ## B∞: integrate.wgsl's LONG_STEP_BOUND, the step limit's bound as
-      ## rho -> 0.
+      ## B∞, the step limit's bound as rho -> 0. Reaches integrate.wgsl folded
+      ## into IntegrationParams.stepBound.
     loopLimitFloor*: float32
-      ## lambda: integrate.wgsl's LOOP_LIMIT_FLOOR, D5's s_C floor.
+      ## lambda, D5's s_C floor. Reaches integrate.wgsl folded into
+      ## IntegrationParams.loopFloor.
     stiffnessFixedPointScale*: float32
     stiffnessCoarseShift*: int
     friction*: float32

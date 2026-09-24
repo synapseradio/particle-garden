@@ -19,6 +19,7 @@ from ../src/physics_core import stepClock, travel, retention, forceGain,
 import ../src/field_core
 import ../src/config_ranges
 import ../src/sph_core
+from ../src/memory_layout import CROWD_DENSITY_DELTA_WORDS
 import ../src/ui/api/param_descriptor
 import coupling_space  # the corners of the strength space, ALL_COUPLINGS
 
@@ -760,14 +761,13 @@ suite "Only Integrate Reads The Frame Factor":
     check arraysSeen.len == WRITER_PARAMS.len
 
 
-suite "The Crowd Buffer's Clear Covers All Three Words":
-  # webgpu_init sizes the crowd buffer at stride 5 (crowd, stiffnessFine,
-  # stiffnessCoarse, cFine, cCoarse). A clear sized like the single-word delta
-  # buffers would leave the stiffness and loop words holding the previous
-  # frame's slope with no validation error. Read from source, since
-  # webgpu_compute opens on std/jsffi and no native test can import it.
+suite "The Crowd Buffer's Clear Covers Every Word":
+  # A clear shorter than the allocation passes WebGPU validation and leaves
+  # the uncleared particles' words accumulating frame over frame. Read from
+  # source, since webgpu_compute and webgpu_init open on std/jsffi and no
+  # native test can import them.
 
-  test "sbCrowdDensityDelta's byte length is not grouped with the single-word deltas":
+  test "sbCrowdDensityDelta's byte length is sized by CROWD_DENSITY_DELTA_WORDS":
     let lines = readFile("src/webgpu_compute.nim").splitLines
     var inByteLengthFor = false
     var statement = ""
@@ -784,7 +784,45 @@ suite "The Crowd Buffer's Clear Covers All Three Words":
     check statement.len > 0
     check "sbDensityDelta" notin statement
     check "sbSphDensityDelta" notin statement
-    check "3" in statement
+    check "CROWD_DENSITY_DELTA_WORDS" in statement
+
+  test "the crowd buffer's allocation is sized by CROWD_DENSITY_DELTA_WORDS":
+    var statement = ""
+    let lines = readFile("src/webgpu_init.nim").splitLines
+    for number, line in lines:
+      if line.strip.startsWith("result.crowdDensityDelta ="):
+        statement = line
+        var next = number + 1
+        while next < lines.len and lines[next].strip.len > 0 and
+            lines[next].indentation > line.indentation:
+          statement.add " " & lines[next].strip
+          inc next
+        break
+    checkpoint("crowdDensityDelta's allocation: " & statement)
+    check "CROWD_DENSITY_DELTA_WORDS" in statement
+
+  test "every shader index into the crowd buffer strides by CROWD_DENSITY_DELTA_WORDS":
+    const Indexer = "crowdDensityDeltaFixed["
+    for file in ["web/shaders/src/forces.wgsl", "web/shaders/src/integrate.wgsl"]:
+      var indicesSeen = 0
+      let lines = readFile(file).splitLines
+      for number, line in lines:
+        var at = line.find(Indexer)
+        while at >= 0:
+          let index = line[at + Indexer.len .. ^1]
+          let star = index.find(" * ")
+          var stride = ""
+          if star >= 0:
+            for character in index[star + 3 .. ^1]:
+              if character notin Digits: break
+              stride.add character
+          checkpoint(file & ":" & $(number + 1) & " indexes at stride '" &
+            stride & "'")
+          check stride == $CROWD_DENSITY_DELTA_WORDS
+          inc indicesSeen
+          at = line.find(Indexer, at + Indexer.len)
+      checkpoint(file & " crowd-buffer indices seen: " & $indicesSeen)
+      check indicesSeen > 0
 
 
 suite "Bounds Read Only Declared Parameters":
@@ -1069,18 +1107,23 @@ suite "The Pressure Onset Comes From The Density Functions":
     # std/jsffi and no native test can import it.
     const SLOT = "simParamsData[SIM_PRESSURE_ONSET]"
     let lines = readFile("src/webgpu_compute.nim").splitLines
-    var statement = ""
-    for number, line in lines:
-      if not line.strip.startsWith(SLOT): continue
-      let indent = line.len - line.strip(trailing = false).len
-      statement = line
-      var next = number + 1
-      while next < lines.len and lines[next].strip.len > 0 and
-          lines[next].len - lines[next].strip(trailing = false).len > indent:
-        statement.add " " & lines[next]
-        inc next
-      break
+    proc statementOpening(opening: string): string =
+      for number, line in lines:
+        if not line.strip.startsWith(opening): continue
+        result = line
+        var next = number + 1
+        while next < lines.len and lines[next].strip.len > 0 and
+            lines[next].indentation > line.indentation:
+          result.add " " & lines[next]
+          inc next
+        return
+    var statement = statementOpening(SLOT)
     checkpoint("assignment found for " & SLOT & ": " & statement)
+    # A bare identifier on the right is followed to its own `let` binding.
+    let assigned = statement.split('=', maxsplit = 1)[^1].strip
+    if assigned.len > 0 and assigned.allCharsInSet(IdentChars):
+      statement = statementOpening("let " & assigned & " =")
+      checkpoint("binding found for " & assigned & ": " & statement)
     check "pressureOnset(" in statement
 
 

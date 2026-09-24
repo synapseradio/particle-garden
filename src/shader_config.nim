@@ -239,7 +239,7 @@ static:
 
 from physics_core import FRAME_DT_REFERENCE
 from config_ranges import VELOCITY_COARSE_SHIFT, WORLD_PRESSURE_STIFFNESS,
-  WORLD_PRESSURE_IMPULSE_MAX, PRESSURE_STEP_BOUND, STIFFNESS_COARSE_SHIFT,
+  WORLD_PRESSURE_IMPULSE_MAX, STIFFNESS_COARSE_SHIFT,
   STIFFNESS_FIXED_POINT_SCALE
 # long_range_core is pure; it owns the mesh density accumulator's fixed point
 # and the transform's line length, so the five mesh shaders encode at the scale
@@ -366,7 +366,6 @@ proc getPlaceholderMap*(): Table[string, string] =
   # both are emitted from the one stored field: a hand-written radius can drift
   # from the square it is supposed to be the root of.
   result["TUNABLE_BLAST_RANGE"] = fmt"{sqrt(activeConfig.tuning.blastRangeSq):.1f}"
-  result["TUNABLE_DENSITY_SMOOTH_FACTOR"] = fmt"{activeConfig.tuning.densitySmoothFactor:.2f}"
   result["TUNABLE_FIXED_POINT_SCALE"] = fmt"{activeConfig.tuning.fixedPointScale:.1f}"
   # fixed_point.wgsl multiplies by the reciprocal rather than dividing, so the
   # bundler emits it too. Deriving it here is what keeps the pair consistent:
@@ -391,13 +390,11 @@ proc getPlaceholderMap*(): Table[string, string] =
   result["WORLD_PRESSURE_IMPULSE_MAX"] = fmt"{WORLD_PRESSURE_IMPULSE_MAX:.8f}"
 
   # The stiffness words' shift and scale (forces.wgsl encodes, integrate.wgsl
-  # decodes) and the step limit's bound (integrate.wgsl only), from
-  # config_ranges.
+  # decodes), from config_ranges.
   result["STIFFNESS_COARSE_SHIFT"] = $STIFFNESS_COARSE_SHIFT
   result["STIFFNESS_FIXED_POINT_SCALE"] = fmt"{STIFFNESS_FIXED_POINT_SCALE:.1f}"
   result["STIFFNESS_INV_FIXED_POINT_SCALE"] =
     fmt"{1.0 / STIFFNESS_FIXED_POINT_SCALE:.16f}"
-  result["PRESSURE_STEP_BOUND"] = fmt"{PRESSURE_STEP_BOUND:.8f}"
 
   # Glow curve constants (consumed by glow.wgsl). Two decimal places keep
   # 0.15/0.05 exact while remaining unambiguous WGSL f32 literals.

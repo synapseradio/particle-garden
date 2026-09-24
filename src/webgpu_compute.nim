@@ -44,7 +44,7 @@ import long_range_core
 # indexes; the live size bounds every long-range dispatch and clear below.
 import config_ranges
 from physics_core import frameFactor, crowdLoopMeanFieldGain
-from memory_layout import MAX_BODIES
+from memory_layout import MAX_BODIES, CROWD_DENSITY_DELTA_WORDS
 from body_core import nil
   # Qualified throughout: gpu_types generates BodyParams' field indices under
   # the same BODY_ prefix this module's physical constants carry, so
@@ -1269,10 +1269,7 @@ proc runPhysicsFrame*(params: JsObject): Future[void] {.async, exportc.} =
       # zero every x and leave every y holding the previous frame's impulse,
       # which reads as a world that drifts steadily downward.
     of sbDensityDelta, sbSphDensityDelta: particleCount * 4  # i32 per particle
-    of sbCrowdDensityDelta: particleCount * 3 * 4
-      # Three i32 per particle: crowd, stiffnessFine, stiffnessCoarse. A clear
-      # sized like the single-word deltas above would leave the two stiffness
-      # words holding the previous frame's slope.
+    of sbCrowdDensityDelta: particleCount * CROWD_DENSITY_DELTA_WORDS * 4
     of sbFieldAlive: 4  # one u32: the frame's alive-cell census
     of sbFieldDeposit: FIELD_W * FIELD_H * 4  # one i32 (inhibitor) per field cell
     of sbBodies: MAX_BODIES * BodyLayout.totalSize

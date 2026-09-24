@@ -100,6 +100,11 @@ const
     ## The last word of the 32-byte struct; the field costs no extra bytes,
     ## since the struct was already sized to this width.
 
+  CROWD_DENSITY_DELTA_WORDS* = 5
+    ## i32 words per particle in the crowd delta buffer: crowd, stiffnessFine,
+    ## stiffnessCoarse, cFine, cCoarse. forces.wgsl and integrate.wgsl index it
+    ## at this stride as a literal.
+
 const
   WASM_MEMORY_PAGES* = 2048      ## 128MB initial (2048 * 64KB)
   WASM_MEMORY_PAGES_MAX* = 8192  ## 512MB maximum
